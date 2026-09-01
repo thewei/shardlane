@@ -13,7 +13,6 @@ settings:
     shortcuts: Shortcuts
     behavior: Behavior
     window: Window
-    machines: Machines
     providers: Providers
     mobile: Mobile
     browser: Browser
@@ -34,8 +33,10 @@ settings:
     language_title: Language
     language_subtitle: Interface language for Shardlane's native shell. Additional languages will arrive in future releases.
 workspace:
-  multiplexers: Terminal multiplexers
-  stopped: Stopped
   local: (local)
   new: New Workspace…
-  ssh_placeholder: user@host / SSH alias…
+  filter: Filter workspaces…
+  none: No workspaces yet
+tab:
+  filter: Filter tabs…
+  none: No tabs in this workspace

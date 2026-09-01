@@ -172,17 +172,17 @@ pub async fn in_instance_scope(
     CURRENT_INSTANCE.scope(instance, f).await
 }
 
-/// Resolve the Herdr client for a Project registry id (multi-instance).
-/// `None` = the default instance (legacy single-instance behavior). A dead
-/// named instance's server is started — the same persistent-instance semantics
-/// as the desktop (`bootstrap_for_session`).
+/// Resolve the Herdr client for a session (multi-instance). `None` = no
+/// instance scope given — fall back to the base connection. A dead session's
+/// server is started — the same persistent-instance semantics as the desktop
+/// (`bootstrap_for_session`).
 pub fn connect_herdr_for(
     state: &RemoteState,
     instance: Option<&str>,
 ) -> Result<HerdrClient, HerdrError> {
     match instance {
-        None | Some("default") => connect_herdr(state),
-        Some(session) => HerdrClient::bootstrap_for_session(Some(session)),
+        None => connect_herdr(state),
+        Some(session) => HerdrClient::bootstrap_for_session(session),
     }
 }
 

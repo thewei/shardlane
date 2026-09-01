@@ -117,7 +117,7 @@ fn session_from_state(
 fn protocol_gate_for(state: &RemoteState, session: Option<&str>) -> Result<(), TuiError> {
     let client = match session {
         None => connect_herdr(state),
-        Some(session) => shardlane_host::herdr::HerdrClient::bootstrap_for_session(Some(session)),
+        Some(session) => shardlane_host::herdr::HerdrClient::bootstrap_for_session(session),
     }
     .map_err(|error| TuiError::HerdrUnavailable(error.to_string()))?;
     let protocol = client.protocol().ok_or_else(|| {

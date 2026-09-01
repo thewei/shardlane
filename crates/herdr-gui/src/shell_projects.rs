@@ -159,43 +159,213 @@ impl ShardlaneApp {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.run_new_project_flow(window, cx);
+        self.begin_workspace_creation(window, cx);
     }
 
-    /// Multi-instance New Project: creates a Project registry entry backed by a
-    /// dedicated Herdr session (`shardlane-project-<n>`; names are checked
-    /// against the registry AND existing CLI sessions so a foreign instance is
-    /// never hijacked), then rebinds THIS window to it. Projects carry no
-    /// working directory of their own — per-Tab cwds belong to Herdr, and the
-    /// instance's first workspace is created on first bind.
-    /// Multi-instance New Workspace: creates a new Herdr instance (unique
-    /// `shardlane-project-<n>` session; collisions checked against live
-    /// sessions so CLI-created instances are never hijacked) and rebinds this
-    /// window to it. There is no Shardlane-side workspace registry, and no
-    /// per-Project directory — per-Tab cwds belong to Herdr.
-    pub(super) fn run_new_project_flow(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    /// Multi-instance New Workspace, step 1: open the picker page in creation
+    /// mode — the user must name the workspace before anything is created.
+    /// The name is written into the session's metadata file on herdr's disk.
+    pub(super) fn begin_workspace_creation(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.leave_history_surface(cx);
+        self.show_project_picker = true;
+        self.picker_page = PickerPage::Creating;
+        window.focus(&self.focus_handle);
+        cx.notify();
+    }
+
+    pub(super) fn cancel_workspace_creation(&mut self, cx: &mut Context<Self>) {
+        self.picker_page = PickerPage::None;
+        cx.notify();
+    }
+
+    /// Opens the full-page settings for one workspace (session): rename +
+    /// delete. Opened from the workspace switcher row's hover gear.
+    pub(super) fn open_workspace_settings(
+        &mut self,
+        session: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.picker_page = PickerPage::WorkspaceSettings(session.clone());
+        self.workspace_settings_session = Some(session);
+        self.workspace_settings_name = None; // recreated prefilled on render
+        self.workspace_delete_armed = false;
+        self.clear_ime_state();
+        window.focus(&self.focus_handle);
+        cx.notify();
+    }
+
+    /// Opens the full-page devices surface: management (moved out of Settings)
+    /// plus switching — picking a device focuses the panel on its workspaces.
+    pub(super) fn open_device_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.picker_page = PickerPage::DeviceSettings;
+        self.clear_ime_state();
+        window.focus(&self.focus_handle);
+        cx.notify();
+    }
+
+    pub(super) fn close_settings_page(&mut self, cx: &mut Context<Self>) {
+        self.picker_page = PickerPage::None;
+        self.workspace_settings_session = None;
+        self.workspace_delete_armed = false;
+        self.clear_ime_state();
+        cx.notify();
+    }
+
+    /// Selects the device whose workspaces the switcher panel lists, and
+    /// returns to the shell.
+    pub(super) fn select_panel_device(&mut self, device_id: String, cx: &mut Context<Self>) {
+        self.panel_device = Some(device_id);
+        self.picker_page = PickerPage::None;
+        self.notify_sidebar(cx);
+        cx.notify();
+    }
+
+    /// Renames from the workspace-settings page: writes the session's
+    /// metadata file (the single rename path) and updates the bound title.
+    pub(super) fn rename_workspace_from_settings(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(session) = self.workspace_settings_session.clone() else {
+            return;
+        };
+        let Some(input) = self.workspace_settings_name.clone() else {
+            return;
+        };
+        let name = input.read(cx).value().trim().to_string();
+        if name.is_empty() {
+            window.push_notification("Name must not be empty", cx);
+            return;
+        }
+        if let Err(error) = self.shared.rename_session(&session, &name) {
+            window.push_notification(format!("Rename failed: {error}"), cx);
+            return;
+        }
+        if let Some(binding) = self.binding.as_mut() {
+            if binding.project_id == session {
+                binding.project_name = name;
+            }
+        }
+        self.update_window_title(window);
+        self.notify_sidebar(cx);
+        self.picker_page = PickerPage::None;
+        self.workspace_settings_session = None;
+        cx.notify();
+    }
+
+    /// Deletes from the workspace-settings page. Two-step: the first click
+    /// arms the confirm button, the second executes — the session's server is
+    /// stopped and the session deleted.
+    pub(super) fn delete_workspace_from_settings(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(session) = self.workspace_settings_session.clone() else {
+            return;
+        };
+        if !self.workspace_delete_armed {
+            self.workspace_delete_armed = true;
+            cx.notify();
+            return;
+        }
+        self.workspace_delete_armed = false;
+        let bound_here = self
+            .binding
+            .as_ref()
+            .is_some_and(|b| b.project_id == session);
         let window_handle = window.window_handle();
         cx.spawn(async move |this, cx| {
-            let session = cx
+            let outcome = cx
                 .background_executor()
                 .spawn(async move {
-                    let existing = shardlane_host::herdr::list_sessions().unwrap_or_default();
-                    let ordinal = existing.iter().filter(|s| !s.is_default).count() + 1;
-                    let mut suffix = ordinal;
-                    loop {
-                        let candidate = format!("shardlane-project-{suffix}");
-                        if !existing.iter().any(|s| s.name == candidate) {
-                            break candidate;
+                    let stop = shardlane_host::herdr::stop_session(&session);
+                    std::thread::sleep(std::time::Duration::from_millis(400));
+                    shardlane_host::herdr::delete_session(&session).map_err(|delete_error| {
+                        match stop {
+                            Ok(()) => delete_error,
+                            Err(stop_error) => format!("{delete_error} (stop: {stop_error})"),
                         }
-                        suffix += 1;
-                    }
+                    })
                 })
                 .await;
             let _ = cx.update_window(window_handle, |_, window, cx| {
-                let _ = this.update(cx, |view, cx| {
-                    view.bind_instance(Some(session), window, cx);
-                    window.push_notification("Workspace created", cx);
+                let _ = this.update(cx, |view, cx| match outcome {
+                    Ok(()) => {
+                        view.shared.refresh_instances();
+                        if bound_here {
+                            view.teardown_binding(cx);
+                            view.show_project_picker = true;
+                        }
+                        view.picker_page = PickerPage::None;
+                        view.workspace_settings_session = None;
+                        view.notify_sidebar(cx);
+                        window.push_notification("Workspace deleted", cx);
+                    }
+                    Err(error) => {
+                        window.push_notification(format!("Delete failed: {error}"), cx);
+                    }
+                });
+            });
+        })
+        .detach();
+    }
+
+    /// Multi-instance New Workspace, step 2: create the Herdr session (unique
+    /// slug derived from the chosen name; collisions checked against live
+    /// sessions so CLI-created instances are never hijacked), write the
+    /// chosen name into the session's metadata file, and rebind this window.
+    pub(super) fn create_workspace_now(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(input) = self.new_workspace_name.clone() else {
+            return;
+        };
+        let chosen = input.read(cx).value().trim().to_string();
+        if chosen.is_empty() {
+            window.push_notification("Name the workspace first", cx);
+            return;
+        }
+        self.picker_page = PickerPage::None;
+        let window_handle = window.window_handle();
+        cx.spawn(async move |this, cx| {
+            let outcome = cx
+                .background_executor()
+                .spawn(async move {
+                    let existing = shardlane_host::herdr::list_sessions().unwrap_or_default();
+                    let base = slugify_workspace_name(&chosen);
+                    let base = if base.is_empty() {
+                        "workspace".to_string()
+                    } else {
+                        base
+                    };
+                    let mut suffix = existing.len() + 1;
+                    let mut candidate = base.clone();
+                    while existing.iter().any(|s| s.name == candidate) {
+                        candidate = format!("{base}-{suffix}");
+                        suffix += 1;
+                    }
+                    // Bootstrapping starts (and persists) the session's server.
+                    let client = HerdrClient::bootstrap_for_session(&candidate)
+                        .map_err(|error| error.to_string())?;
+                    shardlane_host::herdr::write_session_display_name(&candidate, &chosen)?;
+                    Ok::<_, String>((client, candidate))
+                })
+                .await;
+            let _ = cx.update_window(window_handle, |_, window, cx| {
+                let _ = this.update(cx, |view, cx| match outcome {
+                    Ok((_client, session)) => {
+                        // Reveal the created workspace: the picker (including
+                        // `show_project_picker`, which `begin_workspace_creation`
+                        // set) must not keep covering the freshly bound shell.
+                        view.show_project_picker = false;
+                        view.shared.refresh_instances();
+                        view.bind_instance(session, window, cx);
+                        window.push_notification("Workspace created", cx);
+                    }
+                    Err(error) => {
+                        window.push_notification(format!("Create failed: {error}"), cx);
+                    }
                 });
             });
         })
@@ -463,4 +633,17 @@ pub(crate) fn before_target_authoritative_insert(
     } else {
         target_index
     })
+}
+
+/// Session slug from a display name: filesystem-safe (ASCII alphanumerics and
+/// dashes). Non-ASCII names (e.g. Chinese) fall back to the caller's default
+/// base — the exact display name itself lives in the metadata file.
+fn slugify_workspace_name(name: &str) -> String {
+    let slug: String = name
+        .trim()
+        .to_lowercase()
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .collect();
+    slug.trim_matches('-').to_string()
 }

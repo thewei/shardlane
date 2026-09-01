@@ -1196,178 +1196,166 @@ pub(crate) fn project_picker_page_impl(
     cx: &mut Context<ShardlaneApp>,
 ) -> AnyElement {
     let component_theme = cx.theme().clone();
-    // Picker filter input: lazily created (InputState needs a live Window).
-    if this.project_picker_filter.is_none() {
-        this.project_picker_filter =
-            Some(cx.new(|cx| InputState::new(window, cx).placeholder("Filter workspaces…")));
-    }
-    let filter_value = this
-        .project_picker_filter
-        .as_ref()
-        .map(|input| input.read(cx).value().trim().to_lowercase())
-        .unwrap_or_default();
-    // Instance list: refreshed once per picker open (background CLI round
-    // trip; render never shells out synchronously). Workspaces ARE Herdr
-    // instances — there is no Shardlane-side registry.
-    if !this.instances_refresh_requested.get() {
-        this.instances_refresh_requested.set(true);
-        cx.spawn(async move |this, cx| {
-            let _ = this.update(cx, |view, _| view.shared.refresh_instances());
-            // B1: refresh remote machine instance lists over live bridges.
-            let targets: Vec<(String, String)> = this
-                .update(cx, |view, _| {
-                    view.shared
-                        .ssh_bridges
-                        .lock()
-                        .unwrap_or_else(std::sync::PoisonError::into_inner)
-                        .iter()
-                        .map(|bridge| (bridge.device_id.clone(), bridge.target.clone()))
-                        .collect()
-                })
-                .unwrap_or_default();
-            for (device_id, target) in targets {
-                let sessions = cx
-                    .background_executor()
-                    .spawn(async move {
-                        crate::ssh_bridge::list_remote_sessions(&target).unwrap_or_default()
-                    })
-                    .await;
-                let _ = this.update(cx, |view, _| {
-                    view.shared
-                        .remote_sessions
-                        .lock()
-                        .unwrap_or_else(std::sync::PoisonError::into_inner)
-                        .insert(device_id, sessions);
-                });
+    // Creation mode: name first — the name is written into the session's
+    // metadata file (workspace.json) when the session is created, and the
+    // switcher/sidebar read it back from there.
+    if this.picker_page == PickerPage::Creating {
+        let herdr = cx.entity();
+        if this.new_workspace_name.is_none() {
+            let input = cx.new(|cx| InputState::new(window, cx).placeholder("Workspace name…"));
+            let subscription = cx.subscribe_in(
+                &input,
+                window,
+                |this: &mut ShardlaneApp,
+                 _,
+                 event: &gpui_component::input::InputEvent,
+                 window,
+                 cx| {
+                    if matches!(event, gpui_component::input::InputEvent::PressEnter { .. }) {
+                        this.create_workspace_now(window, cx);
+                    }
+                },
+            );
+            this.new_workspace_name = Some(input);
+            this._new_workspace_name_sub = Some(subscription);
+        }
+        if let Some(input) = this.new_workspace_name.as_ref() {
+            let handle = input.read(cx).focus_handle(cx);
+            if !handle.is_focused(window) {
+                input.update(cx, |state, cx| state.focus(window, cx));
             }
-            let _ = this.update(cx, |_, cx| cx.notify());
-        })
-        .detach();
+        }
+        let name_control = this
+            .new_workspace_name
+            .as_ref()
+            .map(|input| {
+                Input::new(input)
+                    .small()
+                    .appearance(false)
+                    .w_full()
+                    .text_size(px(13.0))
+                    .into_any_element()
+            })
+            .unwrap_or_else(|| div().into_any_element());
+        let create_herdr = herdr.clone();
+        let cancel_herdr = herdr.clone();
+        return div()
+            .id("shardlane-project-picker")
+            .size_full()
+            .key_context("ShardlaneApp")
+            .on_action(cx.listener(|this, _: &PickerCancel, _, cx| {
+                this.cancel_workspace_creation(cx);
+            }))
+            // Early render return skips the shell's action registrations;
+            // keep the Window menu alive in creation/picker windows.
+            .on_action(cx.listener(ShardlaneApp::new_window))
+            .on_action(cx.listener(ShardlaneApp::merge_all_windows))
+            .bg(cx.theme().background)
+            .text_color(cx.theme().foreground)
+            .flex()
+            .flex_col()
+            .items_center()
+            .justify_center()
+            .child(
+                div()
+                    .w(px(360.0))
+                    .rounded(px(10.0))
+                    .border_1()
+                    .border_color(component_theme.border)
+                    .p(px(12.0))
+                    .flex()
+                    .flex_col()
+                    .gap(px(10.0))
+                    .child(
+                        div()
+                            .text_size(px(13.0))
+                            .font_weight(FontWeight::MEDIUM)
+                            .child("New Workspace"),
+                    )
+                    .child(
+                        div()
+                            .text_size(px(12.0))
+                            .text_color(component_theme.muted_foreground)
+                            .child(
+                                "Pick a name — it is stored with the Herdr session. Enter ↵ to create.",
+                            ),
+                    )
+                    .child(
+                        div()
+                            .w_full()
+                            .h(px(34.0))
+                            .px(px(10.0))
+                            .rounded(px(6.0))
+                            .border_1()
+                            .border_color(component_theme.border)
+                            .flex()
+                            .items_center()
+                            .child(name_control),
+                    )
+                    .child(
+                        h_flex()
+                            .w_full()
+                            .gap(px(8.0))
+                            .child(
+                                div()
+                                    .id("workspace-create")
+                                    .flex_1()
+                                    .h(px(32.0))
+                                    .rounded(px(6.0))
+                                    .bg(component_theme.primary)
+                                    .text_color(component_theme.primary_foreground)
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .text_size(px(12.0))
+                                    .cursor_pointer()
+                                    .hover(|s| s.bg(component_theme.primary.opacity(0.85)))
+                                    .on_click(move |_, window, app| {
+                                        create_herdr.update(app, |this, cx| {
+                                            this.create_workspace_now(window, cx)
+                                        });
+                                    })
+                                    .child("Create"),
+                            )
+                            .child(
+                                div()
+                                    .id("workspace-create-cancel")
+                                    .w(px(90.0))
+                                    .h(px(32.0))
+                                    .rounded(px(6.0))
+                                    .border_1()
+                                    .border_color(component_theme.border)
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .text_size(px(12.0))
+                                    .text_color(component_theme.muted_foreground)
+                                    .cursor_pointer()
+                                    .hover(|s| {
+                                        s.bg(component_theme
+                                            .foreground
+                                            .opacity(crate::theme::WASH_HOVER))
+                                    })
+                                    .on_click(move |_, window, app| {
+                                        cancel_herdr.update(app, |this, cx| {
+                                            this.cancel_workspace_creation(cx);
+                                            this.close_project_picker(window, cx);
+                                        });
+                                    })
+                                    .child("Cancel"),
+                            ),
+                    ),
+            )
+            .into_any_element();
     }
-    let instances = this.shared.instance_list();
+    // The full workspace LIST page was removed: switching happens in the
+    // switcher panel (sidebar footer chip / header breadcrumbs). This page
+    // remains only for unbound windows and workspace creation.
     let herdr = cx.entity();
-    let row_herdr = herdr.clone();
     let new_project_herdr = herdr.clone();
     let close_herdr = herdr.clone();
-
-    let mut list = div().flex().flex_col().gap(px(2.0));
-    for instance in &instances {
-        let row_herdr = row_herdr.clone();
-        let instance_key = if instance.is_default {
-            "default".to_string()
-        } else {
-            instance.name.clone()
-        };
-        let display = this.shared.display_name(if instance.is_default {
-            None
-        } else {
-            Some(instance.name.as_str())
-        });
-        let bound_here = this
-            .bound_project()
-            .is_some_and(|binding| binding.project_id == instance_key);
-        let bound_elsewhere = (!bound_here)
-            && this
-                .shared
-                .window_handle_for_project(&instance_key)
-                .is_some();
-        let status = if bound_here {
-            "This window"
-        } else if bound_elsewhere {
-            "Open in another window"
-        } else if instance.running {
-            "Running"
-        } else {
-            "Stopped"
-        };
-        if !filter_value.is_empty() && !display.to_lowercase().contains(&filter_value) {
-            continue;
-        }
-        list = list.child(
-            div()
-                .id(SharedString::from(format!(
-                    "picker-instance-{}",
-                    instance_key
-                )))
-                .w_full()
-                .h(px(40.0))
-                .px(px(12.0))
-                .rounded(px(6.0))
-                .flex()
-                .items_center()
-                .justify_between()
-                .cursor_pointer()
-                .hover(|s| s.bg(component_theme.foreground.opacity(crate::theme::WASH_HOVER)))
-                .active(|s| {
-                    s.bg(component_theme
-                        .foreground
-                        .opacity(crate::theme::WASH_ACTIVE))
-                })
-                .on_click(move |_, window, app| {
-                    row_herdr.update(app, |this, cx| {
-                        this.open_or_jump_project(&instance_key, window, cx);
-                        cx.notify();
-                    });
-                })
-                .child(
-                    div()
-                        .text_size(px(13.0))
-                        .text_color(component_theme.foreground)
-                        .child(display),
-                )
-                .child(
-                    div()
-                        .text_size(px(11.0))
-                        .text_color(component_theme.muted_foreground)
-                        .child(status),
-                ),
-        );
-    }
-
-    let filter_control = this
-        .project_picker_filter
-        .as_ref()
-        .map(|input| {
-            Input::new(input)
-                .small()
-                .appearance(false)
-                .w_full()
-                .text_size(px(12.0))
-                .into_any_element()
-        })
-        .unwrap_or_else(|| div().into_any_element());
-
-    let filter_row = div()
-        .w_full()
-        .h(px(32.0))
-        .px(px(10.0))
-        .mb(px(4.0))
-        .rounded(px(6.0))
-        .border_1()
-        .border_color(component_theme.border)
-        .flex()
-        .items_center()
-        .child(filter_control);
-
-    list = list.child(
-        div()
-            .id("picker-new-project")
-            .w_full()
-            .h(px(40.0))
-            .px(px(12.0))
-            .rounded(px(6.0))
-            .flex()
-            .items_center()
-            .gap(px(8.0))
-            .cursor_pointer()
-            .text_color(component_theme.muted_foreground)
-            .hover(|s| s.bg(component_theme.foreground.opacity(crate::theme::WASH_HOVER)))
-            .on_click(move |_, window, app| {
-                new_project_herdr.update(app, |this, cx| this.new_project(&NewProject, window, cx));
-            })
-            .child("+ New workspace"),
-    );
-
+    let unbound = this.binding.is_none();
+    let dismiss_text = if unbound { "Close window" } else { "Close" };
     div()
         .id("shardlane-project-picker")
         .size_full()
@@ -1375,6 +1363,10 @@ pub(crate) fn project_picker_page_impl(
         .on_action(cx.listener(|this, _: &PickerCancel, window, cx| {
             this.close_project_picker(window, cx);
         }))
+        // Early render return skips the shell's action registrations;
+        // keep the Window menu alive in creation/picker windows.
+        .on_action(cx.listener(ShardlaneApp::new_window))
+        .on_action(cx.listener(ShardlaneApp::merge_all_windows))
         .bg(cx.theme().background)
         .text_color(cx.theme().foreground)
         .flex()
@@ -1384,32 +1376,61 @@ pub(crate) fn project_picker_page_impl(
         .child(
             div()
                 .w(px(360.0))
-                .max_h(px(480.0))
                 .rounded(px(10.0))
                 .border_1()
                 .border_color(component_theme.border)
-                .p(px(10.0))
+                .p(px(12.0))
                 .flex()
                 .flex_col()
-                .gap(px(6.0))
+                .gap(px(10.0))
                 .child(
                     div()
                         .text_size(px(13.0))
                         .font_weight(FontWeight::MEDIUM)
-                        .text_color(component_theme.muted_foreground)
-                        .child(if this.binding.is_none() {
-                            "Choose a workspace to open in this window".to_string()
+                        .child(if unbound {
+                            "Open a workspace".to_string()
                         } else {
-                            "Switch / jump to workspace".to_string()
+                            "Workspace".to_string()
                         }),
                 )
-                .child(filter_row)
-                .child(list)
+                .child(
+                    div()
+                        .text_size(px(12.0))
+                        .text_color(component_theme.muted_foreground)
+                        .child(
+                            "Switch workspaces from the switcher — the ● button at the bottom of the sidebar (or the breadcrumb above).",
+                        ),
+                )
+                .child(
+                    div()
+                        .id("picker-new-project")
+                        .w_full()
+                        .h(px(36.0))
+                        .px(px(12.0))
+                        .rounded(px(6.0))
+                        .border_1()
+                        .border_color(component_theme.border)
+                        .flex()
+                        .items_center()
+                        .gap(px(8.0))
+                        .cursor_pointer()
+                        .text_size(px(12.0))
+                        .text_color(component_theme.foreground)
+                        .hover(|s| {
+                            s.bg(component_theme.foreground.opacity(crate::theme::WASH_HOVER))
+                        })
+                        .on_click(move |_, window, app| {
+                            new_project_herdr.update(app, |this, cx| {
+                                this.new_project(&NewProject, window, cx)
+                            });
+                        })
+                        .child("+ New Workspace…"),
+                )
                 .child(
                     div()
                         .id("picker-dismiss")
                         .w_full()
-                        .h(px(32.0))
+                        .h(px(30.0))
                         .rounded(px(6.0))
                         .flex()
                         .items_center()
@@ -1424,6 +1445,432 @@ pub(crate) fn project_picker_page_impl(
                             close_herdr.update(app, |this, cx| {
                                 this.close_project_picker(window, cx);
                             });
+                        })
+                        .child(dismiss_text),
+                ),
+        )
+        .into_any_element()
+}
+/// The workspace settings page: rename (metadata write) and delete (two-step
+/// confirm). Full-page, same form as the New-Workspace page.
+pub(crate) fn workspace_settings_page_impl(
+    this: &mut ShardlaneApp,
+    window: &mut Window,
+    cx: &mut Context<ShardlaneApp>,
+) -> AnyElement {
+    let component_theme = cx.theme().clone();
+    let Some(session) = this.workspace_settings_session.clone() else {
+        return div().into_any_element();
+    };
+    let display = this.shared.display_name(&session);
+    // Lazily create the name input for this session, prefilled.
+    if this.workspace_settings_name.is_none() {
+        let input = cx.new(|cx| InputState::new(window, cx).placeholder("Workspace name…"));
+        input.update(cx, |state, cx| {
+            state.set_value(display.clone(), window, cx);
+        });
+        let subscription = cx.subscribe_in(
+            &input,
+            window,
+            |this: &mut ShardlaneApp, _, event: &gpui_component::input::InputEvent, window, cx| {
+                if matches!(event, gpui_component::input::InputEvent::PressEnter { .. }) {
+                    this.rename_workspace_from_settings(window, cx);
+                }
+            },
+        );
+        this.workspace_settings_name = Some(input);
+        this._workspace_settings_name_sub = Some(subscription);
+    }
+    let name_control = this
+        .workspace_settings_name
+        .as_ref()
+        .map(|input| {
+            Input::new(input)
+                .small()
+                .appearance(false)
+                .w_full()
+                .text_size(px(13.0))
+                .into_any_element()
+        })
+        .unwrap_or_else(|| div().into_any_element());
+    let armed = this.workspace_delete_armed;
+    let rename_herdr = cx.entity();
+    let delete_herdr = cx.entity();
+    let cancel_herdr = cx.entity();
+
+    div()
+        .id("shardlane-project-picker")
+        .size_full()
+        .key_context("ShardlaneApp")
+        .on_action(cx.listener(|this, _: &PickerCancel, _, cx| {
+            this.close_settings_page(cx);
+        }))
+        // Early render return skips the shell's action registrations;
+        // keep the Window menu alive on full-page surfaces.
+        .on_action(cx.listener(ShardlaneApp::new_window))
+        .on_action(cx.listener(ShardlaneApp::merge_all_windows))
+        .bg(cx.theme().background)
+        .text_color(cx.theme().foreground)
+        .flex()
+        .flex_col()
+        .items_center()
+        .justify_center()
+        .child(
+            div()
+                .w(px(360.0))
+                .rounded(px(10.0))
+                .border_1()
+                .border_color(component_theme.border)
+                .p(px(12.0))
+                .flex()
+                .flex_col()
+                .gap(px(10.0))
+                .child(
+                    div()
+                        .text_size(px(13.0))
+                        .font_weight(FontWeight::MEDIUM)
+                        .child("Workspace Settings"),
+                )
+                .child(
+                    div()
+                        .text_size(px(12.0))
+                        .text_color(component_theme.muted_foreground)
+                        .child(SharedString::from(format!("herdr session · {session}"))),
+                )
+                .child(
+                    div()
+                        .w_full()
+                        .h(px(34.0))
+                        .px(px(10.0))
+                        .rounded(px(6.0))
+                        .border_1()
+                        .border_color(component_theme.border)
+                        .flex()
+                        .items_center()
+                        .child(name_control),
+                )
+                .child(
+                    h_flex()
+                        .w_full()
+                        .gap(px(8.0))
+                        .child(
+                            div()
+                                .id("workspace-settings-rename")
+                                .flex_1()
+                                .h(px(32.0))
+                                .rounded(px(6.0))
+                                .bg(component_theme.primary)
+                                .text_color(component_theme.primary_foreground)
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .text_size(px(12.0))
+                                .cursor_pointer()
+                                .hover(|s| s.bg(component_theme.primary.opacity(0.85)))
+                                .on_click(move |_, window, app| {
+                                    rename_herdr.update(app, |this, cx| {
+                                        this.rename_workspace_from_settings(window, cx)
+                                    });
+                                })
+                                .child("Rename"),
+                        )
+                        .child(
+                            div()
+                                .id("workspace-settings-delete")
+                                .flex_1()
+                                .h(px(32.0))
+                                .rounded(px(6.0))
+                                .border_1()
+                                .border_color(if armed {
+                                    component_theme.danger
+                                } else {
+                                    component_theme.border
+                                })
+                                .text_color(if armed {
+                                    component_theme.danger_foreground
+                                } else {
+                                    component_theme.danger
+                                })
+                                .bg(if armed {
+                                    component_theme.danger
+                                } else {
+                                    gpui::transparent_black()
+                                })
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .text_size(px(12.0))
+                                .cursor_pointer()
+                                .hover(|s| {
+                                    if armed {
+                                        s.bg(component_theme.danger.opacity(0.85))
+                                    } else {
+                                        s.bg(component_theme
+                                            .danger
+                                            .opacity(crate::theme::WASH_HOVER))
+                                    }
+                                })
+                                .on_click(move |_, window, app| {
+                                    delete_herdr.update(app, |this, cx| {
+                                        this.delete_workspace_from_settings(window, cx)
+                                    });
+                                })
+                                .child(if armed { "Confirm delete" } else { "Delete" }),
+                        ),
+                )
+                .child(
+                    div()
+                        .id("workspace-settings-close")
+                        .w_full()
+                        .h(px(30.0))
+                        .rounded(px(6.0))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .text_size(px(12.0))
+                        .text_color(component_theme.muted_foreground)
+                        .cursor_pointer()
+                        .hover(|s| {
+                            s.bg(component_theme.foreground.opacity(crate::theme::WASH_HOVER))
+                        })
+                        .on_click(move |_, _window, app| {
+                            cancel_herdr.update(app, |this, cx| this.close_settings_page(cx));
+                        })
+                        .child("Close"),
+                ),
+        )
+        .into_any_element()
+}
+
+/// The device settings/switcher page: management moved out of Settings →
+/// Machines, plus switching — clicking a device focuses the workspace
+/// switcher panel on that device's workspaces.
+pub(crate) fn device_settings_page_impl(
+    this: &mut ShardlaneApp,
+    window: &mut Window,
+    cx: &mut Context<ShardlaneApp>,
+) -> AnyElement {
+    let component_theme = cx.theme().clone();
+    // Lazily create the SSH-target input (InputState needs a live Window).
+    if this.machine_ssh_input.is_none() {
+        this.machine_ssh_input =
+            Some(cx.new(|cx| InputState::new(window, cx).placeholder("user@host or SSH alias…")));
+    }
+    let ssh_control = this
+        .machine_ssh_input
+        .as_ref()
+        .map(|input| {
+            Input::new(input)
+                .small()
+                .appearance(false)
+                .w_full()
+                .text_size(px(12.0))
+                .into_any_element()
+        })
+        .unwrap_or_else(|| div().into_any_element());
+
+    let connect_herdr = cx.entity();
+    let cancel_herdr = cx.entity();
+    let devices = this.config.devices.clone();
+    let local_name = crate::remote_display_host_name();
+    let local_version =
+        shardlane_host::herdr::installed_cli_version().unwrap_or_else(|| "—".to_string());
+    let selected = this
+        .panel_device
+        .clone()
+        .unwrap_or_else(|| "local".to_string());
+
+    let mut device_rows = v_flex().gap(px(4.0));
+    for device in &devices {
+        let device_id = device.id.clone();
+        let is_selected = device.id == selected;
+        let bridged = device.ssh_target.is_none()
+            || this
+                .shared
+                .ssh_bridges
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .iter()
+                .any(|bridge| bridge.device_id == device.id);
+        let (title, detail) = match device.ssh_target.clone() {
+            Some(target) => (device.name.clone(), target),
+            None => (
+                format!("{local_name} (local)"),
+                format!("herdr {local_version}"),
+            ),
+        };
+        let row_herdr = cx.entity();
+        device_rows =
+            device_rows.child(
+                h_flex()
+                    .id(SharedString::from(format!("device-row-{}", device.id)))
+                    .w_full()
+                    .h(px(44.0))
+                    .px(px(12.0))
+                    .rounded(px(6.0))
+                    .border_1()
+                    .border_color(if is_selected {
+                        component_theme.primary
+                    } else {
+                        component_theme.border
+                    })
+                    .items_center()
+                    .justify_between()
+                    .cursor_pointer()
+                    .hover(|s| s.bg(component_theme.foreground.opacity(crate::theme::WASH_HOVER)))
+                    .on_click(move |_, _window, app| {
+                        row_herdr.update(app, |this, cx| {
+                            this.select_panel_device(device_id.clone(), cx);
+                        });
+                    })
+                    .child(
+                        h_flex()
+                            .gap(px(8.0))
+                            .items_center()
+                            .min_w_0()
+                            .child(div().size(px(7.0)).rounded_full().flex_shrink_0().bg(
+                                if bridged {
+                                    component_theme.success
+                                } else {
+                                    component_theme.muted_foreground.opacity(0.45)
+                                },
+                            ))
+                            .child(
+                                div()
+                                    .text_size(px(12.0))
+                                    .text_color(component_theme.foreground)
+                                    .min_w_0()
+                                    .truncate()
+                                    .child(title),
+                            ),
+                    )
+                    .child(
+                        h_flex()
+                            .gap(px(8.0))
+                            .items_center()
+                            .flex_shrink_0()
+                            .child(
+                                div()
+                                    .text_size(px(11.0))
+                                    .text_color(component_theme.muted_foreground)
+                                    .child(detail),
+                            )
+                            .child(if is_selected {
+                                Icon::empty()
+                                    .path("icons/check.svg")
+                                    .with_size(px(12.0))
+                                    .text_color(component_theme.success)
+                                    .flex_shrink_0()
+                                    .into_any_element()
+                            } else {
+                                div().into_any_element()
+                            }),
+                    ),
+            );
+    }
+
+    div()
+        .id("shardlane-project-picker")
+        .size_full()
+        .key_context("ShardlaneApp")
+        .on_action(cx.listener(|this, _: &PickerCancel, _, cx| {
+            this.close_settings_page(cx);
+        }))
+        // Early render return skips the shell's action registrations;
+        // keep the Window menu alive on full-page surfaces.
+        .on_action(cx.listener(ShardlaneApp::new_window))
+        .on_action(cx.listener(ShardlaneApp::merge_all_windows))
+        .bg(cx.theme().background)
+        .text_color(cx.theme().foreground)
+        .flex()
+        .flex_col()
+        .items_center()
+        .justify_center()
+        .child(
+            div()
+                .w(px(420.0))
+                .rounded(px(10.0))
+                .border_1()
+                .border_color(component_theme.border)
+                .p(px(12.0))
+                .flex()
+                .flex_col()
+                .gap(px(10.0))
+                .child(
+                    div()
+                        .text_size(px(13.0))
+                        .font_weight(FontWeight::MEDIUM)
+                        .child("Devices"),
+                )
+                .child(
+                    div()
+                        .text_size(px(12.0))
+                        .text_color(component_theme.muted_foreground)
+                        .child(
+                            "Click a device to show its workspaces in the switcher. Connect another machine over SSH.",
+                        ),
+                )
+                .child(device_rows)
+                .child(
+                    h_flex()
+                        .w_full()
+                        .h(px(34.0))
+                        .px(px(10.0))
+                        .rounded(px(6.0))
+                        .border_1()
+                        .border_color(component_theme.border)
+                        .items_center()
+                        .child(ssh_control),
+                )
+                .child(
+                    div()
+                        .id("device-settings-connect")
+                        .w_full()
+                        .h(px(32.0))
+                        .rounded(px(6.0))
+                        .border_1()
+                        .border_color(component_theme.border)
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .text_size(px(12.0))
+                        .text_color(component_theme.foreground)
+                        .cursor_pointer()
+                        .hover(|s| {
+                            s.bg(component_theme.foreground.opacity(crate::theme::WASH_HOVER))
+                        })
+                        .on_click(move |_, window, app| {
+                            connect_herdr.update(app, |this, cx| {
+                                this.add_ssh_machine(window, cx);
+                            });
+                        })
+                        .child("Connect over SSH"),
+                )
+                .child(
+                    div()
+                        .text_size(px(11.0))
+                        .text_color(component_theme.muted_foreground)
+                        .child(
+                            "SSH must be non-interactive: run ssh-copy-id user@host, or use Tailscale SSH. Password login is not supported.",
+                        ),
+                )
+                .child(
+                    div()
+                        .id("device-settings-close")
+                        .w_full()
+                        .h(px(30.0))
+                        .rounded(px(6.0))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .text_size(px(12.0))
+                        .text_color(component_theme.muted_foreground)
+                        .cursor_pointer()
+                        .hover(|s| {
+                            s.bg(component_theme.foreground.opacity(crate::theme::WASH_HOVER))
+                        })
+                        .on_click(move |_, _window, app| {
+                            cancel_herdr.update(app, |this, cx| this.close_settings_page(cx));
                         })
                         .child("Close"),
                 ),

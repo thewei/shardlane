@@ -180,11 +180,13 @@ impl ShardlaneApp {
         // (adopted=false), and best-effort renames the instance's focused
         // runtime workspace so the in-TUI label matches.
         if let RenameTarget::RegistryProject(project_id) = &target {
-            // Rename = a cosmetic display-name override (herdr sessions have no
-            // rename); the Herdr instance itself is untouched.
-            let key_session = (project_id.as_str() != "default").then(|| project_id.clone());
-            self.shared
-                .set_display_name(key_session.as_deref(), label.clone());
+            // Rename = write the session's metadata file (workspace.json in
+            // the session dir); herdr sessions themselves have no rename. The
+            // shared cache updates so switcher/sidebar reflect it immediately.
+            if let Err(error) = self.shared.rename_session(project_id, &label) {
+                _window.push_notification(format!("Rename failed: {error}"), cx);
+                return;
+            }
             let mut renamed_bound = false;
             if let Some(binding) = self.binding.as_mut() {
                 if binding.project_id == *project_id {

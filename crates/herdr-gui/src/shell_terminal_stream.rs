@@ -37,13 +37,13 @@ impl ShardlaneApp {
         let delay = reconnect_backoff(self.events_reconnect_attempts);
         self.events_reconnect_attempts = self.events_reconnect_attempts.saturating_add(1);
         let existing_client = self.client.clone();
-        // Reconnect re-adopts THIS window's bound instance; a Project rebind in the
+        // Reconnect re-adopts THIS window's bound session; a Project rebind in the
         // meantime bumps the generation and voids the whole retry.
         let generation = self.binding_generation;
         let session = self
             .binding
             .as_ref()
-            .and_then(|binding| binding.session.clone());
+            .map(|binding| binding.session_name().to_string());
         self._events_reconnect_script = cx.spawn(async move |this, cx| {
             cx.background_executor().timer(delay).await;
             let result = cx
@@ -51,7 +51,15 @@ impl ShardlaneApp {
                 .spawn(async move {
                     let client = match existing_client {
                         Some(client) if client.ping().is_ok() => client,
-                        _ => HerdrClient::bootstrap_for_session(session.as_deref())?,
+                        _ => match session.as_deref() {
+                            Some(session) => HerdrClient::bootstrap_for_session(session)?,
+                            None => {
+                                return Err(herdr::HerdrError::SocketUnavailable(
+                                    "unbound window".to_string(),
+                                    "no session to reconnect".to_string(),
+                                ))
+                            }
+                        },
                     };
                     let state = client.visible_state()?;
                     let events = client.subscribe_events()?;

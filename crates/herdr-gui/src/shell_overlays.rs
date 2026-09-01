@@ -140,33 +140,6 @@ impl ShardlaneApp {
     /// every workspace (one Herdr instance each) plus adoptable foreign
     /// instances, with a filter. Switching rebinds this window or jumps to the
     /// workspace's existing window.
-    pub(super) fn open_project_picker(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.show_project_picker = true;
-        cx.notify();
-        let _ = window;
-    }
-
-    pub(super) fn open_tab_picker(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let tab_ids = self
-            .active_workspace_id()
-            .map(|workspace_id| {
-                self.tabs_for_workspace(workspace_id)
-                    .into_iter()
-                    .map(|tab| tab.tab_id)
-                    .collect::<HashSet<_>>()
-            })
-            .unwrap_or_default();
-        let items = self
-            .client_search_items()
-            .into_iter()
-            .filter(|item| match &item.target {
-                ClientSearchTarget::Tab { tab_id } => tab_ids.contains(tab_id),
-                _ => false,
-            })
-            .collect();
-        self.open_client_picker("Search tabs…", items, None, window, cx);
-    }
-
     /// Accept the input's ghost completion: replace the query with the completion
     /// candidate and re-run the search.
     /// Triggered by Tab/→ (ClientPicker context; see render_client_picker_overlay).

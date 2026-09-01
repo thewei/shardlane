@@ -58,6 +58,7 @@ mod ssh_bridge;
 mod status;
 mod status_bar;
 mod steering;
+mod switcher_panel;
 mod terminal_interact;
 mod terminal_stream;
 mod terminal_trace;
@@ -262,7 +263,6 @@ enum SettingsSection {
     Shortcuts,
     Behavior,
     Window,
-    Machines,
     Providers,
     Mobile,
     Browser,
@@ -271,14 +271,13 @@ enum SettingsSection {
 impl SettingsSection {
     // Audit E24: Providers sits before Mobile/Browser — it decides whether New Task/History
     // can work at all, so it outranks the secondary mobile/browser surfaces in the sidebar.
-    const ALL: [Self; 10] = [
+    const ALL: [Self; 9] = [
         Self::Appearance,
         Self::Terminal,
         Self::Lazygit,
         Self::Shortcuts,
         Self::Behavior,
         Self::Window,
-        Self::Machines,
         Self::Providers,
         Self::Mobile,
         Self::Browser,
@@ -292,7 +291,6 @@ impl SettingsSection {
             Self::Shortcuts => i18n::t("settings.section.shortcuts"),
             Self::Behavior => i18n::t("settings.section.behavior"),
             Self::Window => i18n::t("settings.section.window"),
-            Self::Machines => i18n::t("settings.section.machines"),
             Self::Providers => i18n::t("settings.section.providers"),
             Self::Mobile => i18n::t("settings.section.mobile"),
             Self::Browser => i18n::t("settings.section.browser"),
@@ -310,7 +308,6 @@ impl SettingsSection {
             Self::Shortcuts => gpui_component::Icon::new(ComponentIconName::Settings),
             Self::Behavior => gpui_component::Icon::new(ComponentIconName::Settings2),
             Self::Window => gpui_component::Icon::new(ComponentIconName::Frame),
-            Self::Machines => gpui_component::Icon::empty().path("icons/layers.svg"),
             Self::Providers => gpui_component::Icon::new(ComponentIconName::Bot),
             Self::Mobile => gpui_component::Icon::empty().path("icons/smartphone.svg"),
             Self::Browser => gpui_component::Icon::new(ComponentIconName::Globe),
@@ -1127,15 +1124,38 @@ fn slide_width(slide: &mut Option<WidthTween>, target: f64) -> f64 {
     }
 }
 
-/// This window's bound Project (= one Herdr instance under the multi-instance model).
-/// `session: None` is the user's default Herdr instance.
+/// What the full-page picker surface currently shows. `Creating` is the
+/// New-Workspace naming page; the settings pages open from the workspace
+/// switcher's hover gears and render as standalone full pages.
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum PickerPage {
+    None,
+    Creating,
+    WorkspaceSettings(String),
+    DeviceSettings,
+}
+
 pub(crate) struct ProjectBinding {
+    /// The Herdr session name (one session = one workspace); remote bindings
+    /// use the device-scoped key `ssh:<device>:<session>`.
     pub(crate) project_id: String,
     pub(crate) project_name: String,
-    pub(crate) session: Option<String>,
     /// B1: SSH bridge socket for remote-machine instances (None = local).
     pub(crate) socket_override: Option<std::path::PathBuf>,
+}
+
+impl ProjectBinding {
+    /// The Herdr session name this binding points at (remote keys carry it
+    /// after the device id).
+    pub(crate) fn session_name(&self) -> &str {
+        match self.project_id.strip_prefix("ssh:") {
+            Some(rest) => rest
+                .split_once(':')
+                .map(|(_, session)| session)
+                .unwrap_or(rest),
+            None => &self.project_id,
+        }
+    }
 }
 
 /// Process-wide services and cross-window bookkeeping shared by every Shardlane window.
@@ -1162,8 +1182,10 @@ pub(crate) struct ShellSharedRuntime {
     /// Process-scoped and bound to the default instance: a second window toggling Settings
     /// must not spawn a second listener.
     pub(crate) remote_server: std::sync::Mutex<Option<shardlane_remote::RemoteServerHandle>>,
-    /// Per-session display-name overrides (cosmetic; persisted in settings).
-    pub(crate) display_names: std::sync::Mutex<std::collections::HashMap<String, String>>,
+    /// Cached display names read from each session's metadata file
+    /// (`workspace.json` in the session dir). Missing = no metadata = the raw
+    /// session name is shown. Refreshed alongside the instance list.
+    pub(crate) session_display_names: std::sync::Mutex<std::collections::HashMap<String, String>>,
     /// Cached Herdr instance list (CLI `session list`); refreshed in the
     /// background and on picker/New-Workspace actions — never per frame.
     pub(crate) instances: std::sync::Mutex<Vec<shardlane_host::herdr::HerdrSessionListing>>,
@@ -1203,9 +1225,7 @@ pub(crate) struct ShellWindowRecord {
 impl ShellSharedRuntime {
     /// Constructs the process-wide services once. Returns the status-bar and notification
     /// action receivers for the app-level consumers (`spawn_global_action_consumer`).
-    pub(crate) fn new(
-        display_names: std::collections::HashMap<String, String>,
-    ) -> (
+    pub(crate) fn new() -> (
         std::sync::Arc<Self>,
         async_channel::Receiver<status_bar::StatusBarAction>,
         async_channel::Receiver<notifications::NotificationAction>,
@@ -1237,7 +1257,7 @@ impl ShellSharedRuntime {
             delivery: delivery_queue,
             status_bar: SendStatusBar(status_bar),
             remote_server: std::sync::Mutex::new(None),
-            display_names: std::sync::Mutex::new(display_names),
+            session_display_names: std::sync::Mutex::new(std::collections::HashMap::new()),
             instances: std::sync::Mutex::new(
                 shardlane_host::herdr::list_sessions().unwrap_or_default(),
             ),
@@ -1318,13 +1338,24 @@ impl ShellSharedRuntime {
             .clone()
     }
 
-    /// Refreshes the cached instance list (CLI round trip; call off the hot path).
+    /// Refreshes the cached instance list AND each session's metadata display
+    /// name (CLI round trip + per-session disk reads; call off the hot path).
     pub(crate) fn refresh_instances(&self) {
+        let sessions = shardlane_host::herdr::list_sessions().unwrap_or_default();
+        let mut names = std::collections::HashMap::new();
+        for session in &sessions {
+            if let Some(name) = shardlane_host::herdr::read_session_display_name(&session.name) {
+                names.insert(session.name.clone(), name);
+            }
+        }
         *self
             .instances
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) =
-            shardlane_host::herdr::list_sessions().unwrap_or_default();
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = sessions;
+        *self
+            .session_display_names
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = names;
     }
 
     /// Registers a live SSH bridge (B1) and caches the machine's instance
@@ -1367,45 +1398,26 @@ impl ShellSharedRuntime {
             .cloned()
     }
 
-    /// The cosmetic display name for an instance (settings override or the
-    /// session name itself; "default" reads as "Default").
-    pub(crate) fn display_name(&self, session: Option<&str>) -> String {
-        let key = session.unwrap_or("default");
-        let overrides = self
-            .display_names
+    /// The display name for a session: its metadata file's name, else the raw
+    /// session name. Truth lives on herdr's session disk, not in settings.
+    pub(crate) fn display_name(&self, session: &str) -> String {
+        self.session_display_names
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        overrides.get(key).cloned().unwrap_or_else(|| {
-            if key == "default" {
-                "Default".to_string()
-            } else {
-                key.to_string()
-            }
-        })
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(session)
+            .cloned()
+            .unwrap_or_else(|| session.to_string())
     }
 
-    /// Sets a display-name override and persists it (rename = cosmetic only;
-    /// the Herdr instance itself is untouched).
-    pub(crate) fn set_display_name(&self, session: Option<&str>, name: String) {
-        let key = session.unwrap_or("default").to_string();
-        let default_display = session.is_none() && name == "Default";
-        {
-            let mut overrides = self
-                .display_names
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            if default_display || overrides.get(&key).is_some_and(|old| *old == name) {
-                overrides.remove(&key);
-            } else {
-                overrides.insert(key.clone(), name);
-            }
-        }
-        settings::ApplicationConfig::persist_instance_display_names(
-            self.display_names
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .clone(),
-        );
+    /// Renames a session by writing its metadata file, then updates the cache.
+    /// The single rename path — no settings-side overrides exist anymore.
+    pub(crate) fn rename_session(&self, session: &str, name: &str) -> Result<(), String> {
+        shardlane_host::herdr::write_session_display_name(session, name)?;
+        self.session_display_names
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .insert(session.to_string(), name.trim().to_string());
+        Ok(())
     }
 }
 
@@ -1509,12 +1521,26 @@ struct ShardlaneApp {
     /// The Project picker overlay (⌘N windows start here; also reachable while bound
     /// to switch/jump without a sidebar round trip).
     show_project_picker: bool,
-    /// Picker filter input (lazily created — InputState needs a live Window).
-    project_picker_filter: Option<Entity<InputState>>,
     /// Machine panel SSH-target input (lazily created, same reason).
     machine_ssh_input: Option<Entity<InputState>>,
-    /// Picker refresh-in-flight flag (instance list lives on the shared runtime).
-    instances_refresh_requested: std::cell::Cell<bool>,
+    /// The picker page's workspace filter (lazily created, same reason).
+    project_picker_filter: Option<Entity<InputState>>,
+    /// New-workspace naming input for the picker page's creation mode (lazily
+    /// created, same reason).
+    new_workspace_name: Option<Entity<InputState>>,
+    /// New-workspace naming input's Enter subscription (held; dropping it
+    /// unsubscribes).
+    _new_workspace_name_sub: Option<gpui::Subscription>,
+    /// Which full-page surface the picker area renders.
+    picker_page: PickerPage,
+    /// Workspace-settings page: the session it edits, its (lazily created)
+    /// name input + Enter subscription, and the two-step delete state.
+    workspace_settings_session: Option<String>,
+    workspace_settings_name: Option<Entity<InputState>>,
+    _workspace_settings_name_sub: Option<gpui::Subscription>,
+    workspace_delete_armed: bool,
+    /// Which device's workspaces the switcher panel lists (`None` = local).
+    panel_device: Option<String>,
     status: ConnectionStatus,
     show_help: bool,
     show_settings: bool,
@@ -2176,7 +2202,9 @@ impl ShardlaneApp {
         let mut history = history::HistoryUiState::default();
         history.roster = Arc::new(HistoryAdapterRoster::new(&config.history_sources));
         let initially_expanded_project = state.focused_workspace_id.clone();
-        let default_tui = shared.tui_registry.clone().get_or_create(None);
+        // Placeholder manager until the window binds a session (bind swaps in
+        // the registry-owned manager; no registry key is claimed here).
+        let default_tui = std::sync::Arc::new(shardlane_host::shared_tui::TuiManager::default());
         let conversation_sessions = shared.conversation_sessions.clone();
         let follow_up_queue = shared.follow_up_queue.clone();
         let delivery = shared.delivery.clone();
@@ -2243,9 +2271,16 @@ impl ShardlaneApp {
             binding: None,
             binding_generation: 0,
             show_project_picker: false,
-            project_picker_filter: None,
             machine_ssh_input: None,
-            instances_refresh_requested: std::cell::Cell::new(false),
+            project_picker_filter: None,
+            new_workspace_name: None,
+            _new_workspace_name_sub: None,
+            picker_page: PickerPage::None,
+            workspace_settings_session: None,
+            workspace_settings_name: None,
+            _workspace_settings_name_sub: None,
+            workspace_delete_armed: false,
+            panel_device: None,
             status,
             show_help: false,
             show_settings: false,
@@ -2408,9 +2443,17 @@ impl ShardlaneApp {
                 // Stale map pointing at THIS window while bound elsewhere:
                 // fall through to a rebind instead of self-activating forever.
             } else {
+                // One window per Herdr instance: a picker window (unbound)
+                // picking a workspace that is already open elsewhere IS the
+                // jump — activate that window and close this one, which has
+                // nothing else to show.
+                let unbound = self.binding.is_none();
                 let _ = cx.update_window(handle, |_, target_window, _| {
                     target_window.activate_window();
                 });
+                if unbound {
+                    window.remove_window();
+                }
                 return;
             }
         }
@@ -2426,7 +2469,7 @@ impl ShardlaneApp {
             }
             let _ = device_id;
             self.bind_instance_on_socket(
-                Some(session.to_string()),
+                session.to_string(),
                 self.shared
                     .bridge_for_key(project_id)
                     .map(|bridge| bridge.local_socket),
@@ -2436,19 +2479,17 @@ impl ShardlaneApp {
             );
             return;
         }
-        let session = (project_id != "default").then(|| project_id.to_string());
-        // Unknown named instances can appear between refreshes (e.g. created
-        // by the CLI): refresh once before giving up.
-        if session.as_deref().is_some_and(|name| {
-            !self
-                .shared
-                .instance_list()
-                .iter()
-                .any(|instance| instance.name == name)
-        }) {
+        // Unknown sessions can appear between refreshes (e.g. created by the
+        // CLI): refresh once before giving up.
+        if !self
+            .shared
+            .instance_list()
+            .iter()
+            .any(|instance| instance.name == project_id)
+        {
             self.shared.refresh_instances();
         }
-        self.bind_instance(session, window, cx);
+        self.bind_instance(project_id.to_string(), window, cx);
     }
 
     /// B4/C4: this window's snapshot row (session + frame). `None` while
@@ -2457,11 +2498,7 @@ impl ShardlaneApp {
         let binding = self.bound_project()?;
         let window = &self.config.ui.window;
         Some(settings::OpenWorkspaceRecord {
-            session: if binding.project_id == "default" {
-                None
-            } else {
-                Some(binding.project_id.clone())
-            },
+            session: Some(binding.project_id.clone()),
             x: window.x,
             y: window.y,
             width: window.width,
@@ -2502,27 +2539,26 @@ impl ShardlaneApp {
         settings::ApplicationConfig::persist_open_workspaces(records);
     }
 
-    /// (Re)binds this window to a Herdr instance (= workspace): tears down the
-    /// previous instance's per-window resources, then bootstraps client +
-    /// state + events + TUI for the new one. `session == None` is the default
-    /// instance. Safe to call while unbound (⌘N windows).
+    /// (Re)binds this window to a Herdr session (= workspace): tears down the
+    /// previous session's per-window resources, then bootstraps client +
+    /// state + events + TUI for the new one. Safe to call while unbound
+    /// (⌘N windows).
     pub(crate) fn bind_instance(
         &mut self,
-        session: Option<String>,
+        session: String,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let project_key = session.clone().unwrap_or_else(|| "default".to_string());
-        self.bind_instance_on_socket(session, None, project_key, window, cx);
+        self.bind_instance_on_socket(session.clone(), None, session, window, cx);
     }
 
     /// Bind with an explicit socket — the B1 SSH-bridge path for
     /// remote-machine instances (`socket_override` = the forwarded unix
-    /// socket). Remote instances never bootstrap a local server: the bridge
-    /// must be alive.
+    /// socket, `project_key` = the device-scoped `ssh:` id). Remote instances
+    /// never bootstrap a local server: the bridge must be alive.
     pub(crate) fn bind_instance_on_socket(
         &mut self,
-        session: Option<String>,
+        session: String,
         socket_override: Option<std::path::PathBuf>,
         project_key: String,
         window: &mut Window,
@@ -2535,7 +2571,7 @@ impl ShardlaneApp {
         // host same-named sessions.
         let registry_key = match &socket_override {
             Some(socket) => format!("bridge:{}", socket.display()),
-            None => session.clone().unwrap_or_else(|| "default".to_string()),
+            None => session.clone(),
         };
         self.tui_manager = self.shared.tui_registry.get_or_create_keyed(&registry_key);
         self.binding_generation = self.binding_generation.wrapping_add(1);
@@ -2546,19 +2582,18 @@ impl ShardlaneApp {
         cx.notify();
 
         let bind_session = session;
-        // Local named instances live on their own socket; the default instance
-        // uses standard discovery (env override / ~/.config/herdr/herdr.sock).
+        // Every session is a named Herdr instance. Local sessions live on
+        // their own socket (herdr's own `default` session on the base socket).
         // Bridge (remote-machine) instances are pinned to the forwarded socket
         // and never bootstrap a local server.
-        let fresh_named_instance = socket_override.is_none() && bind_session.is_some();
-        let socket = socket_override.clone().unwrap_or_else(|| {
-            shardlane_host::herdr::session_socket_path_for(bind_session.as_deref())
-        });
-        let project_name = self.shared.display_name(bind_session.as_deref());
+        let fresh_named_instance = socket_override.is_none();
+        let socket = socket_override
+            .clone()
+            .unwrap_or_else(|| shardlane_host::herdr::session_socket_path_for(&bind_session));
+        let project_name = self.shared.display_name(&bind_session);
         self.binding = Some(ProjectBinding {
             project_id: project_key.clone(),
             project_name,
-            session: bind_session.clone(),
             socket_override: socket_override.clone(),
         });
         if let Some(id) = self.window_handle.as_ref().map(|handle| handle.window_id()) {
@@ -2575,9 +2610,8 @@ impl ShardlaneApp {
                     // never start a local server on their behalf.
                     let client = match &socket_override {
                         Some(_) => HerdrClient::connect_to(&socket)?,
-                        None => HerdrClient::connect_to(&socket).or_else(|_| {
-                            HerdrClient::bootstrap_for_session(bind_session.as_deref())
-                        })?,
+                        None => HerdrClient::connect_to(&socket)
+                            .or_else(|_| HerdrClient::bootstrap_for_session(&bind_session))?,
                     };
                     let mut state = client.visible_state()?;
                     // A freshly created named instance has no Workspace yet: create the
@@ -2645,7 +2679,7 @@ impl ShardlaneApp {
     /// Drops every per-binding resource. The default instance's TUI child is left
     /// running (Remote viewers may be attached); a named session's child dies with
     /// this window's manager Arc on the next bind.
-    fn teardown_binding(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn teardown_binding(&mut self, cx: &mut Context<Self>) {
         if let Some(binding) = self.binding.take() {
             if let Some(id) = self.window_handle.as_ref().map(|handle| handle.window_id()) {
                 self.shared.clear_project_window(&binding.project_id, id);
@@ -2688,6 +2722,24 @@ impl ShardlaneApp {
         crate::shell_render::project_picker_page_impl(self, window, cx)
     }
 
+    /// The workspace settings page (see `workspace_settings_page_impl`).
+    pub(crate) fn workspace_settings_page(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        crate::shell_render::workspace_settings_page_impl(self, window, cx)
+    }
+
+    /// The device settings/switcher page (see `device_settings_page_impl`).
+    pub(crate) fn device_settings_page(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        crate::shell_render::device_settings_page_impl(self, window, cx)
+    }
+
     /// Machine panel: adds an SSH machine and brings up its herdr socket
     /// bridge — `ssh -N -L <local-unix-sock>:<remote-herdr-sock> <target>` —
     /// then probes the forwarded socket. Requires non-interactive SSH
@@ -2698,19 +2750,6 @@ impl ShardlaneApp {
             return;
         };
         let target = input.read(cx).value().trim().to_string();
-        self.start_ssh_machine_connect(target, Some(input), window, cx);
-    }
-
-    /// Quick-connect from the workspace switcher's inline SSH row uses the
-    /// popover's own keyed input (see sidebar::shell); the Machines settings
-    /// page uses `add_ssh_machine` below.
-    fn start_ssh_machine_connect(
-        &mut self,
-        target: String,
-        input: Option<Entity<InputState>>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
         if target.is_empty() {
             return;
         }
@@ -2733,11 +2772,9 @@ impl ShardlaneApp {
         devices.push(device.clone());
         settings::ApplicationConfig::persist_machines(devices.clone());
         self.config.devices = devices;
-        if let Some(input) = input.as_ref() {
-            input.update(cx, |state, cx| {
-                state.set_value("", window, cx);
-            });
-        }
+        input.update(cx, |state, cx| {
+            state.set_value("", window, cx);
+        });
         window.push_notification(format!("Connecting to {target}…"), cx);
 
         // Bridge bring-up (background): resolve remote HOME → spawn the unix
@@ -2768,6 +2805,9 @@ impl ShardlaneApp {
 
     /// Dismissing the picker: an unbound window has nothing to show — close it.
     pub(crate) fn close_project_picker(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.picker_page = PickerPage::None;
+        self.workspace_settings_session = None;
+        self.workspace_delete_armed = false;
         if self.show_project_picker {
             self.show_project_picker = false;
         }
@@ -2815,12 +2855,17 @@ impl ShardlaneApp {
         self.navigation_loading = true;
         let existing_client = self.client.clone();
         let reconnect_events = !self.status.is_connected();
-        // Refresh re-adopts THIS window's bound instance (never the default one blindly).
+        // Refresh re-adopts THIS window's bound session (never a fallback).
         let generation = self.binding_generation;
-        let refresh_session = self
+        let Some(refresh_session) = self
             .binding
             .as_ref()
-            .and_then(|binding| binding.session.clone());
+            .map(|binding| binding.session_name().to_string())
+        else {
+            self.navigation_loading = false;
+            window.push_notification("No workspace bound", cx);
+            return;
+        };
         let window_handle = window.window_handle();
         window.push_notification("Refreshing Shardlane…", cx);
         self.notify_sidebar(cx);
@@ -2835,7 +2880,7 @@ impl ShardlaneApp {
                         Some(client) if client.ping().is_ok() => client,
                         _ => {
                             reconnected = true;
-                            HerdrClient::bootstrap_for_session(refresh_session.as_deref())?
+                            HerdrClient::bootstrap_for_session(&refresh_session)?
                         }
                     };
                     let state = client.visible_state()?;
@@ -2941,6 +2986,15 @@ impl Render for ShardlaneApp {
             theme::sync_gpui_component_theme(theme, cx);
             self.applied_ui_theme = Some(theme);
             self.notify_sidebar(cx);
+        }
+        // Full-page surfaces opened from the workspace switcher (workspace
+        // settings / device settings) render on their own, bound or not.
+        match self.picker_page {
+            PickerPage::WorkspaceSettings(_) => {
+                return self.workspace_settings_page(window, cx);
+            }
+            PickerPage::DeviceSettings => return self.device_settings_page(window, cx),
+            PickerPage::Creating | PickerPage::None => {}
         }
         // Multi-instance: an unbound window (⌘N) — or any window with the picker
         // open — renders only the Project picker; the full shell below assumes a
@@ -3596,8 +3650,7 @@ fn main() {
 
         // Process-wide services: one status-bar item, one notification action
         // channel, one per-instance TUI manager registry, one display-name map.
-        let (shared, status_bar_rx, notification_rx) =
-            ShellSharedRuntime::new(startup_config.instance_display_names.clone());
+        let (shared, status_bar_rx, notification_rx) = ShellSharedRuntime::new();
         spawn_global_action_consumer(
             cx,
             shared.clone(),
@@ -3675,25 +3728,16 @@ fn main() {
         } else {
             bounds(point(px(80.0), px(80.0)), size(px(1280.0), px(820.0)))
         };
-        // The startup window binds the default Herdr instance (the user's
-        // existing default session, whatever workspaces it holds).
-        let initial_session = Some("default".to_string());
-        let _ = open_shell_window(
-            cx,
-            shared.clone(),
-            startup_config.clone(),
-            initial_bounds,
-            initial_session,
-        );
-        // B4: restore the remaining workspace windows (one per instance) with
-        // their last frames. Unknown/dead sessions fail their bind softly and
-        // fall back to the picker.
+        // One truth: workspaces ARE Herdr sessions. Restore the last open
+        // set (one window per session); with nothing to restore, open a
+        // single unbound window on the workspace picker.
+        let mut restored = false;
         for record in &startup_config.open_workspaces {
             let Some(session) = record.session.clone() else {
-                continue; // the default instance's window is already open
+                continue;
             };
-            if session == "default" || session.starts_with("ssh:") {
-                continue; // default already open; remote windows need their bridge first
+            if session.starts_with("ssh:") {
+                continue; // remote windows need their bridge first
             }
             let restored_bounds = bounds(
                 point(px(record.x as f32), px(record.y as f32)),
@@ -3706,6 +3750,16 @@ fn main() {
                 restored_bounds,
                 Some(session),
             );
+            restored = true;
+        }
+        if !restored {
+            let _ = open_shell_window(
+                cx,
+                shared.clone(),
+                startup_config.clone(),
+                initial_bounds,
+                None,
+            );
         }
         cx.activate(true);
     });
@@ -3713,9 +3767,8 @@ fn main() {
 
 /// Opens one shell window and performs its per-window wiring (window
 /// registration, native window preferences, focus, activation/bounds
-/// observers). `initial_session` binds the window immediately (`Some("default")`
-/// on startup binds the default Herdr instance); `None` leaves it unbound on
-/// the workspace picker (⌘N).
+/// observers). `initial_session` binds the window to that Herdr session
+/// immediately; `None` leaves it unbound on the workspace picker (⌘N).
 fn open_shell_window(
     cx: &mut App,
     shared: std::sync::Arc<ShellSharedRuntime>,
@@ -3815,11 +3868,7 @@ fn open_shell_window(
                     .detach();
                 view.update_window_title(window);
                 match initial_session {
-                    Some(session) => view.bind_instance(
-                        (session != "default").then_some(session),
-                        window,
-                        view_cx,
-                    ),
+                    Some(session) => view.bind_instance(session, window, view_cx),
                     None => {
                         view.show_project_picker = true;
                         view_cx.notify();

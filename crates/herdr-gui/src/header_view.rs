@@ -253,14 +253,6 @@ impl ShardlaneApp {
         // button(26) + root gap(12), and the title itself has pl(14). Under-counting by 80px would
         // push the title 80px into the content area (measured over three rounds on 08-29: title at
         // 390, target 309). When collapsed, spacer=0.
-        let header_left_chrome = 26.0 + 12.0;
-        let sidebar_header_inner_width = if sidebar_visible {
-            (sidebar_width - APP_TITLEBAR_LEFT_INSET - header_left_chrome - 14.0
-                + f32::from(crate::ui_metrics::CONTENT_INSET))
-            .max(0.0)
-        } else {
-            0.0
-        };
         // +/- pill: appears only when there are changes; clicking reveals the working directory in Finder.
         let git_pill = git_status
             .as_ref()
@@ -725,7 +717,6 @@ impl ShardlaneApp {
                         .gap_1()
                         .text_size(theme::FONT_BODY)
                         .text_color(foreground)
-                        .child(div().w(px(sidebar_header_inner_width)).h_full().flex_none())
                         .when_some(chat_title.clone(), |row, chip| {
                             // Chat presentation mode: the Agent identity+status is the centered Header title
                             //(breadcrumbs yield; notate 2026-08-29). M8: the title is clickable, opening the
@@ -815,8 +806,16 @@ impl ShardlaneApp {
                                 )
                             })
                             .when(!secondary_surface, |row| {
-                                row.child(
-                                    Button::new("titlebar-project-picker")
+                                // Breadcrumb levels are switcher triggers: the
+                                // workspace level opens the SAME panel as the
+                                // sidebar footer switcher; the Tab level opens
+                                // the matching Tab panel.
+                                row.child({
+                                    let machines =
+                                        crate::switcher_panel::build_picker_machines(self);
+                                    let selected_device =
+                                        crate::switcher_panel::selected_panel_device(self);
+                                    let project_button = Button::new("titlebar-project-picker")
                                         .custom(terminal_header_button)
                                         .xsmall()
                                         .min_w_0()
@@ -824,17 +823,41 @@ impl ShardlaneApp {
                                         .flex_shrink()
                                         .overflow_hidden()
                                         .child(div().min_w_0().truncate().child(project_title.clone()))
-                                        .tooltip(format!("Switch Project · {project_title}"))
-                                        .on_click(move |_, window, app| {
-                                            workspace_picker_herdr.update(app, |this, cx| {
-                                                this.open_project_picker(window, cx)
-                                            });
-                                        }),
-                                )
+                                        .tooltip(format!("Switch workspace · {project_title}"));
+                                    crate::switcher_panel::workspace_switcher_panel(
+                                        workspace_picker_herdr.clone(),
+                                        machines,
+                                        selected_device,
+                                        gpui::Corner::TopLeft,
+                                        "shardlane-header-workspace-popover",
+                                        "shardlane-header-ws-filter",
+                                        project_button,
+                                    )
+                                })
                                 .when_some(tab_title, |el, title| {
                                     el.child(div().text_color(terminal_header_muted).child("/"))
-                                        .child(
-                                            Button::new("titlebar-tab-picker")
+                                        .child({
+                                            let tabs: Vec<crate::switcher_panel::TabRow> = self
+                                                .active_workspace_id()
+                                                .map(|workspace_id| {
+                                                    self.tabs_for_workspace(workspace_id)
+                                                        .into_iter()
+                                                        .map(|tab| {
+                                                            let focused = self
+                                                                .state
+                                                                .focused_tab_id
+                                                                .as_deref()
+                                                                == Some(tab.tab_id.as_str());
+                                                            (
+                                                                tab.tab_id.clone(),
+                                                                self.tab_title(&tab),
+                                                                focused,
+                                                            )
+                                                        })
+                                                        .collect()
+                                                })
+                                                .unwrap_or_default();
+                                            let tab_button = Button::new("titlebar-tab-picker")
                                                 .custom(terminal_header_button)
                                                 .xsmall()
                                                 .min_w_0()
@@ -843,13 +866,16 @@ impl ShardlaneApp {
                                                 .overflow_hidden()
                                                 .text_color(terminal_header_muted)
                                                 .child(div().min_w_0().truncate().child(title.clone()))
-                                                .tooltip(format!("Switch Tab · {title}"))
-                                                .on_click(move |_, window, app| {
-                                                    tab_picker_herdr.update(app, |this, cx| {
-                                                        this.open_tab_picker(window, cx)
-                                                    });
-                                                }),
-                                        )
+                                                .tooltip(format!("Switch Tab · {title}"));
+                                            crate::switcher_panel::tab_switcher_panel(
+                                                tab_picker_herdr.clone(),
+                                                tabs,
+                                                gpui::Corner::TopLeft,
+                                                "shardlane-header-tab-popover",
+                                                "shardlane-header-tab-filter",
+                                                tab_button,
+                                            )
+                                        })
                                 })
                             })
                             .child(div().flex_1().min_w_0())

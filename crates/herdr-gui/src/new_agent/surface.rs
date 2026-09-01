@@ -785,7 +785,7 @@ impl ShardlaneApp {
                             .tooltip("Choose a folder to create a project")
                             .on_click(move |_, window, app| {
                                 herdr.update(app, |this, cx| {
-                                    this.run_new_project_flow(window, cx);
+                                    this.begin_workspace_creation(window, cx);
                                 });
                             }),
                     ),

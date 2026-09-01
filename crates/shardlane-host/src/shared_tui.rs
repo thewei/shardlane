@@ -774,10 +774,10 @@ fn stop_slot_and_rearm(
 }
 
 /// Process-level registry of per-instance TUI managers: exactly one
-/// `TuiManager` (⇒ at most one hosted TUI child) per Herdr instance (named
-/// session), shared by every viewer — desktop windows and Remote/mobile
-/// clients attach as broadcast subscribers of the same child. Key `"default"`
-/// holds the default instance's manager.
+/// `TuiManager` (⇒ at most one hosted TUI child) per Herdr session, shared by
+/// every viewer — desktop windows and Remote/mobile clients attach as
+/// broadcast subscribers of the same child. Keys are session names; herdr's
+/// own `default` session uses the same key as any other.
 #[derive(Default)]
 pub struct TuiManagerRegistry {
     managers: Mutex<std::collections::HashMap<String, Arc<TuiManager>>>,

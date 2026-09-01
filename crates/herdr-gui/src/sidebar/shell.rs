@@ -3,12 +3,6 @@
 //! [POS]: Main assembly layer of `crates/herdr-gui::sidebar`; consumes the output of rows/tree_rows/pane_rows/service_rows/projection/section_layout; mechanically split out of sidebar.rs and sharing the module-root namespace with its sibling submodules.
 use super::*;
 use crate::composer_chip::ComposerChip;
-use gpui_component::input::{Input, InputState};
-use gpui_component::popover::{Popover, PopoverState};
-
-/// One workspace-switcher machine row: (display name, is-local, its instances).
-/// Each instance row is (jump key, label, running, bound).
-type PickerMachine = (String, bool, Vec<(String, String, bool, bool)>);
 
 impl ShardlaneApp {
     pub(crate) fn sidebar(
@@ -33,123 +27,9 @@ impl ShardlaneApp {
         let new_project_herdr = herdr.clone();
         let agents_herdr = herdr.clone();
         let settings_herdr = herdr.clone();
-        // Multi-instance footer switcher (expected design, 2026-09): the chip
-        // shows the MACHINE of the current binding; the panel groups each
-        // connected machine's Herdr instances (= workspaces) under a machine
-        // header with live running status, plus an inline SSH quick-connect.
-        // (key, label, running, bound) per instance; (name, local?, instances).
-        let bound_key = self
-            .bound_project()
-            .map(|binding| binding.project_id.clone());
-        let local_machine_name = crate::remote_display_host_name();
-        let bridged_devices: HashSet<String> = self
-            .shared
-            .ssh_bridges
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .iter()
-            .map(|bridge| bridge.device_id.clone())
-            .collect();
-        let picker_instance = |key: String,
-                               raw: &str,
-                               override_label: String,
-                               fallback: String,
-                               running: bool,
-                               bound: bool|
-         -> (String, String, bool, bool) {
-            let label = if override_label == fallback {
-                format!("herdr:{raw}")
-            } else {
-                override_label
-            };
-            (key, label, running, bound)
-        };
-        let mut picker_machines: Vec<PickerMachine> = Vec::new();
-        let local_instances = self
-            .shared
-            .instance_list()
-            .iter()
-            .map(|instance| {
-                let key = if instance.is_default {
-                    "default".to_string()
-                } else {
-                    instance.name.clone()
-                };
-                let fallback = if instance.is_default {
-                    "Default".to_string()
-                } else {
-                    instance.name.clone()
-                };
-                let override_label = self.shared.display_name(if instance.is_default {
-                    None
-                } else {
-                    Some(instance.name.as_str())
-                });
-                let bound = bound_key.as_deref() == Some(key.as_str());
-                picker_instance(
-                    key,
-                    &instance.name,
-                    override_label,
-                    fallback,
-                    instance.running,
-                    bound,
-                )
-            })
-            .collect::<Vec<_>>();
-        picker_machines.push((local_machine_name.clone(), true, local_instances));
-        for device in &self.config.devices {
-            let Some(target) = device.ssh_target.clone() else {
-                continue;
-            };
-            // Disconnected machines are managed in Settings → Machines; the
-            // switcher only lists live bridges.
-            if !bridged_devices.contains(&device.id) {
-                continue;
-            }
-            let instances = self
-                .shared
-                .remote_sessions_for(&device.id)
-                .iter()
-                .map(|session| {
-                    let key = format!("ssh:{}:{}", device.id, session.name);
-                    let override_label = self.shared.display_name(Some(key.as_str()));
-                    let bound = bound_key.as_deref() == Some(key.as_str());
-                    picker_instance(
-                        key.clone(),
-                        &session.name,
-                        override_label,
-                        key,
-                        session.running,
-                        bound,
-                    )
-                })
-                .collect::<Vec<_>>();
-            picker_machines.push((format!("{target} · {}", device.name), false, instances));
-        }
-        // The chip mirrors the machine of the current binding (local unless a
-        // remote instance is bound); its dot reflects that machine's liveness.
-        let bound_device_id = bound_key
-            .as_deref()
-            .and_then(|key| key.strip_prefix("ssh:"))
-            .and_then(|rest| rest.split_once(':'))
-            .map(|(device_id, _)| device_id.to_string());
-        let (chip_machine, chip_connected) = match &bound_device_id {
-            Some(device_id) => {
-                let device = self
-                    .config
-                    .devices
-                    .iter()
-                    .find(|device| &device.id == device_id);
-                (
-                    device
-                        .map(|device| device.name.clone())
-                        .unwrap_or_else(|| local_machine_name.clone()),
-                    bridged_devices.contains(device_id),
-                )
-            }
-            None => (local_machine_name.clone(), true),
-        };
-        let workspace_picker_herdr = herdr.clone();
+        // Footer workspace switcher: the shared panel (also wrapped around the
+        // header breadcrumbs) — the chip shows the CURRENT WORKSPACE's name
+        // with its running dot.
         let dark = theme.bg <= 0x808080;
         // Sidebar render owns one ProjectIndex snapshot. Previously the visible-project
         // projection and the Sidebar itself each rebuilt the same index, paying the
@@ -835,318 +715,54 @@ impl ShardlaneApp {
                     .mt(SPACE_MD)
                     .px(SIDEBAR_EDGE)
                     .pt(SPACE_MD)
-                    .pb(SPACE_SM)
+                    .pb(SPACE_MD)
                     .border_t_1()
                     .border_color(component_theme.border)
-                    .child(div().flex_1())
                     .child({
-                        // The expected workspace switcher: a machine chip that
-                        // opens a panel of machines → their Herdr instances
-                        // (= workspaces) with running status, New Workspace,
-                        // and an inline SSH quick-connect row (mock 2026-09).
-                        let picker_herdr = workspace_picker_herdr.clone();
-                        let picker_machines = picker_machines.clone();
-                        let picker_theme = component_theme.clone();
-                        let mut chip = ComposerChip::new("shardlane-sidebar-workspace-picker")
+                        // Footer workspace switcher: shared panel (also used by
+                        // the header breadcrumbs) — chip = current workspace.
+                        let workspace_picker_herdr = herdr.clone();
+                        let picker_machines = crate::switcher_panel::build_picker_machines(self);
+                        let selected_device = crate::switcher_panel::selected_panel_device(self);
+                        let (chip_label, chip_running) = match self.bound_project() {
+                            Some(binding) => {
+                                let running = self
+                                    .shared
+                                    .instance_list()
+                                    .iter()
+                                    .find(|instance| instance.name == binding.project_id)
+                                    .map(|instance| instance.running)
+                                    .unwrap_or(true);
+                                (binding.project_name.clone(), running)
+                            }
+                            None => (crate::remote_display_host_name(), true),
+                        };
+                        let chip = ComposerChip::new("shardlane-sidebar-workspace-picker")
                             .icon(
                                 div()
                                     .size(px(7.0))
                                     .rounded_full()
                                     .flex_shrink_0()
-                                    .bg(if chip_connected {
+                                    .bg(if chip_running {
                                         component_theme.success
                                     } else {
                                         component_theme.muted_foreground.opacity(0.45)
                                     })
                                     .into_any_element(),
                             )
-                            .label(chip_machine)
+                            .label(chip_label)
                             .cursor_pointer();
-                        let chip_style = chip.style().clone();
-                        Popover::new("shardlane-sidebar-workspace-popover")
-                            .anchor(gpui::Corner::TopLeft)
-                            .trigger(chip)
-                            .trigger_style(chip_style)
-                            .content(
-                                move |_popover_state: &mut PopoverState,
-                                      window: &mut Window,
-                                      cx: &mut Context<PopoverState>| {
-                                    let popover = cx.entity();
-                                    let picker_herdr = picker_herdr.clone();
-                                    // Quick-connect input lives in the popover's
-                                    // keyed state (entities must not be created
-                                    // during ShardlaneApp's own render pass).
-                                    let ssh_input_holder = window.use_keyed_state(
-                                        "shardlane-footer-ssh-input",
-                                        cx,
-                                        |window, cx| {
-                                            cx.new(|cx| {
-                                                InputState::new(window, cx).placeholder(
-                                                    crate::i18n::t(
-                                                        "workspace.ssh_placeholder",
-                                                    ),
-                                                )
-                                            })
-                                        },
-                                    );
-                                    let ssh_input = ssh_input_holder.read(cx).clone();
-                                    let mut sections = v_flex().w_full().gap(px(2.0));
-                                    for (machine_name, is_local, instances) in &picker_machines {
-                                        sections = sections
-                                            .child(
-                                                h_flex()
-                                                    .w_full()
-                                                    .px(px(10.0))
-                                                    .pt(px(6.0))
-                                                    .pb(px(2.0))
-                                                    .gap(px(6.0))
-                                                    .items_center()
-                                                    .child(
-                                                        div()
-                                                            .size(px(7.0))
-                                                            .rounded_full()
-                                                            .flex_shrink_0()
-                                                            .bg(picker_theme.success),
-                                                    )
-                                                    .child(
-                                                        div()
-                                                            .text_size(px(13.0))
-                                                            .font_weight(FontWeight::MEDIUM)
-                                                            .text_color(picker_theme.foreground)
-                                                            .min_w_0()
-                                                            .truncate()
-                                                            .child(SharedString::from(
-                                                                if *is_local {
-                                                                    format!(
-                                                                        "{} {}",
-                                                                        machine_name,
-                                                                        crate::i18n::t(
-                                                                            "workspace.local"
-                                                                        )
-                                                                    )
-                                                                } else {
-                                                                    machine_name.clone()
-                                                                },
-                                                            )),
-                                                    ),
-                                            )
-                                            .child(
-                                                div()
-                                                    .w_full()
-                                                    .px(px(10.0))
-                                                    .text_size(px(11.0))
-                                                    .text_color(picker_theme.muted_foreground)
-                                                    .child(crate::i18n::t(
-                                                        "workspace.multiplexers",
-                                                    )),
-                                            );
-                                        for (key, label, running, bound) in instances {
-                                            let row_herdr = picker_herdr.clone();
-                                            let row_popover = popover.clone();
-                                            let key = key.clone();
-                                            sections = sections.child(
-                                                h_flex()
-                                                    .id(SharedString::from(format!(
-                                                        "ws-picker-{key}"
-                                                    )))
-                                                    .w_full()
-                                                    .h(px(30.0))
-                                                    .px(px(10.0))
-                                                    .rounded(px(6.0))
-                                                    .gap(px(8.0))
-                                                    .items_center()
-                                                    .cursor_pointer()
-                                                    .hover(|s| {
-                                                        s.bg(picker_theme.foreground.opacity(
-                                                            crate::theme::WASH_HOVER,
-                                                        ))
-                                                    })
-                                                    .on_click(move |_, window, app| {
-                                                        row_popover.update(app, |state, cx| {
-                                                            state.dismiss(window, cx)
-                                                        });
-                                                        row_herdr.update(app, |this, cx| {
-                                                            this.open_or_jump_project(
-                                                                &key, window, cx,
-                                                            )
-                                                        });
-                                                    })
-                                                    .child(
-                                                        div()
-                                                            .size(px(7.0))
-                                                            .rounded_full()
-                                                            .flex_shrink_0()
-                                                            .bg(if *running {
-                                                                picker_theme.success
-                                                            } else {
-                                                                picker_theme
-                                                                    .muted_foreground
-                                                                    .opacity(0.45)
-                                                            }),
-                                                    )
-                                                    .child(
-                                                        div()
-                                                            .flex_1()
-                                                            .min_w_0()
-                                                            .truncate()
-                                                            .text_size(px(13.0))
-                                                            .text_color(if *bound {
-                                                                picker_theme.foreground
-                                                            } else {
-                                                                picker_theme.muted_foreground
-                                                            })
-                                                            .child(label.clone()),
-                                                    )
-                                                    .child(if *bound {
-                                                        Icon::empty()
-                                                            .path("icons/check.svg")
-                                                            .with_size(px(12.0))
-                                                            .text_color(picker_theme.success)
-                                                            .flex_shrink_0()
-                                                            .into_any_element()
-                                                    } else if !*running {
-                                                        div()
-                                                            .flex_shrink_0()
-                                                            .text_size(px(11.0))
-                                                            .text_color(
-                                                                picker_theme.muted_foreground,
-                                                            )
-                                                            .child(crate::i18n::t(
-                                                                "workspace.stopped",
-                                                            ))
-                                                            .into_any_element()
-                                                    } else {
-                                                        div().into_any_element()
-                                                    }),
-                                            );
-                                        }
-                                    }
-                                    let new_ws_herdr = picker_herdr.clone();
-                                    let new_ws_popover = popover.clone();
-                                    let connect_herdr = picker_herdr.clone();
-                                    let connect_input = ssh_input.clone();
-                                    v_flex()
-                                        .w(px(320.0))
-                                        .py(px(4.0))
-                                        .child(
-                                            div()
-                                                .id("shardlane-ws-picker-scroll")
-                                                .w_full()
-                                                .max_h(px(420.0))
-                                                .overflow_y_scroll()
-                                                .child(sections),
-                                        )
-                                        .child(
-                                            h_flex()
-                                                .id("shardlane-ws-picker-new-workspace")
-                                                .w_full()
-                                                .h(px(30.0))
-                                                .px(px(10.0))
-                                                .rounded(px(6.0))
-                                                .gap(px(8.0))
-                                                .items_center()
-                                                .cursor_pointer()
-                                                .hover(|s| {
-                                                    s.bg(picker_theme.foreground.opacity(
-                                                        crate::theme::WASH_HOVER,
-                                                    ))
-                                                })
-                                                .on_click(move |_, window, app| {
-                                                    new_ws_popover.update(app, |state, cx| {
-                                                        state.dismiss(window, cx)
-                                                    });
-                                                    new_ws_herdr.update(app, |this, cx| {
-                                                        this.run_new_project_flow(window, cx)
-                                                    });
-                                                })
-                                                .child(
-                                                    Icon::empty()
-                                                        .path("icons/plus.svg")
-                                                        .with_size(px(12.0))
-                                                        .text_color(
-                                                            picker_theme.muted_foreground,
-                                                        )
-                                                        .flex_shrink_0(),
-                                                )
-                                                .child(
-                                                    div()
-                                                        .text_size(px(12.0))
-                                                        .text_color(
-                                                            picker_theme.muted_foreground,
-                                                        )
-                                                        .child(crate::i18n::t(
-                                                            "workspace.new",
-                                                        )),
-                                                ),
-                                        )
-                                        .child(
-                                            h_flex()
-                                                .w_full()
-                                                .h(px(30.0))
-                                                .mt(px(4.0))
-                                                .mx(px(6.0))
-                                                .px(px(6.0))
-                                                .rounded(px(6.0))
-                                                .border_1()
-                                                .border_color(picker_theme.border)
-                                                .gap(px(4.0))
-                                                .items_center()
-                                                .child(
-                                                    Input::new(&connect_input)
-                                                        .small()
-                                                        .appearance(false)
-                                                        .w_full()
-                                                        .text_size(px(12.0)),
-                                                )
-                                                .child(
-                                                    div()
-                                                        .id("shardlane-ws-picker-ssh-connect")
-                                                        .size(px(20.0))
-                                                        .flex_shrink_0()
-                                                        .flex()
-                                                        .items_center()
-                                                        .justify_center()
-                                                        .rounded(px(4.0))
-                                                        .cursor_pointer()
-                                                        .hover(|s| {
-                                                            s.bg(picker_theme.foreground
-                                                                .opacity(
-                                                                    crate::theme::WASH_HOVER,
-                                                                ))
-                                                        })
-                                                        .on_click(move |_, window, app| {
-                                                            let target = connect_input
-                                                                .read(app)
-                                                                .value()
-                                                                .trim()
-                                                                .to_string();
-                                                            let input = connect_input.clone();
-                                                            connect_herdr.update(
-                                                                app,
-                                                                |this, cx| {
-                                                                    this.start_ssh_machine_connect(
-                                                                        target,
-                                                                        Some(input),
-                                                                        window,
-                                                                        cx,
-                                                                    )
-                                                                },
-                                                            );
-                                                        })
-                                                        .child(
-                                                            Icon::empty()
-                                                                .path("icons/arrow-right.svg")
-                                                                .with_size(px(12.0))
-                                                                .text_color(
-                                                                    picker_theme
-                                                                        .muted_foreground,
-                                                                ),
-                                                        ),
-                                                ),
-                                        )
-                                },
-                            )
+                        crate::switcher_panel::workspace_switcher_panel(
+                            workspace_picker_herdr.clone(),
+                            picker_machines,
+                            selected_device,
+                            gpui::Corner::BottomLeft,
+                            "shardlane-sidebar-workspace-popover",
+                            "shardlane-ws-picker-filter",
+                            chip,
+                        )
                     })
+                    .child(div().flex_1())
                     .child(
                         div()
                             .id("shardlane-sidebar-mobile-icon")

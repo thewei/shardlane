@@ -103,11 +103,6 @@ pub struct OpenWorkspaceRecord {
 #[serde(default)]
 pub struct ApplicationConfig {
     pub version: u32,
-    /// Per-session display-name overrides (semantic names in the workspace
-    /// switcher/sidebar). Key: session name or "default". Missing = use the
-    /// session name itself.
-    #[serde(default, skip_serializing_if = "std::collections::HashMap::is_empty")]
-    pub instance_display_names: std::collections::HashMap<String, String>,
     /// Machines that can host Herdr instances (local seeded; SSH targets are
     /// added from the machine panel — socket forwarding is the next step).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -152,7 +147,6 @@ impl Default for ApplicationConfig {
     fn default() -> Self {
         Self {
             version: CONFIG_VERSION,
-            instance_display_names: std::collections::HashMap::new(),
             devices: vec![DeviceEntry::local()],
             open_workspaces: Vec::new(),
             ui: UiConfig::default(),
@@ -611,18 +605,6 @@ impl ApplicationConfig {
 
     pub fn load_strict() -> Result<Self, ConfigError> {
         Self::load_from_path(&config_path())
-    }
-
-    /// Display-name override persistence: load-modify-save the config file so
-    /// a rename never clobbers other settings another window just wrote.
-    pub(crate) fn persist_instance_display_names(
-        display_names: std::collections::HashMap<String, String>,
-    ) {
-        let Ok(mut config) = Self::load_strict() else {
-            return;
-        };
-        config.instance_display_names = display_names;
-        config.save();
     }
 
     /// Machine-list persistence (machine panel: local + added SSH targets).

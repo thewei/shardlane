@@ -15,89 +15,63 @@ use axum::Json;
 use serde::Serialize;
 use std::sync::Arc;
 
-/// One row of `GET /api/v2/instances`.
+/// One row of `GET /api/v2/instances`. One instance = one Herdr session =
+/// one workspace; herdr's own `default` session is an ordinary member.
 #[derive(Debug, Serialize)]
 pub struct InstanceSummary {
     pub id: String,
     pub name: String,
-    /// Herdr session name; `None` = the default instance.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub session: Option<String>,
+    /// The Herdr session name this instance runs on.
+    pub session: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub device_id: Option<String>,
     /// Always false: instances are Herdr-owned, never Shardlane-maintained.
     pub adopted: bool,
     /// Cosmetic display name (desktop rename override; falls back to the
-    /// session name / "Default").
+    /// session name).
     pub display_name: String,
     /// Whether the instance's socket answers a ping right now.
     pub running: bool,
-    /// Convenience flag for the default instance (session == None).
+    /// Mirrors herdr's own `default` session flag (data, not a special case).
     pub is_default: bool,
     /// Remote API version (mirrors hello; convenience for clients that only
     /// call this endpoint first).
     pub remote_api_version: u32,
 }
 
-/// Reads the desktop's display-name overrides from the injected settings file.
-fn load_display_names(path: &std::path::Path) -> std::collections::HashMap<String, String> {
-    std::fs::read_to_string(path)
-        .ok()
-        .and_then(|json| serde_json::from_str::<serde_json::Value>(&json).ok())
-        .and_then(|config| config.get("instance_display_names").cloned())
-        .and_then(|value| serde_json::from_value(value).ok())
-        .unwrap_or_default()
+/// Cosmetic display name: the session's metadata file name, else the raw
+/// session name.
+fn display_name_for(session: &str) -> String {
+    shardlane_host::herdr::read_session_display_name(session).unwrap_or_else(|| session.to_string())
 }
 
-/// Cosmetic display name: override, else "Default", else the session name.
-fn display_name_for(
-    overrides: &std::collections::HashMap<String, String>,
-    session: Option<&str>,
-) -> String {
-    let key = session.unwrap_or("default");
-    overrides.get(key).cloned().unwrap_or_else(|| {
-        if key == "default" {
-            "Default".to_string()
-        } else {
-            key.to_string()
-        }
-    })
-}
-
-pub async fn list_instances(State(state): State<Arc<RemoteState>>) -> Response {
-    let settings_path = state.settings_path.clone();
+pub async fn list_instances(State(_state): State<Arc<RemoteState>>) -> Response {
     // Workspaces ARE Herdr instances: enumerate from the CLI (no
-    // Shardlane-side registry). Display names come from the desktop's
-    // settings overrides.
-    let (sessions, overrides) = tokio::task::spawn_blocking(move || {
-        let overrides = load_display_names(&settings_path);
-        let sessions = shardlane_host::herdr::list_sessions().unwrap_or_default();
-        (sessions, overrides)
-    })
-    .await
-    .unwrap_or_default();
+    // Shardlane-side registry). Display names come from each session's
+    // metadata file on herdr's own disk.
+    let sessions = tokio::task::spawn_blocking(shardlane_host::herdr::list_sessions)
+        .await
+        .unwrap_or_default()
+        .unwrap_or_default();
     let instances: Vec<InstanceSummary> = sessions
         .iter()
-        .map(|session| {
-            let session_name = (!session.is_default).then(|| session.name.clone());
-            InstanceSummary {
-                id: session.name.clone(),
-                name: session.name.clone(),
-                display_name: display_name_for(&overrides, session_name.as_deref()),
-                session: session_name,
-                device_id: None,
-                adopted: false,
-                running: session.running,
-                is_default: session.is_default,
-                remote_api_version: crate::config::REMOTE_API_VERSION,
-            }
+        .map(|session| InstanceSummary {
+            id: session.name.clone(),
+            name: session.name.clone(),
+            display_name: display_name_for(&session.name),
+            session: session.name.clone(),
+            device_id: None,
+            adopted: false,
+            running: session.running,
+            is_default: session.is_default,
+            remote_api_version: crate::config::REMOTE_API_VERSION,
         })
         .collect();
     Json(serde_json::json!({ "instances": instances })).into_response()
 }
 
-/// `POST /api/v2/instances/{id}/rename {name}`: writes the desktop's
-/// display-name override (cosmetic rename; herdr sessions have no rename).
+/// `POST /api/v2/instances/{id}/rename {name}`: writes the session's
+/// metadata display name (cosmetic rename; herdr sessions have no rename).
 #[derive(serde::Deserialize)]
 pub struct RenameInstanceRequest {
     pub name: String,
@@ -127,23 +101,8 @@ pub async fn rename_instance(
         return crate::error::ApiError::not_found(format!("unknown instance: {id}"), request_id)
             .into_response();
     }
-    let settings_path = state.settings_path.clone();
     let write = tokio::task::spawn_blocking(move || {
-        let json = std::fs::read_to_string(&settings_path).map_err(|e| e.to_string())?;
-        let mut config: serde_json::Value =
-            serde_json::from_str(&json).map_err(|e| e.to_string())?;
-        let object = config
-            .as_object_mut()
-            .ok_or_else(|| "config is not a JSON object".to_string())?;
-        let overrides = object
-            .entry("instance_display_names")
-            .or_insert_with(|| serde_json::Value::Object(Default::default()));
-        overrides
-            .as_object_mut()
-            .ok_or_else(|| "instance_display_names is not an object".to_string())?
-            .insert(id, serde_json::Value::String(name));
-        let pretty = serde_json::to_string_pretty(&config).map_err(|e| e.to_string())?;
-        std::fs::write(&settings_path, pretty).map_err(|e| e.to_string())
+        shardlane_host::herdr::write_session_display_name(&id, &name)
     })
     .await;
     match write {

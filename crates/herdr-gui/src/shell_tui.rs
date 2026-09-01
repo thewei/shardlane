@@ -321,13 +321,12 @@ impl ShardlaneApp {
 
         let shared_tui = self.tui_manager.clone();
         // Socket resolution: B1 SSH bridge first (remote machines), then the
-        // named session's own socket; None keeps default-instance discovery.
+        // bound session's own socket (herdr's `default` session = base socket).
         let socket_override = self.binding.as_ref().and_then(|binding| {
             binding.socket_override.clone().or_else(|| {
-                binding
-                    .session
-                    .as_ref()
-                    .map(|session| shardlane_host::herdr::session_socket_path_for(Some(session)))
+                Some(shardlane_host::herdr::session_socket_path_for(
+                    binding.session_name(),
+                ))
             })
         });
         cx.spawn(async move |this, cx| {

@@ -102,7 +102,7 @@ fn new_agent_project_menu(
             })
             .on_click(move |_, window, app_cx| {
                 flow_herdr.update(app_cx, |view, cx| {
-                    view.run_new_project_flow(window, cx);
+                    view.begin_workspace_creation(window, cx);
                 });
             }),
         );
