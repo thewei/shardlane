@@ -801,13 +801,13 @@ impl HerdrClient {
         Self::bootstrap_with_server_config_path(None)
     }
 
-    /// Bootstrap a client for one named Herdr session (one instance = one
-    /// Project under the multi-instance model). `None` targets the user's
-    /// default instance and behaves exactly like `bootstrap`. The session's
-    /// server is started when its socket is not alive; an already-running
-    /// server is never restarted or mutated.
-    pub fn bootstrap_for_session(session: Option<&str>) -> Result<Self, HerdrError> {
-        Self::bootstrap_for_session_with_config_path(session, None)
+    /// Bootstrap a client for one named Herdr session (one session = one
+    /// workspace under the multi-instance model; herdr's own `default`
+    /// session is an ordinary member). The session's server is started when
+    /// its socket is not alive; an already-running server is never restarted
+    /// or mutated.
+    pub fn bootstrap_for_session(session: &str) -> Result<Self, HerdrError> {
+        Self::bootstrap_for_session_with_config_path(Some(session), None)
     }
 
     pub fn bootstrap_for_session_with_config_path(
@@ -815,7 +815,7 @@ impl HerdrClient {
         server_config_path: Option<&Path>,
     ) -> Result<Self, HerdrError> {
         ensure_herdr_installed()?;
-        let socket_path = Self::session_socket_path(session);
+        let socket_path = Self::session_socket_path(session.unwrap_or("default"));
         let needs_server_start = !socket_path.exists()
             || (Self {
                 socket_path: socket_path.clone(),
@@ -852,8 +852,8 @@ impl HerdrClient {
         Ok(client)
     }
 
-    /// Socket path for a named session (`None` = the user's default instance).
-    pub fn session_socket_path(session: Option<&str>) -> PathBuf {
+    /// Socket path for a session name (herdr's `default` = the base socket).
+    pub fn session_socket_path(session: &str) -> PathBuf {
         session_socket_path_for(session)
     }
 
@@ -2422,13 +2422,66 @@ pub fn list_sessions() -> Option<Vec<HerdrSessionListing>> {
     )
 }
 
-/// Socket path for a named session (`None` = the user's default instance).
-/// Free-function form for callers that only need the location.
-pub fn session_socket_path_for(session: Option<&str>) -> PathBuf {
-    match session {
-        Some(session) => socket_path_for_session_name(session),
-        None => socket_path(),
+/// Socket path for a session name. Herdr's own `default` session lives at the
+/// base socket (`~/.config/herdr/herdr.sock`); every other session lives under
+/// `~/.config/herdr/sessions/<name>/`. Free-function form for callers that
+/// only need the location.
+pub fn session_socket_path_for(session: &str) -> PathBuf {
+    if session == "default" {
+        socket_path()
+    } else {
+        socket_path_for_session_name(session)
     }
+}
+
+/// The directory herdr persists a session in (herdr's own `default` session
+/// uses the base config dir, other sessions `sessions/<name>`).
+pub fn session_dir_for(session: &str) -> PathBuf {
+    let home = env::var_os("HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("."));
+    if session == "default" {
+        home.join(".config/herdr")
+    } else {
+        home.join(".config/herdr/sessions").join(session)
+    }
+}
+
+/// Per-session metadata file (`workspace.json` inside the session dir):
+/// Shardlane-side extras — display name — stored on herdr's own session disk
+/// layout, so the name travels with the session.
+pub fn session_metadata_path_for(session: &str) -> PathBuf {
+    session_dir_for(session).join("workspace.json")
+}
+
+/// The session's display name from its metadata file. `None` = no metadata
+/// (callers fall back to the raw session name).
+pub fn read_session_display_name(session: &str) -> Option<String> {
+    let text = std::fs::read_to_string(session_metadata_path_for(session)).ok()?;
+    let value: serde_json::Value = serde_json::from_str(&text).ok()?;
+    value
+        .get("display_name")?
+        .as_str()
+        .map(str::to_string)
+        .filter(|name| !name.trim().is_empty())
+}
+
+/// Writes (or replaces) the session's display-name metadata file.
+pub fn write_session_display_name(session: &str, display_name: &str) -> Result<(), String> {
+    let name = display_name.trim();
+    if name.is_empty() {
+        return Err("display name is empty".to_string());
+    }
+    let path = session_metadata_path_for(session);
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir).map_err(|error| error.to_string())?;
+    }
+    let body = serde_json::json!({ "version": 1, "display_name": name });
+    std::fs::write(
+        &path,
+        serde_json::to_string_pretty(&body).map_err(|e| e.to_string())?,
+    )
+    .map_err(|error| error.to_string())
 }
 
 fn socket_path() -> PathBuf {
@@ -2442,6 +2495,38 @@ fn socket_path() -> PathBuf {
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("."));
     home.join(".config/herdr/herdr.sock")
+}
+
+/// Stops a named session's server (`herdr session stop <name>`). Idempotent
+/// from the caller's perspective: stopping an already-stopped session is fine.
+pub fn stop_session(session: &str) -> Result<(), String> {
+    let herdr = herdr_cli_path()
+        .ok_or_else(|| "herdr CLI not found; install Herdr with `wax install herdr`".to_string())?;
+    let status = std::process::Command::new(&herdr)
+        .args(["session", "stop", session])
+        .output()
+        .map_err(|error| error.to_string())?;
+    if status.status.success() {
+        Ok(())
+    } else {
+        Err(String::from_utf8_lossy(&status.stderr).trim().to_string())
+    }
+}
+
+/// Deletes a STOPPED session (`herdr session delete <name>`); herdr rejects
+/// deleting a running one — call [`stop_session`] first.
+pub fn delete_session(session: &str) -> Result<(), String> {
+    let herdr = herdr_cli_path()
+        .ok_or_else(|| "herdr CLI not found; install Herdr with `wax install herdr`".to_string())?;
+    let status = std::process::Command::new(&herdr)
+        .args(["session", "delete", session])
+        .output()
+        .map_err(|error| error.to_string())?;
+    if status.status.success() {
+        Ok(())
+    } else {
+        Err(String::from_utf8_lossy(&status.stderr).trim().to_string())
+    }
 }
 
 #[cfg(test)]
