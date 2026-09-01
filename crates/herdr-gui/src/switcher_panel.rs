@@ -8,7 +8,7 @@
 //! header_view.rs (breadcrumbs).
 use super::*;
 use ::gpui::Corner;
-use gpui_component::popover::Popover;
+use gpui_component::popover::{Popover, PopoverState};
 use gpui_component::Selectable;
 
 /// One workspace-switcher device section: (device id, display name, is-local,
@@ -86,6 +86,201 @@ pub(crate) fn selected_panel_device(app: &ShardlaneApp) -> String {
         .unwrap_or_else(|| "local".to_string())
 }
 
+/// The switcher's content for ONE device, shared by the switcher Popover and
+/// the New-Window picker page: the device header (gear → device settings) over
+/// its filtered workspace rows (running dot, label, hover gear → workspace
+/// settings, click = jump/rebind), plus a muted empty state when the device
+/// has no workspaces. `dismiss` closes the hosting Popover when rows/gears
+/// activate inside one.
+pub(crate) fn workspace_switcher_device_sections(
+    herdr: &Entity<ShardlaneApp>,
+    machines: &[PickerMachine],
+    selected_device: &str,
+    filter: &str,
+    dismiss: Option<&Entity<PopoverState>>,
+    theme: &gpui_component::Theme,
+) -> gpui::Div {
+    let picker_herdr = herdr.clone();
+    let picker_theme = theme.clone();
+    let mut sections = v_flex().w_full().gap(px(2.0));
+    let mut rendered_rows = 0usize;
+    for (device_id, machine_name, is_local, instances) in machines {
+        // The panel lists ONE device's workspaces.
+        if device_id != selected_device {
+            continue;
+        }
+        let matches: Vec<_> = instances
+            .iter()
+            .filter(|(_, label, _, _)| filter.is_empty() || label.to_lowercase().contains(filter))
+            .collect();
+        if !filter.is_empty() && matches.is_empty() {
+            continue;
+        }
+        let device_gear_herdr = picker_herdr.clone();
+        sections = sections.child(
+            h_flex()
+                .group("ws-device-header")
+                .w_full()
+                .px(px(10.0))
+                .pt(px(6.0))
+                .pb(px(2.0))
+                .gap(px(6.0))
+                .items_center()
+                .child(
+                    div()
+                        .size(px(7.0))
+                        .rounded_full()
+                        .flex_shrink_0()
+                        .bg(picker_theme.success),
+                )
+                .child(
+                    div()
+                        .text_size(px(13.0))
+                        .font_weight(FontWeight::MEDIUM)
+                        .text_color(picker_theme.foreground)
+                        .min_w_0()
+                        .truncate()
+                        .child(SharedString::from(if *is_local {
+                            format!("{} {}", machine_name, crate::i18n::t("workspace.local"))
+                        } else {
+                            machine_name.clone()
+                        })),
+                )
+                .child(
+                    div()
+                        .id("ws-device-settings-gear")
+                        .size(px(18.0))
+                        .flex_shrink_0()
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .rounded(px(4.0))
+                        .cursor_pointer()
+                        .opacity(0.0)
+                        .group_hover("ws-device-header", |s| s.opacity(1.0))
+                        .hover(|s| s.bg(picker_theme.foreground.opacity(crate::theme::WASH_HOVER)))
+                        .on_click(move |_, window, app| {
+                            app.stop_propagation();
+                            device_gear_herdr
+                                .update(app, |this, cx| this.open_device_settings(window, cx));
+                        })
+                        .child(
+                            Icon::empty()
+                                .path("icons/settings.svg")
+                                .with_size(px(12.0))
+                                .text_color(picker_theme.muted_foreground),
+                        ),
+                ),
+        );
+        for (key, label, running, bound) in matches {
+            rendered_rows += 1;
+            let key = key.clone();
+            let row_herdr = picker_herdr.clone();
+            let row_popover = dismiss.cloned();
+            let row_gear_herdr = picker_herdr.clone();
+            let row_gear_popover = dismiss.cloned();
+            let gear_key = key.clone();
+            sections = sections.child(
+                h_flex()
+                    .group("ws-row")
+                    .id(SharedString::from(format!("ws-picker-{key}")))
+                    .w_full()
+                    .h(px(30.0))
+                    .px(px(10.0))
+                    .rounded(px(6.0))
+                    .gap(px(8.0))
+                    .items_center()
+                    .cursor_pointer()
+                    .hover(|s| s.bg(picker_theme.foreground.opacity(crate::theme::WASH_HOVER)))
+                    .on_click(move |_, window, app| {
+                        if let Some(popover) = &row_popover {
+                            popover.update(app, |state, cx| state.dismiss(window, cx));
+                        }
+                        row_herdr
+                            .update(app, |this, cx| this.open_or_jump_project(&key, window, cx));
+                    })
+                    .child(
+                        div()
+                            .size(px(7.0))
+                            .rounded_full()
+                            .flex_shrink_0()
+                            .bg(if *running {
+                                picker_theme.success
+                            } else {
+                                picker_theme.muted_foreground.opacity(0.45)
+                            }),
+                    )
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .truncate()
+                            .text_size(px(13.0))
+                            .text_color(if *bound {
+                                picker_theme.foreground
+                            } else {
+                                picker_theme.muted_foreground
+                            })
+                            .child(label.clone()),
+                    )
+                    .child(if *bound {
+                        Icon::empty()
+                            .path("icons/check.svg")
+                            .with_size(px(12.0))
+                            .text_color(picker_theme.success)
+                            .flex_shrink_0()
+                            .into_any_element()
+                    } else {
+                        div().into_any_element()
+                    })
+                    .child(
+                        div()
+                            .id(SharedString::from(format!("ws-row-gear-{gear_key}")))
+                            .size(px(18.0))
+                            .flex_shrink_0()
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .rounded(px(4.0))
+                            .cursor_pointer()
+                            .opacity(0.0)
+                            .group_hover("ws-row", |s| s.opacity(1.0))
+                            .hover(|s| {
+                                s.bg(picker_theme.foreground.opacity(crate::theme::WASH_HOVER))
+                            })
+                            .on_click(move |_, window, app| {
+                                app.stop_propagation();
+                                if let Some(popover) = &row_gear_popover {
+                                    popover.update(app, |state, cx| state.dismiss(window, cx));
+                                }
+                                row_gear_herdr.update(app, |this, cx| {
+                                    this.open_workspace_settings(gear_key.clone(), window, cx)
+                                });
+                            })
+                            .child(
+                                Icon::empty()
+                                    .path("icons/settings.svg")
+                                    .with_size(px(12.0))
+                                    .text_color(picker_theme.muted_foreground),
+                            ),
+                    ),
+            );
+        }
+    }
+    if rendered_rows == 0 {
+        sections = sections.child(
+            div()
+                .w_full()
+                .px(px(10.0))
+                .py(px(8.0))
+                .text_size(px(12.0))
+                .text_color(picker_theme.muted_foreground)
+                .child(crate::i18n::t("workspace.none")),
+        );
+    }
+    sections
+}
+
 /// Wraps any `Selectable` trigger (footer chip, header breadcrumb button) in
 /// the workspace switcher panel: device header (hover gear → device settings)
 /// over that device's workspaces (hover gear → workspace settings; click =
@@ -106,8 +301,6 @@ pub(crate) fn workspace_switcher_panel(
         .trigger_style(trigger_style)
         .content(move |_, window, cx| {
             let popover = cx.entity();
-            let picker_herdr = herdr.clone();
-            let picker_theme = cx.theme().clone();
             // Front-end filter for the rows above. Lives in the popover's
             // keyed state (entities must not be created during ShardlaneApp's
             // own render pass); keystrokes repaint the tree, so the closure
@@ -127,180 +320,14 @@ pub(crate) fn workspace_switcher_panel(
                 });
             }
             let filter = filter_input.read(cx).value().trim().to_lowercase();
-            let mut sections = v_flex().w_full().gap(px(2.0));
-            for (device_id, machine_name, is_local, instances) in &machines {
-                // The panel lists ONE device's workspaces.
-                if *device_id != selected_device {
-                    continue;
-                }
-                let matches: Vec<_> = instances
-                    .iter()
-                    .filter(|(_, label, _, _)| {
-                        filter.is_empty() || label.to_lowercase().contains(&filter)
-                    })
-                    .collect();
-                if !filter.is_empty() && matches.is_empty() {
-                    continue;
-                }
-                let device_gear_herdr = picker_herdr.clone();
-                sections = sections.child(
-                    h_flex()
-                        .group("ws-device-header")
-                        .w_full()
-                        .px(px(10.0))
-                        .pt(px(6.0))
-                        .pb(px(2.0))
-                        .gap(px(6.0))
-                        .items_center()
-                        .child(
-                            div()
-                                .size(px(7.0))
-                                .rounded_full()
-                                .flex_shrink_0()
-                                .bg(picker_theme.success),
-                        )
-                        .child(
-                            div()
-                                .text_size(px(13.0))
-                                .font_weight(FontWeight::MEDIUM)
-                                .text_color(picker_theme.foreground)
-                                .min_w_0()
-                                .truncate()
-                                .child(SharedString::from(if *is_local {
-                                    format!(
-                                        "{} {}",
-                                        machine_name,
-                                        crate::i18n::t("workspace.local")
-                                    )
-                                } else {
-                                    machine_name.clone()
-                                })),
-                        )
-                        .child(
-                            div()
-                                .id("ws-device-settings-gear")
-                                .size(px(18.0))
-                                .flex_shrink_0()
-                                .flex()
-                                .items_center()
-                                .justify_center()
-                                .rounded(px(4.0))
-                                .cursor_pointer()
-                                .opacity(0.0)
-                                .group_hover("ws-device-header", |s| s.opacity(1.0))
-                                .hover(|s| {
-                                    s.bg(picker_theme.foreground.opacity(crate::theme::WASH_HOVER))
-                                })
-                                .on_click(move |_, window, app| {
-                                    app.stop_propagation();
-                                    device_gear_herdr.update(app, |this, cx| {
-                                        this.open_device_settings(window, cx)
-                                    });
-                                })
-                                .child(
-                                    Icon::empty()
-                                        .path("icons/settings.svg")
-                                        .with_size(px(12.0))
-                                        .text_color(picker_theme.muted_foreground),
-                                ),
-                        ),
-                );
-                for (key, label, running, bound) in matches {
-                    let key = key.clone();
-                    let row_herdr = picker_herdr.clone();
-                    let row_popover = popover.clone();
-                    let row_gear_herdr = picker_herdr.clone();
-                    let row_gear_popover = popover.clone();
-                    let gear_key = key.clone();
-                    sections = sections.child(
-                        h_flex()
-                            .group("ws-row")
-                            .id(SharedString::from(format!("ws-picker-{key}")))
-                            .w_full()
-                            .h(px(30.0))
-                            .px(px(10.0))
-                            .rounded(px(6.0))
-                            .gap(px(8.0))
-                            .items_center()
-                            .cursor_pointer()
-                            .hover(|s| {
-                                s.bg(picker_theme.foreground.opacity(crate::theme::WASH_HOVER))
-                            })
-                            .on_click(move |_, window, app| {
-                                row_popover.update(app, |state, cx| state.dismiss(window, cx));
-                                row_herdr.update(app, |this, cx| {
-                                    this.open_or_jump_project(&key, window, cx)
-                                });
-                            })
-                            .child(div().size(px(7.0)).rounded_full().flex_shrink_0().bg(
-                                if *running {
-                                    picker_theme.success
-                                } else {
-                                    picker_theme.muted_foreground.opacity(0.45)
-                                },
-                            ))
-                            .child(
-                                div()
-                                    .flex_1()
-                                    .min_w_0()
-                                    .truncate()
-                                    .text_size(px(13.0))
-                                    .text_color(if *bound {
-                                        picker_theme.foreground
-                                    } else {
-                                        picker_theme.muted_foreground
-                                    })
-                                    .child(label.clone()),
-                            )
-                            .child(if *bound {
-                                Icon::empty()
-                                    .path("icons/check.svg")
-                                    .with_size(px(12.0))
-                                    .text_color(picker_theme.success)
-                                    .flex_shrink_0()
-                                    .into_any_element()
-                            } else {
-                                div().into_any_element()
-                            })
-                            .child(
-                                div()
-                                    .id(SharedString::from(format!("ws-row-gear-{gear_key}")))
-                                    .size(px(18.0))
-                                    .flex_shrink_0()
-                                    .flex()
-                                    .items_center()
-                                    .justify_center()
-                                    .rounded(px(4.0))
-                                    .cursor_pointer()
-                                    .opacity(0.0)
-                                    .group_hover("ws-row", |s| s.opacity(1.0))
-                                    .hover(|s| {
-                                        s.bg(picker_theme
-                                            .foreground
-                                            .opacity(crate::theme::WASH_HOVER))
-                                    })
-                                    .on_click(move |_, window, app| {
-                                        app.stop_propagation();
-                                        row_gear_popover
-                                            .update(app, |state, cx| state.dismiss(window, cx));
-                                        row_gear_herdr.update(app, |this, cx| {
-                                            this.open_workspace_settings(
-                                                gear_key.clone(),
-                                                window,
-                                                cx,
-                                            )
-                                        });
-                                    })
-                                    .child(
-                                        Icon::empty()
-                                            .path("icons/settings.svg")
-                                            .with_size(px(12.0))
-                                            .text_color(picker_theme.muted_foreground),
-                                    ),
-                            ),
-                    );
-                }
-            }
+            let sections = workspace_switcher_device_sections(
+                &herdr,
+                &machines,
+                &selected_device,
+                &filter,
+                Some(&popover),
+                cx.theme(),
+            );
             let filter_element = Input::new(&filter_input)
                 .small()
                 .appearance(false)
@@ -326,14 +353,14 @@ pub(crate) fn workspace_switcher_panel(
                         .px(px(6.0))
                         .rounded(px(6.0))
                         .border_1()
-                        .border_color(picker_theme.border)
+                        .border_color(cx.theme().border)
                         .gap(px(6.0))
                         .items_center()
                         .child(
                             Icon::empty()
                                 .path("icons/list-filter.svg")
                                 .with_size(px(12.0))
-                                .text_color(picker_theme.muted_foreground)
+                                .text_color(cx.theme().muted_foreground)
                                 .flex_shrink_0(),
                         )
                         .child(filter_element),

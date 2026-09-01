@@ -1356,6 +1356,32 @@ pub(crate) fn project_picker_page_impl(
     let close_herdr = herdr.clone();
     let unbound = this.binding.is_none();
     let dismiss_text = if unbound { "Close window" } else { "Close" };
+    // The workspace switcher panel's content: the selected device's header
+    // over its workspace rows. A new window offers every workspace, plus
+    // creation below; clicking a workspace opens it here (or jumps to its
+    // existing window).
+    let machines = crate::switcher_panel::build_picker_machines(this);
+    let selected_device = crate::switcher_panel::selected_panel_device(this);
+    if this.project_picker_filter.is_none() {
+        this.project_picker_filter =
+            Some(cx.new(|cx| {
+                InputState::new(window, cx).placeholder(crate::i18n::t("workspace.filter"))
+            }));
+    }
+    let filter_value = this
+        .project_picker_filter
+        .as_ref()
+        .map(|input| input.read(cx).value().trim().to_lowercase())
+        .unwrap_or_default();
+    let sections = crate::switcher_panel::workspace_switcher_device_sections(
+        &herdr,
+        &machines,
+        &selected_device,
+        &filter_value,
+        None,
+        cx.theme(),
+    );
+    let filter_input = this.project_picker_filter.clone();
     div()
         .id("shardlane-project-picker")
         .size_full()
@@ -1397,9 +1423,42 @@ pub(crate) fn project_picker_page_impl(
                     div()
                         .text_size(px(12.0))
                         .text_color(component_theme.muted_foreground)
+                        .child(if unbound {
+                            "Choose a workspace to open in this window, or create a new one."
+                        } else {
+                            "Switch workspaces from the switcher — the ● button at the bottom of the sidebar (or the breadcrumb above)."
+                        }),
+                )
+                // No scroll wrapper: in the main window, GPUI 0.2.2 does not
+                // deliver clicks to children inside an overflow_y_scroll
+                // container, and the full-page card has room to grow anyway.
+                .child(sections)
+                .child(
+                    h_flex()
+                        .w_full()
+                        .h(px(30.0))
+                        .px(px(6.0))
+                        .rounded(px(6.0))
+                        .border_1()
+                        .border_color(component_theme.border)
+                        .gap(px(6.0))
+                        .items_center()
                         .child(
-                            "Switch workspaces from the switcher — the ● button at the bottom of the sidebar (or the breadcrumb above).",
-                        ),
+                            Icon::empty()
+                                .path("icons/list-filter.svg")
+                                .with_size(px(12.0))
+                                .text_color(component_theme.muted_foreground)
+                                .flex_shrink_0(),
+                        )
+                        .child(match filter_input.as_ref() {
+                            Some(input) => Input::new(input)
+                                .small()
+                                .appearance(false)
+                                .w_full()
+                                .text_size(px(12.0))
+                                .into_any_element(),
+                            None => div().into_any_element(),
+                        }),
                 )
                 .child(
                     div()
