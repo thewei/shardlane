@@ -1,0 +1,49 @@
+diff --git a/src/window.rs b/src/window.rs
+index 6d74a0e..c9cb9d3 100644
+--- a/src/window.rs
++++ b/src/window.rs
+@@ -1018,10 +1018,7 @@ impl Window {
+         platform_window.on_request_frame(Box::new({
+             let mut cx = cx.to_async();
+             let invalidator = invalidator.clone();
+-            let active = active.clone();
+-            let needs_present = needs_present.clone();
+             let next_frame_callbacks = next_frame_callbacks.clone();
+-            let last_input_timestamp = last_input_timestamp.clone();
+             move |request_frame_options| {
+                 let next_frame_callbacks = next_frame_callbacks.take();
+                 if !next_frame_callbacks.is_empty() {
+@@ -1033,14 +1030,6 @@ impl Window {
+                         })
+                         .log_err();
+                 }
+-
+-                // Keep presenting the current scene for 1 extra second since the
+-                // last input to prevent the display from underclocking the refresh rate.
+-                let needs_present = request_frame_options.require_presentation
+-                    || needs_present.get()
+-                    || (active.get()
+-                        && last_input_timestamp.get().elapsed() < Duration::from_secs(1));
+-
+                 if invalidator.is_dirty() || request_frame_options.force_render {
+                     measure("frame duration", || {
+                         handle
+@@ -1052,11 +1041,14 @@ impl Window {
+                             })
+                             .log_err();
+                     })
+-                } else if needs_present {
+-                    handle
+-                        .update(&mut cx, |_, window, _| window.present())
+-                        .log_err();
+                 }
++                // Shardlane pacing patch: drop the per-vsync re-present during the
++                // 1s post-input keep-alive window. It re-renders the full scene
++                // through Metal every vsync even when nothing changed, which under
++                // macOS 15 FramePacing starves next_drawable and blocks the main
++                // thread (44% during 30Hz key repeat), collapsing visible update
++                // rate. The last presented drawable stays on screen regardless.
++
+ 
+                 handle
+                     .update(&mut cx, |_, window, _| {

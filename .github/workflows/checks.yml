@@ -1,0 +1,99 @@
+name: checks
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rust:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+          targets: x86_64-apple-darwin
+
+      - name: Configure macOS SDK
+        run: echo "SDKROOT=$(xcrun --show-sdk-path)" >> "$GITHUB_ENV"
+
+      - name: Verify vendored Ghostty VT archive
+        run: |
+          ARCHS="$(lipo -archs vendor/ghostty-vt/lib/libghostty-vt.a)"
+          [[ " $ARCHS " == *" arm64 "*" ]]
+          [[ " $ARCHS " == *" x86_64 "*" ]]
+
+      - name: Format
+        run: cargo fmt -- --check
+
+      - name: Clippy
+        run: cargo clippy --locked --workspace --all-targets -- -D warnings
+
+      - name: Test
+        run: cargo test --locked --workspace
+
+      - name: Build
+        run: cargo build --locked --workspace
+
+      - name: Cross-build Intel macOS target
+        run: cargo build --locked --workspace --target x86_64-apple-darwin
+
+  macos-bundle:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - name: Configure macOS SDK
+        run: echo "SDKROOT=$(xcrun --show-sdk-path)" >> "$GITHUB_ENV"
+
+      - name: Install macOS bundler
+        run: cargo install cargo-bundle --version 0.11.0 --locked
+
+      - name: Build, sign, and verify app bundle
+        run: scripts/package-macos.sh --universal
+
+      - name: Verify app bundle
+        run: |
+          APP="target/aarch64-apple-darwin/debug/bundle/osx/Shardlane.app"
+          test -x "$APP/Contents/MacOS/shardlane"
+          ARCHS="$(lipo -archs "$APP/Contents/MacOS/shardlane")"
+          [[ " $ARCHS " == *" arm64 "*" ]]
+          [[ " $ARCHS " == *" x86_64 "*" ]]
+          while IFS= read -r -d '' member; do
+            if [[ "$(file -b "$member")" == *Mach-O* ]]; then
+              MEMBER_ARCHS="$(lipo -archs "$member")"
+              [[ " $MEMBER_ARCHS " == *" arm64 "*" ]]
+              [[ " $MEMBER_ARCHS " == *" x86_64 "*" ]]
+            fi
+          done < <(find "$APP" -type f -print0)
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Contents/Info.plist")" = "dev.shardlane.app"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconFile' "$APP/Contents/Info.plist")" = "Shardlane.icns"
+          test -f "$APP/Contents/Resources/Shardlane.icns"
+          plutil -lint "$APP/Contents/Info.plist"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+
+      - name: Verify distributable archive
+        run: |
+          ARCHIVE_DIR="$RUNNER_TEMP/shardlane-dist"
+          scripts/archive-macos.sh \
+            --app "target/aarch64-apple-darwin/debug/bundle/osx/Shardlane.app" \
+            --output-dir "$ARCHIVE_DIR" \
+            --architecture universal2
+          ARCHIVE="$(find "$ARCHIVE_DIR" -maxdepth 1 -type f -name '*.zip' -print -quit)"
+          CHECKSUM="$ARCHIVE.sha256"
+          test -n "$ARCHIVE"
+          test -f "$CHECKSUM"
+          (cd "$ARCHIVE_DIR" && shasum -a 256 -c "$(basename "$CHECKSUM")")

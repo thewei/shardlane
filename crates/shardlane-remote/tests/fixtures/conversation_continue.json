@@ -1,0 +1,17 @@
+{
+  "accepted": true,
+  "identity": {
+    "agent_ref": "pane-1",
+    "conversation_id": "conv_1_bGl2ZTpwYW5lLTE",
+    "native_session_id": "native-1",
+    "provider": "claude",
+    "revision": 10
+  },
+  "instruction": null,
+  "launched": {
+    "pane_id": "pane-1",
+    "tab_id": "tab-1",
+    "workspace_id": "workspace-1"
+  },
+  "strategy": "native_resume"
+}

@@ -1,0 +1,57 @@
+{
+  "conversation": {
+    "agent_kind": "claude-code",
+    "id": "conv_1_aGlzdG9yeTpjbGF1ZGUtY29kZTpzZXNzaW9uLTE",
+    "live_agent_ref": null,
+    "project_id": "prj_1_cGF0aDovdG1wL3dvcmsvZGVtbw",
+    "revision": 0,
+    "sendable": false,
+    "source": "history",
+    "status": null,
+    "title": "Prior session",
+    "updated_at_ms": 1700000000000
+  },
+  "window": {
+    "conversation_id": "conv_1_aGlzdG9yeTpjbGF1ZGUtY29kZTpzZXNzaW9uLTE",
+    "first_seq": 1,
+    "has_newer": true,
+    "has_older": false,
+    "items": [
+      {
+        "id": "item-1",
+        "kind": "user",
+        "model": null,
+        "role": "user",
+        "seq": 1,
+        "text": "Inspect the failing test",
+        "thinking": null,
+        "timestamp_ms": 1700000000000,
+        "tool_calls": [],
+        "truncated": false
+      },
+      {
+        "id": "item-2",
+        "kind": "tool",
+        "model": "claude-sonnet",
+        "role": "assistant",
+        "seq": 2,
+        "text": "cargo test",
+        "thinking": "I will inspect the test output",
+        "timestamp_ms": 1700000000100,
+        "tool_calls": [
+          {
+            "id": "tool-1",
+            "input": null,
+            "input_preview": "cargo test",
+            "is_error": false,
+            "name": "shell",
+            "output": "ok"
+          }
+        ],
+        "truncated": false
+      }
+    ],
+    "last_seq": 2,
+    "revision": 9
+  }
+}

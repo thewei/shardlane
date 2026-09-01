@@ -1,0 +1,93 @@
+{
+  "agents": [
+    {
+      "conversation_id": "conv_1_bGl2ZTp3MTpwMQ",
+      "id": "w1:p1",
+      "kind": "pi",
+      "name": "pi-main",
+      "pane_id": "w1:p1",
+      "project_id": "prj_1_cnVudGltZTp3MQ",
+      "revision": 3,
+      "status": "working",
+      "tab_id": "w1:t1",
+      "title": null
+    }
+  ],
+  "capabilities": {
+    "agent_control": true,
+    "conversation_live": true,
+    "conversation_view": true,
+    "herdr_tui": true,
+    "history": true,
+    "history_continue": true,
+    "scripts": false,
+    "terminal_stream": true,
+    "terminal_text": true
+  },
+  "conversations": [
+    {
+      "agent_kind": "pi",
+      "id": "conv_1_bGl2ZTp3MTpwMQ",
+      "live_agent_ref": "w1:p1",
+      "project_id": "prj_1_cnVudGltZTp3MQ",
+      "revision": 3,
+      "sendable": true,
+      "source": "live",
+      "status": "working",
+      "title": "pi-main",
+      "updated_at_ms": null
+    }
+  ],
+  "host": {
+    "api_version": 1,
+    "host_id": "shardlane-host-fixture",
+    "name": "Test Mac",
+    "version": "0.1.11"
+  },
+  "panes": [
+    {
+      "agent_ref": "w1:p1",
+      "cwd": "/tmp/work/herdr-client",
+      "id": "w1:p1",
+      "tab_id": "w1:t1",
+      "title": null
+    }
+  ],
+  "projects": [
+    {
+      "agent_refs": [
+        "w1:p1"
+      ],
+      "id": "prj_1_cnVudGltZTp3MQ",
+      "label": "herdr-client",
+      "project_path": "/tmp/work/herdr-client",
+      "runtime_available": true,
+      "tab_ids": [
+        "w1:t1"
+      ],
+      "workspace_id": "workspace-main"
+    }
+  ],
+  "tabs": [
+    {
+      "id": "w1:t1",
+      "label": "1",
+      "pane_ids": [
+        "w1:p1"
+      ],
+      "project_id": "prj_1_cnVudGltZTp3MQ",
+      "title": null
+    }
+  ],
+  "workspaces": [
+    {
+      "active": true,
+      "color": "#7C8CFF",
+      "id": "workspace-main",
+      "name": "Default",
+      "project_ids": [
+        "prj_1_cnVudGltZTp3MQ"
+      ]
+    }
+  ]
+}

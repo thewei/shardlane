@@ -1,0 +1,8 @@
+/target/
+/dist/
+/.config/
+/.shardlane/
+/.claude/
+.DS_Store
+/vendor/ghostty/
+/vendor/ghostty-vt/lib/*.dylib

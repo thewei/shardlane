@@ -1,0 +1,22 @@
+{
+  "capabilities": {
+    "agent_control": true,
+    "conversation_live": true,
+    "conversation_view": true,
+    "herdr_tui": true,
+    "history": true,
+    "history_continue": true,
+    "scripts": false,
+    "terminal_stream": true,
+    "terminal_text": true
+  },
+  "host": {
+    "api_version": 1,
+    "host_id": "shardlane-host-fixture",
+    "name": "Test Mac",
+    "version": "0.1.11"
+  },
+  "min_mobile_api_version": 2,
+  "product": "shardlane",
+  "remote_api_version": 3
+}

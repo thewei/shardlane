@@ -1,0 +1,25 @@
+[package]
+name = "shardlane-host"
+version = "0.1.0"
+edition.workspace = true
+publish = false
+license = "PolyForm-Noncommercial-1.0.0"
+description = "UI-independent Shardlane host contracts and application-service boundaries"
+
+[dependencies]
+async-channel = { workspace = true }
+base64 = { workspace = true }
+portable-pty = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+shardlane-history = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["sync"] }
+uuid = { workspace = true }
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+tempfile = { workspace = true }

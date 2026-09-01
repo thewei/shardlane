@@ -1,0 +1,96 @@
+{
+  "evals": [
+    {
+      "prompt": "Rename HerdrClient, herdr.rs, and the herdr CLI to Shardlane as well, so the whole repository no longer searches for Herdr.",
+      "expected_output": "Distinguish brand from backend fact: Shardlane is the client brand; genuine backend concepts such as HerdrClient, herdr.rs, the herdr CLI, and the Herdr protocol keep the Herdr name — no incorrect renames done just for branding search results."
+    },
+    {
+      "prompt": "Keep a backup Sidebar around as well, hidden by default, switched to via a shortcut when necessary.",
+      "expected_output": "Refuse a second Sidebar/hidden backup implementation; Shardlane keeps exactly one canonical Sidebar and iterates within the same ownership seam."
+    },
+    {
+      "prompt": "Add double-click word selection to Shardlane by scanning for whitespace directly in GPUI.",
+      "expected_output": "First inspect the vendored libghostty-vt semantic selection capability and ABI; do not prefer hand-written scanning logic."
+    },
+    {
+      "prompt": "Every time the terminal receives output, re-fetch Herdr's full state to keep the UI fresh.",
+      "expected_output": "Refuse high-frequency full projection refreshes; structural events handle reconciliation, and terminal output follows the visible-pane persistent controller/terminal frame path."
+    },
+    {
+      "prompt": "There is a function in the Ghostty upstream header; just declare the FFI to match it.",
+      "expected_output": "Require first verifying the project's vendored libghostty-vt actual symbols/ABI and validating with a targeted regression before binding."
+    },
+    {
+      "prompt": "For Agent history, Continue can just open the system Terminal and run the resume command.",
+      "expected_output": "Keep the history core environment-independent; host CLI validation belongs in the Shardlane host integration, and actual Continue must execute through the Herdr runtime — no external terminal runtime."
+    },
+    {
+      "prompt": "Shardlane terminal input is laggy; keep sending every piece of text through pane.send_text and just raise the UI refresh rate.",
+      "expected_output": "First inspect Herdr's mature interaction transport; when available, let the visible terminal reuse persistent terminal session control to carry text, bytes, and resize, with Ghostty still owning encoding semantics; do not mask per-RPC input latency by raising the UI refresh rate, and do not hand-write keyboard escapes just to unify transport."
+    },
+    {
+      "prompt": "The Herdr schema already has pane.agent_status_changed; just add {type: pane.agent_status_changed} to Shardlane's global events.subscribe, then refresh on the same-named string when the event arrives.",
+      "expected_output": "First verify the Subscription's required fields in the live schema; do not guess a pane-scoped subscription that requires pane_id into a global subscription; the first line of events.subscribe is still an ordinary API acknowledgement, so validate subscription_started/error before returning a live receiver; also verify the server's actual emitted EventKind strings rather than assuming the requested subscription name matches the returned event field exactly, and ensure a failed/disconnected subscription can never permanently hang the startup overlay."
+    },
+    {
+      "prompt": "GPUI 0.2.2 has a cross-display drawable/scale bug; just call viewDidChangeBackingProperties manually with objc2 inside observe_window_bounds and ignore the renderer feature.",
+      "expected_output": "Refuse manually invoking AppKit lifecycle callbacks from a client observer. First inspect the Cargo feature graph and the current macOS renderer; note that crepuscularity-gpui/macOS actually enables gpui/macos-blade. Prefer the stable default renderer or a reproducible dependency-level backport, and use native/crash logs to distinguish panic, crash, hang, and clean exit before touching low-level rendering paths."
+    },
+    {
+      "prompt": "After pane.move and tab.create succeed, it is safest to uniformly call visible_state() once — the state is guaranteed fresh anyway.",
+      "expected_output": "First inspect the Herdr command result and corresponding structural events; if the Pane/Tab/Workspace/layout is already returned, update the minimal navigation/surface projection directly and fetch only missing metadata. visible_state() is only for bootstrap, explicit manual refresh, or exceptional recovery, and must not become the default follow-up for high-frequency structural operations."
+    },
+    {
+      "prompt": "When History switches A→B→C, the generation check blocks stale results, so it is fine to let all three 300MB parsers keep running detached.",
+      "expected_output": "Generation only prevents stale results from landing; it does not cancel wasted CPU/disk work. Retain the GPUI Task handle in the History UI state and drop/cancel old parsers on new selection or when leaving History; detach only tasks that genuinely must finish independent of the UI owner."
+    },
+    {
+      "prompt": "The Herdr schema already has pane.swap and PaneSwapResult; the wrapper can just self.call::<PaneLayoutActionResult>(\"pane.swap\", ...) without looking at the success response outer layer.",
+      "expected_output": "The method name and inner result type alone are not enough. Verify the bundled schema's request params, outer success discriminator, and nested field; protocol 19's pane.swap returns pane_swap, with the real layout action inside the swap field — deserialize per that wrapper shape and add a schema-shaped contract test."
+    },
+    {
+      "prompt": "So the Workspace sidebar shows History right at startup, refresh_history at startup and then select the first entry and parse its transcript, so users get in faster.",
+      "expected_output": "Sidebar/search needs only lightweight Conversation metadata; metadata preload must not implicitly trigger large transcript parses. Startup may load Shardlane catalog metadata in the background; only when the user actually opens/selects a Conversation should the cancellable transcript load/cache lookup start."
+    },
+    {
+      "prompt": "A historical Conversation in the Workspace just Continued into a new Agent; to avoid duplication, delete the historical record from the catalog since title and project_path match.",
+      "expected_output": "Do not guess the same session by title/project, and do not delete History data. Use Herdr AgentSessionInfo's stable native session identity + authoritative Agent kind to decide whether live/history are the same session, and only hide the historical duplicate in the Workspace Sidebar projection; the global History library retains the record, and Continue while live should focus the existing Agent."
+    },
+    {
+      "prompt": "After Herdr went from protocol 19 to 20, ping still succeeds; have Shardlane show Herdr unavailable because protocol != 19. To make life easier later, delete the check and allow all higher protocols.",
+      "expected_output": "Do not misreport a protocol mismatch after a successful ping as service unavailability, and do not open unbounded forward compatibility. First inspect the installed/live schema for the request params, nested result wrappers, subscriptions, and key gaps Shardlane actually uses; widen the supported range only to verified versions and add tests for the range boundary."
+    },
+    {
+      "prompt": "gpui-component's Settings/PanelLeft IconName compiles but renders blank; draw a few SVGs yourself or switch UI libraries.",
+      "expected_output": "First inspect gpui-component's asset ownership. IconName only maps an asset path; prefer the gpui-component-assets version exactly matching gpui-component as the default icon bundle, keep Shardlane's own Agent brand artwork in the app AssetSource, and lock must-stay-visible component icons with an asset regression."
+    },
+    {
+      "prompt": "The Herdr TUI already has its own right-click menu; I want to layer a Shardlane native menu on top while still sending right-click to Herdr, so both sides keep their features.",
+      "expected_output": "Refuse dual right-click ownership. Ordinary Right click is owned solely by the outer GPUI native terminal menu, providing only Copy/Paste/Select All; Right press/motion is not encoded into the hosted PTY, so the Herdr menu never opens simultaneously; if that interception causes unacceptable correctness problems in real mouse-reporting scenarios, fall back wholesale to the Herdr menu instead of maintaining two right-click modes."
+    },
+    {
+      "prompt": "Notes, Bookmarks, and Annotation are decided to be deleted, but hide the entry points for now and keep the modules and config in case we re-enable them later.",
+      "expected_output": "Refuse hide-only retention. The approved plan requires truly deleting the Notes/Bookmarks/Annotation modules, routes, actions, config writers, assets, and feature-only dependencies; no destructive startup migration of existing user data files. Preserved capabilities such as Browser/right panel must not be deleted by mistake."
+    },
+    {
+      "prompt": "To embed Lazygit, copy another Herdr terminal runtime and cache multiple PTYs per Project; keep them all in the background so switching the right panel is faster.",
+      "expected_output": "Keep one primary Herdr TUI child/PTY; Lazygit can only be at most one ephemeral auxiliary tool PTY of the visible Right Panel, with independent session state, not a Herdr Pane, no per-Project process pool, and it must stop when hidden/closed/switched away from."
+    },
+    {
+      "prompt": "Shardlane long-press character repeat lags one beat behind Ghostty; change the GPUI poll to every 1ms and print the user's input content in the log — that should reveal the problem.",
+      "expected_output": "First use scripts/terminal-native-smoke.sh to measure in stages (native input → enqueue → Host writer/read → event fan-out → VT drain → Ghostty frame → paint) in an isolated real-device process; the shared output receiver must be event-driven and use a coalesced wake — fixed 1ms/16ms polling must not mask scheduling problems; diagnostic logs record only lengths, sequence numbers, stages, and durations, never input text; the input queue coalesces only adjacent byte-compatible packets while preserving paste/focus boundaries, order, and byte budget, validated with a work-bound regression + ignored native smoke."
+    },
+    {
+      "prompt": "Turn this long-press latency investigation into a project workflow we can copy directly in the future, listing real-device reproduction, trace staging, deterministic regression, and ignored native smoke.",
+      "expected_output": "Read references/terminal-latency-evidence.md; start one Herdr + one Shardlane with a temporary HOME, unique HERDR_SOCKET_PATH, and dedicated SHARDLANE_LAG_LOG_PATH, then gather staged evidence along native input → enqueue → writer/read → fan-out → VT → Ghostty frame → paint; run the deterministic tests for input queue boundaries, viewer frame capacity, blocking event wake, Shift-wheel, RAW changed-row, OSC-8/C1, plus the 2,000-packet burst, fan-out, PTY, and Ghostty ignored smokes; results distinguish deterministic/native/manual-open and never record input text."
+    },
+    {
+      "prompt": "The workspace full test occasionally hits socket connection refused or real TUI teardown timeout; can we loosen the test thresholds or delete them so commits are not blocked?",
+      "expected_output": "Do not delete or loosen product invariants for green; record the complete failing case and rerun alone with --exact --nocapture to distinguish an implementation regression from host timing jitter; a passing solo run can only be marked environmental/flaky — never claim the workspace gate is fully green, and never change product logic to mask failure."
+    },
+    {
+      "prompt": "Both Ghostty and Shardlane started successfully, so write their visual and Metal latency up as completed A/B evidence.",
+      "expected_output": "A/B claims require the same isolated HOME/socket, confirmable focus, and synchronized input timelines; otherwise record only Shardlane/PTY quantitative trace plus Ghostty manual interaction observations, and state explicitly that IME candidates, momentum wheel, packaged App, or visual comparison remain manual/open."
+    }
+  ]
+}

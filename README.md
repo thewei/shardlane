@@ -1,0 +1,121 @@
+# Shardlane
+
+Shardlane is a native macOS workspace for coding agents, built with Rust, GPUI, gpui-component, and libghostty-vt.
+
+Shardlane is the **client/product**. **Herdr remains the backend runtime** and owns workspaces, tabs, panes, terminal sessions, agents, persistence, layout state, and process lifecycle. Shardlane projects that runtime into a native macOS interface; it does not replace or duplicate Herdr.
+
+## Requirements
+
+- macOS with Xcode / macOS SDK
+- stable Rust
+- `herdr`
+- bundled `libghostty-vt`
+- `crepus` for the hot-reload development loop
+- `wax` for installing Herdr when it is missing
+- `cargo-bundle` 0.11.0 for building the macOS `.app`
+
+Install development tools once:
+
+```sh
+cargo install waxpkg
+cargo install crepuscularity-cli --version 0.16.0
+cargo install cargo-bundle --version 0.11.0 --locked
+```
+
+If `herdr` is missing, Shardlane attempts `wax install herdr`.
+
+## Development
+
+```sh
+SDKROOT="$(xcrun --show-sdk-path)" crepus dev --bin shardlane
+```
+
+Direct Cargo run:
+
+```sh
+SDKROOT="$(xcrun --show-sdk-path)" cargo run --locked --bin shardlane
+```
+
+## Checks
+
+```sh
+cargo fmt -- --check
+cargo clippy --locked --workspace --all-targets -- -D warnings
+cargo test --locked --workspace
+cargo build --locked --workspace
+git diff --check
+```
+
+## macOS app bundle
+
+One-click release (gates + Mobile Web + install + archive):
+
+```sh
+scripts/release-macos.sh
+```
+
+Or use the individual reproducible entrypoints (the bundle name, identifier, and icon are configured once in `Cargo.toml`):
+
+```sh
+scripts/package-macos.sh
+scripts/package-macos.sh --release --with-mobile-web --mobile-root ../herdr-mobile --install
+```
+
+For the individual cargo-bundle steps and the cross-repo development/debug loop, read [`docs/macos-packaging-and-development.md`](docs/macos-packaging-and-development.md).
+
+Bundle identity:
+
+- App: `Shardlane.app`
+- Executable: `shardlane`
+- Bundle identifier: `dev.shardlane.app`
+
+Tags matching `v*` build one arm64+x86_64 Universal 2 ad-hoc-signed `Shardlane.app` release archive (`Shardlane-macos-universal2.zip`) and SHA-256 checksum. It is not notarized; first launch on another Mac requires the user to explicitly allow the app in Finder/System Settings. An explicit `--arm64` fallback remains available when the Universal 2 toolchain is unavailable.
+
+To create the same archive locally after building a release app:
+
+```sh
+scripts/package-macos.sh --release --universal
+scripts/archive-macos.sh \
+  --app target/aarch64-apple-darwin/release/bundle/osx/Shardlane.app \
+  --output-dir dist \
+  --architecture universal2
+(cd dist && shasum -a 256 -c Shardlane-macos-universal2.zip.sha256)
+```
+
+The GitHub Actions `release` workflow runs this archive step automatically for `v*` tags and uploads both files to the GitHub release.
+
+## Architecture
+
+Ownership is intentionally narrow:
+
+1. **Herdr** — runtime/backend authority.
+2. **libghostty-vt** — terminal semantics.
+3. **gpui-component / GPUI** — native desktop UI and interaction primitives.
+4. **Shardlane shell** — presentation, navigation, local settings, and read-only coding-agent history browsing.
+
+Runtime capabilities missing from Herdr must be added at the Herdr boundary rather than implemented as a second local runtime inside Shardlane.
+
+## Scope
+
+- native macOS client
+- Herdr socket/runtime integration
+- libghostty-backed terminal rendering
+- workspace/tab/pane navigation
+- coding-agent history and resume flows through Herdr
+- local right-panel web preview only (not a general browser)
+- optional packaged Mobile Web companion served by the Host Remote API
+- no plugin marketplace
+- no cloud account layer
+- no telemetry
+
+## Contributing
+
+Development setup, the verification gates every change must pass, and review expectations live in [CONTRIBUTING.md](CONTRIBUTING.md). Bug reports and feature requests use the issue templates.
+
+## Security
+
+Report vulnerabilities privately through GitHub's vulnerability reporting — see [SECURITY.md](SECURITY.md). Do not open public issues for anything exploitable.
+
+## License
+
+Shardlane is source-available under the [PolyForm Noncommercial License 1.0.0](LICENSE): free for personal, learning, research, and other noncommercial use; any commercial use requires a separate commercial license from the author. Forks and derived works must retain the copyright and license notices. Embedded third-party material keeps its own license — see [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).

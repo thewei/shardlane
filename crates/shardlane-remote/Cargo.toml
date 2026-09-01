@@ -1,0 +1,29 @@
+[package]
+name = "shardlane-remote"
+version = "0.1.0"
+edition.workspace = true
+publish = false
+license = "PolyForm-Noncommercial-1.0.0"
+description = "Loopback Remote API server exposing the Shardlane Host boundary to remote clients"
+
+[dependencies]
+axum = { version = "=0.8.9", features = ["ws"] }
+base64 = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+shardlane-history = { workspace = true }
+shardlane-host = { workspace = true }
+async-channel = { workspace = true }
+futures-util = "=0.3.34"
+portable-pty = { workspace = true }
+subtle = "=2.6.1"
+tokio = { workspace = true, features = ["rt-multi-thread", "net", "sync", "time", "macros", "io-util"] }
+tower-http = { version = "0.6", features = ["fs"] }
+uuid = { workspace = true }
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+tempfile = { workspace = true }
+tokio-tungstenite = { version = "=0.30.0", default-features = false, features = ["connect"] }

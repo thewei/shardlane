@@ -1,0 +1,116 @@
+# [INPUT]: cargo-bundle 0.11.0, vendored app artwork, workspace crate manifests,
+# lsp-types 0.97/anyhow (the provider contract for the gpui-component Input completion menu),
+# and rust-i18n 3.1.5 (the i18n backend shared with gpui-component; catalog in crates/herdr-gui/locales)
+# [OUTPUT]: the single source of truth for the Shardlane package/binary and macOS bundle identity/icon
+# [POS]: repository-root build contract; consumed by cargo build, cargo bundle, CI, and local packaging scripts
+
+[package]
+name = "shardlane"
+version = "0.1.11"
+edition.workspace = true
+publish = false
+license = "PolyForm-Noncommercial-1.0.0"
+description = "Native macOS workspace for coding agents"
+
+[package.metadata.bundle]
+name = "Shardlane"
+identifier = "dev.shardlane.app"
+category = "public.app-category.developer-tools"
+short_description = "Native macOS workspace for coding agents"
+icon = [
+    "assets/app-icon/shardlane-16.png",
+    "assets/app-icon/shardlane-16@2x.png",
+    "assets/app-icon/shardlane-32.png",
+    "assets/app-icon/shardlane-32@2x.png",
+    "assets/app-icon/shardlane-128.png",
+    "assets/app-icon/shardlane-128@2x.png",
+    "assets/app-icon/shardlane-256.png",
+    "assets/app-icon/shardlane-256@2x.png",
+    "assets/app-icon/shardlane-512.png",
+    "assets/app-icon/shardlane-512@2x.png",
+]
+
+[[bin]]
+name = "shardlane"
+path = "crates/herdr-gui/src/main.rs"
+
+[workspace]
+members = ["crates/herdr-history", "crates/shardlane-host", "crates/shardlane-remote"]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+
+[workspace.lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+
+# Single authority for dependency versions shared by 2+ member manifests; member
+# manifests consume these via `dep = { workspace = true }` and may only add
+# feature flags. Version specs match what Cargo.lock already resolved.
+[workspace.dependencies]
+anyhow = "=1.0.104"
+async-channel = "=2.5.0"
+base64 = "=0.22.1"
+notify = "=7.0.0"
+portable-pty = "=0.9.0"
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = "=1.0.151"
+sha2 = "=0.10.9"
+tempfile = "=3.24.0"
+thiserror = "=2.0.20"
+tokio = { version = "=1.53.1" }
+uuid = { version = "=1.24.1", features = ["v4"] }
+shardlane-history = { path = "crates/herdr-history" }
+shardlane-host = { path = "crates/shardlane-host" }
+
+[dependencies]
+async-channel = { workspace = true }
+uuid = { workspace = true }
+crepuscularity-gpui = { version = "=0.5.8", features = ["symbols"] }
+futures = "=0.3.34"
+gpui = "=0.2.2"
+gpui-component = { version = "=0.5.1", default-features = false }
+gpui-component-assets = "=0.5.1"
+lsp-types = "=0.97.0"
+anyhow = { workspace = true }
+shardlane-history = { workspace = true }
+shardlane-host = { workspace = true }
+shardlane-remote = { path = "crates/shardlane-remote" }
+base64 = { workspace = true }
+libc = "0.2.189"
+portable-pty = { workspace = true }
+pulldown-cmark = "0.13"
+regex = "1"
+notify = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["sync"] }
+toml_edit = "=0.22.27"
+# i18n backend; same crate/version gpui-component 0.5.1 uses for its own strings
+# (one global locale covers both). Catalog: crates/herdr-gui/locales/.
+rust-i18n = "=3.1.5"
+local-ip-address = "0.6"
+qrcode = "0.14.1"
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+block2 = "=0.6.2"
+core-text = "=21.0.0"
+objc2 = "=0.6.4"
+objc2-app-kit = { version = "=0.3.2", default-features = false, features = ["std", "NSAppearance", "NSView", "NSWindow", "NSStatusBar", "NSStatusItem", "NSStatusBarButton", "NSButton", "NSControl", "NSResponder", "NSMenu", "NSMenuItem", "NSImage", "NSApplication", "NSRunningApplication", "NSPasteboard"] }
+objc2-foundation = { version = "=0.3.2", default-features = false, features = ["NSBundle", "NSString", "NSURL", "NSURLRequest", "NSGeometry", "NSData", "NSThread", "NSUUID", "NSDate"] }
+objc2-user-notifications = "=0.3.2"
+raw-window-handle = "=0.6.2"
+
+[lints]
+workspace = true
+
+# Pacing patch (key-repeat presentation): keep presents_with_transaction persistent to avoid
+# the CAMetalLayer drawable pool starving under 30Hz + invalidation requests, which blocks the
+# main thread in next_drawable (measured on macOS 15). See vendor/gpui/PACING-PATCH.md
+[patch.crates-io]
+gpui = { path = "vendor/gpui" }

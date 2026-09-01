@@ -1,0 +1,26 @@
+{
+  "instances": [
+    {
+      "id": "default",
+      "name": "default",
+      "display_name": "Default",
+      "session": "default",
+      "device_id": null,
+      "adopted": false,
+      "running": true,
+      "is_default": true,
+      "remote_api_version": 3
+    },
+    {
+      "id": "shardlane-project-1",
+      "name": "shardlane-project-1",
+      "display_name": "frontend",
+      "session": "shardlane-project-1",
+      "device_id": null,
+      "adopted": false,
+      "running": false,
+      "is_default": false,
+      "remote_api_version": 3
+    }
+  ]
+}

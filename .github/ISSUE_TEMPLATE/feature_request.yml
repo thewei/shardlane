@@ -1,0 +1,22 @@
+name: Feature request
+description: Suggest an improvement or a new capability.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Note the project's ownership model: Herdr is the backend/runtime authority; Shardlane projects it into a native macOS shell. Capabilities that belong to the runtime may need to land in Herdr first.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or motivation
+      description: What are you trying to do, and what stands in the way?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What would you like to happen? Alternatives you considered are welcome.
+    validations:
+      required: true

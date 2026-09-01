@@ -1,0 +1,41 @@
+# Shardlane native-shell English catalog (rust-i18n format 1: the locale is
+# the file stem and nested keys flatten to dot keys). `en` is the fallback
+# locale: keys missing from any other locale resolve here.
+#
+# Migration policy: strings move into this catalog surface by surface; the
+# Settings → Appearance page is the first slice. New UI strings must use
+# `crate::i18n::t()` so a future locale only needs a sibling YAML file.
+settings:
+  section:
+    appearance: Theme
+    terminal: Terminal
+    lazygit: Lazygit
+    shortcuts: Shortcuts
+    behavior: Behavior
+    window: Window
+    machines: Machines
+    providers: Providers
+    mobile: Mobile
+    browser: Browser
+  theme_category:
+    light: Light
+    dark: Dark
+  appearance:
+    title: Appearance
+    subtitle: Pick an appearance first, then a Herdr built-in theme that the App chrome and the terminal surface both follow.
+    mode_light: Light
+    mode_light_detail: One light theme
+    mode_dark: Dark
+    mode_dark_detail: One dark theme
+    mode_auto: Auto
+    mode_auto_detail: Follow macOS; needs both
+    notice_unofficial_theme: The current Herdr theme is not one of Shardlane's visual presets. Choose cards below to write official built-in themes to Herdr config.
+    notice_auto_both: 'Both selections are used: the light theme in light appearance, the dark theme in dark appearance.'
+    language_title: Language
+    language_subtitle: Interface language for Shardlane's native shell. Additional languages will arrive in future releases.
+workspace:
+  multiplexers: Terminal multiplexers
+  stopped: Stopped
+  local: (local)
+  new: New Workspace…
+  ssh_placeholder: user@host / SSH alias…

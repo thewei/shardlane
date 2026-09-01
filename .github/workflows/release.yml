@@ -1,0 +1,80 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  macos-universal:
+    runs-on: macos-15
+    env:
+      ARM_TARGET: aarch64-apple-darwin
+      INTEL_TARGET: x86_64-apple-darwin
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - name: Configure macOS SDK
+        run: echo "SDKROOT=$(xcrun --show-sdk-path)" >> "$GITHUB_ENV"
+
+      - name: Install macOS bundler
+        run: cargo install cargo-bundle --version 0.11.0 --locked
+
+      - name: Build, sign, and verify release app bundle
+        run: scripts/package-macos.sh --release --universal
+
+      - name: Verify app bundle
+        run: |
+          APP="target/$ARM_TARGET/release/bundle/osx/Shardlane.app"
+          test -d "$APP/Contents/MacOS"
+          test -x "$APP/Contents/MacOS/shardlane"
+          ARCHS="$(lipo -archs "$APP/Contents/MacOS/shardlane")"
+          [[ " $ARCHS " == *" arm64 "*" ]]
+          [[ " $ARCHS " == *" x86_64 "*" ]]
+          while IFS= read -r -d '' member; do
+            if [[ "$(file -b "$member")" == *Mach-O* ]]; then
+              MEMBER_ARCHS="$(lipo -archs "$member")"
+              [[ " $MEMBER_ARCHS " == *" arm64 "*" ]]
+              [[ " $MEMBER_ARCHS " == *" x86_64 "*" ]]
+            fi
+          done < <(find "$APP" -type f -print0)
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Contents/Info.plist")" = "dev.shardlane.app"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconFile' "$APP/Contents/Info.plist")" = "Shardlane.icns"
+          test -f "$APP/Contents/Resources/Shardlane.icns"
+          plutil -lint "$APP/Contents/Info.plist"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+
+      - name: Create ad-hoc ZIP and SHA-256 checksum
+        run: |
+          APP="target/$ARM_TARGET/release/bundle/osx/Shardlane.app"
+          scripts/archive-macos.sh \
+            --app "$APP" \
+            --output-dir dist \
+            --architecture universal2
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          ARCHIVE="$(find dist -maxdepth 1 -type f -name '*.zip' -print -quit)"
+          CHECKSUM="$ARCHIVE.sha256"
+          test -n "$ARCHIVE"
+          test -f "$CHECKSUM"
+          if ! gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release create "$GITHUB_REF_NAME" \
+              --verify-tag \
+              --generate-notes \
+              --notes "macOS Universal 2 artifact (arm64 + x86_64): ad-hoc signed and not notarized. Verify the ZIP with the accompanying SHA-256 file; first launch on another Mac requires explicit user approval."
+          fi
+          gh release upload "$GITHUB_REF_NAME" \
+            "$ARCHIVE" \
+            "$CHECKSUM" \
+            --clobber

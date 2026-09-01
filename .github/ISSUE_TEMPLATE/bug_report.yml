@@ -1,0 +1,44 @@
+name: Bug report
+description: Something in Shardlane is broken or behaves incorrectly.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug. Please search existing issues first.
+        Security vulnerabilities must not be reported here — see [SECURITY.md](../blob/main/SECURITY.md).
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What you expected vs. what actually happened. Steps to reproduce are worth their weight in gold.
+    validations:
+      required: true
+  - type: input
+    id: macos-version
+    attributes:
+      label: macOS version
+      placeholder: "e.g. macOS 15.5 (arm64)"
+    validations:
+      required: true
+  - type: input
+    id: herdr-version
+    attributes:
+      label: Herdr version
+      description: Output of `herdr --version` (Shardlane is the client; Herdr is the runtime it hosts).
+    validations:
+      required: true
+  - type: input
+    id: shardlane-version
+    attributes:
+      label: Shardlane version / commit
+      placeholder: "e.g. release v0.1.x or a commit hash"
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or trace output
+      description: |
+        Console output, and for terminal rendering/latency issues the trace from `/tmp/shardlane-lag.log`.
+        Attach files instead of pasting large dumps.

@@ -1,0 +1,10 @@
+{
+  "code": "arrow_up",
+  "kind": "key",
+  "modifiers": {
+    "alt": false,
+    "ctrl": true,
+    "meta": false,
+    "shift": false
+  }
+}

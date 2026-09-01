@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "runtime_unavailable",
+    "message": "conversation source is unavailable",
+    "request_id": "req-fixture"
+  }
+}

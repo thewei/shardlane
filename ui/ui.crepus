@@ -1,0 +1,11 @@
+div #shardlane-root w-full h-full relative flex flex-row overflow-hidden text-[14px]
+    div flex flex-col flex-1 min-w-0
+        if {show_header}
+            {self.window_header(theme, window, cx)}
+        div w-full flex-1 min-h-0 overflow-hidden
+            {self.client_shell(theme, window, cx)}
+    {self.right_panel_overlay(window, cx)}
+    {self.client_picker_overlay(window, cx)}
+    {self.sidebar_divider_overlay(cx)}
+    if {initializing}
+        {self.startup_overlay(cx)}
