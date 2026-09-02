@@ -2802,6 +2802,11 @@ impl ShardlaneApp {
                             view.status = ConnectionStatus::Offline(error.to_string());
                             view.notify_sidebar(cx);
                             view.notify_status_bar();
+                            // The instance may still be coming up (first launch races
+                            // the socket): ride the same automatic backoff reconnect as
+                            // a dropped event stream instead of waiting for a manual
+                            // Reconnect click. Exits by itself once a bind supersedes it.
+                            view.schedule_events_reconnect(cx);
                         }
                     }
                     view.update_window_title(window);

@@ -163,12 +163,115 @@ impl ShardlaneApp {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.begin_workspace_creation(window, cx);
+        self.run_new_project_flow(window, cx);
+    }
+
+    /// New Project: the macOS directory picker chooses the project's working
+    /// directory; the project itself is a Herdr runtime workspace created with
+    /// that cwd in the bound instance (the same primitive the script launcher's
+    /// create-at path uses). Cancel leaves everything untouched.
+    pub(super) fn run_new_project_flow(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let picker = cx.prompt_for_paths(PathPromptOptions {
+            files: false,
+            directories: true,
+            multiple: false,
+            prompt: Some("New Project".into()),
+        });
+        let window_handle = window.window_handle();
+        cx.spawn(async move |this, cx| {
+            let selected = match picker.await {
+                Ok(Ok(Some(paths))) => paths.into_iter().next(),
+                Ok(Ok(None)) | Err(_) => None,
+                Ok(Err(error)) => {
+                    let message = format!("Directory picker failed: {error}");
+                    let _ = cx.update_window(window_handle, |_, window, cx| {
+                        window.push_notification(message.clone(), cx);
+                    });
+                    None
+                }
+            };
+            let Some(directory) = selected else { return };
+            let _ = cx.update_window(window_handle, |_, window, cx| {
+                let _ = this.update(cx, |view, cx| {
+                    view.create_project_at_directory(directory, window, cx);
+                });
+            });
+        })
+        .detach();
+    }
+
+    /// Step 2 of New Project: creates the picked directory's project — a Herdr
+    /// runtime workspace seeded with that cwd, focused on creation — then pulls
+    /// the authoritative navigation projection so the sidebar shows it in
+    /// Herdr's order. With the New Agent composer open (the "+ Add Project"
+    /// entry) the created project is selected so the next step is the prompt;
+    /// otherwise the hosted TUI attaches to the new focused Tab.
+    pub(super) fn create_project_at_directory(
+        &mut self,
+        directory: std::path::PathBuf,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(client) = self.client.clone() else {
+            // The bind never came up (transient offline at startup): kick the
+            // same reconnect the Reconnect button uses and let the retry land.
+            window.push_notification("Workspace runtime offline — reconnecting…", cx);
+            self.refresh(&Refresh, window, cx);
+            return;
+        };
+        self.leave_history_surface(cx);
+        let cwd = directory.to_string_lossy().to_string();
+        let window_handle = window.window_handle();
+        cx.spawn(async move |this, cx| {
+            let outcome = cx
+                .background_executor()
+                .spawn(async move {
+                    let created =
+                        client.create_workspace(&shardlane_host::mux::CreateWorkspace {
+                            cwd: Some(&cwd),
+                            focus: true,
+                        })?;
+                    let navigation = client.navigation_state()?;
+                    Ok::<_, shardlane_host::mux::MuxError>((
+                        created.workspace.workspace_id,
+                        navigation,
+                    ))
+                })
+                .await;
+            let _ = cx.update_window(window_handle, |_, window, cx| {
+                let _ = this.update(cx, |view, cx| match outcome {
+                    Ok((workspace_id, navigation)) => {
+                        view.apply_navigation_state(navigation);
+                        view.status = ConnectionStatus::Connected;
+                        view.new_agent_context_workspace_id = Some(workspace_id.clone());
+                        if view.new_agent_open {
+                            view.select_new_agent_project(workspace_id, window, cx);
+                        } else {
+                            view.attach_focused_terminal(window, cx);
+                        }
+                        view.sync_right_panel_for_project_context(cx);
+                        view.notify_sidebar(cx);
+                        window.push_notification("Project created", cx);
+                        cx.notify();
+                    }
+                    Err(error) => {
+                        view.status = ConnectionStatus::Offline(error.to_string());
+                        view.notify_sidebar(cx);
+                        window.push_notification(format!("Create project failed: {error}"), cx);
+                        cx.notify();
+                    }
+                });
+            });
+        })
+        .detach();
     }
 
     /// Multi-instance New Workspace, step 1: open the picker page in creation
     /// mode — the user must name the workspace before anything is created.
     /// The name is written into the session's metadata file on herdr's disk.
+    /// Reached from the workspace switcher's "+ New Workspace…" (creating a
+    /// whole instance is the switcher's business; Project creation inside the
+    /// bound instance is `run_new_project_flow`).
     pub(super) fn begin_workspace_creation(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.leave_history_surface(cx);
         self.show_project_picker = true;

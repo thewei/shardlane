@@ -1480,7 +1480,7 @@ pub(crate) fn project_picker_page_impl(
                         })
                         .on_click(move |_, window, app| {
                             new_project_herdr.update(app, |this, cx| {
-                                this.new_project(&NewProject, window, cx)
+                                this.begin_workspace_creation(window, cx)
                             });
                         })
                         .child("+ New Workspace…"),

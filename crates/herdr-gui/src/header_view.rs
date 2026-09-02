@@ -253,6 +253,14 @@ impl ShardlaneApp {
         // button(26) + root gap(12), and the title itself has pl(14). Under-counting by 80px would
         // push the title 80px into the content area (measured over three rounds on 08-29: title at
         // 390, target 309). When collapsed, spacer=0.
+        let header_left_chrome = 26.0 + 12.0;
+        let sidebar_header_inner_width = if sidebar_visible {
+            (sidebar_width - APP_TITLEBAR_LEFT_INSET - header_left_chrome - 14.0
+                + f32::from(crate::ui_metrics::CONTENT_INSET))
+            .max(0.0)
+        } else {
+            0.0
+        };
         // +/- pill: appears only when there are changes; clicking reveals the working directory in Finder.
         let git_pill = git_status
             .as_ref()
@@ -717,6 +725,7 @@ impl ShardlaneApp {
                         .gap_1()
                         .text_size(theme::FONT_BODY)
                         .text_color(foreground)
+                        .child(div().w(px(sidebar_header_inner_width)).h_full().flex_none())
                         .when_some(chat_title.clone(), |row, chip| {
                             // Chat presentation mode: the Agent identity+status is the centered Header title
                             //(breadcrumbs yield; notate 2026-08-29). M8: the title is clickable, opening the

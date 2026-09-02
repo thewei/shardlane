@@ -74,6 +74,7 @@ impl ShardlaneApp {
                     Ok::<_, shardlane_host::mux::MuxError>((client, state, events))
                 })
                 .await;
+            let mut attach_target = None;
             let _ = this.update(cx, |view, cx| {
                 match result {
                     Ok((client, state, events)) => {
@@ -90,6 +91,11 @@ impl ShardlaneApp {
                         Self::start_event_subscription(client, events, generation, cx);
                         // After the event stream is rebuilt, the pane-scoped subscription is rebuilt too (same cause as the refresh path).
                         view.sync_pane_event_subscription(cx);
+                        // A failed first bind re-enters the runtime through this chain,
+                        // so the attach the normal bind path performs must happen here
+                        // too — otherwise the window turns Connected with no terminal
+                        // surface (same tail as the manual Refresh path).
+                        attach_target = view.window_handle;
                         cx.notify();
                     }
                     Err(err) => {
@@ -103,6 +109,11 @@ impl ShardlaneApp {
                     }
                 }
             });
+            if let Some(handle) = attach_target {
+                let _ = cx.update_window(handle, |_, window, cx| {
+                    let _ = this.update(cx, |view, cx| view.attach_focused_terminal(window, cx));
+                });
+            }
         });
     }
 

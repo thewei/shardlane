@@ -84,7 +84,7 @@ fn new_agent_project_menu(
             );
         }
         // Trailing action, same as before: New Project — system directory picker →
-        // create library → assign → select.
+        // create the project (a runtime workspace with that cwd) → select.
         let flow_herdr = app.clone();
         menu = menu.separator().item(
             PopupMenuItem::element(move |_, _| {
@@ -102,7 +102,7 @@ fn new_agent_project_menu(
             })
             .on_click(move |_, window, app_cx| {
                 flow_herdr.update(app_cx, |view, cx| {
-                    view.begin_workspace_creation(window, cx);
+                    view.run_new_project_flow(window, cx);
                 });
             }),
         );
