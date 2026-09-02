@@ -607,3 +607,7 @@ A change is architecturally correct when all are true:
 - remote clients, transports, and Relay infrastructure never become a second runtime authority;
 - semantic remote operations use explicit targets and do not implicitly steal another client's navigation/focus; an explicit shared TUI action may mutate Herdr's global focus/resize and is disclosed;
 - documentation and code describe the same ownership model.
+
+## 14. Approved Next — Multiplexer backend API
+
+Approved direction (2026-09-02): the Host runtime boundary is generalized into a backend-neutral **Multiplexer API** so additional terminal multiplexers (tmux first) can be integrated without forking the shell. The contract — the domain catalog covering every UI-visible runtime capability, the capability model, backend-adapter/registry rules, and the behavior-preserving TDD migration and verification strategy — is normative in [`multiplexer-api.md`](multiplexer-api.md). Until it lands, `shardlane-host` `herdr.rs` (`HerdrClient`) remains the only runtime-boundary implementation and GUI/Remote consume it concretely. The "Herdr is the sole runtime authority" statement is amended only when a second backend actually ships (the tmux MVP), not by this approval.

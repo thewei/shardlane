@@ -8,6 +8,8 @@ Members:
 - `performance-engineering.md` — measured performance contract, budgets, methodology, and known lessons.
 - `macos-packaging-and-development.md` — macOS `.app` packaging/install, Mobile Web composition, and the cross-repo debug loop.
 - `remote-client-architecture.md` — Host Remote API and remote/mobile client architecture.
+- `multiplexer-api.md` — Approved Next backend-neutral Multiplexer API: domain catalog, capability model, adapter/registry rules, and the TDD migration/verification strategy.
+- `ui-acceptance-testing.md` — UI acceptance harness practice: `SHARDLANE_BIND_INSTANCE` seam, evpost/vocr tools, isolation discipline, ground-truth assertion patterns, and pitfalls.
 - `libghostty-upgrade.md` — vendored libghostty-vt upgrade and ABI verification runbook.
 
 Rules:
@@ -15,3 +17,5 @@ Rules:
 - Architecture conflicts are resolved in `client-product-architecture.md` first, then subordinate docs are updated.
 - Documents must distinguish Current / Approved Next / Protocol Gap. Never write plans as implemented facts.
 - Internal iteration plans, audits, handoffs, and progress evidence live in a private engineering archive outside this repository; do not reference them from public documents.
+
+[PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

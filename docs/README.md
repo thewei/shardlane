@@ -10,6 +10,8 @@ Public documentation for Shardlane. Internal working documents (iteration plans,
 4. **`macos-packaging-and-development.md`** — macOS `.app` packaging/install, app icon configuration, Mobile Web composition, and the cross-repo development loop.
 5. **`remote-client-architecture.md`** — Host Remote API and remote/mobile client architecture.
 6. **`libghostty-upgrade.md`** — how the vendored libghostty-vt static library is upgraded and ABI-verified (companion to [`vendor/ghostty-vt/PIN.md`](../vendor/ghostty-vt/PIN.md)).
+7. **`multiplexer-api.md`** — Approved Next backend-neutral Multiplexer API contract (domain catalog, capabilities, adapters/registry, TDD migration and verification).
+8. **`ui-acceptance-testing.md`** — how to drive the real app in scripted acceptance tests (Computer Use MCP contract, bind seam, evpost/vocr tools, isolation, ground-truth assertions, and composable capability probes).
 
 ## Rules
 
