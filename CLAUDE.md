@@ -7,7 +7,7 @@ assets/ - packaged Shardlane brand artwork
 crates/ - Shardlane application and read-only Agent-history code
 ui/ - thin Crepuscularity shell composition templates
 vendor/ - bundled native runtime artifacts (ghostty-vt) + patched gpui 0.2.2 (see vendor/gpui/PACING-PATCH.md, wired via [patch.crates-io])
-scripts/ - tiered verification entrypoints (verify.sh: check/unit/history/fast/full)
+scripts/ - tiered verification and composable UI acceptance entrypoints (verify.sh: check/unit/history/ui/fast/full)
 docs/ - public architecture, interaction, performance, packaging, and remote documentation
 .agents/skills/ - project-local engineering workflow/checklists
 .github/ - CI and release workflows
@@ -25,7 +25,11 @@ scripts/release-macos.sh - one-click release: gates + Mobile Web + install + dis
 scripts/archive-macos.sh - reproducible macOS app ZIP/checksum entrypoint
 docs/macos-packaging-and-development.md - packaging, Mobile Web composition, and debug runbook
 docs/client-product-architecture.md - unique architecture source of truth
+docs/ui-acceptance-testing.md - isolated real-app acceptance, Computer Use MCP, native fallback, and ground-truth evidence
+scripts/acceptance-capabilities.py + scripts/acceptance/ - no-GUI capability inventory, MCP probe, and composable backend assertions
+.github/workflows/checks.yml - macOS CI gates plus no-GUI UI acceptance/unit preflight
 .agents/skills/herdr-client-development/SKILL.md - Shardlane engineering workflow
+.agents/skills/ui-acceptance-testing/SKILL.md - reusable UI acceptance driver/isolation/evidence workflow
 </config>
 
 Product rule: **Shardlane is the client and brand. Herdr is the backend/runtime.** Herdr remains authoritative for workspaces, tabs, panes, layouts, agents, scrollback, persistence, terminal sessions, and process lifecycle. Shardlane owns native macOS presentation, local interaction state/preferences, and the read-only Agent-history browsing/index layer.

@@ -6,6 +6,8 @@ Before engineering Shardlane, read:
 
 1. `docs/client-product-architecture.md` — canonical architecture source of truth.
 2. `.agents/skills/herdr-client-development/SKILL.md` — Shardlane engineering workflow.
+3. For real-app UI acceptance, `.agents/skills/ui-acceptance-testing/SKILL.md` and
+   `docs/ui-acceptance-testing.md` — Computer Use MCP, isolation, and evidence contract.
 
 Internal iteration plans, audits, handoffs, and progress evidence are kept in a private engineering archive outside this repository; public documentation under `docs/` is self-contained.
 
@@ -40,11 +42,24 @@ git diff --cached --check
 
 When packaging changes, also build and structurally verify `Shardlane.app`.
 
+For real-app UI acceptance, read `docs/ui-acceptance-testing.md` and use
+`.agents/skills/ui-acceptance-testing/SKILL.md`. Computer Use is the default
+driver through the host Computer Use MCP (node_repl + Sky), with an isolated
+manifest and Herdr/tmux ground-truth assertions. Any native CGEvent/System Events
+fallback must set `SHARDLANE_UI_DRIVER=native SHARDLANE_ALLOW_GLOBAL_INPUT=1` explicitly;
+it can move the user's pointer and steal focus. Native screenshots/video also
+require `SHARDLANE_ALLOW_GLOBAL_CAPTURE=1`. Run `scripts/verify.sh ui` for the
+no-GUI harness preflight before starting an acceptance session. Run
+`scripts/acceptance-capabilities.py check --json` to inventory the local pieces;
+run its `mcp-snippet` output through `mcp__node_repl__js` to resolve the host
+Computer Use connector. Do not add a project-local fake MCP server.
+
 For native runtime/input/render changes, smoke the app and inspect `/tmp/shardlane-lag.log`.
 
 ## Scope and ownership
 
-- Herdr socket/projection wrappers → `crates/herdr-gui/src/herdr.rs`.
+- Herdr socket/projection wrappers → `crates/shardlane-host/src/herdr.rs` (`crates/herdr-gui/src/herdr.rs` is a re-export shim). Backend-neutral runtime seam → `crates/shardlane-host/src/mux/` (docs/multiplexer-api.md): the macOS shell and the Remote API consume instances only through `mux::MuxRegistry` + the `Multiplexer*` traits; `HerdrClient` concrete references above the adapter are restricted to the as_herdr() whitelist (Domain 7/9 services, protocol gate).
+- **Integration acceptance order (2026-09-02):** Herdr-behavior parity first, then GUI completeness, then new-backend integration (tmux). An acceptance pass over a new mux adapter does not substitute for regression coverage of the Herdr path, and a new backend must never delay or mask a Herdr/GUI defect.
 - **Multi-instance model (2026-09-01, no-registry revision):** a workspace IS a Herdr instance (a named Herdr session); there is NO Shardlane-side workspace registry — instances are enumerated live from `herdr session list` (`shardlane_host::herdr::list_sessions`). One workspace is displayed per window; each window owns its client, runtime state, and TUI child for its bound instance (`bind_instance`/`open_or_jump_project` in `main.rs`); switching workspaces rebinds the window or jumps to the workspace's existing window. Layout persistence is Herdr's (`session.json` restores workspaces/tabs/per-Tab cwd on server restart); Shardlane persists only cosmetics + window bookkeeping: per-session display-name overrides (`settings.instance_display_names` — herdr has no session rename), the machine list (`settings.devices`, local seeded; SSH socket bridging lives in `ssh_bridge.rs`), and the open-window snapshot (`settings.open_workspaces` for launch restore). One TUI child per instance, process-wide (`TuiManagerRegistry`, shared by desktop windows and Remote/mobile viewers; unwatched children are reaped after their idle lease). Projects/workspaces inside an instance belong to Herdr: every Tab's cwd belongs to Herdr, and the right panel (Files/Lazygit) follows the focused Tab's cwd. Renaming a workspace writes only the display-name override — instances are Herdr-owned and never created/renamed/deleted behind the CLI. The legacy client-side "Workspace grouping" machinery (`workspace_management.rs` + `workspace_management/`, the `config.workspaces` registry, `project_path_overrides`/`project_path_last_seen_ms`/`workspace_dormant_project_paths`, the project auto-restore policy, the sidebar/status-bar workspace switchers, and the `workspace.N` shortcuts) was deleted on 2026-09-01; do not reintroduce it — project path resolution goes through `build_project_index` only. Still forbidden: a second Shardlane runtime implementation, the Embedded per-Pane path, a mode switch, Notes/Bookmarks/Annotation. Do not invent Herdr protocol methods; `HERDR_SESSION`/socket targeting (`bootstrap_for_session` / `connect_herdr_for` with `?instance=<session>`) is the only per-instance seam.
 - `terminal_stream.rs` is the shared hosted-PTY transport for the primary Herdr TUI child and the bounded auxiliary tool child; the per-Pane controller branch remains deleted (2026-08-27 TUI-only convergence).
 - libghostty terminal semantics required by the hosted TUI → `ghostty.rs`.

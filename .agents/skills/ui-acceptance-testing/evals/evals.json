@@ -1,0 +1,36 @@
+[
+  {
+    "prompt": "用 Computer Use 验收 Shardlane 的 tmux 项目：点击项目、输入 marker、验证 split 和 zoom。要求用户可以继续使用自己的鼠标键盘。",
+    "expected": [
+      "选择 mcp__node_repl__js + @oai/sky，并先运行 mux-acceptance.sh --driver computer-use --prepare",
+      "使用临时 HOME、Herdr socket、tmux socket 和 manifest",
+      "每次 Sky 动作后重新读取 get_app_state，不调用 CGEvent/osascript",
+      "用 tmux capture-pane/list-panes/window_zoomed_flag 做后端断言，并写 evidence.jsonl"
+    ]
+  },
+  {
+    "prompt": "测量 30Hz key-repeat 的真实 macOS 屏幕节奏。",
+    "expected": [
+      "说明这是 native 全局输入回退，不把它描述为虚拟光标",
+      "要求 SHARDLANE_UI_DRIVER=native SHARDLANE_ALLOW_GLOBAL_INPUT=1 SHARDLANE_ALLOW_GLOBAL_CAPTURE=1 显式授权",
+      "隔离 HOME/socket、单脚本阻塞运行并恢复输入源，输出 trace/video 证据"
+    ]
+  },
+  {
+    "prompt": "让另一个 Agent 复用 Shardlane 的 Computer Use 测试能力，并快速判断当前宿主哪些能力可用；再为一个只验证输入 marker 和 pane 数量的新场景组合测试。",
+    "expected": [
+      "声明宿主工具为 mcp__node_repl__js + @oai/sky，而不是创建项目内 MCP server 或 shell 伪实现",
+      "运行 scripts/acceptance-capabilities.py check 与 mcp-snippet；把 target/mac、missing 列表和 available/blocked/unknown/unavailable 状态作为判定依据",
+      "从 scripts.acceptance.assertions 组合 marker/pane 断言，使用 Herdr/tmux 输出作真值并在 PASS marker 前写 evidence"
+    ]
+  },
+  {
+    "prompt": "用 Sky 驱动 GPUI 版 Shardlane：点击 sidebar 切换工作区，然后向终端键入 echo marker 并验证回显。",
+    "expected": [
+      "先激活 app（frontmost）再发键盘，并说明键盘事件会落到当前前台应用",
+      "指出 type_text 和非修饰键对 GPUI 自绘 surface 不产生 PTY 字节，终端输入回显必须改用原生 evpost 驱动或人工；修饰键 chord（如 cmd+b）可用于验证键盘路径",
+      "指出 GPUI 窗口不暴露内部 AX 元素，只能按像素坐标点击，且每次点击前用同一基准现抓 vocr 坐标",
+      "确认目标 app 是刚打包的 dev .app bundle，且启动前已清理同 bundle id 的旧实例"
+    ]
+  }
+]

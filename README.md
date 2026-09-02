@@ -46,6 +46,30 @@ cargo build --locked --workspace
 git diff --check
 ```
 
+Real-app UI acceptance uses the isolated Computer Use/MCP workflow in
+[`docs/ui-acceptance-testing.md`](docs/ui-acceptance-testing.md) and
+[`.agents/skills/ui-acceptance-testing/SKILL.md`](.agents/skills/ui-acceptance-testing/SKILL.md):
+
+```sh
+# No-GUI capability inventory (safe to run from any Agent/CI worker).
+scripts/acceptance-capabilities.py check --json
+# Print the read-only probe to execute through the host MCP.
+scripts/acceptance-capabilities.py mcp-snippet
+scripts/verify.sh ui
+scripts/mux-acceptance.sh --driver computer-use --prepare --keep
+```
+
+`check` reports each local capability as `available`, `blocked`, `unknown`, or
+`unavailable`. The Computer Use MCP itself must be probed by the Agent host with
+`mcp__node_repl__js`; a shell process cannot declare or emulate that connector.
+In Codex desktop, enable the Computer Use plugin/server/skill toggles first;
+custom MCP servers belong to the host `~/.codex/config.toml`, not this repo.
+
+Native CGEvent/System Events pacing or scroll measurements are explicit
+real-device fallbacks and require `SHARDLANE_UI_DRIVER=native
+SHARDLANE_ALLOW_GLOBAL_INPUT=1`; shared-display screenshots/video additionally
+require `SHARDLANE_ALLOW_GLOBAL_CAPTURE=1`.
+
 ## macOS app bundle
 
 One-click release (gates + Mobile Web + install + archive):

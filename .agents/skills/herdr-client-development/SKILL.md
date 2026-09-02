@@ -55,7 +55,7 @@ If custom code is necessary, record the concrete reason: missing API, incompatib
 
 ## Ownership router
 
-- Herdr socket/projection/wrappers → `crates/herdr-gui/src/herdr.rs`
+- Herdr socket/projection/wrappers → `crates/shardlane-host/src/herdr.rs` (GUI `herdr.rs` is a re-export shim); backend-neutral runtime seam → `shardlane-host` `mux/` (docs/multiplexer-api.md) — GUI and Remote resolve instances via `MuxRegistry`, `HerdrClient` concrete use is whitelist-restricted to the as_herdr() escape hatch
 - Herdr runtime workspace → Shardlane Project correlation/index → `workspace_model.rs` (`ProjectIndex` / `ProjectProjection`)
 - workspace is a Herdr instance; per-session display-name overrides, the machine list, and open-window bookkeeping → `settings.rs` (`instance_display_names`, `devices`, `open_workspaces`)
 - approved normal Terminal surface → one hosted Herdr TUI child + PTY + private Ghostty model; the visible Right Panel may additionally host at most one ephemeral auxiliary tool PTY (currently Lazygit) with independent session state (TUI-only convergence landed 2026-08-27; Lazygit exception landed 2026-08-29)
@@ -235,6 +235,42 @@ When changing Shardlane identity, classify every occurrence before editing:
 - **stale reference/backup implementation** → remove from active architecture and documentation.
 
 Branding work is incomplete until package/binary/bundle/menu/About/settings/release/docs/CI all agree.
+
+## UI acceptance harness (real-app testing)
+
+Acceptance order (2026-09-02): Herdr-behavior parity first, then GUI
+completeness, then new-backend integration. A pass over the tmux adapter does
+not substitute for Herdr-path regression coverage, and new-backend work must
+not mask or delay a Herdr/GUI defect. When a session fixes mux-adapter bugs,
+close with an explicit Herdr-path regression checklist before moving on.
+
+For acceptance that only the real app can answer (picker contents, hosted-TUI
+rendering, input/resize through a backend), use the dedicated
+`.agents/skills/ui-acceptance-testing/SKILL.md` workflow and its
+`docs/ui-acceptance-testing.md` contract instead of hand-clicking:
+
+- `SHARDLANE_BIND_INSTANCE=<key>` binds the startup window with zero clicks
+  (`tmux:<instance>` or a Herdr session name);
+- `scripts/verify.sh ui` runs the no-GUI preflight (shell syntax, Swift helper
+  type-checks, evidence/capability syntax, composable acceptance unit tests, and
+  eval JSON); `scripts/acceptance-capabilities.py check --json` inventories
+  which local tools and guarded paths are available;
+- `scripts/mux-acceptance.sh --driver computer-use --prepare --keep` is the
+  safe default: it publishes an isolated manifest for
+  `mcp__node_repl__js` + `@oai/sky`, then waits for a PASS/FAIL marker;
+- the host MCP connection is declared by the Agent tool manifest (not by a
+  project `.mcp.json`); run `scripts/acceptance-capabilities.py mcp-snippet`
+  through `mcp__node_repl__js`, then merge its export names with repeated
+  `--mcp-export` options. New scenarios compose
+  `scripts.acceptance.capabilities` probes and `scripts.acceptance.assertions`
+  backend truth before writing evidence;
+- native `evpost`/`vocr` and the pacing/scroll harnesses are explicit real-device
+  fallbacks only; set `SHARDLANE_UI_DRIVER=native SHARDLANE_ALLOW_GLOBAL_INPUT=1`
+  and add `SHARDLANE_ALLOW_GLOBAL_CAPTURE=1` for screenshots/video;
+  PID-scoped OCR returns real bounding boxes, and every behavior still uses
+  Herdr/tmux ground truth rather than pixels alone;
+- isolation is mandatory: temporary `HOME` + dedicated `HERDR_SOCKET_PATH` +
+  throwaway tmux server; never drive the user's live instance.
 
 ## Verification
 

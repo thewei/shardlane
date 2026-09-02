@@ -26,6 +26,9 @@ jobs:
       - name: Configure macOS SDK
         run: echo "SDKROOT=$(xcrun --show-sdk-path)" >> "$GITHUB_ENV"
 
+      - name: Verify UI acceptance helpers
+        run: scripts/verify.sh ui
+
       - name: Verify vendored Ghostty VT archive
         run: |
           ARCHS="$(lipo -archs vendor/ghostty-vt/lib/libghostty-vt.a)"

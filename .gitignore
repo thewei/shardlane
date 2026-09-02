@@ -6,3 +6,4 @@
 .DS_Store
 /vendor/ghostty/
 /vendor/ghostty-vt/lib/*.dylib
+__pycache__/
