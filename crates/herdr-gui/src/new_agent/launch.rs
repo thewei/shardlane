@@ -23,7 +23,10 @@ pub(super) fn agent_supports_permission_flags(agent: AgentId) -> bool {
     shardlane_host::provider_permission_modes(agent)
 }
 
-fn wait_for_shell_ready(client: &HerdrClient, pane_id: &str) -> Result<(), String> {
+fn wait_for_shell_ready(
+    client: &dyn shardlane_host::mux::MultiplexerConnection,
+    pane_id: &str,
+) -> Result<(), String> {
     let started = Instant::now();
     loop {
         if let Ok(info) = client.pane_process_info(pane_id) {
@@ -47,17 +50,21 @@ fn wait_for_shell_ready(client: &HerdrClient, pane_id: &str) -> Result<(), Strin
 /// Explicit terminal-command launch: this is NOT an Agent lifecycle path. The
 /// Agent launch transaction lives in `shardlane_host::run_agent_launch`.
 pub(super) fn launch_terminal_command(
-    client: &HerdrClient,
+    client: &dyn shardlane_host::mux::MultiplexerConnection,
     workspace_id: &str,
     cwd: &str,
     command: &str,
 ) -> Result<(TabCreatedResult, PaneLayout, String), String> {
     let created = client
-        .create_tab_at(Some(workspace_id), Some(cwd))
+        .create_tab(&shardlane_host::mux::CreateTab {
+            workspace_id: Some(workspace_id),
+            cwd: Some(cwd),
+            focus: true,
+        })
         .map_err(|error| error.to_string())?;
     let tab_id = created.tab.tab_id.clone();
     let pane_id = created.root_pane.pane_id.clone();
-    let cleanup_client = client.clone();
+    let cleanup_client = client;
     let result = (|| {
         wait_for_shell_ready(client, &pane_id)?;
         client

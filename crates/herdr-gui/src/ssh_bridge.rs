@@ -95,9 +95,12 @@ pub(crate) fn bring_up(device_id: &str, target: &str) -> Result<SshBridge, Strin
     for _ in 0..40 {
         std::thread::sleep(std::time::Duration::from_millis(250));
         if local_socket.exists() {
-            match shardlane_host::herdr::HerdrClient::connect_to(&local_socket)
-                .and_then(|client| client.ping())
-            {
+            let probe = shardlane_host::mux::InstanceRef::socket("herdr", local_socket.clone());
+            let probe_result =
+                std::sync::Arc::new(shardlane_host::mux::MuxRegistry::with_builtins())
+                    .connect_instance(&probe)
+                    .and_then(|connection| connection.ping());
+            match probe_result {
                 Ok(()) => {
                     pinged = Some(Ok(()));
                     break;

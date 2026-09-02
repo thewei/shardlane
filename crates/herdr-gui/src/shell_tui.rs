@@ -8,7 +8,8 @@
 //!           `restart_tui_surface`/`handle_tui_keyboard` (the observer-driven keyboard boundary)/
 //!           `handle_tui_scroll_wheel`/`handle_tui_mouse_down`/
 //!           `restore_tui_grid_on_activation` (activation = the shared-grid width-ownership
-//!           signal; navigation probes are crop-only)/
+//!           signal; navigation probes are crop-only; a re-probe that grows chrome in BOTH
+//!           edges is rejected as the stale-transport race — see apply_tui_chrome_area)/
 //!           `tui_key_encodes_to_pty`/`text_is_terminal_control_payload`/
 //!           `tui_native_context_menu_owns_button` (pure classification functions), and
 //!           `TUI_RESPAWN_COOLDOWN`.
@@ -134,6 +135,31 @@ impl ShardlaneApp {
         else {
             return false;
         };
+        // Anti-feedback guard: reimpose probes run right after the transport
+        // resize, and a backend whose pane absorbs the new grid (tmux attach,
+        // or Herdr after its own resize) can still report the pre-resize pane
+        // rect for a moment. Adopting that stale rect would grow the chrome
+        // allowance by the whole stale delta and re-impose a bigger grid — a
+        // compounding loop. The race signature is an UNCHANGED pane area
+        // measured against a grown adopted grid: the probe raced the resize
+        // and read the old layout again. A genuinely changed area (Remote
+        // viewer resized the session, Herdr TUI chrome toggled) always
+        // differs from the previous probe, so it still lands. First
+        // measurement (empty projection) is exempt.
+        if reimpose
+            && !self.tui_chrome_projection.is_empty()
+            && Some((area.width, area.height)) == self.tui_chrome_last_probe
+            && (next.right > self.tui_chrome_projection.right
+                || next.bottom > self.tui_chrome_projection.bottom)
+        {
+            lag_log(format_args!(
+                "tui.chrome stale probe rejected: unchanged pane {}x{} with growing allowance right={} bottom={}",
+                area.width, area.height,
+                next.right, next.bottom
+            ));
+            return false;
+        }
+        self.tui_chrome_last_probe = Some((area.width, area.height));
         let projection_changed = next != self.tui_chrome_projection;
         if projection_changed {
             lag_log(format_args!(
@@ -282,7 +308,7 @@ impl ShardlaneApp {
             return;
         }
         if let Some(client) = self.client.as_ref() {
-            if !herdr_tui::protocol_supported(client) {
+            if !herdr_tui::protocol_supported(client.as_ref()) {
                 // The explicit compatibility gate for TUI-only: an old protocol does not fall back to
                 // Embedded; give an actionable upgrade hint (plan §19 Protocol too old).
                 let detected = client.protocol().unwrap_or(0);
@@ -320,8 +346,13 @@ impl ShardlaneApp {
         self.set_terminal_frame(Arc::new(TerminalFrame::default()), None, cx);
 
         let shared_tui = self.tui_manager.clone();
-        // Socket resolution: B1 SSH bridge first (remote machines), then the
-        // bound session's own socket (herdr's `default` session = base socket).
+        // Backend-aware acquisition: a tmux binding streams its `tmux attach`
+        // child through the seam; Herdr bindings attach the Host-owned shared
+        // TUI session. Socket resolution: B1 SSH bridge first (remote
+        // machines), then the bound session's own socket (herdr's `default`
+        // session = base socket).
+        let bound_backend = self.binding.as_ref().map(|binding| binding.backend);
+        let seam_client = self.client.clone();
         let socket_override = self.binding.as_ref().and_then(|binding| {
             binding.socket_override.clone().or_else(|| {
                 Some(shardlane_host::herdr::session_socket_path_for(
@@ -337,12 +368,33 @@ impl ShardlaneApp {
                     // spawn call creates the one child only when no running
                     // session exists; Remote viewers attach the same object.
                     let socket_override = socket_override.as_deref();
-                    let session = if restart {
-                        shared_tui.restart(raw_size.0, raw_size.1, socket_override)
-                    } else {
-                        shared_tui.open(raw_size.0, raw_size.1, socket_override)
-                    }
-                    .map_err(|error| format!("open shared Herdr TUI: {error}"))?;
+                    let session: std::sync::Arc<dyn shardlane_host::mux::MultiplexerStream> =
+                        if bound_backend == Some("tmux") {
+                            let client = seam_client
+                                .clone()
+                                .ok_or_else(|| "connection gone during attach".to_string())?;
+                            // The instance key is not a tmux session name: the
+                            // adapter resolves the server's first/most-recent
+                            // session when no key is given.
+                            client
+                                .open_shared_session(None, raw_size.0, raw_size.1)
+                                .map_err(|error| {
+                                    lag_log(format_args!(
+                                        "tui.attach open_shared_session err {error}"
+                                    ));
+                                    format!("open tmux attach stream: {error}")
+                                })?
+                        } else if restart {
+                            let session = shared_tui
+                                .restart(raw_size.0, raw_size.1, socket_override)
+                                .map_err(|error| format!("open shared Herdr TUI: {error}"))?;
+                            session
+                        } else {
+                            let session = shared_tui
+                                .open(raw_size.0, raw_size.1, socket_override)
+                                .map_err(|error| format!("open shared Herdr TUI: {error}"))?;
+                            session
+                        };
                     let mut managed = ManagedTerminal::attach_shared(
                         &session,
                         raw_size.0,
@@ -404,6 +456,7 @@ impl ShardlaneApp {
                         poll_managed_terminal(token, herdr_tui::TUI_TARGET.to_string(), wake, cx);
                     }
                     Err(err) => {
+                        lag_log(format_args!("tui.attach err {err}"));
                         // Shared teardown reset list (audit B04): also clears the retained
                         // surface size/frame — the attach-failure arm is exactly the site
                         // that used to forget them.
@@ -438,7 +491,7 @@ impl ShardlaneApp {
                 .background_executor()
                 .spawn(async move {
                     herdr_tui::execute_focus_plan(
-                        &client,
+                        client.as_ref(),
                         workspace_id.as_deref(),
                         tab_id.as_deref(),
                         pane_id.as_deref(),

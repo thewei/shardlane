@@ -14,6 +14,7 @@
 use crate::error::ApiError;
 use crate::state::RemoteState;
 use shardlane_host::herdr::{HerdrClient, HerdrError};
+use shardlane_host::mux::{InstanceRef, MultiplexerConnection, MuxCapabilities, MuxError};
 use shardlane_host::project_index::ProjectProjection;
 use shardlane_host::workspace_config::{WorkspaceConfig, WorkspacesConfig};
 use shardlane_host::{
@@ -22,13 +23,15 @@ use shardlane_host::{
     WorkspaceId, WorkspaceSummary, HOST_API_VERSION,
 };
 use std::collections::HashMap;
+use std::sync::Arc;
 
 #[derive(Debug)]
 pub enum BootstrapError {
-    /// Herdr unreachable (missing socket / failed ping / protocol mismatch).
-    HerdrUnavailable(HerdrError),
-    /// Herdr RPC failed midway.
-    HerdrRuntime(HerdrError),
+    /// The instance is unreachable (missing socket / failed ping / protocol
+    /// mismatch / unknown backend).
+    Unavailable(MuxError),
+    /// The instance answered connect but an RPC failed midway.
+    Runtime(MuxError),
 }
 
 /// Single BootstrapError → ApiError envelope mapping (used by the blocking
@@ -36,11 +39,11 @@ pub enum BootstrapError {
 /// must not drift between call sites.
 pub(crate) fn map_bootstrap_error(error: BootstrapError, request_id: String) -> ApiError {
     match error {
-        BootstrapError::HerdrUnavailable(error) => ApiError::host_unavailable(
+        BootstrapError::Unavailable(error) => ApiError::host_unavailable(
             format!("herdr runtime is not reachable: {error}"),
             request_id,
         ),
-        BootstrapError::HerdrRuntime(error) => ApiError::runtime_unavailable(
+        BootstrapError::Runtime(error) => ApiError::runtime_unavailable(
             format!("herdr runtime failed to answer: {error}"),
             request_id,
         ),
@@ -50,23 +53,43 @@ pub(crate) fn map_bootstrap_error(error: BootstrapError, request_id: String) -> 
 /// Single authority for the advertised Host capability set: `hello` and the
 /// bootstrap projection must declare byte-identical values (the mobile entry
 /// gate reads the bootstrap copy), so both construct through this function
-/// instead of maintaining twin literals.
-pub(crate) fn host_capabilities() -> HostCapabilities {
+/// instead of maintaining twin literals. The values are derived from the
+/// registry's backend capabilities (the Herdr builtin advertises all-true,
+/// keeping the pinned wire values).
+pub(crate) fn host_capabilities_for(state: &RemoteState) -> HostCapabilities {
+    let caps = state
+        .mux_registry
+        .backend("herdr")
+        .map(|backend| backend.capabilities())
+        .unwrap_or(MuxCapabilities {
+            agents: false,
+            server_admin: false,
+            shared_tui: false,
+            pane_history_read: false,
+            cross_workspace_tab_move: false,
+            events_push: false,
+        });
+    host_capabilities_from(caps)
+}
+
+/// Capability mapping used by [`host_capabilities_for`]; free-standing so the
+/// pinned contract test can exercise it without a registry.
+pub(crate) fn host_capabilities_from(caps: MuxCapabilities) -> HostCapabilities {
     HostCapabilities {
-        agent_control: true,
+        agent_control: caps.agents,
         scripts: false,
         // The semantic History list/search/transcript is provided by the
         // v2 Conversation service; the mobile entry gate reads this value.
-        history: true,
-        terminal_text: true,
-        terminal_stream: true,
-        conversation_view: true,
-        conversation_live: true,
-        history_continue: true,
-        // One Host-owned shared/global Herdr TUI session. Client-local
+        history: caps.agents,
+        terminal_text: caps.pane_history_read,
+        terminal_stream: caps.shared_tui,
+        conversation_view: caps.agents,
+        conversation_live: caps.agents,
+        history_continue: caps.agents,
+        // One Host-owned shared/global backend TUI session. Client-local
         // focus/resize isolation is intentionally not implied; focus and
         // resize effects are visible to other attached clients.
-        herdr_tui: true,
+        herdr_tui: caps.shared_tui,
     }
 }
 
@@ -172,18 +195,40 @@ pub async fn in_instance_scope(
     CURRENT_INSTANCE.scope(instance, f).await
 }
 
-/// Resolve the Herdr client for a session (multi-instance). `None` = no
-/// instance scope given — fall back to the base connection. A dead session's
-/// server is started — the same persistent-instance semantics as the desktop
-/// (`bootstrap_for_session`).
+/// Resolve the backend-neutral connection for an instance scope (multi-
+/// instance). `None` = no instance scope given — fall back to the base
+/// connection (side-effect-free; an explicit socket override wins). A scoped
+/// instance is opened with persistent-instance semantics (its server is
+/// started when not running — the same behavior as the desktop's
+/// `bootstrap_for_session`).
+pub fn connect_instance_for(
+    state: &RemoteState,
+    instance: Option<&str>,
+) -> Result<Arc<dyn MultiplexerConnection>, MuxError> {
+    let reference = match (instance, &state.herdr_socket_override) {
+        (Some(session), _) => InstanceRef::named("herdr", session),
+        (None, Some(path)) => InstanceRef::socket("herdr", path.clone()),
+        (None, None) => InstanceRef::default_instance("herdr"),
+    };
+    if instance.is_some() {
+        state.mux_registry.open_instance(&reference)
+    } else {
+        state.mux_registry.connect_instance(&reference)
+    }
+}
+
+/// Resolve the concrete Herdr client for Herdr-product surfaces (Domain 7/9
+/// services and the TUI protocol gate). Capability-gated: an instance served
+/// by a non-Herdr backend is a typed error, never a silent fallback.
 pub fn connect_herdr_for(
     state: &RemoteState,
     instance: Option<&str>,
 ) -> Result<HerdrClient, HerdrError> {
-    match instance {
-        None => connect_herdr(state),
-        Some(session) => HerdrClient::bootstrap_for_session(session),
-    }
+    let connection = connect_instance_for(state, instance).map_err(HerdrError::from)?;
+    connection
+        .as_herdr()
+        .cloned()
+        .ok_or_else(|| HerdrError::Api("this instance is not served by the herdr backend".into()))
 }
 
 /// The instance scope for blocking work: read it on the async side.
@@ -191,13 +236,10 @@ pub fn scope_for_blocking() -> Option<String> {
     current_instance_scope()
 }
 
-/// Connect to Herdr (side-effect-free connect: does not start the server; a
-/// missing socket is an error).
+/// Connect to the default instance's concrete Herdr client (side-effect-free
+/// connect: does not start the server; a missing socket is an error).
 pub fn connect_herdr(state: &RemoteState) -> Result<HerdrClient, HerdrError> {
-    match &state.herdr_socket_override {
-        Some(path) => HerdrClient::connect_to(path),
-        None => HerdrClient::connect(),
-    }
+    connect_herdr_for(state, None)
 }
 
 pub fn build_bootstrap(state: &RemoteState) -> Result<HostBootstrap, BootstrapError> {
@@ -210,10 +252,10 @@ pub fn build_bootstrap_for(
     state: &RemoteState,
     instance: Option<&str>,
 ) -> Result<HostBootstrap, BootstrapError> {
-    let client = connect_herdr_for(state, instance).map_err(BootstrapError::HerdrUnavailable)?;
-    let runtime_state = client
+    let connection = connect_instance_for(state, instance).map_err(BootstrapError::Unavailable)?;
+    let runtime_state = connection
         .host_bootstrap_state()
-        .map_err(BootstrapError::HerdrRuntime)?;
+        .map_err(BootstrapError::Runtime)?;
     let index = shardlane_host::project_index::ProjectIndex::build_from_state(&runtime_state);
     let (workspace_config, overrides) = load_workspace_config(state);
 
@@ -370,7 +412,7 @@ pub fn build_bootstrap_for(
             version: state.host_version.clone(),
             api_version: HOST_API_VERSION,
         },
-        capabilities: host_capabilities(),
+        capabilities: host_capabilities_for(state),
         workspaces,
         projects,
         tabs,
@@ -395,7 +437,15 @@ mod tests {
     fn advertised_capabilities_are_pinned_from_the_single_constructor() {
         // hello and bootstrap must stay byte-identical; this pins the values
         // so a change here is a deliberate contract change, not drift.
-        let json = serde_json::to_value(host_capabilities()).unwrap_or_default();
+        let herdr_caps = MuxCapabilities {
+            agents: true,
+            server_admin: true,
+            shared_tui: true,
+            pane_history_read: true,
+            cross_workspace_tab_move: false,
+            events_push: true,
+        };
+        let json = serde_json::to_value(host_capabilities_from(herdr_caps)).unwrap_or_default();
         assert_eq!(json["agent_control"], true);
         assert_eq!(json["scripts"], false);
         assert_eq!(json["history"], true);
@@ -411,7 +461,7 @@ mod tests {
     fn bootstrap_error_maps_to_distinct_unavailable_envelopes() {
         let id = "req-x".to_string();
         let unavailable = map_bootstrap_error(
-            BootstrapError::HerdrUnavailable(HerdrError::SocketUnavailable(
+            BootstrapError::Unavailable(MuxError::SocketUnavailable(
                 "/tmp/h.sock".into(),
                 "no such file".into(),
             )),
@@ -422,10 +472,8 @@ mod tests {
             axum::http::StatusCode::SERVICE_UNAVAILABLE
         );
         assert_eq!(unavailable.code, "host_unavailable");
-        let runtime = map_bootstrap_error(
-            BootstrapError::HerdrRuntime(HerdrError::Api("boom".into())),
-            id,
-        );
+        let runtime =
+            map_bootstrap_error(BootstrapError::Runtime(MuxError::Api("boom".into())), id);
         assert_eq!(runtime.status, axum::http::StatusCode::SERVICE_UNAVAILABLE);
         assert_eq!(runtime.code, "runtime_unavailable");
     }

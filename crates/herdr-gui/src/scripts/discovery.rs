@@ -41,7 +41,7 @@ pub(super) fn next_discovery_interval(any_change: bool, current: Duration) -> Du
 }
 
 pub(super) fn observe_unmanaged_services(
-    client: &HerdrClient,
+    client: &dyn shardlane_host::mux::MultiplexerConnection,
     workspace_ids: &[String],
     managed_pane_ids: &HashSet<String>,
     sweep_deadline: Instant,

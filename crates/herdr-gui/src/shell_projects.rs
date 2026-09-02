@@ -36,7 +36,11 @@ impl ShardlaneApp {
             Some(attach_window),
             false,
             move |client| {
-                let created = client.create_tab(create_workspace_id.as_deref())?;
+                let created = client.create_tab(&shardlane_host::mux::CreateTab {
+                    workspace_id: create_workspace_id.as_deref(),
+                    cwd: None,
+                    focus: true,
+                })?;
                 let layout = client.pane_layout(&created.root_pane.pane_id)?;
                 Ok((created, layout))
             },
@@ -346,15 +350,19 @@ impl ShardlaneApp {
                         suffix += 1;
                     }
                     // Bootstrapping starts (and persists) the session's server.
-                    let client = HerdrClient::bootstrap_for_session(&candidate)
+                    let reference = shardlane_host::mux::InstanceRef::named("herdr", &candidate);
+                    let registry =
+                        std::sync::Arc::new(shardlane_host::mux::MuxRegistry::with_builtins());
+                    registry
+                        .open_instance(&reference)
                         .map_err(|error| error.to_string())?;
                     shardlane_host::herdr::write_session_display_name(&candidate, &chosen)?;
-                    Ok::<_, String>((client, candidate))
+                    Ok::<_, String>(candidate)
                 })
                 .await;
             let _ = cx.update_window(window_handle, |_, window, cx| {
                 let _ = this.update(cx, |view, cx| match outcome {
-                    Ok((_client, session)) => {
+                    Ok(session) => {
                         // Reveal the created workspace: the picker (including
                         // `show_project_picker`, which `begin_workspace_creation`
                         // set) must not keep covering the freshly bound shell.
@@ -394,7 +402,11 @@ impl ShardlaneApp {
         attach_window: AnyWindowHandle,
         cx: &mut Context<Self>,
     ) where
-        F: FnOnce(&HerdrClient) -> Result<(), herdr::HerdrError> + Send + 'static,
+        F: FnOnce(
+                &dyn shardlane_host::mux::MultiplexerConnection,
+            ) -> Result<(), shardlane_host::mux::MuxError>
+            + Send
+            + 'static,
     {
         let Some(client) = self.client.clone() else {
             return;

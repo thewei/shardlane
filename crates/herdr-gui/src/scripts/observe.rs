@@ -24,14 +24,14 @@ pub(super) struct ScriptObservation {
 /// None = transient (keep the current state).
 fn pane_alive_after_recheck(
     script: &ScriptRecord,
-    result: Result<Vec<Pane>, crate::herdr::HerdrError>,
+    result: Result<Vec<Pane>, shardlane_host::mux::MuxError>,
 ) -> Option<bool> {
     let pane_id = script.pane_id.as_deref()?;
     match result {
         Ok(panes) => Some(panes.iter().any(|pane| pane.pane_id == pane_id)),
         // An explicit API negation from Herdr (e.g. unknown workspace/pane) is
         // an authoritative death.
-        Err(crate::herdr::HerdrError::Api(_)) => Some(false),
+        Err(shardlane_host::mux::MuxError::Api(_)) => Some(false),
         // Service unreachable / protocol / codec problems are transient: the
         // correlation must never be cleared based on them.
         Err(_) => None,
@@ -59,7 +59,7 @@ fn transient_script_observation(script: &ScriptRecord, error: Option<String>) ->
 }
 
 fn probe_script_pane(
-    client: &HerdrClient,
+    client: &dyn shardlane_host::mux::MultiplexerConnection,
     script: &ScriptRecord,
     pane_id: &str,
 ) -> ScriptObservation {
@@ -93,7 +93,7 @@ fn probe_script_pane(
 }
 
 pub(super) fn observe_script(
-    client: &HerdrClient,
+    client: &dyn shardlane_host::mux::MultiplexerConnection,
     script: &ScriptRecord,
     known_tabs: &HashSet<String>,
 ) -> ScriptObservation {
@@ -274,7 +274,7 @@ mod tests {
         assert_eq!(
             pane_alive_after_recheck(
                 &script,
-                Err(crate::herdr::HerdrError::Api(
+                Err(shardlane_host::mux::MuxError::Api(
                     "unknown workspace".to_string()
                 ))
             ),
@@ -291,7 +291,7 @@ mod tests {
         assert_eq!(
             pane_alive_after_recheck(
                 &script,
-                Err(crate::herdr::HerdrError::SocketUnavailable(
+                Err(shardlane_host::mux::MuxError::SocketUnavailable(
                     "/tmp/herdr.sock".to_string(),
                     "down".to_string(),
                 ))

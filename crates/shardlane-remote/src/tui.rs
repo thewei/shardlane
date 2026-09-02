@@ -30,7 +30,7 @@ use base64::Engine;
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use shardlane_host::shared_tui::{
-    validate_remote_size, HerdrTuiSession, TuiError, TuiEvent, DEFAULT_COLS, DEFAULT_ROWS,
+    validate_remote_size, TuiError, TuiEvent, DEFAULT_COLS, DEFAULT_ROWS,
 };
 use shardlane_host::HerdrTuiSessionSummary;
 use std::sync::Arc;
@@ -107,10 +107,11 @@ fn map_error(error: TuiError, request_id: String) -> ApiError {
 fn session_from_state(
     state: &Arc<RemoteState>,
     id: &str,
-) -> Result<Arc<HerdrTuiSession>, TuiError> {
+) -> Result<Arc<dyn shardlane_host::mux::MultiplexerStream>, TuiError> {
     state
         .tui_registry
         .get_session(id)
+        .map(|session| session as Arc<dyn shardlane_host::mux::MultiplexerStream>)
         .ok_or(TuiError::InvalidSession)
 }
 
@@ -252,7 +253,7 @@ pub async fn stream_session(
 
 async fn serve_socket(
     socket: WebSocket,
-    session: Arc<HerdrTuiSession>,
+    session: Arc<dyn shardlane_host::mux::MultiplexerStream>,
     state: Arc<RemoteState>,
     peer: std::net::SocketAddr,
 ) {
@@ -267,7 +268,7 @@ async fn serve_socket(
 
 async fn serve_socket_inner(
     socket: WebSocket,
-    session: Arc<HerdrTuiSession>,
+    session: Arc<dyn shardlane_host::mux::MultiplexerStream>,
     state: &Arc<RemoteState>,
     connection_id: u64,
 ) {

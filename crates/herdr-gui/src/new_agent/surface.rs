@@ -489,10 +489,17 @@ impl ShardlaneApp {
         };
         let window_handle = window.window_handle();
         cx.spawn(async move |this, cx| {
-            let launch_client = client.clone();
             let result = cx
                 .background_executor()
                 .spawn(async move {
+                    let launch_client = match client.as_herdr() {
+                        Some(herdr) => herdr.clone(),
+                        None => {
+                            return Err(shardlane_host::AgentLaunchFailure::RuntimeCreateFailed(
+                                "this instance does not support agents".to_string(),
+                            ))
+                        }
+                    };
                     let preparation = shardlane_host::GitWorktreePreparation::new(
                         crate::settings::app_data_dir().join("worktrees"),
                     );
@@ -687,7 +694,9 @@ impl ShardlaneApp {
             let cwd = project_path.clone();
             let result = cx
                 .background_executor()
-                .spawn(async move { launch_terminal_command(&launch_client, &ws_id, &cwd, &cmd) })
+                .spawn(async move {
+                    launch_terminal_command(launch_client.as_ref(), &ws_id, &cwd, &cmd)
+                })
                 .await;
             let _ = cx.update_window(window_handle, |_, window, cx| {
                 let _ = this.update(cx, |view, cx| {

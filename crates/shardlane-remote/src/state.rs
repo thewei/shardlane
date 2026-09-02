@@ -62,6 +62,10 @@ pub struct RemoteState {
     /// default discovery (HERDR_SOCKET_PATH env var or the standard path
     /// under $HOME).
     pub herdr_socket_override: Option<PathBuf>,
+    /// Backend-neutral Multiplexer registry (docs/multiplexer-api.md): the
+    /// sole assembly point for instance connections. Remote handlers resolve
+    /// instances through it; the Herdr backend is the builtin registration.
+    pub mux_registry: std::sync::Arc<shardlane_host::mux::MuxRegistry>,
     /// Per-instance Herdr TUI managers (multi-instance model): at most one
     /// hosted TUI child per Herdr instance, shared by every viewer. Normally
     /// injected by the GUI so the desktop window and Remote/mobile viewers
@@ -123,6 +127,7 @@ impl RemoteState {
             host_version,
             settings_path,
             herdr_socket_override,
+            mux_registry: std::sync::Arc::new(shardlane_host::mux::MuxRegistry::with_builtins()),
             tui_registry: Arc::new(shardlane_host::shared_tui::TuiManagerRegistry::default()),
             tui_owned: true,
             mutations: crate::idempotency::MutationCache::new(),

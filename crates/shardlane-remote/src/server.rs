@@ -524,7 +524,7 @@ pub fn hello_response(state: &RemoteState) -> HelloResponse {
         // Single capability authority (crate::bootstrap::host_capabilities):
         // the bootstrap projection declares the identical set. The B4 prompt
         // endpoint has landed, so agent_control=true.
-        capabilities: crate::bootstrap::host_capabilities(),
+        capabilities: crate::bootstrap::host_capabilities_for(state),
     }
 }
 
@@ -639,7 +639,7 @@ where
 /// keep only their success projection. `op` names the operation in the
 /// join-failure envelope (spawn task panicked/cancelled; never a Herdr
 /// outcome).
-pub(crate) async fn run_herdr<T, F>(
+pub(crate) async fn run_mux<T, F>(
     state: &Arc<RemoteState>,
     op: &'static str,
     request_id: String,
@@ -647,21 +647,25 @@ pub(crate) async fn run_herdr<T, F>(
 ) -> Result<T, ApiError>
 where
     T: Send + 'static,
-    F: FnOnce(&HerdrClient) -> Result<T, HerdrError> + Send + 'static,
+    F: FnOnce(
+            &dyn shardlane_host::mux::MultiplexerConnection,
+        ) -> Result<T, shardlane_host::mux::MuxError>
+        + Send
+        + 'static,
 {
     let work_state = state.clone();
     // Instance scope (multi-instance): `?instance=<registry id>` selects the
-    // Project's Herdr instance for this request. Read BEFORE spawn_blocking —
-    // task-locals do not cross that boundary.
+    // instance for this request. Read BEFORE spawn_blocking — task-locals do
+    // not cross that boundary.
     let instance = crate::bootstrap::current_instance_scope();
     match tokio::task::spawn_blocking(move || {
-        let client = crate::bootstrap::connect_herdr_for(&work_state, instance.as_deref())?;
-        work(&client)
+        let connection = crate::bootstrap::connect_instance_for(&work_state, instance.as_deref())?;
+        work(connection.as_ref())
     })
     .await
     {
         Ok(Ok(value)) => Ok(value),
-        Ok(Err(error)) => Err(map_herdr_error(error, request_id)),
+        Ok(Err(error)) => Err(map_mux_error(error, request_id)),
         Err(join_error) => Err(ApiError::internal(
             format!("{op} failed: {join_error}"),
             request_id,
@@ -686,6 +690,38 @@ const MAX_OUTPUT_LINES: u32 = 1000;
 /// Unified mapping of Herdr errors → stable envelope.
 /// AgentNotFound (structured code) → 404; timeout semantics → 504; others →
 /// 503 runtime unavailable.
+/// Neutral-seam counterpart of [`map_herdr_error`]: identical wire mapping
+/// over `MuxError`. Arms must not drift from the Herdr version.
+pub(crate) fn map_mux_error(error: shardlane_host::mux::MuxError, request_id: String) -> ApiError {
+    match &error {
+        shardlane_host::mux::MuxError::NotFound(message) => {
+            ApiError::not_found(message.clone(), request_id)
+        }
+        shardlane_host::mux::MuxError::Timeout(message) => {
+            ApiError::timeout(message.clone(), request_id)
+        }
+        shardlane_host::mux::MuxError::SocketUnavailable(path, reason) => {
+            ApiError::host_unavailable(
+                format!("herdr socket unavailable at {path}: {reason}"),
+                request_id,
+            )
+        }
+        // R2-05: the mutation may already be accepted — a stable wire state
+        // that idempotency tombstones; never collapse it into a generic
+        // transient failure.
+        shardlane_host::mux::MuxError::Uncertain(message) => {
+            ApiError::delivery_uncertain(message.clone(), request_id)
+        }
+        shardlane_host::mux::MuxError::Api(message)
+            if message.to_lowercase().contains("timeout")
+                || message.to_lowercase().contains("timed out") =>
+        {
+            ApiError::timeout(message.clone(), request_id)
+        }
+        _ => ApiError::runtime_unavailable(format!("{error}"), request_id),
+    }
+}
+
 pub(crate) fn map_herdr_error(error: HerdrError, request_id: String) -> ApiError {
     match &error {
         HerdrError::AgentNotFound(message) => ApiError::not_found(message.clone(), request_id),
@@ -767,8 +803,11 @@ async fn agent_keys(
 
     let keys = body.keys;
     json_or_error(
-        run_herdr(&state, "send_keys", request_id, move |client| {
-            client.send_runtime_agent_keys(&shardlane_host::AgentRef::new(agent_ref), &keys)
+        run_mux(&state, "send_keys", request_id, move |client| {
+            client
+                .agent_runtime()
+                .ok_or(shardlane_host::mux::MuxError::Unsupported("agents"))?
+                .send_runtime_agent_keys(&shardlane_host::AgentRef::new(agent_ref), &keys)
         })
         .await
         .map(|()| serde_json::json!({ "ok": true })),
@@ -793,14 +832,19 @@ async fn create_workspace(
     };
     let cwd = body.cwd;
     json_or_error(
-        run_herdr(&state, "create_workspace", request_id, move |client| {
-            client.create_workspace_at(cwd.as_deref()).map(|created| {
-                serde_json::json!({
-                    "workspace_id": created.workspace.workspace_id,
-                    "tab_id": created.tab.tab_id,
-                    "pane_id": created.root_pane.pane_id,
+        run_mux(&state, "create_workspace", request_id, move |client| {
+            client
+                .create_workspace(&shardlane_host::mux::CreateWorkspace {
+                    cwd: cwd.as_deref(),
+                    focus: true,
                 })
-            })
+                .map(|created| {
+                    serde_json::json!({
+                        "workspace_id": created.workspace.workspace_id,
+                        "tab_id": created.tab.tab_id,
+                        "pane_id": created.root_pane.pane_id,
+                    })
+                })
         })
         .await,
     )
@@ -816,7 +860,7 @@ async fn close_workspace(
             .into_response();
     }
     json_or_error(
-        run_herdr(&state, "close_workspace", request_id, move |client| {
+        run_mux(&state, "close_workspace", request_id, move |client| {
             client
                 .close_workspace(&workspace_id)
                 .map(|()| serde_json::json!({ "ok": true }))
@@ -845,7 +889,7 @@ async fn rename_workspace(
             .into_response();
     }
     json_or_error(
-        run_herdr(&state, "rename_workspace", request_id, move |client| {
+        run_mux(&state, "rename_workspace", request_id, move |client| {
             client
                 .rename_workspace(&workspace_id, &body.label)
                 .map(|()| serde_json::json!({ "ok": true }))
@@ -874,7 +918,7 @@ async fn move_workspace(
             .into_response();
     }
     json_or_error(
-        run_herdr(&state, "move_workspace", request_id, move |client| {
+        run_mux(&state, "move_workspace", request_id, move |client| {
             client
                 .move_workspace(&workspace_id, body.insert_index)
                 .map(|()| serde_json::json!({ "ok": true }))
@@ -924,9 +968,13 @@ async fn create_tab(
             let body = body.clone();
             let error_request_id = request_id.clone();
             async move {
-                run_herdr(&state, "create_tab", error_request_id, move |client| {
+                run_mux(&state, "create_tab", error_request_id, move |client| {
                     client
-                        .create_tab_at(body.workspace_id.as_deref(), body.cwd.as_deref())
+                        .create_tab(&shardlane_host::mux::CreateTab {
+                            workspace_id: body.workspace_id.as_deref(),
+                            cwd: body.cwd.as_deref(),
+                            focus: true,
+                        })
                         .map(|created| {
                             serde_json::json!({
                                 "tab_id": created.tab.tab_id,
@@ -947,7 +995,7 @@ async fn close_tab(State(state): State<Arc<RemoteState>>, Path(tab_id): Path<Str
         return ApiError::invalid_request("tab_id must not be empty", request_id).into_response();
     }
     json_or_error(
-        run_herdr(&state, "close_tab", request_id, move |client| {
+        run_mux(&state, "close_tab", request_id, move |client| {
             client
                 .close_tab(&tab_id)
                 .map(|()| serde_json::json!({ "ok": true }))
@@ -970,7 +1018,7 @@ async fn rename_tab(
         return ApiError::invalid_request("tab_id must not be empty", request_id).into_response();
     }
     json_or_error(
-        run_herdr(&state, "rename_tab", request_id, move |client| {
+        run_mux(&state, "rename_tab", request_id, move |client| {
             client
                 .rename_tab(&tab_id, &body.label)
                 .map(|()| serde_json::json!({ "ok": true }))
@@ -993,7 +1041,7 @@ async fn move_tab(
         return ApiError::invalid_request("tab_id must not be empty", request_id).into_response();
     }
     json_or_error(
-        run_herdr(&state, "move_tab", request_id, move |client| {
+        run_mux(&state, "move_tab", request_id, move |client| {
             client
                 .move_tab(&tab_id, body.insert_index)
                 .map(|()| serde_json::json!({ "ok": true }))
@@ -1023,15 +1071,15 @@ async fn split_pane(
         return ApiError::invalid_request("pane_id must not be empty", request_id).into_response();
     }
     json_or_error(
-        run_herdr(&state, "split_pane", request_id, move |client| {
+        run_mux(&state, "split_pane", request_id, move |client| {
             match body.direction.as_str() {
                 "right" => client
-                    .split_right(&pane_id)
+                    .split_pane(&pane_id, shardlane_host::mux::SplitDirection::Right)
                     .map(|pane| serde_json::json!({ "pane_id": pane.pane_id })),
                 "down" => client
-                    .split_down(&pane_id)
+                    .split_pane(&pane_id, shardlane_host::mux::SplitDirection::Down)
                     .map(|pane| serde_json::json!({ "pane_id": pane.pane_id })),
-                other => Err(shardlane_host::herdr::HerdrError::Api(format!(
+                other => Err(shardlane_host::mux::MuxError::Api(format!(
                     "direction must be \"right\" or \"down\", got \"{other}\""
                 ))),
             }
@@ -1049,7 +1097,7 @@ async fn close_pane(
         return ApiError::invalid_request("pane_id must not be empty", request_id).into_response();
     }
     json_or_error(
-        run_herdr(&state, "close_pane", request_id, move |client| {
+        run_mux(&state, "close_pane", request_id, move |client| {
             client
                 .close_pane(&pane_id)
                 .map(|()| serde_json::json!({ "ok": true }))
@@ -1067,7 +1115,7 @@ async fn toggle_pane_zoom(
         return ApiError::invalid_request("pane_id must not be empty", request_id).into_response();
     }
     json_or_error(
-        run_herdr(&state, "toggle_pane_zoom", request_id, move |client| {
+        run_mux(&state, "toggle_pane_zoom", request_id, move |client| {
             client
                 .toggle_pane_zoom(&pane_id)
                 .map(|action| serde_json::json!({ "zoomed": action.layout.zoomed }))
@@ -1095,9 +1143,13 @@ async fn resize_pane(
         return ApiError::invalid_request("pane_id must not be empty", request_id).into_response();
     }
     json_or_error(
-        run_herdr(&state, "resize_pane", request_id, move |client| {
+        run_mux(&state, "resize_pane", request_id, move |client| {
+            let direction: shardlane_host::mux::MuxDirection = body
+                .direction
+                .parse()
+                .map_err(shardlane_host::mux::MuxError::Api)?;
             client
-                .resize_pane(&pane_id, &body.direction)
+                .resize_pane(&pane_id, direction)
                 .map(|_| serde_json::json!({ "ok": true }))
         })
         .await,
@@ -1123,9 +1175,13 @@ async fn swap_pane(
         return ApiError::invalid_request("pane_id must not be empty", request_id).into_response();
     }
     json_or_error(
-        run_herdr(&state, "swap_pane", request_id, move |client| {
+        run_mux(&state, "swap_pane", request_id, move |client| {
+            let direction: shardlane_host::mux::MuxDirection = body
+                .direction
+                .parse()
+                .map_err(shardlane_host::mux::MuxError::Api)?;
             client
-                .swap_pane(&pane_id, &body.direction)
+                .swap_pane(&pane_id, direction)
                 .map(|_| serde_json::json!({ "ok": true }))
         })
         .await,
@@ -1153,7 +1209,7 @@ async fn move_pane(
         return ApiError::invalid_request("pane_id must not be empty", request_id).into_response();
     }
     json_or_error(
-        run_herdr(&state, "move_pane", request_id, move |client| {
+        run_mux(&state, "move_pane", request_id, move |client| {
             match body.destination.as_str() {
                 "new_tab" => {
                     let workspace_id = body.workspace_id.as_deref().ok_or_else(|| {
@@ -1167,7 +1223,7 @@ async fn move_pane(
                 }
                 "tab" => {
                     let tab_id = body.tab_id.as_deref().ok_or_else(|| {
-                        shardlane_host::herdr::HerdrError::Api(
+                        shardlane_host::mux::MuxError::Api(
                             "tab_id required for tab destination".into(),
                         )
                     })?;
@@ -1175,7 +1231,7 @@ async fn move_pane(
                         .move_pane_to_tab(&pane_id, tab_id)
                         .map(|result| serde_json::json!({ "pane_id": result.pane.pane_id }))
                 }
-                other => Err(shardlane_host::herdr::HerdrError::Api(format!(
+                other => Err(shardlane_host::mux::MuxError::Api(format!(
                     "destination must be \"new_tab\" or \"tab\", got \"{other}\""
                 ))),
             }
@@ -1198,7 +1254,7 @@ async fn rename_pane(
         return ApiError::invalid_request("pane_id must not be empty", request_id).into_response();
     }
     json_or_error(
-        run_herdr(&state, "rename_pane", request_id, move |client| {
+        run_mux(&state, "rename_pane", request_id, move |client| {
             client
                 .rename_pane(&pane_id, &body.label)
                 .map(|()| serde_json::json!({ "ok": true }))
@@ -1240,10 +1296,10 @@ async fn pane_output(
         return ApiError::invalid_request("pane_id must not be empty", request_id).into_response();
     }
     json_or_error(
-        run_herdr(&state, "pane_output", request_id, move |client| {
+        run_mux(&state, "pane_output", request_id, move |client| {
             client
-                .read_pane_recent_ansi(&pane_id, lines)
-                .map(|text| serde_json::json!({ "text": text }))
+                .read_pane_history(&pane_id, lines)
+                .map(|history| serde_json::json!({ "text": history.text }))
         })
         .await,
     )
@@ -1266,7 +1322,7 @@ async fn pane_keys(
         return Json(serde_json::json!({ "ok": true })).into_response();
     }
     json_or_error(
-        run_herdr(&state, "pane_keys", request_id, move |client| {
+        run_mux(&state, "pane_keys", request_id, move |client| {
             client
                 .send_keys(&pane_id, &body.keys)
                 .map(|()| serde_json::json!({ "ok": true }))
@@ -1294,7 +1350,7 @@ async fn pane_text(
         return ApiError::invalid_request("pane_id must not be empty", request_id).into_response();
     }
     json_or_error(
-        run_herdr(&state, "pane_text", request_id, move |client| {
+        run_mux(&state, "pane_text", request_id, move |client| {
             client
                 .send_text(&pane_id, &body.text)
                 .map(|()| serde_json::json!({ "ok": true }))
@@ -1312,7 +1368,7 @@ async fn pane_process(
         return ApiError::invalid_request("pane_id must not be empty", request_id).into_response();
     }
     json_or_error(
-        run_herdr(&state, "pane_process", request_id, move |client| {
+        run_mux(&state, "pane_process", request_id, move |client| {
             client.pane_process_info(&pane_id).map(|info| {
                 serde_json::json!({
                     "pane_id": info.pane_id,
@@ -1508,8 +1564,10 @@ async fn report_pane_agent(
         return ApiError::invalid_request("pane_id must not be empty", request_id).into_response();
     }
     json_or_error(
-        run_herdr(&state, "report_pane_agent", request_id, move |client| {
+        run_mux(&state, "report_pane_agent", request_id, move |client| {
             client
+                .agent_runtime()
+                .ok_or(shardlane_host::mux::MuxError::Unsupported("agents"))?
                 .report_pane_agent(&pane_id, &body.agent)
                 .map(|()| serde_json::json!({ "ok": true }))
         })
@@ -1526,8 +1584,10 @@ async fn clear_pane_agent(
         return ApiError::invalid_request("pane_id must not be empty", request_id).into_response();
     }
     json_or_error(
-        run_herdr(&state, "clear_pane_agent", request_id, move |client| {
+        run_mux(&state, "clear_pane_agent", request_id, move |client| {
             client
+                .agent_runtime()
+                .ok_or(shardlane_host::mux::MuxError::Unsupported("agents"))?
                 .clear_pane_agent_authority(&pane_id)
                 .map(|()| serde_json::json!({ "ok": true }))
         })

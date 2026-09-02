@@ -157,10 +157,18 @@ impl ShardlaneApp {
                     }
                     Err(error) => {
                         lag_log(format_args!("pane event subscription failed: {error}"));
-                        // Clear the recorded set; the next surface application retries the subscription;
-                        // F19: also do bounded backoff retries instead of waiting for the user to navigate.
-                        view.pane_event_subscription_ids.clear();
-                        view.schedule_pane_subscription_retry(cx);
+                        // A backend without push events (events_push=false, e.g.
+                        // tmux) is a permanent degradation, not a transient
+                        // failure: retrying would spin the backoff loop forever.
+                        if !matches!(
+                            error,
+                            shardlane_host::mux::MuxError::Unsupported("events_push")
+                        ) {
+                            // Clear the recorded set; the next surface application retries the subscription;
+                            // F19: also do bounded backoff retries instead of waiting for the user to navigate.
+                            view.pane_event_subscription_ids.clear();
+                            view.schedule_pane_subscription_retry(cx);
+                        }
                     }
                 }
             });
@@ -168,7 +176,7 @@ impl ShardlaneApp {
     }
 
     pub(super) fn start_event_subscription(
-        client: HerdrClient,
+        client: std::sync::Arc<dyn shardlane_host::mux::MultiplexerConnection>,
         events: async_channel::Receiver<HerdrEvent>,
         generation: u64,
         cx: &mut Context<Self>,
@@ -784,9 +792,22 @@ impl ShardlaneApp {
 
     /// Close secondary surfaces that block the terminal (Settings/Help); the History surface exits via its dedicated path.
     pub(super) fn exit_blocked_secondary_surfaces(&mut self, cx: &mut Context<Self>) {
+        // The blocked-surface set is whatever stands between the user and the
+        // work surface they just navigated to. The New Agent page is the most
+        // frequent occupant (it is the startup landing surface), so a sidebar
+        // / picker click that skips it looked like a dead button until the
+        // page joined this exit list.
+        let mut changed = false;
         if self.show_settings || self.show_help {
             self.show_settings = false;
             self.show_help = false;
+            changed = true;
+        }
+        if self.new_agent_open {
+            self.new_agent_open = false;
+            changed = true;
+        }
+        if changed {
             self.sync_terminal_application_focus(cx);
             cx.notify();
         }
@@ -841,22 +862,24 @@ impl ShardlaneApp {
             Some(window_handle),
             true,
             move |client| {
-                let fallback =
-                    |client: &HerdrClient| -> Result<FocusNavigationProjection, herdr::HerdrError> {
-                        let navigation = client.navigation_state()?;
-                        let (workspace_id, tab_id) =
-                            resolve_navigation_selection(Some(&workspace_id), None, &navigation);
-                        let surface = match (workspace_id.as_deref(), tab_id.as_deref()) {
-                            (Some(workspace_id), Some(tab_id)) => {
-                                Some(client.tab_surface_state(workspace_id, tab_id)?)
-                            }
-                            _ => None,
-                        };
-                        Ok(FocusNavigationProjection::Navigation {
-                            navigation,
-                            surface,
-                        })
+                let fallback = |client: &dyn shardlane_host::mux::MultiplexerConnection| -> Result<
+                    FocusNavigationProjection,
+                    shardlane_host::mux::MuxError,
+                > {
+                    let navigation = client.navigation_state()?;
+                    let (workspace_id, tab_id) =
+                        resolve_navigation_selection(Some(&workspace_id), None, &navigation);
+                    let surface = match (workspace_id.as_deref(), tab_id.as_deref()) {
+                        (Some(workspace_id), Some(tab_id)) => {
+                            Some(client.tab_surface_state(workspace_id, tab_id)?)
+                        }
+                        _ => None,
                     };
+                    Ok(FocusNavigationProjection::Navigation {
+                        navigation,
+                        surface,
+                    })
+                };
                 match local_tab_id {
                     Some(tab_id) => client
                         .tab_surface_state(&workspace_id, &tab_id)
@@ -1108,7 +1131,7 @@ impl ShardlaneApp {
     #[allow(clippy::too_many_arguments)]
     pub(super) fn run_navigation_rpc<P, Projection, Apply>(
         &mut self,
-        client: HerdrClient,
+        client: std::sync::Arc<dyn shardlane_host::mux::MultiplexerConnection>,
         cx: &mut Context<Self>,
         attach_window: Option<AnyWindowHandle>,
         attach_on_error: bool,
@@ -1116,7 +1139,11 @@ impl ShardlaneApp {
         apply: Apply,
     ) where
         P: Send + 'static,
-        Projection: FnOnce(&HerdrClient) -> Result<P, herdr::HerdrError> + Send + 'static,
+        Projection: FnOnce(
+                &dyn shardlane_host::mux::MultiplexerConnection,
+            ) -> Result<P, shardlane_host::mux::MuxError>
+            + Send
+            + 'static,
         Apply: FnOnce(&mut Self, P, &mut Context<Self>) -> bool + 'static,
     {
         self.navigation_token = self.navigation_token.wrapping_add(1);
@@ -1127,7 +1154,7 @@ impl ShardlaneApp {
         self._navigation_script = cx.spawn(async move |this, cx| {
             let result = cx
                 .background_executor()
-                .spawn(async move { projection(&client) })
+                .spawn(async move { projection(client.as_ref()) })
                 .await;
             let applied = this
                 .update(cx, |view, cx| {

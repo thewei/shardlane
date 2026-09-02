@@ -57,7 +57,11 @@ impl ShardlaneApp {
         apply: Apply,
     ) where
         P: Send + 'static,
-        Projection: FnOnce(&HerdrClient) -> Result<P, herdr::HerdrError> + Send + 'static,
+        Projection: FnOnce(
+                &dyn shardlane_host::mux::MultiplexerConnection,
+            ) -> Result<P, shardlane_host::mux::MuxError>
+            + Send
+            + 'static,
         Apply: FnOnce(&mut Self, P, Option<&mut Window>, &mut Context<Self>) + 'static,
     {
         let Some(client) = self.client.clone() else {
@@ -66,10 +70,10 @@ impl ShardlaneApp {
         cx.spawn(async move |this, cx| {
             let result = cx
                 .background_executor()
-                .spawn(async move { projection(&client) })
+                .spawn(async move { projection(client.as_ref()) })
                 .await;
             let finish = move |view: &mut Self,
-                               result: Result<P, herdr::HerdrError>,
+                               result: Result<P, shardlane_host::mux::MuxError>,
                                window: Option<&mut Window>,
                                cx: &mut Context<Self>| {
                 match result {
@@ -110,7 +114,10 @@ impl ShardlaneApp {
     pub(super) fn run_pane_split_by_id(
         &mut self,
         pane_id: String,
-        operation: fn(&HerdrClient, &str) -> Result<Pane, herdr::HerdrError>,
+        operation: fn(
+            &dyn shardlane_host::mux::MultiplexerConnection,
+            &str,
+        ) -> Result<Pane, shardlane_host::mux::MuxError>,
         cx: &mut Context<Self>,
     ) {
         self.run_pane_rpc(
@@ -119,12 +126,12 @@ impl ShardlaneApp {
             move |client| {
                 let created = operation(client, &pane_id)?;
                 let workspace_id = created.workspace_id.clone().ok_or_else(|| {
-                    herdr::HerdrError::Api(
+                    shardlane_host::mux::MuxError::Api(
                         "pane.split response missing required workspace_id".to_string(),
                     )
                 })?;
                 let tab_id = created.tab_id.clone().ok_or_else(|| {
-                    herdr::HerdrError::Api(
+                    shardlane_host::mux::MuxError::Api(
                         "pane.split response missing required tab_id".to_string(),
                     )
                 })?;
@@ -137,11 +144,11 @@ impl ShardlaneApp {
     }
 
     pub(super) fn split_pane_right_by_id(&mut self, pane_id: String, cx: &mut Context<Self>) {
-        self.run_pane_split_by_id(pane_id, HerdrClient::split_right, cx);
+        self.run_pane_split_by_id(pane_id, mux_split_right, cx);
     }
 
     pub(super) fn split_pane_down_by_id(&mut self, pane_id: String, cx: &mut Context<Self>) {
-        self.run_pane_split_by_id(pane_id, HerdrClient::split_down, cx);
+        self.run_pane_split_by_id(pane_id, mux_split_down, cx);
     }
 
     pub(super) fn toggle_pane_zoom_by_id(&mut self, pane_id: String, cx: &mut Context<Self>) {
@@ -160,16 +167,19 @@ impl ShardlaneApp {
         pane_id: String,
         direction: &'static str,
         operation: fn(
-            &HerdrClient,
+            &dyn shardlane_host::mux::MultiplexerConnection,
             &str,
-            &str,
-        ) -> Result<PaneLayoutActionResult, herdr::HerdrError>,
+            shardlane_host::mux::MuxDirection,
+        ) -> Result<PaneLayoutActionResult, shardlane_host::mux::MuxError>,
         cx: &mut Context<Self>,
     ) {
+        let Ok(parsed_direction) = direction.parse::<shardlane_host::mux::MuxDirection>() else {
+            return;
+        };
         self.run_pane_rpc(
             cx,
             None,
-            move |client| operation(client, &pane_id, direction),
+            move |client| operation(client, &pane_id, parsed_direction),
             |view, result, _, cx| {
                 view.apply_current_layout(result.layout, cx);
             },
@@ -206,7 +216,7 @@ impl ShardlaneApp {
         direction: &'static str,
         cx: &mut Context<Self>,
     ) {
-        self.run_pane_layout_action_by_id(pane_id, direction, HerdrClient::resize_pane, cx);
+        self.run_pane_layout_action_by_id(pane_id, direction, mux_resize_pane, cx);
     }
 
     pub(super) fn swap_pane_direction_by_id(
@@ -215,7 +225,7 @@ impl ShardlaneApp {
         direction: &'static str,
         cx: &mut Context<Self>,
     ) {
-        self.run_pane_layout_action_by_id(pane_id, direction, HerdrClient::swap_pane, cx);
+        self.run_pane_layout_action_by_id(pane_id, direction, mux_swap_pane, cx);
     }
 
     pub(super) fn close_pane_by_id(
@@ -278,7 +288,7 @@ impl ShardlaneApp {
                     .clone()
                     .or_else(|| moved.pane.workspace_id.clone())
                     .ok_or_else(|| {
-                        herdr::HerdrError::Api(
+                        shardlane_host::mux::MuxError::Api(
                             "pane.move result omitted target workspace".to_string(),
                         )
                     })?;
@@ -314,7 +324,12 @@ impl ShardlaneApp {
         self.run_pane_rpc(
             cx,
             None,
-            move |client| client.report_pane_agent(&pane_id, agent_cli::herdr_agent_id(agent)),
+            move |client| {
+                client
+                    .agent_runtime()
+                    .ok_or(shardlane_host::mux::MuxError::Unsupported("agents"))?
+                    .report_pane_agent(&pane_id, agent_cli::herdr_agent_id(agent))
+            },
             |view, (), _, cx| {
                 view.refresh_agents_snapshot(cx);
             },
@@ -331,7 +346,12 @@ impl ShardlaneApp {
         self.run_pane_rpc(
             cx,
             None,
-            move |client| client.clear_pane_agent_authority(&pane_id),
+            move |client| {
+                client
+                    .agent_runtime()
+                    .ok_or(shardlane_host::mux::MuxError::Unsupported("agents"))?
+                    .clear_pane_agent_authority(&pane_id)
+            },
             |view, (), _, cx| {
                 view.refresh_agents_snapshot(cx);
             },
@@ -583,4 +603,36 @@ impl ShardlaneApp {
         };
         self.close_pane_by_id(pane_id, workspace_id, cx);
     }
+}
+
+/// Pane-operation adapters over the neutral seam: the by_id family keeps its
+/// `fn`-pointer shape, so the four Herdr method pointers become free functions.
+fn mux_split_right(
+    client: &dyn shardlane_host::mux::MultiplexerConnection,
+    pane_id: &str,
+) -> Result<Pane, shardlane_host::mux::MuxError> {
+    client.split_pane(pane_id, shardlane_host::mux::SplitDirection::Right)
+}
+
+fn mux_split_down(
+    client: &dyn shardlane_host::mux::MultiplexerConnection,
+    pane_id: &str,
+) -> Result<Pane, shardlane_host::mux::MuxError> {
+    client.split_pane(pane_id, shardlane_host::mux::SplitDirection::Down)
+}
+
+fn mux_resize_pane(
+    client: &dyn shardlane_host::mux::MultiplexerConnection,
+    pane_id: &str,
+    direction: shardlane_host::mux::MuxDirection,
+) -> Result<PaneLayoutActionResult, shardlane_host::mux::MuxError> {
+    client.resize_pane(pane_id, direction)
+}
+
+fn mux_swap_pane(
+    client: &dyn shardlane_host::mux::MultiplexerConnection,
+    pane_id: &str,
+    direction: shardlane_host::mux::MuxDirection,
+) -> Result<PaneLayoutActionResult, shardlane_host::mux::MuxError> {
+    client.swap_pane(pane_id, direction)
 }

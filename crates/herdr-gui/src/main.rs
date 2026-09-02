@@ -102,8 +102,8 @@ use gpui_component::{
     Selectable as _, Sizable as _, TitleBar, WindowExt as _,
 };
 use herdr::{
-    herdr_cli_path, installed_cli_version, Agent, AgentStatusPatch, DeviceEndpoint, HerdrClient,
-    HerdrEvent, HerdrState, LayoutRect, NavigationState, Pane, PaneLayout, PaneLayoutActionResult,
+    herdr_cli_path, installed_cli_version, Agent, AgentStatusPatch, DeviceEndpoint, HerdrEvent,
+    HerdrState, LayoutRect, NavigationState, Pane, PaneLayout, PaneLayoutActionResult,
     PaneMoveResult, PaneProcessInfo, Tab, TabCreatedResult, TabSurfaceState, Workspace,
 };
 use input::{ghostty_terminal_key, key_name};
@@ -411,9 +411,9 @@ impl From<String> for TerminalInputFailure {
 
 /// Herdr RPC error → input failure classification: API rejections are Input; socket/IO/serialization
 /// failures are Connection (only evidence of genuinely degrading connectivity enters the connection state).
-fn classify_input_failure(err: herdr::HerdrError) -> TerminalInputFailure {
+fn classify_input_failure(err: shardlane_host::mux::MuxError) -> TerminalInputFailure {
     match err {
-        herdr::HerdrError::Api(reason) => TerminalInputFailure::Input(reason),
+        shardlane_host::mux::MuxError::Api(reason) => TerminalInputFailure::Input(reason),
         other => TerminalInputFailure::Connection(other.to_string()),
     }
 }
@@ -1135,6 +1135,14 @@ pub(crate) enum PickerPage {
     DeviceSettings,
 }
 
+/// Neutral backend id validated against the registry vocabulary.
+fn backend_id(raw: &str) -> &'static str {
+    match raw {
+        "tmux" => "tmux",
+        _ => "herdr",
+    }
+}
+
 pub(crate) struct ProjectBinding {
     /// The Herdr session name (one session = one workspace); remote bindings
     /// use the device-scoped key `ssh:<device>:<session>`.
@@ -1142,6 +1150,8 @@ pub(crate) struct ProjectBinding {
     pub(crate) project_name: String,
     /// B1: SSH bridge socket for remote-machine instances (None = local).
     pub(crate) socket_override: Option<std::path::PathBuf>,
+    /// Multiplexer backend serving this instance (docs/multiplexer-api.md).
+    pub(crate) backend: &'static str,
 }
 
 impl ProjectBinding {
@@ -1153,9 +1163,28 @@ impl ProjectBinding {
                 .split_once(':')
                 .map(|(_, session)| session)
                 .unwrap_or(rest),
-            None => &self.project_id,
+            None => self
+                .project_id
+                .strip_prefix("tmux:")
+                .unwrap_or(&self.project_id),
         }
     }
+}
+
+/// One picker row of the aggregated Multiplexer instance list
+/// (docs/multiplexer-api.md Domain 1).
+#[derive(Clone, Debug)]
+pub(crate) struct InstanceEntry {
+    pub(crate) backend: &'static str,
+    /// Picker jump key: the raw instance name for Herdr, `tmux:<name>` for
+    /// tmux so same-named instances cannot collide.
+    pub(crate) label_key: String,
+    pub(crate) name: String,
+    pub(crate) running: bool,
+    /// Kept for the picker's "mirrors the backend's own default flag" data
+    /// contract (display-only today).
+    #[allow(dead_code)]
+    pub(crate) is_default: bool,
 }
 
 /// Process-wide services and cross-window bookkeeping shared by every Shardlane window.
@@ -1168,6 +1197,9 @@ pub(crate) struct ShellSharedRuntime {
     /// instance, shared by every viewer — the desktop window bound to that
     /// Project AND the Remote/mobile clients.
     pub(crate) tui_registry: std::sync::Arc<shardlane_host::shared_tui::TuiManagerRegistry>,
+    /// Backend-neutral Multiplexer registry (docs/multiplexer-api.md): the
+    /// sole assembly point for instance connections in every window bind.
+    pub(crate) mux_registry: std::sync::Arc<shardlane_host::mux::MuxRegistry>,
     /// Host-owned shared live Conversation session owner (M3).
     pub(crate) conversation_sessions: std::sync::Arc<shardlane_host::ConversationSessionManager>,
     /// Host-owned semantic follow-up queue (M4).
@@ -1186,9 +1218,10 @@ pub(crate) struct ShellSharedRuntime {
     /// (`workspace.json` in the session dir). Missing = no metadata = the raw
     /// session name is shown. Refreshed alongside the instance list.
     pub(crate) session_display_names: std::sync::Mutex<std::collections::HashMap<String, String>>,
-    /// Cached Herdr instance list (CLI `session list`); refreshed in the
-    /// background and on picker/New-Workspace actions — never per frame.
-    pub(crate) instances: std::sync::Mutex<Vec<shardlane_host::herdr::HerdrSessionListing>>,
+    /// Cached instance list aggregated from the Multiplexer registry
+    /// (Herdr sessions + tmux servers); refreshed in the background and on
+    /// picker/New-Workspace actions — never per frame.
+    pub(crate) instances: std::sync::Mutex<Vec<InstanceEntry>>,
     /// Live SSH socket bridges (B1): the remote machine's herdr socket is
     /// forwarded to a local unix socket; instances behind it are addressed by
     /// that socket path on bind.
@@ -1244,6 +1277,7 @@ impl ShellSharedRuntime {
             tui_registry: std::sync::Arc::new(
                 shardlane_host::shared_tui::TuiManagerRegistry::default(),
             ),
+            mux_registry: std::sync::Arc::new(shardlane_host::mux::MuxRegistry::with_builtins()),
             conversation_sessions: {
                 let manager = std::sync::Arc::new(shardlane_host::ConversationSessionManager::new(
                     crate::history::transcript_source::history_db_path(),
@@ -1258,14 +1292,13 @@ impl ShellSharedRuntime {
             status_bar: SendStatusBar(status_bar),
             remote_server: std::sync::Mutex::new(None),
             session_display_names: std::sync::Mutex::new(std::collections::HashMap::new()),
-            instances: std::sync::Mutex::new(
-                shardlane_host::herdr::list_sessions().unwrap_or_default(),
-            ),
+            instances: std::sync::Mutex::new(Vec::new()),
             ssh_bridges: std::sync::Mutex::new(Vec::new()),
             remote_sessions: std::sync::Mutex::new(std::collections::HashMap::new()),
             project_windows: std::sync::Mutex::new(std::collections::HashMap::new()),
             windows: std::sync::Mutex::new(Vec::new()),
         });
+        runtime.refresh_instances();
         (runtime, status_bar_rx, notification_rx)
     }
 
@@ -1331,7 +1364,7 @@ impl ShellSharedRuntime {
         }
     }
 
-    pub(crate) fn instance_list(&self) -> Vec<shardlane_host::herdr::HerdrSessionListing> {
+    pub(crate) fn instance_list(&self) -> Vec<InstanceEntry> {
         self.instances
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -1341,17 +1374,52 @@ impl ShellSharedRuntime {
     /// Refreshes the cached instance list AND each session's metadata display
     /// name (CLI round trip + per-session disk reads; call off the hot path).
     pub(crate) fn refresh_instances(&self) {
-        let sessions = shardlane_host::herdr::list_sessions().unwrap_or_default();
+        let listings = self.mux_registry.list_instances();
+        shardlane_host::diagnostics::lag_log(format_args!(
+            "mux.instances total={} {:?}",
+            listings.len(),
+            listings
+                .iter()
+                .map(|l| (l.backend.as_str(), l.name.as_str(), l.running))
+                .collect::<Vec<_>>()
+        ));
+        let entries = listings
+            .iter()
+            .map(|listing| {
+                // A tmux instance's jump key is prefixed so it cannot collide
+                // with a same-named Herdr session in the picker.
+                let label_key = if listing.backend == "tmux" {
+                    format!("tmux:{}", listing.name)
+                } else {
+                    listing.name.clone()
+                };
+                InstanceEntry {
+                    backend: backend_id(&listing.backend),
+                    label_key,
+                    name: listing.name.clone(),
+                    running: listing.running,
+                    is_default: listing.is_default,
+                }
+            })
+            .collect::<Vec<_>>();
         let mut names = std::collections::HashMap::new();
-        for session in &sessions {
-            if let Some(name) = shardlane_host::herdr::read_session_display_name(&session.name) {
-                names.insert(session.name.clone(), name);
+        for entry in &entries {
+            names.insert(entry.label_key.clone(), entry.name.clone());
+        }
+        for listing in &listings {
+            if let Some(display) = &listing.display_name {
+                let label_key = if listing.backend == "tmux" {
+                    format!("tmux:{}", listing.name)
+                } else {
+                    listing.name.clone()
+                };
+                names.insert(label_key, display.clone());
             }
         }
         *self
             .instances
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = sessions;
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = entries;
         *self
             .session_display_names
             .lock()
@@ -1426,7 +1494,7 @@ struct ShardlaneApp {
     /// Process-wide services + cross-window bookkeeping (TUI live arbitration, window
     /// registry, status bar, Remote server slot, Lazygit slot).
     shared: std::sync::Arc<ShellSharedRuntime>,
-    client: Option<HerdrClient>,
+    client: Option<std::sync::Arc<dyn shardlane_host::mux::MultiplexerConnection>>,
     herdr_user_config: herdr_tui::HerdrUserConfigSnapshot,
     terminal: Option<Arc<Mutex<ManagedTerminal>>>,
     /// Small Ghostty key encoder snapshot kept separate from the VT/frame mutex so repeated
@@ -1548,6 +1616,9 @@ struct ShardlaneApp {
     /// The Hosted Herdr TUI's presentation-only chrome projection. Herdr/Ghostty still hold the
     /// full screen; Shardlane shows only the Pane region matching `pane.layout.area`.
     tui_chrome_projection: crate::herdr_tui::TuiChromeProjection,
+    /// Pane size seen by the most recent chrome probe; unchanged across probes
+    /// with a grown allowance is the stale-transport race signature.
+    tui_chrome_last_probe: Option<(u32, u32)>,
     /// The viewer-local model's actual grid after adopting a remote viewer's shared-session
     /// resize. Chrome margins for the adoption path must be derived from this grid, not from
     /// the desktop's compensated target grid.
@@ -1757,7 +1828,7 @@ impl SidebarPane {
     fn finish_project_pane_load(
         &mut self,
         workspace_id: String,
-        panes: Result<Vec<Pane>, herdr::HerdrError>,
+        panes: Result<Vec<Pane>, shardlane_host::mux::MuxError>,
         cx: &mut Context<Self>,
     ) {
         self.project_pane_loads_in_flight.remove(&workspace_id);
@@ -2117,7 +2188,7 @@ impl ShardlaneApp {
         // Multi-instance model: a new window starts UNBOUND. `bind_project` (called by
         // `open_shell_window` for the startup window, or from the Project picker) owns
         // the per-Project bootstrap: client, state, event subscription, and TUI attach.
-        let client: Option<HerdrClient> = None;
+        let client: Option<std::sync::Arc<dyn shardlane_host::mux::MultiplexerConnection>> = None;
         let state = HerdrState::default();
         let status = ConnectionStatus::Offline("No Project".to_string());
         let startup_now = Instant::now();
@@ -2286,6 +2357,7 @@ impl ShardlaneApp {
             show_settings: false,
             tui_host: crate::herdr_tui::HerdrTuiHostState::default(),
             tui_chrome_projection: crate::herdr_tui::TuiChromeProjection::default(),
+            tui_chrome_last_probe: None,
             tui_adopted_grid: None,
             tui_respawn_blocked_until: None,
             _tui_focus_task: BackgroundJob::ready(()),
@@ -2469,6 +2541,7 @@ impl ShardlaneApp {
             }
             let _ = device_id;
             self.bind_instance_on_socket(
+                "herdr",
                 session.to_string(),
                 self.shared
                     .bridge_for_key(project_id)
@@ -2479,13 +2552,27 @@ impl ShardlaneApp {
             );
             return;
         }
+        // Multiplexer instance key (`tmux:<instance>`): bind through the
+        // tmux backend (docs/multiplexer-api.md Domain 1).
+        if let Some(session) = project_id.strip_prefix("tmux:") {
+            self.bind_instance_on_socket(
+                "tmux",
+                session.to_string(),
+                None,
+                project_id.to_string(),
+                window,
+                cx,
+            );
+            return;
+        }
         // Unknown sessions can appear between refreshes (e.g. created by the
         // CLI): refresh once before giving up.
+        let lookup_name = project_id.strip_prefix("tmux:").unwrap_or(project_id);
         if !self
             .shared
             .instance_list()
             .iter()
-            .any(|instance| instance.name == project_id)
+            .any(|instance| instance.name == lookup_name)
         {
             self.shared.refresh_instances();
         }
@@ -2549,7 +2636,20 @@ impl ShardlaneApp {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.bind_instance_on_socket(session.clone(), None, session, window, cx);
+        let (backend, bound_session, project_key) = match session.strip_prefix("tmux:") {
+            Some(instance) => ("tmux", instance.to_string(), session.clone()),
+            None => (
+                self.shared
+                    .instance_list()
+                    .into_iter()
+                    .find(|instance| instance.name == session)
+                    .map(|instance| instance.backend)
+                    .unwrap_or("herdr"),
+                session.clone(),
+                session.clone(),
+            ),
+        };
+        self.bind_instance_on_socket(backend, bound_session, None, project_key, window, cx);
     }
 
     /// Bind with an explicit socket — the B1 SSH-bridge path for
@@ -2558,6 +2658,7 @@ impl ShardlaneApp {
     /// never bootstrap a local server: the bridge must be alive.
     pub(crate) fn bind_instance_on_socket(
         &mut self,
+        backend: &'static str,
         session: String,
         socket_override: Option<std::path::PathBuf>,
         project_key: String,
@@ -2565,12 +2666,13 @@ impl ShardlaneApp {
         cx: &mut Context<Self>,
     ) {
         self.teardown_binding(cx);
-        // One TUI child per Herdr instance, process-wide: this window and any
+        // One TUI child per instance, process-wide: this window and any
         // Remote/mobile viewers share the same manager (broadcast subscribers).
-        // The registry key is device-scoped for bridges so two machines can
-        // host same-named sessions.
+        // The registry key is device-scoped for bridges and backend-scoped
+        // otherwise so same-named sessions cannot collide.
         let registry_key = match &socket_override {
             Some(socket) => format!("bridge:{}", socket.display()),
+            None if backend == "tmux" => format!("tmux:{session}"),
             None => session.clone(),
         };
         self.tui_manager = self.shared.tui_registry.get_or_create_keyed(&registry_key);
@@ -2582,24 +2684,28 @@ impl ShardlaneApp {
         cx.notify();
 
         let bind_session = session;
-        // Every session is a named Herdr instance. Local sessions live on
-        // their own socket (herdr's own `default` session on the base socket).
-        // Bridge (remote-machine) instances are pinned to the forwarded socket
-        // and never bootstrap a local server.
-        let fresh_named_instance = socket_override.is_none();
-        let socket = socket_override
-            .clone()
-            .unwrap_or_else(|| shardlane_host::herdr::session_socket_path_for(&bind_session));
-        let project_name = self.shared.display_name(&bind_session);
+        // Herdr sessions are named instances on their own sockets (herdr's
+        // `default` session on the base socket). Bridge (remote-machine)
+        // instances are pinned to the forwarded socket and never bootstrap a
+        // local server. A tmux instance binds to the user's default server.
+        let fresh_named_instance = socket_override.is_none() && backend == "herdr";
+        let label_key = if backend == "tmux" {
+            format!("tmux:{bind_session}")
+        } else {
+            bind_session.clone()
+        };
+        let project_name = self.shared.display_name(&label_key);
         self.binding = Some(ProjectBinding {
             project_id: project_key.clone(),
             project_name,
             socket_override: socket_override.clone(),
+            backend,
         });
         if let Some(id) = self.window_handle.as_ref().map(|handle| handle.window_id()) {
             self.shared.set_project_window(&project_key, id);
         }
         let window_handle = window.window_handle();
+        let mux_registry = self.shared.mux_registry.clone();
         cx.spawn(async move |this, cx| {
             let bootstrapped = cx
                 .background_executor()
@@ -2608,22 +2714,36 @@ impl ShardlaneApp {
                     // adopted as-is; only a dead socket starts a new server.
                     // Bridge (remote) instances must answer through the tunnel —
                     // never start a local server on their behalf.
-                    let client = match &socket_override {
-                        Some(_) => HerdrClient::connect_to(&socket)?,
-                        None => HerdrClient::connect_to(&socket)
-                            .or_else(|_| HerdrClient::bootstrap_for_session(&bind_session))?,
+                    let reference = match (backend, &socket_override) {
+                        ("tmux", _) => shardlane_host::mux::InstanceRef::default_instance("tmux"),
+                        ("herdr", Some(socket)) => {
+                            shardlane_host::mux::InstanceRef::socket("herdr", socket.clone())
+                        }
+                        _ => shardlane_host::mux::InstanceRef::named("herdr", &bind_session),
                     };
+                    let client = mux_registry
+                        .connect_instance(&reference)
+                        .or_else(|_| mux_registry.open_instance(&reference))?;
                     let mut state = client.visible_state()?;
                     // A freshly created named instance has no Workspace yet: create the
                     // Project's one workspace so the hosted TUI has a surface. Per the
                     // per-Tab cwd model the workspace carries no Project-level directory
                     // — Herdr seeds each Tab's own cwd.
                     if fresh_named_instance && state.workspaces.is_empty() {
-                        client.create_workspace_at(None)?;
+                        client.create_workspace(&shardlane_host::mux::CreateWorkspace {
+                            cwd: None,
+                            focus: true,
+                        })?;
                         state = client.visible_state()?;
                     }
                     let events = client.subscribe_events().ok();
-                    Ok::<_, herdr::HerdrError>((client, state, events))
+                    shardlane_host::diagnostics::lag_log(format_args!(
+                        "bind.connected ws={} tabs={} panes={}",
+                        state.workspaces.len(),
+                        state.tabs.len(),
+                        state.panes.len()
+                    ));
+                    Ok::<_, shardlane_host::mux::MuxError>((client, state, events))
                 })
                 .await;
             let _ = cx.update_window(window_handle, move |_, window, cx| {
@@ -2634,9 +2754,24 @@ impl ShardlaneApp {
                     view.initializing = false;
                     match bootstrapped {
                         Ok((client, state, events)) => {
+                            shardlane_host::diagnostics::lag_log(format_args!(
+                                "bind.ok ws={} tabs={} panes={} agents={}",
+                                state.workspaces.len(),
+                                state.tabs.len(),
+                                state.panes.len(),
+                                state.agents.len()
+                            ));
                             view.client = Some(client.clone());
                             view.status = ConnectionStatus::Connected;
                             view.state = state;
+                            // Backend-aware landing surface: a backend without
+                            // agent capability (tmux MVP) cannot act on the New
+                            // Agent page — landing there is a dead first screen
+                            // ("runtime creation failed: this instance does not
+                            // support agents"). Land on the hosted work surface.
+                            if !client.capabilities().agents {
+                                view.new_agent_open = false;
+                            }
                             // F34: after the whole-domain replacement, derive the selection flags uniformly.
                             derive_selection_flags(&mut view.state);
                             if let Some(events) = events {
@@ -2663,6 +2798,7 @@ impl ShardlaneApp {
                             .detach();
                         }
                         Err(error) => {
+                            shardlane_host::diagnostics::lag_log(format_args!("bind.err {error}"));
                             view.status = ConnectionStatus::Offline(error.to_string());
                             view.notify_sidebar(cx);
                             view.notify_status_bar();
@@ -2854,6 +2990,8 @@ impl ShardlaneApp {
         let token = self.navigation_token;
         self.navigation_loading = true;
         let existing_client = self.client.clone();
+        let mux_registry = self.shared.mux_registry.clone();
+        let refresh_backend = self.binding.as_ref().map(|binding| binding.backend);
         let reconnect_events = !self.status.is_connected();
         // Refresh re-adopts THIS window's bound session (never a fallback).
         let generation = self.binding_generation;
@@ -2876,11 +3014,15 @@ impl ShardlaneApp {
                 .background_executor()
                 .spawn(async move {
                     let mut reconnected = false;
+                    let reference = match refresh_backend {
+                        Some("tmux") => shardlane_host::mux::InstanceRef::default_instance("tmux"),
+                        _ => shardlane_host::mux::InstanceRef::named("herdr", &refresh_session),
+                    };
                     let client = match existing_client {
                         Some(client) if client.ping().is_ok() => client,
                         _ => {
                             reconnected = true;
-                            HerdrClient::bootstrap_for_session(&refresh_session)?
+                            mux_registry.open_instance(&reference)?
                         }
                     };
                     let state = client.visible_state()?;
@@ -2889,7 +3031,7 @@ impl ShardlaneApp {
                     } else {
                         None
                     };
-                    Ok::<_, herdr::HerdrError>((client, state, events, reconnected))
+                    Ok::<_, shardlane_host::mux::MuxError>((client, state, events, reconnected))
                 })
                 .await;
 
@@ -3731,6 +3873,24 @@ fn main() {
         // One truth: workspaces ARE Herdr sessions. Restore the last open
         // set (one window per session); with nothing to restore, open a
         // single unbound window on the workspace picker.
+        // Automation seam (docs/ui-acceptance-testing.md): SHARDLANE_BIND_INSTANCE
+        // binds the startup window to an explicit instance key — a Herdr session
+        // name or `tmux:<instance>` — without any picker interaction. It takes
+        // precedence over the restore snapshot.
+        let bind_instance_override = std::env::var("SHARDLANE_BIND_INSTANCE")
+            .ok()
+            .filter(|key| !key.is_empty());
+        if let Some(key) = bind_instance_override {
+            let _ = open_shell_window(
+                cx,
+                shared.clone(),
+                startup_config.clone(),
+                initial_bounds,
+                Some(key),
+            );
+            cx.activate(true);
+            return;
+        }
         let mut restored = false;
         for record in &startup_config.open_workspaces {
             let Some(session) = record.session.clone() else {

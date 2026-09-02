@@ -18,7 +18,10 @@ fn pane_shell_ready(info: &PaneProcessInfo) -> bool {
         .all(|process| process.pid == shell_pid)
 }
 
-fn wait_for_script_shell(client: &HerdrClient, pane_id: &str) -> Result<(), String> {
+fn wait_for_script_shell(
+    client: &dyn shardlane_host::mux::MultiplexerConnection,
+    pane_id: &str,
+) -> Result<(), String> {
     let started = Instant::now();
     loop {
         match client.pane_process_info(pane_id) {
@@ -70,7 +73,7 @@ pub(super) fn resolve_script_project_launch_target(
 }
 
 pub(super) fn launch_script_runtime(
-    client: &HerdrClient,
+    client: &dyn shardlane_host::mux::MultiplexerConnection,
     script: &ScriptRecord,
     target: ScriptProjectLaunchTarget,
 ) -> Result<(String, String, String), String> {
@@ -88,7 +91,10 @@ pub(super) fn launch_script_runtime(
                 .or_else(|| panes.first())
             {
                 let created = client
-                    .split_down(&target_pane.pane_id)
+                    .split_pane(
+                        &target_pane.pane_id,
+                        shardlane_host::mux::SplitDirection::Down,
+                    )
                     .map_err(|error| error.to_string())?;
                 let tab_id = created
                     .tab_id
@@ -98,14 +104,21 @@ pub(super) fn launch_script_runtime(
                 (workspace_id, tab_id, created.pane_id)
             } else {
                 let created = client
-                    .create_tab_at(Some(&workspace_id), Some(script.project_path.as_str()))
+                    .create_tab(&shardlane_host::mux::CreateTab {
+                        workspace_id: Some(&workspace_id),
+                        cwd: Some(script.project_path.as_str()),
+                        focus: true,
+                    })
                     .map_err(|error| error.to_string())?;
                 (workspace_id, created.tab.tab_id, created.root_pane.pane_id)
             }
         }
         ScriptProjectLaunchTarget::CreateAt(project_path) => {
             let created_workspace = client
-                .create_workspace_at(Some(&project_path))
+                .create_workspace(&shardlane_host::mux::CreateWorkspace {
+                    cwd: Some(&project_path),
+                    focus: true,
+                })
                 .map_err(|error| error.to_string())?;
             (
                 created_workspace.workspace.workspace_id,

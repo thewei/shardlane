@@ -13,7 +13,7 @@
 //! through a bootstrap re-pull (resync semantics), with no persistent
 //! replay
 
-use crate::bootstrap::connect_herdr;
+use crate::bootstrap::connect_instance_for;
 use crate::state::RemoteState;
 use serde::Serialize;
 use serde_json::json;
@@ -249,8 +249,10 @@ pub fn spawn_event_hub_for(
                 if *stop.borrow() {
                     break;
                 }
-                let subscription = crate::bootstrap::connect_herdr_for(&state, session.as_deref())
-                    .and_then(|client| client.subscribe_events().map(|rx| (client, rx)));
+                let subscription =
+                    connect_instance_for(&state, session.as_deref()).and_then(|connection| {
+                        connection.subscribe_events().map(|rx| (connection, rx))
+                    });
                 match subscription {
                     Ok((_client, rx)) => {
                         backoff_step = 0;
@@ -264,7 +266,7 @@ pub fn spawn_event_hub_for(
                         // Projection snapshot: used for agent→project
                         // association (staleness acceptable — hint
                         // semantics).
-                        let snapshot = connect_herdr(&state)
+                        let snapshot = connect_instance_for(&state, None)
                             .ok()
                             .and_then(|c| c.host_bootstrap_state().ok());
                         let index = snapshot.as_ref().map(ProjectIndex::build_from_state);
@@ -284,7 +286,7 @@ pub fn spawn_event_hub_for(
                                 "remote.events pane_scroll: subscribing {} panes",
                                 pane_ids.len()
                             ));
-                            let result = connect_herdr(&state)
+                            let result = connect_instance_for(&state, None)
                                 .ok()
                                 .and_then(|c| c.subscribe_pane_events(&pane_ids).ok());
                             if result.is_none() {

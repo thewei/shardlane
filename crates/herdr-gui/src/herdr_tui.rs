@@ -21,7 +21,7 @@
 //!          `terminal_stream.rs`, rendering to the existing Ghostty/GPUI stack, and all terminal semantics to Herdr
 
 use crate::ghostty::TerminalFrame;
-use crate::herdr::{HerdrClient, LayoutRect};
+use crate::herdr::LayoutRect;
 use shardlane_host::diagnostics::lag_log;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -520,14 +520,18 @@ fn validate_herdr_tui_config(path: &Path) -> Result<(), String> {
 ///
 /// Returns first failure step description (caller logs only, does not mutate UI state).
 pub fn execute_focus_plan(
-    client: &HerdrClient,
+    client: &dyn shardlane_host::mux::MultiplexerConnection,
     workspace_id: Option<&str>,
     tab_id: Option<&str>,
     pane_id: Option<&str>,
     agent_terminal_id: Option<&str>,
 ) -> Result<(), String> {
     if let Some(target) = agent_terminal_id {
-        return match client.agent_focus(target) {
+        let runtime = match client.agent_runtime() {
+            Some(runtime) => runtime,
+            None => return Err("agents unsupported by this backend".to_string()),
+        };
+        return match runtime.agent_focus(target) {
             Ok(()) => Ok(()),
             Err(error) => {
                 lag_log(format_args!(
@@ -541,7 +545,7 @@ pub fn execute_focus_plan(
 }
 
 fn execute_pane_chain(
-    client: &HerdrClient,
+    client: &dyn shardlane_host::mux::MultiplexerConnection,
     workspace_id: Option<&str>,
     tab_id: Option<&str>,
     pane_id: Option<&str>,
@@ -602,8 +606,16 @@ pub struct HerdrTuiHostState {
 /// Whether the current Herdr server supports protocol 20 (required for TUI focus wrappers).
 /// Cached connection metadata only — never performs socket RPC (audit TUI-08:
 /// compatibility checks must not run from render paths).
-pub fn protocol_supported(client: &HerdrClient) -> bool {
-    client.protocol().unwrap_or(0) >= 20
+/// Protocol gate stays a Herdr-protocol-self concern: resolved through the
+/// adapter escape hatch (docs/multiplexer-api.md §5 whitelist).
+pub fn protocol_supported(client: &dyn shardlane_host::mux::MultiplexerConnection) -> bool {
+    match client.as_herdr() {
+        // Protocol 20 is required for the Herdr focus chain (TUI-only cutover).
+        Some(herdr) => herdr.protocol().unwrap_or(0) >= 20,
+        // The gate is a Herdr-protocol concern; other backends are not bound
+        // by it (their focus chains degrade per capabilities).
+        None => true,
+    }
 }
 
 /// Reveal the generated TUI config file in Finder. No-op if path does not exist.
@@ -632,6 +644,7 @@ impl HerdrTuiHostState {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+    use crate::herdr::HerdrClient;
 
     #[test]
     fn user_config_snapshot_accepts_empty_document_without_panicking() {

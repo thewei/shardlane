@@ -39,32 +39,32 @@ pub struct InstanceSummary {
     pub remote_api_version: u32,
 }
 
-/// Cosmetic display name: the session's metadata file name, else the raw
-/// session name.
-fn display_name_for(session: &str) -> String {
-    shardlane_host::herdr::read_session_display_name(session).unwrap_or_else(|| session.to_string())
-}
-
-pub async fn list_instances(State(_state): State<Arc<RemoteState>>) -> Response {
-    // Workspaces ARE Herdr instances: enumerate from the CLI (no
-    // Shardlane-side registry). Display names come from each session's
-    // metadata file on herdr's own disk.
-    let sessions = tokio::task::spawn_blocking(shardlane_host::herdr::list_sessions)
+pub async fn list_instances(State(state): State<Arc<RemoteState>>) -> Response {
+    // Workspaces ARE backend instances: enumerate from the backend registry
+    // (no Shardlane-side registry). Display names come from the Shardlane-
+    // owned per-instance override, else the raw instance name.
+    let registry = state.mux_registry.clone();
+    let listings = tokio::task::spawn_blocking(move || registry.list_instances())
         .await
-        .unwrap_or_default()
         .unwrap_or_default();
-    let instances: Vec<InstanceSummary> = sessions
+    let instances: Vec<InstanceSummary> = listings
         .iter()
-        .map(|session| InstanceSummary {
-            id: session.name.clone(),
-            name: session.name.clone(),
-            display_name: display_name_for(&session.name),
-            session: session.name.clone(),
-            device_id: None,
-            adopted: false,
-            running: session.running,
-            is_default: session.is_default,
-            remote_api_version: crate::config::REMOTE_API_VERSION,
+        .map(|listing| {
+            let display_name = listing
+                .display_name
+                .clone()
+                .unwrap_or_else(|| listing.name.clone());
+            InstanceSummary {
+                id: listing.name.clone(),
+                name: listing.name.clone(),
+                display_name,
+                session: listing.name.clone(),
+                device_id: None,
+                adopted: false,
+                running: listing.running,
+                is_default: listing.is_default,
+                remote_api_version: crate::config::REMOTE_API_VERSION,
+            }
         })
         .collect();
     Json(serde_json::json!({ "instances": instances })).into_response()
@@ -92,17 +92,27 @@ pub async fn rename_instance(
         return crate::error::ApiError::invalid_request("name must not be empty", request_id)
             .into_response();
     }
-    let known = id == "default"
-        || shardlane_host::herdr::list_sessions()
-            .unwrap_or_default()
-            .iter()
-            .any(|session| session.name == id);
+    let registry = state.mux_registry.clone();
+    let probe_id = id.clone();
+    let known = tokio::task::spawn_blocking(move || {
+        probe_id == "default" || registry.list_instances().iter().any(|l| l.name == probe_id)
+    })
+    .await
+    .unwrap_or_default();
     if !known {
         return crate::error::ApiError::not_found(format!("unknown instance: {id}"), request_id)
             .into_response();
     }
+    let registry = state.mux_registry.clone();
     let write = tokio::task::spawn_blocking(move || {
-        shardlane_host::herdr::write_session_display_name(&id, &name)
+        registry
+            .backend("herdr")
+            .ok_or_else(|| "herdr backend is not registered".to_string())
+            .and_then(|backend| {
+                backend
+                    .rename_instance(&id, &name)
+                    .map_err(|e| e.to_string())
+            })
     })
     .await;
     match write {
@@ -120,10 +130,15 @@ pub async fn instance_bootstrap(
     Path(id): Path<String>,
 ) -> Response {
     let request_id = state.next_request_id();
-    let known = shardlane_host::herdr::list_sessions()
-        .unwrap_or_default()
-        .iter()
-        .any(|session| session.name == id || (id == "default" && session.is_default));
+    let registry = state.mux_registry.clone();
+    let probe_id = id.clone();
+    let known = tokio::task::spawn_blocking(move || {
+        registry.list_instances().iter().any(|listing| {
+            listing.name == probe_id || (probe_id == "default" && listing.is_default)
+        })
+    })
+    .await
+    .unwrap_or_default();
     if !known {
         return crate::error::ApiError::not_found(format!("unknown instance: {id}"), request_id)
             .into_response();

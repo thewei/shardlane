@@ -37,13 +37,14 @@ impl ShardlaneApp {
         let delay = reconnect_backoff(self.events_reconnect_attempts);
         self.events_reconnect_attempts = self.events_reconnect_attempts.saturating_add(1);
         let existing_client = self.client.clone();
+        let registry = self.shared.mux_registry.clone();
         // Reconnect re-adopts THIS window's bound session; a Project rebind in the
         // meantime bumps the generation and voids the whole retry.
         let generation = self.binding_generation;
-        let session = self
+        let bound = self
             .binding
             .as_ref()
-            .map(|binding| binding.session_name().to_string());
+            .map(|binding| (binding.backend, binding.session_name().to_string()));
         self._events_reconnect_script = cx.spawn(async move |this, cx| {
             cx.background_executor().timer(delay).await;
             let result = cx
@@ -51,10 +52,17 @@ impl ShardlaneApp {
                 .spawn(async move {
                     let client = match existing_client {
                         Some(client) if client.ping().is_ok() => client,
-                        _ => match session.as_deref() {
-                            Some(session) => HerdrClient::bootstrap_for_session(session)?,
+                        _ => match bound.as_ref() {
+                            Some((backend, session)) => {
+                                let reference = if *backend == "tmux" {
+                                    shardlane_host::mux::InstanceRef::default_instance("tmux")
+                                } else {
+                                    shardlane_host::mux::InstanceRef::named("herdr", session)
+                                };
+                                registry.open_instance(&reference)?
+                            }
                             None => {
-                                return Err(herdr::HerdrError::SocketUnavailable(
+                                return Err(shardlane_host::mux::MuxError::SocketUnavailable(
                                     "unbound window".to_string(),
                                     "no session to reconnect".to_string(),
                                 ))
@@ -63,7 +71,7 @@ impl ShardlaneApp {
                     };
                     let state = client.visible_state()?;
                     let events = client.subscribe_events()?;
-                    Ok::<_, herdr::HerdrError>((client, state, events))
+                    Ok::<_, shardlane_host::mux::MuxError>((client, state, events))
                 })
                 .await;
             let _ = this.update(cx, |view, cx| {

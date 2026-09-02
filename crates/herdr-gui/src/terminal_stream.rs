@@ -118,7 +118,7 @@ struct PtyWritePacket {
 /// dropping this handle only unsubscribes input, never the shared child.
 #[derive(Clone)]
 pub struct SharedTuiHandle {
-    session: Arc<shardlane_host::shared_tui::HerdrTuiSession>,
+    session: Arc<dyn shardlane_host::mux::MultiplexerStream>,
 }
 
 impl SharedTuiHandle {
@@ -128,7 +128,7 @@ impl SharedTuiHandle {
         let coalescible = !matches!(kind, "paste" | "focus");
         let result = self
             .session
-            .send_bytes_with_trace_kind(bytes, trace_id, coalescible)
+            .send_bytes_traced(bytes, trace_id, coalescible)
             .map_err(|error| error.to_string());
         if let Some(started_at) = started_at {
             terminal_trace::event(format_args!(
@@ -265,7 +265,7 @@ enum StreamImp {
     /// belongs to `shardlane_host::shared_tui::TuiManager`.
     Shared {
         stop: Arc<std::sync::atomic::AtomicBool>,
-        session: Arc<shardlane_host::shared_tui::HerdrTuiSession>,
+        session: Arc<dyn shardlane_host::mux::MultiplexerStream>,
     },
 }
 
@@ -503,7 +503,7 @@ impl TerminalStream {
     /// single PTY/child; a bounded forwarder thread bridges the session's
     /// output fan-out into this stream's frames channel + wake signal, and
     /// input/resize go back through the session's serialized seams.
-    pub fn attach_shared(session: &Arc<shardlane_host::shared_tui::HerdrTuiSession>) -> Self {
+    pub fn attach_shared(session: &Arc<dyn shardlane_host::mux::MultiplexerStream>) -> Self {
         let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let (tx, rx) = mpsc::sync_channel(FRAME_QUEUE_CAPACITY);
         let (wake_tx, wake_rx) = terminal_wake_channel();
@@ -573,7 +573,7 @@ impl TerminalStream {
     /// privately hosted PTY child).
     pub(crate) fn shared_session(
         &self,
-    ) -> Option<std::sync::Arc<shardlane_host::shared_tui::HerdrTuiSession>> {
+    ) -> Option<std::sync::Arc<dyn shardlane_host::mux::MultiplexerStream>> {
         match &self.imp {
             StreamImp::Shared { session, .. } => Some(session.clone()),
             StreamImp::Pty(_) => None,
@@ -702,7 +702,7 @@ impl ManagedTerminal {
     /// viewer-local Ghostty model/viewport. The shared session's authoritative
     /// geometry is adopted via the caller's resize before first paint.
     pub fn attach_shared(
-        session: &Arc<shardlane_host::shared_tui::HerdrTuiSession>,
+        session: &Arc<dyn shardlane_host::mux::MultiplexerStream>,
         cols: u16,
         rows: u16,
         max_scrollback: usize,

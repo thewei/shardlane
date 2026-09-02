@@ -382,6 +382,14 @@ impl ShardlaneApp {
             let result = cx
                 .background_executor()
                 .spawn(async move {
+                    let client = match client.as_herdr() {
+                        Some(herdr) => herdr.clone(),
+                        None => {
+                            return Err(shardlane_host::ConversationServiceError::Herdr(
+                                shardlane_host::mux::MuxError::Unsupported("agents").into(),
+                            ))
+                        }
+                    };
                     let service =
                         shardlane_host::HostConversationService::new(&client, history_db_path());
                     let app_data = crate::settings::app_data_dir();

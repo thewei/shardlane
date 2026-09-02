@@ -884,6 +884,10 @@ impl ShardlaneApp {
             let submission = cx
                 .background_executor()
                 .spawn(async move {
+                    let client = match client.as_herdr() {
+                        Some(herdr) => herdr.clone(),
+                        None => return Err("this instance does not support agents".to_string()),
+                    };
                     let service = shardlane_host::HostConversationService::new(
                         &client,
                         std::path::PathBuf::new(),
@@ -1128,6 +1132,14 @@ impl ShardlaneApp {
                     // AC-08: the Host reads the authoritative status itself; this
                     // side no longer passes the UI-captured working flag.
                     let _ = working_source;
+                    let client = match client.as_herdr() {
+                        Some(herdr) => herdr.clone(),
+                        None => {
+                            return Err(shardlane_host::LiveHandoffFailure::WaitFailed(
+                                "this instance does not support agents".to_string(),
+                            ))
+                        }
+                    };
                     shardlane_host::run_live_handoff_with_delivery(
                         &client,
                         &preparation,
@@ -1964,6 +1976,14 @@ impl ShardlaneApp {
             let outcome = cx
                 .background_executor()
                 .spawn(async move {
+                    let client = match client.as_herdr() {
+                        Some(herdr) => herdr.clone(),
+                        None => {
+                            return Err(shardlane_host::ConversationServiceError::Herdr(
+                                shardlane_host::mux::MuxError::Unsupported("agents").into(),
+                            ))
+                        }
+                    };
                     let service = shardlane_host::HostConversationService::new(
                         &client,
                         std::path::PathBuf::new(),
@@ -2041,6 +2061,14 @@ impl ShardlaneApp {
             let _ = cx
                 .background_executor()
                 .spawn(async move {
+                    let client = match client.as_herdr() {
+                        Some(herdr) => herdr.clone(),
+                        None => {
+                            return Err(shardlane_host::ConversationServiceError::Herdr(
+                                shardlane_host::mux::MuxError::Unsupported("agents").into(),
+                            ))
+                        }
+                    };
                     let service = shardlane_host::HostConversationService::new(
                         &client,
                         std::path::PathBuf::new(),

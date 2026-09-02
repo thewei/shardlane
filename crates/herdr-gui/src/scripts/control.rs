@@ -50,7 +50,9 @@ impl ShardlaneApp {
         cx.spawn(async move |this, cx| {
             let result = cx
                 .background_executor()
-                .spawn(async move { launch_script_runtime(&client, &script, launch_target) })
+                .spawn(
+                    async move { launch_script_runtime(client.as_ref(), &script, launch_target) },
+                )
                 .await;
             let _ = this.update(cx, |view, cx| {
                 let mut runtime_materialized = false;
@@ -185,7 +187,7 @@ impl ShardlaneApp {
                     if let Some(pane_id) = old_pane {
                         let _ = client.close_pane(&pane_id);
                     }
-                    launch_script_runtime(&client, &script, launch_target)
+                    launch_script_runtime(client.as_ref(), &script, launch_target)
                 })
                 .await;
             let _ = this.update(cx, |view, cx| {

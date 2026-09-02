@@ -37,9 +37,16 @@ pub(crate) fn build_picker_machines(app: &ShardlaneApp) -> Vec<PickerMachine> {
         .instance_list()
         .iter()
         .map(|instance| {
-            let label = app.shared.display_name(&instance.name);
-            let bound = bound_key.as_deref() == Some(instance.name.as_str());
-            (instance.name.clone(), label, instance.running, bound)
+            // Same-named instances on different backends would render as two
+            // identical rows (a Herdr session and the user's tmux default
+            // server are both "default"); tag the non-Herdr rows so the
+            // picker stays readable.
+            let mut label = app.shared.display_name(&instance.label_key);
+            if instance.backend == "tmux" {
+                label = format!("{label} · tmux");
+            }
+            let bound = bound_key.as_deref() == Some(instance.label_key.as_str());
+            (instance.label_key.clone(), label, instance.running, bound)
         })
         .collect::<Vec<_>>();
     machines.push((

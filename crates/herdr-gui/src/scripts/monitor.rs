@@ -141,11 +141,11 @@ impl ShardlaneApp {
                     .spawn(async move {
                         let observations = scripts
                             .iter()
-                            .map(|script| observe_script(&probe_client, script, &known_tabs))
+                            .map(|script| observe_script(probe_client.as_ref(), script, &known_tabs))
                             .collect::<Vec<_>>();
                         let observed_services = should_discover_services.then(|| {
                             observe_unmanaged_services(
-                                &probe_client,
+                                probe_client.as_ref(),
                                 &discovery_workspace_ids,
                                 &managed_pane_ids,
                                 sweep_deadline,
