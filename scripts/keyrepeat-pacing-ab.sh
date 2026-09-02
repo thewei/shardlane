@@ -2,7 +2,8 @@
 # -----------------------------------------------------------------------------
 # [INPUT]: macOS + herdr CLI + target/debug/shardlane (or SHARDLANE_BIN),
 #          scripts/keyrepeat-evpost.swift (compiled on the fly with swiftc into the event injection tool),
-#          python3 + Pillow (screen-recording frame differencing), ffmpeg/ffprobe, osascript (System Events)
+#          python3 + Pillow (screen-recording frame differencing), ffmpeg/ffprobe, osascript (System Events),
+#          and scripts/ui-driver-guard.sh (explicit native global-input authorization)
 # [OUTPUT]: A repeatable scored measurement of long-press rendering cadence (key-repeat pacing):
 #          setup/snap establish a seeded isolated environment; run executes N consecutive sampling
 #          rounds within a single app session (deterministic navigation to Terminal+composer → esc/gg reset →
@@ -16,6 +17,11 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+# Native pacing uses CGEvent/System Events and therefore has an explicit,
+# process-level safety gate. Computer Use is the default UI driver; this
+# harness is intentionally a real-device fallback, not a silent alternative.
+# shellcheck source=scripts/ui-driver-guard.sh
+source "$ROOT_DIR/scripts/ui-driver-guard.sh"
 RUNTIME_DIR="${PACING_RUNTIME_DIR:-/tmp/shardlane-pacing-ab}"
 HOME_DIR="$RUNTIME_DIR/home"
 SEED_DIR="$RUNTIME_DIR/seed-home"
@@ -201,6 +207,7 @@ mode_key_stage() {
 }
 
 cmd_setup() {
+  require_native_ui_driver
   ensure_tooling
   rm -rf "$HOME_DIR" "$APP_DIR"
   mkdir -p "$HOME_DIR/.config/herdr" "$APP_DIR/$APP_NAME.app/Contents/MacOS" "$RUNTIME_DIR/proj"
@@ -351,7 +358,7 @@ open(res,"a").write("\n".join(lines)+"\n")
 PYEOF
 }
 
-cmd_setup() {
+cmd_setup_legacy() {
   ensure_tooling
   rm -rf "$HOME_DIR" "$APP_DIR"
   mkdir -p "$HOME_DIR/.config/herdr" "$APP_DIR/$APP_NAME.app/Contents/MacOS" "$RUNTIME_DIR/proj"
@@ -388,7 +395,7 @@ EOF
   cmd_snap
 }
 
-cmd_snap() {
+cmd_snap_legacy() {
   [[ -d "$HOME_DIR" ]] || die "no live HOME to snapshot (run setup first)"
   rm -rf "$SEED_DIR"
   cp -R "$HOME_DIR" "$SEED_DIR"
@@ -502,6 +509,8 @@ PYEOF
 }
 
 cmd_run() {
+  require_native_ui_driver
+  require_global_capture
   [[ $# -ge 1 ]] || { usage; exit 2; }
   local label="$1"; shift
   local samples=$DEFAULT_SAMPLES profile=0 mode=nav interval_us=$KEYINTERVAL_US

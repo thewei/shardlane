@@ -2,7 +2,8 @@
 # -----------------------------------------------------------------------------
 # [INPUT]: macOS + herdr CLI + target/debug/shardlane (or SHARDLANE_BIN),
 #          scripts/keyrepeat-evpost.swift (compiled on the fly with swiftc into the event injection tool),
-#          python3 + Pillow (scrollbar-column pixel continuity scoring), osascript (System Events)
+#          python3 + Pillow (scrollbar-column pixel continuity scoring), osascript (System Events),
+#          and scripts/ui-driver-guard.sh (explicit native global-input authorization)
 # [OUTPUT]: A repeatable scored measurement of hosted Herdr TUI vertical scrollbar rendering continuity:
 #          a single run command starts server+app in a fresh isolated HOME+socket, clicks the
 #          Terminal segment with evpost + seeds seq 400 into the composer, captures N consecutive
@@ -23,6 +24,10 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+# This harness posts global mouse/keyboard events. Require an explicit
+# real-device opt-in; Computer Use/MCP is the preferred app-scoped driver.
+# shellcheck source=scripts/ui-driver-guard.sh
+source "$ROOT_DIR/scripts/ui-driver-guard.sh"
 RUNTIME_ROOT="${SCROLLBAR_RUNTIME_ROOT:-/tmp/shardlane-scrollbar-ab}"
 EVPOST_SRC="$ROOT_DIR/scripts/keyrepeat-evpost.swift"
 # Fixed New Task layout: window-relative coordinates (pt) of the Terminal segment button and command composer
@@ -143,6 +148,8 @@ PYEOF
 }
 
 cmd_run() {
+  require_native_ui_driver
+  require_global_capture
   local label="$1"; shift
   local samples="$DEFAULT_SAMPLES"
   while (($# > 0)); do

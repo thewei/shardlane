@@ -1,3 +1,12 @@
+// -----------------------------------------------------------------------------
+// [INPUT]: key/click/rclick/scroll/bounds arguments; native event posting additionally
+//          requires SHARDLANE_UI_DRIVER=native and SHARDLANE_ALLOW_GLOBAL_INPUT=1.
+// [OUTPUT]: deterministic CGEvent probes for explicitly-authorized real-device
+//           measurements plus read-only window/input-source inspection.
+// [POS]: native hardware probe used by the pacing/scroll acceptance harnesses;
+//        Computer Use is the preferred app-scoped driver and never calls this.
+// [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+// -----------------------------------------------------------------------------
 // Key-repeat pacing probe event tool.
 // Posts hardware-faithful CGEvents (autorepeat-flagged key downs, mouse clicks)
 // and queries window geometry, so the pacing A/B harness can run unattended.
@@ -5,6 +14,7 @@
 // Usage:
 //   evpost key <keycode> <count> <interval_us> [input_source_id]
 //   evpost click <x_pt> <y_pt>
+//   evpost rclick <x_pt> <y_pt>
 //   evpost bounds <pid>            -> prints "x y w h" (points) of the main window
 //   evpost sources                 -> lists input sources
 
@@ -17,6 +27,18 @@ struct StdErrStream: TextOutputStream {
     mutating func write(_ string: String) { FileHandle.standardError.write(Data(string.utf8)) }
 }
 var stdErr = StdErrStream()
+
+/// CGEvent posting is a global desktop side effect. Keep the guard in the
+/// binary as well as in the shell harness so a direct invocation is safe.
+func requireGlobalInput(_ operation: String) -> Bool {
+    let env = ProcessInfo.processInfo.environment
+    guard env["SHARDLANE_UI_DRIVER"] == "native",
+          env["SHARDLANE_ALLOW_GLOBAL_INPUT"] == "1" else {
+        print("evpost: refusing global \(operation); set SHARDLANE_UI_DRIVER=native SHARDLANE_ALLOW_GLOBAL_INPUT=1 for an explicit real-device probe", to: &stdErr)
+        return false
+    }
+    return true
+}
 
 func forEachInputSource(_ body: (TISInputSource) -> Void) {
     guard let sources = TISCreateInputSourceList(nil, false)?.takeRetainedValue() as? [TISInputSource] else { return }
@@ -38,10 +60,13 @@ func selectSource(id wanted: String) -> Bool {
 }
 
 func postKeys(_ args: [String]) -> Int32 {
+    guard requireGlobalInput("keyboard events") else { return 64 }
     guard args.count >= 3,
           let keycode = Int(args[0]),
           let count = Int(args[1]),
-          let intervalUs = Int(args[2]) else {
+          let intervalUs = Int(args[2]),
+          count >= 0,
+          intervalUs >= 0 else {
             print("usage: key <keycode> <count> <interval_us> [input_source_id]", to: &stdErr)
             return 2
     }
@@ -67,29 +92,36 @@ func postKeys(_ args: [String]) -> Int32 {
 }
 
 func postClick(_ args: [String]) -> Int32 {
-    guard args.count >= 2, let x = Double(args[0]), let y = Double(args[1]) else {
-        print("usage: click <x_pt> <y_pt>", to: &stdErr)
+    postClick(args, button: .left, downType: .leftMouseDown, upType: .leftMouseUp, label: "click")
+}
+
+func postClick(_ args: [String], button: CGMouseButton, downType: CGEventType, upType: CGEventType, label: String) -> Int32 {
+    guard requireGlobalInput("\(label) mouse events") else { return 64 }
+    guard args.count >= 2,
+          let x = Double(args[0]), let y = Double(args[1]),
+          x.isFinite, y.isFinite else {
+        print("usage: \(label) <x_pt> <y_pt>", to: &stdErr)
         return 2
     }
     let src = CGEventSource(stateID: .combinedSessionState)
     let pt = CGPoint(x: x, y: y)
-    // Move first so hover-dependent UI settles, then a clean down/up pair.
-    if let move = CGEvent(mouseEventSource: src, mouseType: .mouseMoved, mouseCursorPosition: pt, mouseButton: .left) {
+    if let move = CGEvent(mouseEventSource: src, mouseType: .mouseMoved, mouseCursorPosition: pt, mouseButton: button) {
         move.post(tap: .cghidEventTap)
     }
     usleep(80_000)
-    if let down = CGEvent(mouseEventSource: src, mouseType: .leftMouseDown, mouseCursorPosition: pt, mouseButton: .left) {
+    if let down = CGEvent(mouseEventSource: src, mouseType: downType, mouseCursorPosition: pt, mouseButton: button) {
         down.post(tap: .cghidEventTap)
     }
     usleep(40_000)
-    if let up = CGEvent(mouseEventSource: src, mouseType: .leftMouseUp, mouseCursorPosition: pt, mouseButton: .left) {
+    if let up = CGEvent(mouseEventSource: src, mouseType: upType, mouseCursorPosition: pt, mouseButton: button) {
         up.post(tap: .cghidEventTap)
     }
-    print("clicked \(x),\(y)")
+    print("\(label) clicked \(x),\(y)")
     return 0
 }
 
 func postScroll(_ args: [String]) -> Int32 {
+    guard requireGlobalInput("scroll events") else { return 64 }
     // scroll <x> <y> <amount> <count> <interval_us> [line|pixel]
     // Posts a deterministic scroll-wheel burst at the given point (the pointer is
     // moved there first so the event lands on the hovered window). Positive
@@ -97,7 +129,10 @@ func postScroll(_ args: [String]) -> Int32 {
     guard args.count >= 5,
           let x = Double(args[0]), let y = Double(args[1]),
           let amount = Double(args[2]), let count = Int(args[3]),
-          let intervalUs = Int(args[4]) else {
+          let intervalUs = Int(args[4]),
+          x.isFinite, y.isFinite, amount.isFinite,
+          count >= 0,
+          intervalUs >= 0 else {
         print("usage: scroll <x> <y> <amount> <count> <interval_us> [line|pixel]", to: &stdErr)
         return 2
     }
@@ -173,12 +208,14 @@ guard args.count >= 2 else {
 switch args[1] {
 case "key": exit(postKeys(Array(args.dropFirst(2))))
 case "click": exit(postClick(Array(args.dropFirst(2))))
+case "rclick": exit(postClick(Array(args.dropFirst(2)), button: .right, downType: .rightMouseDown, upType: .rightMouseUp, label: "rclick"))
 case "scroll": exit(postScroll(Array(args.dropFirst(2))))
 case "bounds": exit(windowBounds(Array(args.dropFirst(2))))
 case "sources": listSources(); exit(0)
 case "src":
     // `src get` prints the selected input source id; `src set <id>` selects without typing.
     if args.count >= 3, args[2] == "set", args.count >= 4 {
+        guard requireGlobalInput("input-source changes") else { exit(64) }
         exit(selectSource(id: args[3]) ? 0 : 3)
     }
     var current = "?"

@@ -1,15 +1,18 @@
 #!/usr/bin/env bash
 # scripts/verify.sh — Shardlane tiered verification: fast refactor loop.
 #
-# [INPUT]: Depends on cargo and the repository Cargo.lock; no external services, no Git writes
-# [OUTPUT]: Provides five verification tiers: check | unit [FILTER] | history | fast | full
+# [INPUT]: cargo/Cargo.lock for Rust tiers; swiftc/python3 for the UI harness
+#          tier; no external services, no Git writes
+# [OUTPUT]: Provides six verification tiers: check | unit [FILTER] | history | ui | fast | full
 # [POS]: Fast verification entry point for edits/refactors; the full tier == AGENTS.md static gates (same source as CI)
+# [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 #
 # Usage:
 #   scripts/verify.sh check               # Fastest: compile check only (run repeatedly while moving code around)
 #   scripts/verify.sh unit [FILTER]       # Targeted unit tests; FILTER defaults to herdr::tests
 #   scripts/verify.sh unit request_param  # Example: 015 request-shape contract tests
 #   scripts/verify.sh history             # All shardlane-history crate tests
+#   scripts/verify.sh ui                  # UI harness syntax/type/capability/evidence checks (no GUI actions)
 #   scripts/verify.sh fast                # fmt + clippy (both crates in this repo) + all unit tests
 #   scripts/verify.sh full                # AGENTS.md four gates + git diff --check
 set -euo pipefail
@@ -30,6 +33,31 @@ case "$cmd" in
     # shardlane-history crate tests in isolation (small crate, second-scale loop).
     cargo test --locked -p shardlane-history
     ;;
+  ui)
+    # Validate the real-app acceptance chain without launching or focusing a GUI.
+    for script in scripts/*.sh; do bash -n "$script"; done
+    swiftc -typecheck scripts/keyrepeat-evpost.swift
+    swiftc -typecheck scripts/vision-ocr.swift
+    python3 -B - <<'PY'
+import ast
+import json
+from pathlib import Path
+
+for path in (
+    Path("scripts/acceptance-evidence.py"),
+    Path("scripts/acceptance-capabilities.py"),
+    Path("scripts/acceptance/__init__.py"),
+    Path("scripts/acceptance/capabilities.py"),
+    Path("scripts/acceptance/assertions.py"),
+    Path("scripts/tests/test_acceptance_capabilities.py"),
+    Path("scripts/tests/test_acceptance_assertions.py"),
+    Path("scripts/tests/test_acceptance_evidence.py"),
+):
+    ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+json.loads(Path(".agents/skills/ui-acceptance-testing/evals/evals.json").read_text(encoding="utf-8"))
+PY
+    python3 -B -m unittest discover -s scripts/tests -p 'test_*.py' -v
+    ;;
   fast)
     # Pre-commit loop: format + clippy for both crates + all unit tests (no full build).
     cargo fmt -- --check
@@ -47,7 +75,7 @@ case "$cmd" in
     git diff --cached --check
     ;;
   *)
-    echo "unknown tier: $cmd (use check|unit|history|fast|full)" >&2
+    echo "unknown tier: $cmd (use check|unit|history|ui|fast|full)" >&2
     exit 2
     ;;
 esac

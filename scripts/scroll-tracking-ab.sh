@@ -2,7 +2,8 @@
 # -----------------------------------------------------------------------------
 # [INPUT]: macOS + herdr CLI + target/debug/shardlane (or SHARDLANE_BIN),
 #          scripts/keyrepeat-evpost.swift (compiled on the fly with swiftc, includes the scroll injection command),
-#          python3 + Pillow (screen-recording frame differencing), ffmpeg/ffprobe, osascript (System Events)
+#          python3 + Pillow (screen-recording frame differencing), ffmpeg/ffprobe, osascript (System Events),
+#          and scripts/ui-driver-guard.sh (explicit native global-input authorization)
 # [OUTPUT]: A repeatable scored measurement of hosted Herdr TUI scroll tracking:
 #          under multi-screen scrollback (100 screens by default), deterministic wheel bursts
 #          (up/down phases) are jointly scored against screen-recording frame differencing:
@@ -27,6 +28,10 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# This harness posts global wheel events. Require an explicit real-device
+# opt-in; Computer Use/MCP is the preferred app-scoped driver for UI checks.
+# shellcheck source=scripts/ui-driver-guard.sh
+source "$ROOT_DIR/ui-driver-guard.sh"
 RUNTIME_ROOT="${SCROLL_RUNTIME_ROOT:-/tmp/shardlane-scroll-ab}"
 EVPOST_SRC="$ROOT_DIR/keyrepeat-evpost.swift"
 APP_NAME="Shardlane"
@@ -86,6 +91,8 @@ focus_window() {
 }
 
 cmd_run() {
+  require_native_ui_driver
+  require_global_capture
   local label="$1"; shift
   local samples=$DEFAULT_SAMPLES screens=$DEFAULT_SCREENS pixel=0
   local events=$DEFAULT_EVENTS interval_us=$DEFAULT_INTERVAL_US amount=$DEFAULT_AMOUNT
