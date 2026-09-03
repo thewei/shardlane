@@ -1,5 +1,5 @@
 //! [INPUT]: Existing imports and types from the crate root (via the history module root glob: `use super::*` chain).
-//! [OUTPUT]: For the crate::history family: the History main page rendering (history_page) — master-detail layout, compact breakpoint policy, conversation cards, right-click context menu.
+//! [OUTPUT]: For the crate::history family: the History main page rendering (history_page) — master-detail layout, compact breakpoint policy, conversation cards (rendered through the shared ui::list_card primitive, same body as the Sidebar Agents cards), right-click context menu.
 //! [POS]: Page-view responsibility slice of the herdr-gui History surface; mechanically split out of history.rs.
 use super::*;
 
@@ -382,92 +382,52 @@ impl ShardlaneApp {
                                 .unwrap_or_else(|| session.project_name.clone());
                             let description =
                                 history_session_list_description(&session, &descriptions);
-                            let lead = agent_brand_icon(session.agent.as_str(), dark)
-                                .map(|path| img(path).size(px(15.0)).into_any_element())
-                                .unwrap_or_else(|| {
-                                    Icon::new(ComponentIconName::BookOpen)
-                                        .small()
-                                        .into_any_element()
-                                });
-                            div()
-                                .id(gpui::ElementId::Name(
-                                    format!("history-session-{}", session.key).into(),
-                                ))
-                                .w_full()
-                                .mb(px(6.0))
-                                .h(px(SESSION_ROW_HEIGHT))
-                                .px_3()
-                                .py_2()
-                                .rounded(px(6.0))
-                                .cursor_pointer()
-                                .overflow_hidden()
-                                .text_color(list_theme.foreground)
-                                .when(selected, |row| row.bg(list_theme.active))
-                                .when(!selected, |row| {
-                                    row.hover(|style| style.bg(list_theme.hover))
-                                })
-                                .active(|style| style.bg(list_theme.active))
-                                .child(
-                                    v_flex()
-                                        .w_full()
-                                        .h_full()
-                                        .justify_center()
-                                        .gap(SPACE_ICON)
-                                        .child(
-                                            h_flex().gap(px(8.0)).min_w_0().child(lead).child(
-                                                div()
-                                                    .min_w_0()
-                                                    .flex_1()
-                                                    .truncate()
-                                                    .text_size(px(13.5))
-                                                    .font_weight(FontWeight::SEMIBOLD)
-                                                    .child(session.title.clone()),
-                                            ),
-                                        )
-                                        .child(
-                                            div()
-                                                .min_w_0()
-                                                .line_clamp(2)
-                                                .text_ellipsis()
-                                                .whitespace_normal()
-                                                .text_size(theme::FONT_DESCRIPTION)
-                                                .text_color(list_theme.foreground.opacity(0.62))
-                                                .child(description),
-                                        )
-                                        .child(
-                                            div()
-                                                .min_w_0()
-                                                .truncate()
-                                                .text_size(theme::FONT_META)
-                                                .text_color(list_theme.foreground.opacity(0.62))
-                                                .child(format!(
-                                                    "{} · {}",
-                                                    session.agent.display_name(),
-                                                    project_path_label
-                                                )),
-                                        ),
+                            let lead = crate::ui::list_card::history_card_lead(
+                                agent_brand_icon(session.agent.as_str(), dark).map(str::to_string),
+                            );
+                            crate::ui::list_card::list_card(
+                                crate::ui::list_card::ListCardColors {
+                                    foreground: list_theme.foreground,
+                                    secondary: list_theme.foreground.opacity(0.62),
+                                    selected_bg: list_theme.active,
+                                    hover_bg: list_theme.hover,
+                                    selected_foreground: list_theme.foreground,
+                                },
+                                selected,
+                                lead,
+                                session.title.clone(),
+                                Some(SharedString::from(description)),
+                                Some(SharedString::from(format!(
+                                    "{} · {}",
+                                    session.agent.display_name(),
+                                    project_path_label
+                                ))),
+                                None,
+                                Some(px(SESSION_ROW_HEIGHT)),
+                            )
+                            .id(gpui::ElementId::Name(
+                                format!("history-session-{}", session.key).into(),
+                            ))
+                            .mb(px(6.0))
+                            .cursor_pointer()
+                            .shardlane_interactive(
+                                list_theme.primary.opacity(INTERACTIVE_FOCUS_OPACITY),
+                                move |_, app| {
+                                    click_herdr.update(app, |view, cx| {
+                                        if open_detail_only {
+                                            view.history.detail_only = true;
+                                        }
+                                        view.select_history_session(session_for_click.clone(), cx)
+                                    });
+                                },
+                            )
+                            .context_menu(move |menu, _, _| {
+                                history_conversation_context_menu(
+                                    menu,
+                                    menu_session.clone(),
+                                    menu_herdr.clone(),
                                 )
-                                .shardlane_interactive(
-                                    list_theme.primary.opacity(INTERACTIVE_FOCUS_OPACITY),
-                                    move |_, app| {
-                                        click_herdr.update(app, |view, cx| {
-                                            if open_detail_only {
-                                                view.history.detail_only = true;
-                                            }
-                                            view.select_history_session(
-                                                session_for_click.clone(),
-                                                cx,
-                                            )
-                                        });
-                                    },
-                                )
-                                .context_menu(move |menu, _, _| {
-                                    history_conversation_context_menu(
-                                        menu,
-                                        menu_session.clone(),
-                                        menu_herdr.clone(),
-                                    )
-                                })
+                            })
                         })
                         .collect::<Vec<_>>()
                 },

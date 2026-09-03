@@ -41,3 +41,10 @@ Members:
   with one carried block-comment flag and Markdown fence state; a deliberate
   per-line approximation, not a parser; std-only (token layer), colors applied
   by the caller; consumed by file_preview.
+- `list_card.rs`: unified list-card body — `list_card` (px_3 card, lead +
+  semibold title row, optional two-line description, optional meta row,
+  optional trailing element, optional fixed height for uniform_list) +
+  `ListCardColors` (caller-supplied surface colors) + `history_card_lead`
+  (brand-or-fallback lead). Pure presentation: History wires
+  `shardlane_interactive` + context menu, the Sidebar wires roving rows —
+  consumed by history/page_view and sidebar/rows.

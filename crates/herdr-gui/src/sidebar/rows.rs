@@ -1,5 +1,5 @@
 //! [INPUT]: Constants, types, and root-level imports from the sidebar module root (`super`); full inheritance via `use super::*`.
-//! [OUTPUT]: Row-level primitives: the TextColored coloring trait, `icon`, `sidebar_action_row`, the RowLevel/RowLead row models (including the service-badged `IconService` lead), project/tab drag ghosts (with Render), `sidebar_hint_row`, `group_header`, the general-purpose `sidebar_row` renderer, and the two-line `sidebar_card_row` card renderer (Agents section).
+//! [OUTPUT]: Row-level primitives: the TextColored coloring trait, `icon`, `sidebar_action_row`, the RowLevel/RowLead row models (including the service-badged `IconService` lead), project/tab drag ghosts (with Render), `sidebar_hint_row`, `group_header`, the general-purpose `sidebar_row` renderer, and the `sidebar_card_row` adapter that renders the Agents cards through the shared `ui::list_card` primitive (same body as the History catalog rows).
 //! [POS]: Row-primitive layer of `crates/herdr-gui::sidebar`, consumed by shell/tree_rows/pane_rows/service_rows; mechanically split out of sidebar.rs and sharing the module-root namespace with its sibling submodules.
 use super::*;
 
@@ -422,10 +422,13 @@ pub(super) fn sidebar_row(
         )
 }
 
-/// Two-line card row for the Agents section: bold title over a muted
-/// meta/subtitle line (project · model · context pressure). Same roving-list
-/// integration and active/hover/indicator language as `sidebar_row` — the
-/// card differs only in stacking two text lines, never in interaction.
+/// Agents-section card, rendered with the shared History list-card language
+/// (`ui::list_card`): semibold title over a muted meta line, brand lead
+/// inline, generous px_3 padding. Interaction stays Sidebar-native — the
+/// roving list (↑/↓/Enter) wraps the same card body the History catalog
+/// uses, so the two surfaces cannot drift apart again. The old compact-row
+/// indent (LEAD_INSET + double edge padding) was the width thief that
+/// ellipsized title and meta even in a full-width sidebar.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn sidebar_card_row(
     list: &Rc<RovingList>,
@@ -441,142 +444,66 @@ pub(super) fn sidebar_card_row(
     let theme = cx.theme();
     let focus_key = id.into();
     let focus_handle = list.row_handle(focus_key.as_ref(), cx);
-    let indicator_color = theme.accent;
+    let lead_element = match lead {
+        RowLead::Icon(path) => icon(path)
+            .with_size(px(15.0))
+            .text_color(theme.muted_foreground)
+            .into_any_element(),
+        RowLead::IconService(path) => div()
+            .relative()
+            .child(
+                icon(path)
+                    .with_size(px(15.0))
+                    .text_color(theme.muted_foreground),
+            )
+            .child(
+                div()
+                    .absolute()
+                    .top(px(-1.0))
+                    .right(px(-2.0))
+                    .size(px(6.0))
+                    .rounded_full()
+                    .border_1()
+                    .border_color(theme.sidebar)
+                    .bg(theme.success),
+            )
+            .into_any_element(),
+        RowLead::Brand(path) => img(path).size(px(15.0)).into_any_element(),
+        RowLead::Project { expanded } => icon(if expanded {
+            "icons/folder-open.svg"
+        } else {
+            "icons/folder.svg"
+        })
+        .with_size(px(15.0))
+        .text_color(theme.muted_foreground)
+        .into_any_element(),
+    };
     div()
         .id(ElementId::Name(focus_key.clone()))
-        .group("sidebar-item-row")
-        .w_full()
-        .min_h(ROW_HEIGHT)
-        .flex_shrink_0()
-        .pl(LEAD_INSET)
-        .pr(SIDEBAR_EDGE)
-        .py(px(4.0))
-        .rounded(theme.radius)
         .cursor_pointer()
-        .relative()
-        .flex()
-        .items_center()
-        .child(
-            div()
-                .absolute()
-                .left_0()
-                .top(px(6.0))
-                .bottom(px(6.0))
-                .w(px(2.5))
-                .rounded(px(1.5))
-                .when(active, |bar| bar.bg(indicator_color))
-                .when(!active, |bar| {
-                    bar.invisible().group_hover("sidebar-item-row", |s| {
-                        s.visible().bg(indicator_color.opacity(0.5))
-                    })
-                }),
-        )
-        .when(active, |s| {
-            s.bg(theme.sidebar_accent)
-                .text_color(theme.sidebar_accent_foreground)
-        })
-        .when(!active, |s| {
-            s.text_color(theme.sidebar_foreground)
-                .hover(|s| s.bg(theme.sidebar_accent.opacity(INTERACTIVE_HOVER_OPACITY)))
-                .active(|s| s.bg(theme.sidebar_accent))
-        })
+        .child(crate::ui::list_card::list_card(
+            crate::ui::list_card::ListCardColors {
+                foreground: theme.sidebar_foreground,
+                secondary: theme.muted_foreground,
+                selected_bg: theme.sidebar_accent,
+                hover_bg: theme.sidebar_accent.opacity(INTERACTIVE_HOVER_OPACITY),
+                selected_foreground: theme.sidebar_accent_foreground,
+            },
+            active,
+            lead_element,
+            title.into(),
+            None,
+            subtitle,
+            status.map(|level| {
+                crate::status::status_glyph_container("sidebar-card-status", level, cx)
+            }),
+            None,
+        ))
         .shardlane_roving_row(
             list,
             focus_handle,
             focus_key,
             theme.primary.opacity(INTERACTIVE_FOCUS_OPACITY),
             on_activate,
-        )
-        .child(
-            h_flex()
-                .w_full()
-                .gap(SPACE_SM)
-                .child(
-                    div()
-                        .w(LEAD_BOX)
-                        .flex_shrink_0()
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .child(match lead {
-                            RowLead::Icon(path) => icon(path)
-                                .with_size(px(15.0))
-                                .text_color(if active {
-                                    theme.sidebar_accent_foreground
-                                } else {
-                                    theme.muted_foreground
-                                })
-                                .into_any_element(),
-                            RowLead::IconService(path) => div()
-                                .relative()
-                                .child(icon(path).with_size(px(15.0)).text_color(if active {
-                                    theme.sidebar_accent_foreground
-                                } else {
-                                    theme.muted_foreground
-                                }))
-                                .child(
-                                    div()
-                                        .absolute()
-                                        .top(px(-1.0))
-                                        .right(px(-2.0))
-                                        .size(px(6.0))
-                                        .rounded_full()
-                                        .border_1()
-                                        .border_color(theme.sidebar)
-                                        .bg(theme.success),
-                                )
-                                .into_any_element(),
-                            RowLead::Brand(path) => img(path).size(LEAD_BOX).into_any_element(),
-                            RowLead::Project { expanded } => icon(if expanded {
-                                "icons/folder-open.svg"
-                            } else {
-                                "icons/folder.svg"
-                            })
-                            .with_size(px(15.0))
-                            .text_color(if active {
-                                theme.sidebar_accent_foreground
-                            } else {
-                                theme.muted_foreground
-                            })
-                            .into_any_element(),
-                        }),
-                )
-                .child(
-                    div()
-                        .flex_1()
-                        .min_w_0()
-                        .flex()
-                        .flex_col()
-                        .gap(px(1.0))
-                        .child(
-                            div()
-                                .min_w_0()
-                                .truncate()
-                                .text_size(FONT_BODY)
-                                .font_weight(FontWeight::MEDIUM)
-                                .child(title.into()),
-                        )
-                        .when_some(subtitle, |line, text| {
-                            line.child(
-                                div()
-                                    .min_w_0()
-                                    .truncate()
-                                    .text_size(FONT_LABEL)
-                                    .text_color(if active {
-                                        theme.sidebar_accent_foreground.opacity(0.82)
-                                    } else {
-                                        theme.muted_foreground
-                                    })
-                                    .child(text),
-                            )
-                        }),
-                )
-                .when_some(status, |row, level| {
-                    row.child(crate::status::status_glyph_container(
-                        "sidebar-card-status",
-                        level,
-                        cx,
-                    ))
-                }),
         )
 }

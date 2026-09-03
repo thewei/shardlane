@@ -31,7 +31,6 @@ mod browsing;
 mod export;
 mod formatting;
 pub(crate) use export::history_export_cached_window_markdown;
-pub(crate) use formatting::history_last_active_short;
 mod insights_view;
 mod page_view;
 mod resume;

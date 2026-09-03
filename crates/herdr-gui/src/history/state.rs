@@ -161,68 +161,6 @@ impl ShardlaneApp {
         )
     }
 
-    /// History-session backfill for the Sidebar Agents section (notate
-    /// 2026-08-29): when live agents are fewer than 10, backfill history
-    /// sessions by most recently updated up to 10 (row 11 is a fixed "view more").
-    /// Deduplication uses only the stable (provider, native session id) identity —
-    /// history sessions already present as live agents are hidden from this
-    /// projection; never guessed by title/path.
-    pub(crate) fn sidebar_agent_history_sessions(
-        &self,
-        live_count: usize,
-    ) -> Vec<ConversationMeta> {
-        const AGENT_SECTION_ROW_CAPACITY: usize = 10;
-        let fill = AGENT_SECTION_ROW_CAPACITY.saturating_sub(live_count);
-        if fill == 0 {
-            return Vec::new();
-        }
-        let live_identities: HashSet<(&str, &str)> = self
-            .state
-            .agents
-            .iter()
-            .filter_map(|agent| {
-                let session = agent.agent_session.as_ref()?;
-                // agent_session.agent is already the Herdr protocol short id ("claude" etc).
-                Some((session.agent.as_str(), session.value.as_str()))
-            })
-            .collect();
-        self.history
-            .sessions
-            .iter()
-            .filter(|session| !session.archived)
-            .filter(|session| {
-                !live_identities.contains(&(
-                    crate::agent_cli::herdr_agent_id(session.agent),
-                    session.id.as_str(),
-                ))
-            })
-            .take(fill)
-            .cloned()
-            .collect()
-    }
-
-    /// Sidebar "view more history sessions" entry: ensure the History secondary
-    /// surface is open.
-    pub(crate) fn open_history_surface_from_sidebar(&mut self, cx: &mut Context<Self>) {
-        if self.history.open {
-            return;
-        }
-        self.history.open = true;
-        self.history.detail_only = false;
-        self.history.search_open = false;
-        self.new_agent_open = false;
-        self.show_settings = false;
-        self.show_help = false;
-        self.clear_ime_state();
-        self.ensure_history_watcher(cx);
-        if !self.history.sessions.is_empty() {
-            self.reconcile_history_selection(cx);
-        }
-        self.notify_sidebar(cx);
-        self.sync_terminal_application_focus(cx);
-        cx.notify();
-    }
-
     /// Current selection text from drag-selection in the History body Markdown
     /// (the ⌘C copy exit, notate 08-29 round four).
     pub(crate) fn history_transcript_selection_text(&self) -> Option<String> {

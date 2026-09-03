@@ -13,6 +13,7 @@ pub(crate) mod badge;
 pub(crate) mod controls;
 pub(crate) mod drag;
 pub(crate) mod empty_state;
+pub(crate) mod list_card;
 pub(crate) mod menus;
 pub(crate) mod syntax;
 pub(crate) mod tooltip;

@@ -64,55 +64,6 @@ pub(super) fn history_epoch_secs(epoch_secs: i64) -> i64 {
     }
 }
 
-/// Last-active short format (notate 2026-08-29): HH:MM today, `Aug 28` this
-/// year, `YYYY-MM-DD` in earlier years. Consumed by the meta of the Sidebar
-/// Agents history backfill rows.
-pub(crate) fn history_last_active_short(epoch_secs: i64) -> String {
-    const MONTHS: [&str; 12] = [
-        "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-    ];
-    let secs = history_epoch_secs(epoch_secs);
-    if secs <= 0 {
-        return "—".to_string();
-    }
-    let (year, month, day, hour, minute) = history_civil_datetime(secs);
-    let now_secs = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(0);
-    let (now_year, now_month, now_day, _, _) = history_civil_datetime(now_secs);
-    if (year, month, day) == (now_year, now_month, now_day) {
-        format!("{hour:02}:{minute:02}")
-    } else if year == now_year {
-        format!("{} {day}", MONTHS[(month - 1) as usize])
-    } else {
-        format!("{year:04}-{month:02}-{day:02}")
-    }
-}
-
-/// Epoch seconds → (year, month, day, hour, minute) (UTC; pure civil_from_days algorithm).
-pub(super) fn history_civil_datetime(epoch_secs: i64) -> (i64, u32, u32, u32, u32) {
-    let days = epoch_secs.div_euclid(86_400);
-    let secs_of_day = epoch_secs.rem_euclid(86_400);
-    let z = days + 719_468;
-    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
-    let doe = (z - era * 146_097) as u64;
-    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
-    let y = yoe as i64 + era * 400;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let d = (doy - (153 * mp + 2) / 5 + 1) as u32;
-    let m = if mp < 10 { mp + 3 } else { mp - 9 } as u32;
-    let year = if m <= 2 { y + 1 } else { y };
-    (
-        year,
-        m,
-        d,
-        (secs_of_day / 3600) as u32,
-        ((secs_of_day % 3600) / 60) as u32,
-    )
-}
-
 /// Epoch seconds/milliseconds → local date (Howard Hinnant civil_from_days;
 /// a UTC date with no timezone offset — the session stats row only needs
 /// day-level precision, not worth pulling in chrono for this).

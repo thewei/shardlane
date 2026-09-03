@@ -1,5 +1,5 @@
 //! [INPUT]: Constants, types, and root-level imports from the sidebar module root (`super`); full inheritance via `use super::*`.
-//! [OUTPUT]: Provides the Agents section's two-line card rows: live agents (title over project · model · context-pressure meta; insight-derived meta comes only from the live subscribed session, never from transcript parsing) and history backfill rows (chronological fill up to 10 + a fixed "View more history sessions" trailing row). Services cards moved to right_panel/services_view (2026-09-03).
+//! [OUTPUT]: Provides the Agents section's two-line card rows for LIVE agents only (title over project · model · context-pressure meta; insight-derived meta comes only from the live subscribed session, never from transcript parsing); history sessions live in the History surface, not as sidebar backfill (2026-09-03). Services cards moved to right_panel/services_view (2026-09-03).
 //! [POS]: Agent card rendering layer of `crates/herdr-gui::sidebar`; consumed by shell; mechanically split out of sidebar.rs and sharing the module-root namespace with its sibling submodules.
 use super::*;
 use crate::ui::menus::menu_action;
@@ -42,74 +42,6 @@ pub(super) fn agent_row_label(
 }
 
 impl ShardlaneApp {
-    /// History session row in the Sidebar Agents section (notate 2026-08-29):
-    /// backfills history sessions chronologically when fewer than 10; clicking
-    /// jumps to the matching entry in the History secondary page.
-    pub(super) fn sidebar_history_session_row(
-        &self,
-        session: &ConversationMeta,
-        dark: bool,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let lead = agent_brand_icon(session.agent.as_str(), dark)
-            .map(RowLead::Brand)
-            .unwrap_or(RowLead::Icon("icons/layers.svg"));
-        // Card layout (2026-09-03): title on line one; provider kind and
-        // last-active time on the muted second line.
-        let subtitle: Option<SharedString> = (session.updated_at > 0).then(|| {
-            SharedString::from(format!(
-                "{} · {}",
-                session.agent.as_str(),
-                crate::history::history_last_active_short(session.updated_at)
-            ))
-        });
-        let key = session.key.clone();
-        let herdr = cx.entity();
-        sidebar_card_row(
-            &self.sidebar_roving_agents,
-            format!("shardlane-agent-history-{key}"),
-            lead,
-            session.title.clone(),
-            subtitle,
-            None,
-            false,
-            move |window, app| {
-                herdr.update(app, |this, cx| {
-                    this.open_history_session_by_key(key.clone(), window, cx);
-                });
-            },
-            cx,
-        )
-        .into_any_element()
-    }
-
-    /// Trailing row of the Sidebar Agents section (notate 2026-08-29): a fixed
-    /// "view more history sessions" row that opens the History secondary surface.
-    pub(super) fn sidebar_history_more_row(&self, cx: &mut Context<Self>) -> AnyElement {
-        let herdr = cx.entity();
-        sidebar_row(
-            &self.sidebar_roving_agents,
-            "shardlane-agent-history-more",
-            RowLead::Icon("icons/layers.svg"),
-            "View more history sessions",
-            None,
-            None,
-            None,
-            false,
-            None,
-            false,
-            RowLevel::Primary,
-            move |window, app| {
-                herdr.update(app, |this, cx| {
-                    this.open_history_surface_from_sidebar(cx);
-                    let _ = window;
-                });
-            },
-            cx,
-        )
-        .into_any_element()
-    }
-
     pub(super) fn sidebar_agent_row(
         &self,
         agent: &Agent,

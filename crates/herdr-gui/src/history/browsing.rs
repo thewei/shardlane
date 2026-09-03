@@ -154,32 +154,6 @@ impl ShardlaneApp {
         self.sync_terminal_application_focus(cx);
     }
 
-    pub(crate) fn open_history_session_by_key(
-        &mut self,
-        key: String,
-        _window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let session = self.history.sessions.iter().find(|s| s.key == key).cloned();
-        if let Some(session) = session {
-            self.history.open = true;
-            self.history.detail_only = true;
-            self.history.search_open = false;
-            self.new_agent_open = false;
-            self.show_settings = false;
-            self.show_help = false;
-            self.ensure_history_watcher(cx);
-            self.select_history_session(session, cx);
-            self.notify_sidebar(cx);
-            self.sync_terminal_application_focus(cx);
-        } else {
-            self.history.open = true;
-            self.history.detail_only = false;
-            self.notify_sidebar(cx);
-            cx.notify();
-        }
-    }
-
     pub(crate) fn open_project_history(&mut self, project_path: String, cx: &mut Context<Self>) {
         self.history.open = true;
         self.history.detail_only = false;

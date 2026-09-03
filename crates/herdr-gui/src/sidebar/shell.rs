@@ -1,5 +1,5 @@
 //! [INPUT]: Constants, types, and root-level imports from the sidebar module root (`super`); full inheritance via `use super::*`.
-//! [OUTPUT]: Provides ShardlaneApp::sidebar() — the full assembly of the Sidebar's single navigation surface (Projects/Tabs/Agents/Scripts/History sections, collapsing, drag and drop, projection consumption).
+//! [OUTPUT]: Provides ShardlaneApp::sidebar() — the full assembly of the Sidebar's single navigation surface (Agents/Projects sections — live agents only, history lives in the History surface; collapsing, drag and drop, projection consumption).
 //! [POS]: Main assembly layer of `crates/herdr-gui::sidebar`; consumes the output of rows/tree_rows/pane_rows/service_rows/projection/section_layout; mechanically split out of sidebar.rs and sharing the module-root namespace with its sibling submodules.
 use super::*;
 use crate::composer_chip::ComposerChip;
@@ -334,10 +334,6 @@ impl ShardlaneApp {
         }
 
         let visible_agents = self.state.agents.clone();
-        // notate 2026-08-29: when the Agents section has fewer than 10 entries,
-        // backfill recent history sessions in chronological order up to 10, with
-        // a fixed trailing row "view more history sessions" → History.
-        let sidebar_history_sessions = self.sidebar_agent_history_sessions(visible_agents.len());
         // Agents list roving focus: same interaction contract as Workspaces.
         self.sidebar_roving_agents.begin_frame();
         let agent_container_handle = self.sidebar_roving_agents.container_handle(cx);
@@ -372,19 +368,16 @@ impl ShardlaneApp {
             .pb(px(16.0))
             .gap(SPACE_XS);
         if !self.agents_collapsed {
-            if visible_agents.is_empty() && sidebar_history_sessions.is_empty() {
+            // 2026-09-03: the Agents section lists live agents only — history
+            // sessions live in the History surface, not as sidebar backfill.
+            if visible_agents.is_empty() {
                 agent_scrolling = agent_scrolling.child(sidebar_hint_row("No active agents", cx));
             } else {
                 for agent in &visible_agents {
                     agent_scrolling =
                         agent_scrolling.child(self.sidebar_agent_row(agent, dark, cx));
                 }
-                for session in &sidebar_history_sessions {
-                    agent_scrolling =
-                        agent_scrolling.child(self.sidebar_history_session_row(session, dark, cx));
-                }
             }
-            agent_scrolling = agent_scrolling.child(self.sidebar_history_more_row(cx));
         }
 
         let blocked_agents = visible_agents
