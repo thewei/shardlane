@@ -114,7 +114,49 @@ pub(super) fn render_transcript(
                             meta.source.clone().filter(|source| !source.is_empty()),
                             |row, source| row.child(history_outline_badge(source, theme.success)),
                         ),
-                ),
+                )
+                .child({
+                    let export_herdr = herdr.clone();
+                    let export_meta = meta.clone();
+                    let delete_herdr = herdr.clone();
+                    let delete_meta = meta.clone();
+                    h_flex()
+                        .gap_1()
+                        .items_center()
+                        .child(
+                            Button::new("history-detail-export")
+                                .xsmall()
+                                .ghost()
+                                .label("Export")
+                                .tooltip("Export as Markdown")
+                                .on_click(move |_, window, app| {
+                                    export_herdr.update(app, |view, cx| {
+                                        view.export_history_markdown(
+                                            export_meta.clone(),
+                                            window,
+                                            cx,
+                                        );
+                                    });
+                                }),
+                        )
+                        .child(
+                            Button::new("history-detail-delete")
+                                .xsmall()
+                                .ghost()
+                                .icon(Icon::empty().path("icons/trash.svg").with_size(px(12.0)))
+                                .label("Delete")
+                                .tooltip("Permanently delete conversation")
+                                .on_click(move |_, window, app| {
+                                    delete_herdr.update(app, |view, cx| {
+                                        view.confirm_delete_history_session(
+                                            delete_meta.clone(),
+                                            window,
+                                            cx,
+                                        );
+                                    });
+                                }),
+                        )
+                }),
         )
         .child(
             // H4 (notate 2026-08-29): single-line title with overflow ellipsis. A

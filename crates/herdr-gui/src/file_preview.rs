@@ -144,31 +144,37 @@ impl ShardlaneApp {
             .bg(content_theme.background)
             .flex()
             .flex_col()
-            .child(self.titlebar_drag_strip("file-preview-titlebar", cx))
             .child(
                 div()
-                    .h(px(40.0))
+                    .h(px(38.0))
                     .flex_none()
-                    .px(px(12.0))
+                    .px(px(14.0))
                     .border_b_1()
                     .border_color(content_theme.border)
+                    .bg(content_theme.background)
                     .flex()
                     .items_center()
-                    .gap(SPACE_ICON)
+                    .justify_between()
                     .child(
-                        Icon::empty()
-                            .path(file_icon_for_path(&preview.relative_path))
-                            .with_size(px(14.0))
-                            .text_color(content_theme.foreground),
-                    )
-                    .child(
-                        div()
+                        h_flex()
                             .min_w_0()
-                            .flex_1()
-                            .truncate()
-                            .text_size(crate::theme::FONT_BODY)
-                            .text_color(content_theme.muted)
-                            .child(preview.relative_path.clone()),
+                            .items_center()
+                            .gap_2()
+                            .child(
+                                Icon::empty()
+                                    .path(file_icon_for_path(&preview.relative_path))
+                                    .with_size(px(14.0))
+                                    .text_color(content_theme.foreground),
+                            )
+                            .child(
+                                div()
+                                    .min_w_0()
+                                    .truncate()
+                                    .text_size(crate::theme::FONT_BODY)
+                                    .font_weight(gpui::FontWeight::MEDIUM)
+                                    .text_color(content_theme.foreground)
+                                    .child(preview.relative_path.clone()),
+                            ),
                     )
                     .child(
                         div()
@@ -215,6 +221,28 @@ impl ShardlaneApp {
         let mut list = div().flex().flex_col();
         for (index, line) in text.lines().take(shown_lines).enumerate() {
             let spans = highlighter.line(line);
+            let code_container = div()
+                .flex_1()
+                .min_w_0()
+                .flex()
+                .flex_wrap()
+                .font_family("Berkeley Mono, Menlo, monospace")
+                .text_size(crate::theme::FONT_BODY)
+                .line_height(px(18.0))
+                .text_color(theme.foreground)
+                .children(spans.into_iter().map(|span| {
+                    let color = match span.kind {
+                        crate::ui::syntax::SyntaxKind::Keyword => theme.primary,
+                        crate::ui::syntax::SyntaxKind::String => theme.success,
+                        crate::ui::syntax::SyntaxKind::Comment => theme.muted.opacity(0.75),
+                        crate::ui::syntax::SyntaxKind::Number => theme.primary,
+                        crate::ui::syntax::SyntaxKind::Plain => theme.foreground,
+                    };
+                    div()
+                        .text_color(color)
+                        .child(span.text.replace(' ', "\u{00a0}"))
+                }));
+
             let row = div()
                 .flex()
                 .items_start()
@@ -230,28 +258,8 @@ impl ShardlaneApp {
                         .text_color(theme.muted.opacity(0.55))
                         .child((index + 1).to_string()),
                 )
-                .child(
-                    div()
-                        .flex_1()
-                        .min_w_0()
-                        .font_family("Berkeley Mono, Menlo, monospace")
-                        .text_size(crate::theme::FONT_BODY)
-                        .line_height(px(18.0))
-                        .text_color(theme.foreground),
-                );
-            let code_row = row.children(spans.into_iter().map(|span| {
-                let color = match span.kind {
-                    crate::ui::syntax::SyntaxKind::Keyword => theme.primary,
-                    crate::ui::syntax::SyntaxKind::String => theme.success,
-                    crate::ui::syntax::SyntaxKind::Comment => theme.muted.opacity(0.75),
-                    crate::ui::syntax::SyntaxKind::Number => theme.primary,
-                    crate::ui::syntax::SyntaxKind::Plain => theme.foreground,
-                };
-                div()
-                    .text_color(color)
-                    .child(span.text.replace(' ', "\u{00a0}"))
-            }));
-            list = list.child(code_row);
+                .child(code_container);
+            list = list.child(row);
         }
         if total_lines > shown_lines {
             list = list.child(

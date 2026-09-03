@@ -65,6 +65,59 @@ impl ShardlaneApp {
         let drop_color = cx.theme().primary;
         let focus_herdr = herdr.clone();
         let status = self.workspace_agent_status(&workspace.workspace_id);
+        let history_action_project = project_cwd.clone();
+        let history_action_group = format!("shardlane-project-history-{workspace_id}");
+        let component_theme = cx.theme().clone();
+
+        // Git identity displayed directly to the right of the project item title:
+        // branch icon + branch name + file change +/- counts.
+        let git_element: Option<AnyElement> = self
+            .sidebar_git_status
+            .get(project_cwd.as_str())
+            .map(|snapshot| {
+                let theme = component_theme.clone();
+                h_flex()
+                    .flex_shrink_0()
+                    .items_center()
+                    .gap(px(3.0))
+                    .child(
+                        icon("icons/git-branch.svg")
+                            .with_size(px(10.5))
+                            .text_color(theme.muted_foreground.opacity(0.7)),
+                    )
+                    .child(
+                        div()
+                            .max_w(px(72.0))
+                            .text_size(crate::theme::FONT_META)
+                            .text_color(theme.muted_foreground.opacity(0.85))
+                            .truncate()
+                            .child(snapshot.branch.clone()),
+                    )
+                    .when(snapshot.additions > 0 || snapshot.deletions > 0, |row| {
+                        row.child(
+                            h_flex()
+                                .gap(px(2.0))
+                                .items_center()
+                                .when(snapshot.additions > 0, |r| {
+                                    r.child(
+                                        div()
+                                            .text_size(crate::theme::FONT_META)
+                                            .text_color(theme.success)
+                                            .child(format!("+{}", snapshot.additions)),
+                                    )
+                                })
+                                .when(snapshot.deletions > 0, |r| {
+                                    r.child(
+                                        div()
+                                            .text_size(crate::theme::FONT_META)
+                                            .text_color(theme.danger)
+                                            .child(format!("-{}", snapshot.deletions)),
+                                    )
+                                }),
+                        )
+                    })
+                    .into_any_element()
+            });
 
         let row_element = sidebar_row(
             &self.sidebar_roving_workspaces,
@@ -73,6 +126,7 @@ impl ShardlaneApp {
                 expanded: !collapsed,
             },
             title,
+            git_element,
             None,
             None,
             None,
@@ -143,61 +197,6 @@ impl ShardlaneApp {
         })
         .into_any_element();
 
-        let history_action_project = project_cwd.clone();
-        let history_action_group = format!("shardlane-project-history-{workspace_id}");
-        let component_theme = cx.theme().clone();
-        // Git identity trailing (read-only projection over the per-project
-        // snapshot map): branch + working-tree +/- counts, exactly the Header
-        // pill's semantics moved to the row. Fades on hover so the existing
-        // action buttons keep the right edge.
-        let git_element: Option<AnyElement> = self
-            .sidebar_git_status
-            .get(project_cwd.as_str())
-            .map(|snapshot| {
-                let theme = component_theme.clone();
-                let right_offset = if status.is_some() {
-                    SIDEBAR_EDGE + px(20.0)
-                } else {
-                    SIDEBAR_EDGE
-                };
-                let mut info = h_flex()
-                    .absolute()
-                    .right(right_offset)
-                    .top_0()
-                    .bottom_0()
-                    .items_center()
-                    .gap(px(4.0))
-                    .group_hover(history_action_group.clone(), |style| style.opacity(0.0))
-                    .child(
-                        icon("icons/git-branch.svg")
-                            .with_size(px(11.0))
-                            .text_color(theme.muted_foreground),
-                    )
-                    .child(
-                        div()
-                            .max_w(px(72.0))
-                            .text_size(crate::theme::FONT_META)
-                            .text_color(theme.muted_foreground)
-                            .truncate()
-                            .child(snapshot.branch.clone()),
-                    );
-                if snapshot.additions > 0 || snapshot.deletions > 0 {
-                    info = info
-                        .child(
-                            div()
-                                .text_size(crate::theme::FONT_META)
-                                .text_color(theme.success)
-                                .child(format!("+{}", snapshot.additions)),
-                        )
-                        .child(
-                            div()
-                                .text_size(crate::theme::FONT_META)
-                                .text_color(theme.danger)
-                                .child(format!("-{}", snapshot.deletions)),
-                        );
-                }
-                info.into_any_element()
-            });
         let status_element: Option<AnyElement> = status.map(|level| {
             div()
                 .absolute()
@@ -219,7 +218,6 @@ impl ShardlaneApp {
             .w_full()
             .group(history_action_group.clone())
             .child(row_element)
-            .when_some(git_element, |wrapper, el| wrapper.child(el))
             .when_some(status_element, |wrapper, el| wrapper.child(el))
             .child(
                 div()
@@ -301,7 +299,11 @@ impl ShardlaneApp {
         let has_running_service = self
             .observed_services
             .iter()
-            .any(|service| service.tab_id == tab.tab_id);
+            .any(|service| service.tab_id == tab.tab_id)
+            || self.scripts.scripts.iter().any(|script| {
+                script.tab_id.as_deref() == Some(tab.tab_id.as_str())
+                    && script.runtime.status == crate::scripts::ScriptStatus::Running
+            });
         let lead = tab_agent
             .and_then(agent_identity)
             .and_then(|identity| agent_brand_icon(identity, dark))
@@ -405,6 +407,7 @@ impl ShardlaneApp {
             format!("shardlane-tab-{tab_id}"),
             lead,
             title,
+            None,
             None,
             None,
             None,

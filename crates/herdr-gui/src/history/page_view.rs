@@ -81,13 +81,24 @@ pub(super) fn history_conversation_context_menu(
     }
     let export_session = session;
     let export_herdr = herdr.clone();
-    menu = menu.item(
-        PopupMenuItem::new("Export as Markdown…").on_click(move |_, window, app| {
-            export_herdr.update(app, |view, cx| {
-                view.export_history_markdown(export_session.clone(), window, cx)
-            });
-        }),
-    );
+    let delete_session = export_session.clone();
+    let delete_herdr = export_herdr.clone();
+    menu = menu
+        .item(
+            PopupMenuItem::new("Export as Markdown…").on_click(move |_, window, app| {
+                export_herdr.update(app, |view, cx| {
+                    view.export_history_markdown(export_session.clone(), window, cx)
+                });
+            }),
+        )
+        .separator()
+        .item(
+            PopupMenuItem::new("Delete Conversation…").on_click(move |_, window, app| {
+                delete_herdr.update(app, |view, cx| {
+                    view.confirm_delete_history_session(delete_session.clone(), window, cx);
+                });
+            }),
+        );
     menu
 }
 

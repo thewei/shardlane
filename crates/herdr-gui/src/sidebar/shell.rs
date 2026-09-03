@@ -31,6 +31,7 @@ impl ShardlaneApp {
         // header breadcrumbs) — the chip shows the CURRENT WORKSPACE's name
         // with its running dot.
         let dark = theme.bg <= 0x808080;
+        self.refresh_git_status(cx);
         // Sidebar render owns one ProjectIndex snapshot. Previously the visible-project
         // projection and the Sidebar itself each rebuilt the same index, paying the
         // path/script projection cost twice on every Sidebar repaint.

@@ -242,6 +242,7 @@ pub(super) fn sidebar_row(
     id: impl Into<SharedString>,
     lead: RowLead,
     label: impl Into<SharedString>,
+    title_suffix: Option<AnyElement>,
     role_badge: Option<&'static str>,
     meta_text: Option<SharedString>,
     count: Option<i64>,
@@ -367,12 +368,24 @@ pub(super) fn sidebar_row(
                         }),
                 )
                 .child(
-                    div()
+                    h_flex()
                         .flex_1()
                         .min_w_0()
-                        .text_size(if sub { FONT_CAPTION } else { FONT_BODY })
-                        .truncate()
-                        .child(label.into()),
+                        .items_center()
+                        .gap(px(5.0))
+                        .child(
+                            div()
+                                .flex_shrink_0()
+                                .max_w(if title_suffix.is_some() {
+                                    px(110.0)
+                                } else {
+                                    px(240.0)
+                                })
+                                .text_size(if sub { FONT_CAPTION } else { FONT_BODY })
+                                .truncate()
+                                .child(label.into()),
+                        )
+                        .when_some(title_suffix, |this, suffix| this.child(suffix)),
                 )
                 .when_some(role_badge, |this, badge| {
                     this.child(sidebar_meta_pill(

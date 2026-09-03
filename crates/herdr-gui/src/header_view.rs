@@ -736,7 +736,7 @@ impl ShardlaneApp {
                                 .top_0()
                                 .bottom_0()
                                 .left(px(breadcrumb_content_left))
-                                .max_w(relative(0.55))
+                                .max_w(relative(0.70))
                         })
                         .when(!sidebar_visible, |row| row.flex_1().pl(px(14.0)))
                         .when_some(chat_title.clone(), |row, chip| {
@@ -842,10 +842,9 @@ impl ShardlaneApp {
                                         .custom(terminal_header_button)
                                         .xsmall()
                                         .min_w_0()
-                                        .max_w(relative(0.26))
                                         .flex_shrink()
                                         .overflow_hidden()
-                                        .child(div().min_w_0().truncate().child(instance_title.clone()))
+                                        .child(div().min_w_0().max_w(px(160.0)).truncate().child(instance_title.clone()))
                                         .tooltip(format!("Switch workspace · {instance_title}"));
                                     crate::switcher_panel::workspace_switcher_panel(
                                         workspace_picker_herdr.clone(),
@@ -857,7 +856,14 @@ impl ShardlaneApp {
                                         instance_button,
                                     )
                                 })
-                                .child(div().text_color(terminal_header_muted).child("/"))
+                                .child(
+                                    div()
+                                        .flex_none()
+                                        .text_size(px(11.0))
+                                        .text_color(terminal_header_muted.opacity(0.55))
+                                        .px(px(2.0))
+                                        .child("/"),
+                                )
                                 .child({
                                     let projects: Vec<crate::switcher_panel::ProjectRow> = self
                                         .state
@@ -895,10 +901,9 @@ impl ShardlaneApp {
                                         .custom(terminal_header_button)
                                         .xsmall()
                                         .min_w_0()
-                                        .max_w(relative(0.3))
                                         .flex_shrink()
                                         .overflow_hidden()
-                                        .child(div().min_w_0().truncate().child(project_title.clone()))
+                                        .child(div().min_w_0().max_w(px(200.0)).truncate().child(project_title.clone()))
                                         .tooltip(format!("Switch project · {project_title}"));
                                     crate::switcher_panel::project_switcher_panel(
                                         project_picker_herdr.clone(),
@@ -909,8 +914,16 @@ impl ShardlaneApp {
                                         project_button,
                                     )
                                 })
-                                .when_some(tab_title, |el, title| {
-                                    el.child(div().text_color(terminal_header_muted).child("/"))
+                                .when(self.file_preview.is_none(), |el| {
+                                    el.when_some(tab_title, |el, title| {
+                                        el.child(
+                                            div()
+                                                .flex_none()
+                                                .text_size(px(11.0))
+                                                .text_color(terminal_header_muted.opacity(0.55))
+                                                .px(px(2.0))
+                                                .child("/"),
+                                        )
                                         .child({
                                             let tabs: Vec<crate::switcher_panel::TabRow> = self
                                                 .active_workspace_id()
@@ -936,11 +949,10 @@ impl ShardlaneApp {
                                                 .custom(terminal_header_button)
                                                 .xsmall()
                                                 .min_w_0()
-                                                .max_w(relative(0.42))
                                                 .flex_shrink()
                                                 .overflow_hidden()
                                                 .text_color(terminal_header_muted)
-                                                .child(div().min_w_0().truncate().child(title.clone()))
+                                                .child(div().min_w_0().max_w(px(200.0)).truncate().child(title.clone()))
                                                 .tooltip(format!("Switch Tab · {title}"));
                                             crate::switcher_panel::tab_switcher_panel(
                                                 tab_picker_herdr.clone(),
@@ -951,6 +963,39 @@ impl ShardlaneApp {
                                                 tab_button,
                                             )
                                         })
+                                    })
+                                })
+                                .when_some(self.file_preview.clone(), |el, preview| {
+                                    el.child(
+                                        div()
+                                            .flex_none()
+                                            .text_size(px(11.0))
+                                            .text_color(terminal_header_muted.opacity(0.55))
+                                            .px(px(2.0))
+                                            .child("/"),
+                                    )
+                                    .child(
+                                        h_flex()
+                                            .min_w_0()
+                                            .flex_shrink()
+                                            .items_center()
+                                            .gap(px(4.0))
+                                            .child(
+                                                Icon::empty()
+                                                    .path(crate::right_panel::files::file_icon_for_path(&preview.relative_path))
+                                                    .with_size(px(12.0))
+                                                    .text_color(terminal_header_muted),
+                                            )
+                                            .child(
+                                                div()
+                                                    .min_w_0()
+                                                    .max_w(px(240.0))
+                                                    .truncate()
+                                                    .text_size(theme::FONT_META)
+                                                    .text_color(content_theme.foreground)
+                                                    .child(preview.relative_path.clone()),
+                                            ),
+                                    )
                                 })
                             })
                             .child(div().flex_1().min_w_0())
@@ -1069,9 +1114,21 @@ impl ShardlaneApp {
                         .gap_1()
                         .text_size(theme::FONT_DECORATIVE)
                         .text_color(muted)
-                        .when(!compact_header && !secondary_surface, |row| {
-                            row.child(script_launcher)
-                        })
+                        .when(
+                            !(compact_header
+                                || secondary_surface
+                                || self.file_preview.is_some()
+                                || (self.right_panel.open
+                                    && matches!(
+                                        self.right_panel
+                                            .active_surface
+                                            .and_then(|idx| self.right_panel.surfaces.get(idx)),
+                                        Some(crate::right_panel::RightPanelSurface::Files)
+                                    ))),
+                            |row| {
+                                row.child(script_launcher)
+                            },
+                        )
                         .when(
                             !compact_header
                                 && !secondary_surface

@@ -84,6 +84,7 @@ impl ShardlaneApp {
             format!("shardlane-pane-{pane_id}"),
             lead,
             label,
+            None,
             role_badge,
             None,
             None,

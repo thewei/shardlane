@@ -382,6 +382,114 @@ impl ShardlaneApp {
         }
     }
 
+    pub(crate) fn confirm_delete_history_session(
+        &mut self,
+        session: ConversationMeta,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if window.has_active_dialog(cx) {
+            return;
+        }
+        let app = cx.entity();
+        let title = if session.title.trim().is_empty() {
+            "Untitled Conversation".to_string()
+        } else {
+            session.title.clone()
+        };
+        let file_path = session.file_path.clone();
+        let key = session.key.clone();
+        let dialog_width =
+            responsive_dialog_width(window.bounds().size.width.to_f64(), 0.84, 320.0, 440.0);
+        window.open_dialog(cx, move |dialog, _window, cx| {
+            let confirm_app = app.clone();
+            let confirm_key = key.clone();
+            let confirm_file_path = file_path.clone();
+            dialog
+                .title("Delete Conversation")
+                .w(px(dialog_width))
+                .button_props(
+                    gpui_component::dialog::DialogButtonProps::default()
+                        .ok_text("Delete")
+                        .cancel_text("Cancel"),
+                )
+                .footer(|ok, cancel, window, cx| vec![cancel(window, cx), ok(window, cx)])
+                .child(
+                    v_flex()
+                        .gap(crate::ui_metrics::DIALOG_CONTENT_GAP)
+                        .child(div().text_size(crate::theme::FONT_BODY).child(format!(
+                            "Are you sure you want to permanently delete \"{title}\"?"
+                        )))
+                        .child(
+                            div()
+                                .text_size(crate::theme::FONT_META)
+                                .text_color(cx.theme().danger)
+                                .child("This will physically remove the source file from disk."),
+                        )
+                        .when(!file_path.is_empty(), |el| {
+                            el.child(
+                                div()
+                                    .text_size(crate::theme::FONT_META)
+                                    .text_color(cx.theme().muted_foreground)
+                                    .truncate()
+                                    .child(file_path.clone()),
+                            )
+                        }),
+                )
+                .on_ok(move |_, window, app| {
+                    confirm_app.update(app, |view, cx| {
+                        view.delete_history_session_confirmed(
+                            confirm_key.clone(),
+                            confirm_file_path.clone(),
+                            window,
+                            cx,
+                        );
+                    });
+                    true
+                })
+        });
+    }
+
+    pub(crate) fn delete_history_session_confirmed(
+        &mut self,
+        key: String,
+        file_path: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        // 1. Physically delete source file from disk
+        let raw_path = if let Some((db, _)) = file_path.split_once('#') {
+            db
+        } else {
+            &file_path
+        };
+        let p = std::path::Path::new(raw_path);
+        if p.exists() && p.is_file() {
+            let _ = std::fs::remove_file(p);
+        }
+
+        // 2. Remove from catalog database
+        let db_path = history_db_path();
+        let key_clone = key.clone();
+        cx.background_executor()
+            .spawn(async move {
+                if let Ok(mut catalog) = HistoryCatalog::open(&db_path) {
+                    let _ = catalog.delete_session(&key_clone);
+                }
+            })
+            .detach();
+
+        // 3. Update in-memory state
+        self.history.sessions.retain(|s| s.key != key);
+        if self.history.selected_key.as_deref() == Some(&key) {
+            self.history.selected_key = None;
+            self.history.transcript = None;
+        }
+        window.push_notification("Conversation permanently deleted", cx);
+        self.notify_sidebar(cx);
+        cx.notify();
+    }
+
     fn history_find_scroll_to_seq(&mut self, seq: i64) {
         use crate::agent_ui::conversation::ConversationRow;
         let Some(transcript) = self.history.transcript.as_ref() else {

@@ -20,7 +20,13 @@ use crate::interaction::InteractiveSurfaceExt as _;
 use crate::ui_metrics::{CONTENT_INSET, INTERACTIVE_FOCUS_OPACITY, SIDEBAR_EDGE_INSET, SPACE_ICON};
 use crate::workspace_model::history_session_project_path_display;
 use ::gpui::{img, uniform_list, StatefulInteractiveElement, Styled};
-use gpui_component::{button::DropdownButton, h_flex, menu::PopupMenu, tooltip::Tooltip, v_flex};
+use gpui_component::{
+    button::{Button, DropdownButton},
+    h_flex,
+    menu::PopupMenu,
+    tooltip::Tooltip,
+    v_flex,
+};
 use shardlane_history::{
     scan, AgentId, CachedTranscriptWindow, ConversationMeta, ConversationRef, HistoryAdapterRoster,
     HistoryCatalog, HistoryWatcher, ParsedTranscript,

@@ -17,23 +17,16 @@ use crate::theme::FONT_BODY;
 use crate::ui::drag::{drag_ghost_row, DragGhostStyle};
 use crate::ui::menus::{menu_action, menu_action_cx};
 use crate::ui_metrics::{ROW_HEIGHT_SUB, SPACE_SM};
-use ::gpui::{img, Div, Point};
-use gpui_component::tab::{Tab as TabItem, TabBar};
+use ::gpui::{img, Div, Point, Stateful};
 use gpui_component::tooltip::Tooltip;
 
 /// Layout height of the native Tab strip (including its bottom divider). Terminal geometry
 /// (`terminal_size`/`terminal_canvas_origin`) subtracts this so the hosted TUI grid stays
-/// inside the visible area below the strip. 32px equals the default `Tab` variant height, so
-/// a Tab's highlight fills the strip edge-to-edge (Ghostty-style integrated block).
+/// inside the visible area below the strip.
 pub(super) const NATIVE_TAB_BAR_HEIGHT: f32 = 32.0;
 
 /// Long Tab titles clip at this width; Herdr's `tab.rename` remains the way to shorten them.
 const NATIVE_TAB_MAX_WIDTH: f32 = 200.0;
-
-/// Fixed width of the trailing `+` slot. The slot exists in both strip states (inline after
-/// the last Tab, or as a blank spacer while `+` is pinned to the fixed trailing edge), so the
-/// overflow decision cannot flip-flop with the `+`'s own width.
-const NATIVE_TAB_PLUS_SLOT: f32 = 26.0;
 
 #[derive(Clone)]
 pub(super) struct NativeTabDrag {
@@ -99,23 +92,8 @@ impl ShardlaneApp {
             .as_deref()
             .and_then(|focused| tabs.iter().position(|tab| tab.tab_id == focused))
             .unwrap_or(usize::MAX);
-        let dark = theme.bg <= 0x808080;
-        let tab_ids = tabs
-            .iter()
-            .map(|tab| tab.tab_id.clone())
-            .collect::<Vec<_>>();
-
-        let items = tabs
-            .into_iter()
-            .enumerate()
-            .map(|(index, tab)| self.native_tab_item(tab, index, workspace_id.clone(), dark, cx))
-            .collect::<Vec<_>>();
 
         let new_tab_herdr = herdr.clone();
-        let click_herdr = herdr.clone();
-        // Page arrows appear only when the strip actually overflows in that direction.
-        // GPUI notifies the view whenever a tracked scroll offset changes, so reading the
-        // handle here keeps the arrows honest after wheel scrolling too.
         let scroll_pos = self.native_tab_scroll.offset().x;
         let scroll_max = self.native_tab_scroll.max_offset().width;
         let overflowing = scroll_max > px(0.0);
@@ -125,84 +103,114 @@ impl ShardlaneApp {
         let scroll_right_herdr = herdr.clone();
         let scroll_left_handle = self.native_tab_scroll.clone();
         let scroll_right_handle = self.native_tab_scroll.clone();
-        let plus_button = || {
+        let plus_button = move || {
+            let herdr = new_tab_herdr.clone();
             Button::new("native-tab-new")
                 .xsmall()
                 .ghost()
                 .icon(ComponentIconName::Plus)
-                .tooltip("New Tab")
+                .tooltip("New Tab (⌘T)")
                 .on_click(move |_, window, app| {
-                    new_tab_herdr.update(app, |this, cx| {
+                    herdr.update(app, |this, cx| {
                         this.new_tab(&NewTab, window, cx);
                     });
                 })
         };
-        // Default `Tab` variant: square corners, filled rectangular highlight, and a Tab
-        // height equal to the strip height, so the highlight reads as one integrated block.
-        let mut bar = TabBar::new("native-tab-bar")
-            .track_scroll(&self.native_tab_scroll)
-            .selected_index(selected_index)
-            .children(items)
-            // Tab switching goes through the one FocusIntent seam (same as Sidebar rows);
-            // tab selection is client-local, the hosted TUI follows the focus chain.
-            .on_click(move |index, window, app| {
-                let Some(tab_id) = tab_ids.get(*index).cloned() else {
-                    return;
-                };
-                click_herdr.update(app, |this, cx| {
-                    this.apply_focus_intent(FocusIntent::tab(tab_id), window, cx);
-                });
-            });
-        if can_scroll_left {
-            bar = bar.prefix(
-                Button::new("native-tab-scroll-left")
-                    .xsmall()
-                    .ghost()
-                    .icon(ComponentIconName::ChevronLeft)
-                    .tooltip("Previous tabs")
-                    .on_click(move |_, _, app| {
-                        scroll_native_tabs(&scroll_left_handle, -1.0);
-                        scroll_left_herdr.update(app, |_, cx| cx.notify());
-                    }),
-            );
-        }
-        let mut strip_suffix = h_flex().gap_0p5();
-        if can_scroll_right {
-            strip_suffix = strip_suffix.child(
-                Button::new("native-tab-scroll-right")
-                    .xsmall()
-                    .ghost()
-                    .icon(ComponentIconName::ChevronRight)
-                    .tooltip("Next tabs")
-                    .on_click(move |_, _, app| {
-                        scroll_native_tabs(&scroll_right_handle, 1.0);
-                        scroll_right_herdr.update(app, |_, cx| cx.notify());
-                    }),
-            );
-        }
-        // The `+` sits right after the last Tab; once the strip overflows it pins to the
-        // fixed trailing slot so it never scrolls out of reach. Both states reserve the same
-        // fixed slot width, so the overflow test (which includes the slot) stays stable.
-        let bar = if overflowing {
-            strip_suffix = strip_suffix.child(plus_button());
-            bar.last_empty_space(div().w(px(NATIVE_TAB_PLUS_SLOT)))
-                .suffix(strip_suffix)
-        } else {
-            bar.last_empty_space(
-                div()
-                    .flex()
-                    .justify_center()
-                    .w(px(NATIVE_TAB_PLUS_SLOT))
-                    .child(plus_button()),
-            )
-            .suffix(strip_suffix)
-        };
 
-        // The TabBar owns the strip's background and bottom divider; the prefix/suffix slots
-        // keep the arrows and `+` inside that background so the divider stays continuous.
-        // The passive measure canvas re-renders the strip once when the scroll max changes
-        // (it is only written during paint, so a render-time read alone would lag a frame
-        // with no follow-up notify — the same bootstrap pattern as the terminal measure canvas).
+        let total_tabs = tabs.len();
+        let mut tab_elements = Vec::new();
+        for (index, tab) in tabs.into_iter().enumerate() {
+            let is_selected = index == selected_index;
+            let next_is_selected = index + 1 == selected_index;
+            tab_elements.push(
+                self.native_tab_item(tab, index, is_selected, workspace_id.clone(), theme, cx)
+                    .into_any_element(),
+            );
+
+            // Subtle vertical separator between two adjacent inactive tabs
+            if !is_selected && !next_is_selected && index + 1 < total_tabs {
+                tab_elements.push(
+                    div()
+                        .w(px(1.0))
+                        .h(px(12.0))
+                        .my_auto()
+                        .flex_none()
+                        .bg(cx.theme().border.opacity(0.6))
+                        .into_any_element(),
+                );
+            }
+        }
+
+        let mut scroll_container = h_flex()
+            .id("native-tabs-scroll")
+            .flex_1()
+            .min_w_0()
+            .h_full()
+            .items_end()
+            .overflow_x_scroll()
+            .track_scroll(&self.native_tab_scroll)
+            .gap(px(2.0))
+            .children(tab_elements);
+
+        if !overflowing {
+            scroll_container = scroll_container.child(
+                div()
+                    .flex_none()
+                    .mb(px(2.0))
+                    .ml(px(2.0))
+                    .child(plus_button()),
+            );
+        }
+
+        let mut bar = h_flex()
+            .id("native-tab-bar")
+            .w_full()
+            .h_full()
+            .items_end()
+            .px(px(4.0));
+
+        if can_scroll_left {
+            bar = bar.child(
+                div().flex_none().mb(px(2.0)).child(
+                    Button::new("native-tab-scroll-left")
+                        .xsmall()
+                        .ghost()
+                        .icon(ComponentIconName::ChevronLeft)
+                        .tooltip("Previous tabs")
+                        .on_click(move |_, _, app| {
+                            scroll_native_tabs(&scroll_left_handle, -1.0);
+                            scroll_left_herdr.update(app, |_, cx| cx.notify());
+                        }),
+                ),
+            );
+        }
+
+        bar = bar.child(scroll_container);
+
+        if overflowing {
+            bar = bar.child(
+                h_flex()
+                    .flex_none()
+                    .items_center()
+                    .mb(px(2.0))
+                    .gap_0p5()
+                    .when(can_scroll_right, |row| {
+                        row.child(
+                            Button::new("native-tab-scroll-right")
+                                .xsmall()
+                                .ghost()
+                                .icon(ComponentIconName::ChevronRight)
+                                .tooltip("Next tabs")
+                                .on_click(move |_, _, app| {
+                                    scroll_native_tabs(&scroll_right_handle, 1.0);
+                                    scroll_right_herdr.update(app, |_, cx| cx.notify());
+                                }),
+                        )
+                    })
+                    .child(plus_button()),
+            );
+        }
+
         let measure_herdr = cx.entity();
         let measure_scroll = self.native_tab_scroll.clone();
         let last_max = self.native_tab_scroll_max.clone();
@@ -211,6 +219,9 @@ impl ShardlaneApp {
             .h(px(NATIVE_TAB_BAR_HEIGHT))
             .flex_none()
             .w_full()
+            .bg(rgb(theme.panel))
+            .border_b_1()
+            .border_color(rgb(theme.border))
             .flex()
             .child(
                 canvas(
@@ -226,17 +237,20 @@ impl ShardlaneApp {
                 .absolute()
                 .size_full(),
             )
-            .child(bar.h_full().flex_1())
+            .child(bar)
     }
 
     fn native_tab_item(
         &self,
         tab: Tab,
         index: usize,
+        is_selected: bool,
         workspace_id: Option<String>,
-        dark: bool,
+        theme: UiTheme,
         cx: &mut Context<Self>,
-    ) -> TabItem {
+    ) -> Stateful<Div> {
+        let component_theme = cx.theme().clone();
+        let dark = theme.bg <= 0x808080;
         let tab_id = tab.tab_id.clone();
         let title = self.tab_title(&tab);
         let is_pinned = self.config.ui.sidebar.pinned_tabs.contains(&tab_id);
@@ -259,83 +273,108 @@ impl ShardlaneApp {
             .and_then(agent_identity)
             .and_then(|identity| agent_brand_icon(identity, dark));
 
-        // Inner horizontal insets (Ghostty-tab look): the variant's label padding only covers
-        // the text box, so the prefix icon and trailing suffix carry their own margins.
+        let has_running_service = self
+            .observed_services
+            .iter()
+            .any(|service| service.tab_id == tab_id)
+            || self.scripts.scripts.iter().any(|script| {
+                script.tab_id.as_deref() == Some(tab_id.as_str())
+                    && script.runtime.status == crate::scripts::ScriptStatus::Running
+            });
+
         let lead: AnyElement = match brand_icon {
-            Some(path) => img(path).size(px(14.0)).ml(px(7.0)).into_any_element(),
-            None => Icon::empty()
-                .path("icons/terminal.svg")
-                .with_size(px(13.0))
-                .ml(px(7.0))
-                .text_color(cx.theme().muted_foreground)
-                .into_any_element(),
+            Some(path) => img(path).size(px(14.0)).into_any_element(),
+            None => {
+                let icon_el = Icon::empty()
+                    .path("icons/square-terminal.svg")
+                    .with_size(px(13.0))
+                    .text_color(if is_selected {
+                        component_theme.foreground.opacity(0.85)
+                    } else {
+                        component_theme.muted_foreground.opacity(0.8)
+                    });
+                if has_running_service {
+                    div()
+                        .relative()
+                        .child(icon_el)
+                        .child(
+                            div()
+                                .absolute()
+                                .top(px(-1.5))
+                                .right(px(-2.0))
+                                .size(px(5.5))
+                                .rounded_full()
+                                .border_1()
+                                .border_color(if is_selected {
+                                    rgb(theme.bg)
+                                } else {
+                                    rgb(theme.panel)
+                                })
+                                .bg(component_theme.success),
+                        )
+                        .into_any_element()
+                } else {
+                    icon_el.into_any_element()
+                }
+            }
         };
 
-        let mut suffix = h_flex().gap_1().mr(px(6.0));
-        if let Some(level) = agent_status {
-            suffix = suffix.child(status_glyph_container(
-                SharedString::from(format!("native-tab-status-{tab_id}")),
-                level,
-                cx,
-            ));
-        }
         let close_herdr = cx.entity();
         let close_id = tab_id.clone();
-        let close_hover_bg = cx.theme().foreground.opacity(0.12);
-        // Ghostty-tab convention: the close affordance appears only while the pointer is on
-        // the tab (group hover), and the confirming state keeps it visible for the second click.
-        suffix = suffix.child(
-            div()
-                .id(SharedString::from(format!("native-tab-close-{tab_id}")))
-                .size(px(16.0))
-                .flex()
-                .items_center()
-                .justify_center()
-                .rounded(px(3.0))
-                .cursor_pointer()
-                .opacity(if close_confirming { 1.0 } else { 0.0 })
-                .group_hover("native-tab-item", |s| s.opacity(1.0))
-                .hover(move |s| {
-                    let s = s.opacity(1.0);
-                    if close_confirming {
-                        s
+        let close_danger = component_theme.danger;
+        let close_text = component_theme.foreground;
+        let close_muted = component_theme.muted_foreground;
+        let close_btn = div()
+            .id(SharedString::from(format!("native-tab-close-{tab_id}")))
+            .size(px(16.0))
+            .rounded_full()
+            .flex()
+            .items_center()
+            .justify_center()
+            .cursor_pointer()
+            .opacity(if close_confirming {
+                1.0
+            } else if is_selected {
+                0.65
+            } else {
+                0.0
+            })
+            .group_hover("native-tab-item", |s| s.opacity(1.0))
+            .hover(move |s| {
+                s.opacity(1.0).bg(if close_confirming {
+                    close_danger.opacity(0.25)
+                } else {
+                    close_text.opacity(0.12)
+                })
+            })
+            .when(close_confirming, |s| s.bg(close_danger.opacity(0.18)))
+            .on_click(move |_, window, app| {
+                app.stop_propagation();
+                close_herdr.update(app, |this, cx| {
+                    this.confirm_close_tab(close_id.clone(), window, cx);
+                });
+            })
+            .tooltip(move |_, cx| {
+                cx.new(|_| {
+                    Tooltip::new(if close_confirming {
+                        "Click again to close"
                     } else {
-                        s.bg(close_hover_bg)
-                    }
-                })
-                .when(close_confirming, |s| s.bg(cx.theme().danger.opacity(0.18)))
-                .active(|s| s.bg(cx.theme().danger.opacity(0.24)))
-                .on_click(move |_, window, app| {
-                    app.stop_propagation();
-                    close_herdr.update(app, |this, cx| {
-                        this.confirm_close_tab(close_id.clone(), window, cx);
-                    });
-                })
-                .tooltip(move |_, cx| {
-                    cx.new(|_| {
-                        Tooltip::new(if close_confirming {
-                            "Click again to close"
-                        } else {
-                            "Close Tab"
-                        })
+                        "Close Tab (⌘W)"
                     })
-                    .into()
                 })
-                .child(
-                    Icon::empty()
-                        .path("icons/x.svg")
-                        .with_size(px(11.0))
-                        .text_color(if close_confirming {
-                            cx.theme().danger
-                        } else {
-                            cx.theme().muted_foreground
-                        }),
-                ),
-        );
+                .into()
+            })
+            .child(
+                Icon::empty()
+                    .path("icons/x.svg")
+                    .with_size(px(10.5))
+                    .text_color(if close_confirming {
+                        close_danger
+                    } else {
+                        close_muted
+                    }),
+            );
 
-        // The context menu mounts on a transparent overlay covering the tab (gpui-component's
-        // ContextMenuExt cannot wrap a `Tab` child inside TabBar, and Tab only renders extra
-        // children when no `icon` is set — the prefix/suffix slots stay outside the overlay).
         let menu_herdr = cx.entity();
         let menu_tab_id = tab_id.clone();
         let menu_title = title.clone();
@@ -363,31 +402,84 @@ impl ShardlaneApp {
             })
         });
 
-        let drag = workspace_id.clone().map(|workspace_id| NativeTabDrag {
+        let click_herdr = cx.entity();
+        let click_tab_id = tab_id.clone();
+        let middle_close_herdr = cx.entity();
+        let middle_close_id = tab_id.clone();
+        let drag_over_tab_id = tab_id.clone();
+        let drop_tab_id = tab_id.clone();
+        let drop_herdr = cx.entity();
+        let drop_color = rgb(theme.active);
+
+        let drag = workspace_id.map(|workspace_id| NativeTabDrag {
             tab_id: tab_id.clone(),
             workspace_id,
             label: title.clone(),
             position: Point::default(),
         });
-        let drop_color = cx.theme().primary;
-        let drag_over_tab_id = tab_id.clone();
-        let drop_tab_id = tab_id.clone();
-        let drop_herdr = cx.entity();
-        let middle_close_herdr = cx.entity();
-        let middle_close_id = tab_id.clone();
 
-        TabItem::new()
-            .relative()
+        div()
+            .id(SharedString::from(format!("native-tab-{tab_id}")))
             .group("native-tab-item")
+            .relative()
+            .flex()
+            .items_center()
+            .gap(px(6.0))
+            .px(px(8.0))
             .max_w(px(NATIVE_TAB_MAX_WIDTH))
-            .label(title.clone())
-            .prefix(lead)
-            .suffix(suffix)
+            .min_w(px(80.0))
+            .flex_shrink()
+            .cursor_pointer()
+            .when(is_selected, |s| {
+                s.h(px(27.0))
+                    .mb(px(-1.0))
+                    .rounded_t(px(5.0))
+                    .bg(rgb(theme.bg))
+                    .border_t_1()
+                    .border_l_1()
+                    .border_r_1()
+                    .border_color(rgb(theme.border))
+            })
+            .when(!is_selected, |s| {
+                s.h(px(25.0))
+                    .mb(px(1.0))
+                    .rounded(px(4.0))
+                    .hover(move |h| h.bg(component_theme.foreground.opacity(0.06)))
+            })
             .child(menu_overlay)
-            // Clipped long titles stay readable via the tooltip.
+            .child(lead)
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .truncate()
+                    .text_size(crate::theme::FONT_BODY)
+                    .font_weight(if is_selected {
+                        gpui::FontWeight::MEDIUM
+                    } else {
+                        gpui::FontWeight::NORMAL
+                    })
+                    .text_color(if is_selected {
+                        rgb(theme.text)
+                    } else {
+                        rgb(theme.muted)
+                    })
+                    .child(title.clone()),
+            )
+            .when_some(agent_status, |row, level| {
+                row.child(status_glyph_container(
+                    SharedString::from(format!("native-tab-status-{tab_id}")),
+                    level,
+                    cx,
+                ))
+            })
+            .child(close_btn)
             .tooltip(crate::ui::tooltip::tooltip_fn(title))
-            // Middle-click close also goes through the two-click confirm (deletion is always
-            // confirmed); the confirming state keeps the ✕ visible for the second click.
+            .on_click(move |_, window, app| {
+                click_herdr.update(app, |this, cx| {
+                    this.apply_focus_intent(FocusIntent::tab(click_tab_id.clone()), window, cx);
+                });
+            })
             .on_mouse_down(MouseButton::Middle, move |_, window, app| {
                 middle_close_herdr.update(app, |this, cx| {
                     this.confirm_close_tab(middle_close_id.clone(), window, cx);
@@ -401,8 +493,7 @@ impl ShardlaneApp {
                 .can_drop(|value, _, _| value.downcast_ref::<NativeTabDrag>().is_some())
                 .drag_over::<NativeTabDrag>(move |style, drag, _, _| {
                     if drag.tab_id != drag_over_tab_id {
-                        // Drop-before semantics: insertion line on the leading edge.
-                        style.border_l_1().border_color(drop_color)
+                        style.border_l_2().border_color(drop_color)
                     } else {
                         style
                     }
@@ -411,8 +502,6 @@ impl ShardlaneApp {
                     if drag.tab_id == drop_tab_id {
                         return;
                     }
-                    // `move_tab_to_index` re-validates workspace membership against the
-                    // authoritative projection before issuing `tab.move`.
                     let dragged_tab_id = drag.tab_id.clone();
                     let workspace_id = drag.workspace_id.clone();
                     drop_herdr.update(app, |this, cx| {

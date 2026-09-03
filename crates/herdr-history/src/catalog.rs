@@ -310,6 +310,36 @@ impl HistoryCatalog {
         Ok(current.len())
     }
 
+    pub fn delete_session(&mut self, key: &str) -> Result<Option<String>> {
+        let transaction = self.conn.transaction()?;
+        let file_path: Option<String> = transaction
+            .query_row(
+                "SELECT file_path FROM sessions WHERE key = ?1",
+                params![key],
+                |row| row.get(0),
+            )
+            .optional()?;
+        transaction.execute(
+            "DELETE FROM message_fts WHERE session_key = ?1",
+            params![key],
+        )?;
+        transaction.execute(
+            "DELETE FROM transcript_page_cache WHERE session_key = ?1",
+            params![key],
+        )?;
+        transaction.execute(
+            "DELETE FROM transcript_message_index WHERE session_key = ?1",
+            params![key],
+        )?;
+        transaction.execute(
+            "DELETE FROM transcript_page_meta WHERE session_key = ?1",
+            params![key],
+        )?;
+        transaction.execute("DELETE FROM sessions WHERE key = ?1", params![key])?;
+        transaction.commit()?;
+        Ok(file_path)
+    }
+
     pub fn transcript_source(&self, key: &str) -> Result<Option<SessionFileRef>> {
         self.conn
             .query_row(
@@ -1560,6 +1590,24 @@ mod tests {
             |row| row.get(0),
         )?;
         assert_eq!(orphan_pages, 0);
+        Ok(())
+    }
+
+    #[test]
+    fn test_delete_session_removes_session_and_cascades() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let path = dir.path().join("history.sqlite");
+        let mut catalog = HistoryCatalog::open(&path)?;
+        let parsed = session("k_del", "to delete", "/work/demo/s_del.jsonl", 1_000);
+        catalog.write_session(&parsed.meta, 1_000, &parsed.units)?;
+        assert!(catalog.session("k_del")?.is_some());
+
+        let deleted_path = catalog.delete_session("k_del")?;
+        assert_eq!(deleted_path, Some("/work/demo/s_del.jsonl".to_string()));
+        assert!(catalog.session("k_del")?.is_none());
+
+        let non_existent = catalog.delete_session("non_existent")?;
+        assert_eq!(non_existent, None);
         Ok(())
     }
 

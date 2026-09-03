@@ -12,6 +12,97 @@ pub(super) fn listening_ports_for_pids(pids: &[u32]) -> Vec<u16> {
         .collect()
 }
 
+pub(super) fn all_listening_ports() -> HashMap<u32, Vec<u16>> {
+    let output = Command::new("lsof")
+        .args(["-Pan", "-iTCP", "-sTCP:LISTEN"])
+        .output();
+    let Ok(output) = output else {
+        return HashMap::new();
+    };
+    if !output.status.success() {
+        return HashMap::new();
+    }
+    parse_lsof_listening_ports_by_pid(&String::from_utf8_lossy(&output.stdout))
+}
+
+#[derive(Clone, Debug, Default)]
+pub(super) struct ProcessTreeSnapshot {
+    pub parents: HashMap<u32, u32>,
+    pub commands: HashMap<u32, String>,
+}
+
+impl ProcessTreeSnapshot {
+    pub(super) fn capture() -> Self {
+        let output = Command::new("ps")
+            .args(["-A", "-o", "pid=,ppid=,command="])
+            .output();
+        let Ok(output) = output else {
+            return Self::default();
+        };
+        if !output.status.success() {
+            return Self::default();
+        }
+        Self::parse(&String::from_utf8_lossy(&output.stdout))
+    }
+
+    pub(super) fn parse(output: &str) -> Self {
+        let mut parents = HashMap::new();
+        let mut commands = HashMap::new();
+        for line in output.lines() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            let mut parts = trimmed.split_whitespace();
+            let Some(pid) = parts.next().and_then(|p| p.parse::<u32>().ok()) else {
+                continue;
+            };
+            let Some(ppid) = parts.next().and_then(|p| p.parse::<u32>().ok()) else {
+                continue;
+            };
+            parents.insert(pid, ppid);
+
+            let cmd = trimmed
+                .split_once(char::is_whitespace)
+                .and_then(|(_, rest)| rest.trim_start().split_once(char::is_whitespace))
+                .map(|(_, cmd)| cmd.trim().to_string())
+                .unwrap_or_default();
+            if !cmd.is_empty() {
+                commands.insert(pid, cmd);
+            }
+        }
+        Self { parents, commands }
+    }
+
+    pub(super) fn is_descendant_of(&self, mut pid: u32, target_pids: &HashSet<u32>) -> bool {
+        let mut visited = HashSet::new();
+        while pid > 1 && visited.insert(pid) {
+            if target_pids.contains(&pid) {
+                return true;
+            }
+            let Some(&parent) = self.parents.get(&pid) else {
+                break;
+            };
+            pid = parent;
+        }
+        false
+    }
+}
+
+pub(super) fn find_listening_for_pane(
+    target_pids: &HashSet<u32>,
+    listening_ports: &HashMap<u32, Vec<u16>>,
+    tree: &ProcessTreeSnapshot,
+) -> Vec<(u32, Vec<u16>)> {
+    let mut matches = Vec::new();
+    for (&lpid, ports) in listening_ports {
+        if target_pids.contains(&lpid) || tree.is_descendant_of(lpid, target_pids) {
+            matches.push((lpid, ports.clone()));
+        }
+    }
+    matches
+}
+
 pub(super) fn listening_ports_by_pid(pids: &[u32]) -> HashMap<u32, Vec<u16>> {
     let pids = pids
         .iter()
@@ -95,5 +186,27 @@ mod tests {
         let grouped = parse_lsof_listening_ports_by_pid(output);
         assert_eq!(grouped.get(&10), Some(&vec![3000, 5173]));
         assert_eq!(grouped.get(&20), Some(&vec![8000]));
+    }
+
+    #[test]
+    fn process_tree_detects_descendant_ancestry() {
+        let ps_output =
+            "  100     1 -zsh\n  105   100 pnpm dev\n  110   105 node /path/to/vite.js\n";
+        let tree = ProcessTreeSnapshot::parse(ps_output);
+        assert_eq!(tree.parents.get(&110), Some(&105));
+        assert_eq!(tree.parents.get(&105), Some(&100));
+
+        let mut shell_roots = HashSet::new();
+        shell_roots.insert(100);
+        assert!(tree.is_descendant_of(110, &shell_roots));
+        assert!(tree.is_descendant_of(105, &shell_roots));
+        assert!(!tree.is_descendant_of(200, &shell_roots));
+
+        let mut listening = HashMap::new();
+        listening.insert(110, vec![5173]);
+        let matches = find_listening_for_pane(&shell_roots, &listening, &tree);
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].0, 110);
+        assert_eq!(matches[0].1, vec![5173]);
     }
 }
