@@ -1,6 +1,8 @@
 //! [INPUT]: std::fs, std::path, gpui, gpui_component, theme
-//! [OUTPUT]: Provides WorkingTreeEntry, collect_working_tree, file_icon_for_path, read_file_content
-//! [POS]: The right-panel file browsing and viewing module of crates/herdr-gui
+//! [OUTPUT]: Provides WorkingTreeEntry, collect_working_tree, file_icon_for_path, and the bounded
+//! preview loader (LoadedFileContent + load_file_content: size cap, NUL-byte binary sniff, image
+//! detection) shared by the content-area file preview.
+//! [POS]: The file-tree collection and preview-loading module of the right_panel directory family
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -219,20 +221,82 @@ pub fn collect_working_tree(
     entries
 }
 
-pub fn read_file_content(root: &Path, relative_path: &str) -> Result<String, String> {
+/// Preview size cap: the viewer renders a bounded window, so a multi-GB log
+/// must fail closed here instead of being read into memory.
+pub const FILE_PREVIEW_MAX_BYTES: u64 = 2_000_000;
+
+/// Result of the background preview load. Text carries the decoded content;
+/// Image carries the absolute path for the GPUI file-path image source;
+/// Binary/TooLarge are terminal states rendered as an explanatory empty state.
+#[derive(Clone, Debug, PartialEq)]
+pub enum LoadedFileContent {
+    Text(String),
+    Image { absolute_path: PathBuf },
+    Binary,
+    TooLarge { size_bytes: u64 },
+}
+
+fn is_image_extension(name: &str) -> bool {
+    matches!(
+        Path::new(name)
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .map(|extension| extension.to_ascii_lowercase())
+            .as_deref(),
+        Some("png" | "jpg" | "jpeg" | "gif" | "webp" | "svg" | "ico")
+    )
+}
+
+/// Blocking collector — always called on the background executor via
+/// `ensure_right_panel_file_loaded`; never from a render pass.
+pub fn load_file_content(root: &Path, relative_path: &str) -> Result<LoadedFileContent, String> {
     let full_path = root.join(relative_path);
     if !full_path.exists() {
         return Err("File does not exist".to_string());
     }
+    let size_bytes = std::fs::metadata(&full_path)
+        .map_err(|err| err.to_string())?
+        .len();
+    if size_bytes > FILE_PREVIEW_MAX_BYTES {
+        return Ok(LoadedFileContent::TooLarge { size_bytes });
+    }
+    let name = full_path
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    if is_image_extension(&name) {
+        return Ok(LoadedFileContent::Image {
+            absolute_path: full_path,
+        });
+    }
+    // NUL-byte sniff on the head: binary formats (archives, object files)
+    // almost always contain one within the first bytes; decoding them as
+    // UTF-8 text would only produce garbage.
+    let head_len = size_bytes.min(8192) as usize;
+    let mut head = vec![0u8; head_len];
+    std::fs::File::open(&full_path)
+        .and_then(|mut file| std::io::Read::read_exact(&mut file, &mut head))
+        .map_err(|err| err.to_string())?;
+    if head.contains(&0u8) {
+        return Ok(LoadedFileContent::Binary);
+    }
     match std::fs::read_to_string(&full_path) {
-        Ok(content) => Ok(content),
-        Err(err) => Err(format!("Unable to read file: {err}")),
+        Ok(content) => Ok(LoadedFileContent::Text(content)),
+        Err(_) => Ok(LoadedFileContent::Binary),
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn image_extensions_are_detected_for_preview() {
+        assert!(is_image_extension("photo.PNG"));
+        assert!(is_image_extension("icon.svg"));
+        assert!(!is_image_extension("main.rs"));
+        assert!(!is_image_extension("archive.tar.gz"));
+    }
 
     #[test]
     fn file_icon_mapping_recognizes_special_files_and_extensions() {

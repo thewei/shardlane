@@ -82,16 +82,6 @@ impl ShardlaneApp {
         }
     }
 
-    pub(crate) fn toggle_services_section(&mut self, cx: &mut Context<Self>) {
-        self.services_collapsed = !self.services_collapsed;
-        self.config.ui.sidebar.services_collapsed = self.services_collapsed;
-        self.save_config();
-        // Disclosure is presentation-only. Service discovery owns its own low-frequency cache;
-        // expanding/collapsing this section must never force pane.process_info/lsof work.
-        self.notify_sidebar(cx);
-        cx.notify();
-    }
-
     pub(crate) fn open_new_script_dialog(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.open_script_editor(None, window, cx);
     }

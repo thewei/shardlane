@@ -15,6 +15,7 @@ mod browser_profile;
 mod browser_profile_view;
 mod chat;
 mod composer_chip;
+mod file_preview;
 mod font_catalog;
 mod ghostty;
 mod git_status;
@@ -1511,6 +1512,13 @@ struct ShardlaneApp {
     pub(crate) shortcut_recording: Option<shortcuts::ShortcutId>,
     /// Active project git status snapshot (consumed by the header's +/- pill and Info popover; 12s freshness).
     git_status: Option<git_status::GitStatusSnapshot>,
+    /// Per-project git snapshots for the visible Sidebar Projects (bounded by
+    /// the bound instance's runtime workspace count; same 12s freshness). The
+    /// header pill keeps its dedicated single snapshot; the Sidebar reads here.
+    sidebar_git_status: std::collections::HashMap<String, git_status::GitStatusSnapshot>,
+    /// Project paths whose background git collection is in flight (re-entry
+    /// guard). Mutex because the every-frame refresh only has &self.
+    git_inflight: std::sync::Mutex<std::collections::HashSet<String>>,
     terminal_attach_target: Option<String>,
     terminal_size: Option<TerminalSize>,
     terminal_surface_size: Option<TerminalSize>,
@@ -1665,6 +1673,10 @@ struct ShardlaneApp {
     /// and dies with the binding.
     tui_manager: std::sync::Arc<shardlane_host::shared_tui::TuiManager>,
     right_panel: right_panel::RightPanelState,
+    /// Full-content file preview (2026-09-03): the right-panel File surface
+    /// moved here so a click in the Files tree previews in the content area,
+    /// covering the hosted TUI without tearing it down.
+    file_preview: Option<file_preview::FilePreviewState>,
     /// Optional visible Lazygit child. This auxiliary slot is independent from the
     /// primary hosted Herdr PTY and is destroyed when the surface is hidden/closed.
     lazygit_session: right_panel::lazygit::LazygitSession,
@@ -1715,7 +1727,6 @@ struct ShardlaneApp {
     sidebar_auto_collapsed: bool,
     projects_collapsed: bool,
     agents_collapsed: bool,
-    services_collapsed: bool,
     theme_mode: ThemeMode,
     /// Unconsumed precise wheel/trackpad distance in pixels. Consumed rows are subtracted
     /// immediately so a continuous gesture cannot resend its cumulative distance.
@@ -2299,6 +2310,8 @@ impl ShardlaneApp {
             dyn_keymap_generation: Vec::new(),
             shortcut_recording: None,
             git_status: None,
+            sidebar_git_status: std::collections::HashMap::new(),
+            git_inflight: std::sync::Mutex::new(std::collections::HashSet::new()),
             terminal_attach_target: None,
             terminal_size: None,
             terminal_surface_size: None,
@@ -2381,6 +2394,7 @@ impl ShardlaneApp {
             // child, replaced on every (re)bind.
             tui_manager: default_tui,
             right_panel,
+            file_preview: None,
             lazygit_session,
             lazygit_detection: None,
             lazygit_detection_requested: std::cell::Cell::new(false),
@@ -2423,7 +2437,6 @@ impl ShardlaneApp {
             sidebar_auto_collapsed: false,
             projects_collapsed: config.ui.sidebar.projects_collapsed,
             agents_collapsed: config.ui.sidebar.agents_collapsed,
-            services_collapsed: config.ui.sidebar.services_collapsed,
             theme_mode,
             terminal_scroll_residual_px: 0.0,
             input_queue: VecDeque::new(),
@@ -2831,6 +2844,11 @@ impl ShardlaneApp {
         self.client = None;
         self.state = HerdrState::default();
         self.git_status = None;
+        self.sidebar_git_status.clear();
+        self.git_inflight
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clear();
         self.workspace_tab_selection_memory.clear();
         self.right_panel_projects.clear();
         self.right_panel_runtime_id = None;
@@ -3756,7 +3774,7 @@ fn main() {
                     MenuItem::action("Toggle Sidebar", ToggleSidebar),
                     MenuItem::action("Toggle Right Panel", ToggleRightPanel),
                     MenuItem::action("Toggle Agents", ToggleAgents),
-                    MenuItem::action("Toggle Services", ToggleServices),
+                    MenuItem::action("Show Services", ToggleServices),
                     MenuItem::action("Toggle Help", ToggleHelp),
                     MenuItem::separator(),
                     MenuItem::submenu(Menu {

@@ -244,17 +244,6 @@ impl ScriptRegistry {
         }
     }
 
-    pub(crate) fn grouped_by_project(&self) -> HashMap<ProjectKey, Vec<&ScriptRecord>> {
-        let mut grouped = HashMap::<ProjectKey, Vec<&ScriptRecord>>::new();
-        for script in &self.scripts {
-            let Some(project_key) = ProjectKey::from_project_path(&script.project_path) else {
-                continue;
-            };
-            grouped.entry(project_key).or_default().push(script);
-        }
-        grouped
-    }
-
     pub(super) fn runtime_probe_scripts(&self) -> Vec<ScriptRecord> {
         self.scripts
             .iter()
@@ -438,43 +427,6 @@ mod tests {
         );
         assert!(normalize_script_keybinding("r").is_err());
         assert!(normalize_script_keybinding("cmd+r").is_err());
-    }
-
-    #[test]
-    fn registry_groups_scripts_by_stable_project_path_not_runtime_correlation() {
-        let registry = ScriptRegistry {
-            scripts: vec![
-                ScriptRecord {
-                    definition: ScriptDefinition {
-                        id: "a".into(),
-                        project_path: "/work/a".into(),
-                        name: "Vite".into(),
-                        ..ScriptDefinition::default()
-                    },
-                    workspace_id: "w-stale".into(),
-                    ..ScriptRecord::default()
-                },
-                ScriptRecord {
-                    definition: ScriptDefinition {
-                        id: "b".into(),
-                        project_path: "/work/b".into(),
-                        name: "API".into(),
-                        ..ScriptDefinition::default()
-                    },
-                    workspace_id: "w-stale".into(),
-                    ..ScriptRecord::default()
-                },
-            ],
-        };
-        let grouped = registry.grouped_by_project();
-        let Some(key) = ProjectKey::from_project_path("/work/a") else {
-            panic!("project key");
-        };
-        let scripts = grouped
-            .get(&key)
-            .unwrap_or_else(|| panic!("missing /work/a"));
-        assert_eq!(scripts.len(), 1);
-        assert_eq!(scripts[0].id, "a");
     }
 
     #[test]

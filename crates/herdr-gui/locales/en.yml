@@ -40,3 +40,6 @@ workspace:
 tab:
   filter: Filter tabs…
   none: No tabs in this workspace
+project:
+  filter: Filter projects…
+  none: No projects in this instance

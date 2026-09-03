@@ -132,7 +132,24 @@ impl ShardlaneApp {
                         let h1 = add_herdr.clone();
                         let h2 = add_herdr.clone();
                         let h3 = add_herdr.clone();
+                        let h4 = add_herdr.clone();
                         menu.item(
+                            PopupMenuItem::new("Services")
+                                .icon(
+                                    Icon::empty()
+                                        .path("icons/square-terminal.svg")
+                                        .with_size(px(13.0)),
+                                )
+                                .on_click(move |_, _, app| {
+                                    h4.update(app, |this, cx| {
+                                        this.open_right_panel_surface(
+                                            RightPanelSurface::Services,
+                                            cx,
+                                        );
+                                    });
+                                }),
+                        )
+                        .item(
                             PopupMenuItem::new("Files")
                                 .icon(Icon::empty().path("icons/folder.svg").with_size(px(13.0)))
                                 .on_click(move |_, _, app| {

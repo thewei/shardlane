@@ -362,7 +362,6 @@ pub struct SidebarConfig {
     pub service_section_height: f64,
     pub projects_collapsed: bool,
     pub agents_collapsed: bool,
-    pub services_collapsed: bool,
     #[serde(default)]
     pub pinned_tabs: Vec<String>,
 }
@@ -377,7 +376,6 @@ impl Default for SidebarConfig {
             service_section_height: 0.0,
             projects_collapsed: false,
             agents_collapsed: false,
-            services_collapsed: false,
             pinned_tabs: Vec::new(),
         }
     }

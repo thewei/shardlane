@@ -17,7 +17,7 @@ use std::path::Path;
 // moved into shardlane-host::project_index — desktop and remote bootstrap share one implementation.
 // Re-exports here keep GUI-internal paths stable and provide a convenient builder adapted to ScriptRegistry.
 pub(crate) use shardlane_host::project_index::{
-    non_empty, project_paths_match, ProjectIndex, ProjectKey, ProjectProjection,
+    non_empty, project_paths_match, ProjectIndex, ProjectProjection,
 };
 
 /// GUI convenience builder for ProjectIndex: runtime projection merged with ScriptRegistry (id, path) pairs.

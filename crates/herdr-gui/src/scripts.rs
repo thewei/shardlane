@@ -7,7 +7,7 @@
 use super::*;
 use crate::ui::controls::{ControlSurface, Toggle};
 use crate::ui_metrics::DIALOG_CONTENT_GAP;
-use crate::workspace_model::{build_project_index, project_paths_match, ProjectIndex, ProjectKey};
+use crate::workspace_model::{build_project_index, project_paths_match, ProjectIndex};
 use gpui_component::{
     dialog::DialogButtonProps,
     input::{Input, InputState},

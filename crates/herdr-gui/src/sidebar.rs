@@ -5,7 +5,6 @@
 use super::*;
 use crate::assets::agent_brand_icon;
 use crate::interaction::{InteractiveSurfaceExt as _, RovingList};
-use crate::scripts::{ObservedService, ScriptKind, ScriptRecord, ScriptStatus};
 use crate::theme::{
     FONT_BODY as FONT_CAPTION, FONT_LIST_TITLE as FONT_BODY, FONT_META as FONT_LABEL,
 };

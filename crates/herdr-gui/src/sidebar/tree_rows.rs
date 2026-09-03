@@ -1,5 +1,5 @@
 //! [INPUT]: Constants, types, and root-level imports from the sidebar module root (`super`); full inheritance via `use super::*`.
-//! [OUTPUT]: Provides ShardlaneApp's history rows, workspace agent status aggregation, and project/tab row rendering (including drag initiation and drop targets: tabs map through the authoritative order, projects reorder via Herdr, load more).
+//! [OUTPUT]: Provides ShardlaneApp's history rows, workspace agent status aggregation, and project/tab row rendering (including drag initiation and drop targets: tabs map through the authoritative order, projects reorder via Herdr, load more). Project rows project a git identity trailing (branch + working-tree +/- counts) from the per-project snapshot map; Tab leads use the square-terminal glyph with a success service badge when an observed service runs inside the Tab.
 //! [POS]: Tree-row rendering layer of `crates/herdr-gui::sidebar`; consumed by shell; calls the rows primitives and the projection; mechanically split out of sidebar.rs and sharing the module-root namespace with its sibling submodules.
 use super::*;
 use crate::ui::menus::{menu_action, menu_action_cx};
@@ -146,6 +146,58 @@ impl ShardlaneApp {
         let history_action_project = project_cwd.clone();
         let history_action_group = format!("shardlane-project-history-{workspace_id}");
         let component_theme = cx.theme().clone();
+        // Git identity trailing (read-only projection over the per-project
+        // snapshot map): branch + working-tree +/- counts, exactly the Header
+        // pill's semantics moved to the row. Fades on hover so the existing
+        // action buttons keep the right edge.
+        let git_element: Option<AnyElement> = self
+            .sidebar_git_status
+            .get(project_cwd.as_str())
+            .map(|snapshot| {
+                let theme = component_theme.clone();
+                let right_offset = if status.is_some() {
+                    SIDEBAR_EDGE + px(20.0)
+                } else {
+                    SIDEBAR_EDGE
+                };
+                let mut info = h_flex()
+                    .absolute()
+                    .right(right_offset)
+                    .top_0()
+                    .bottom_0()
+                    .items_center()
+                    .gap(px(4.0))
+                    .group_hover(history_action_group.clone(), |style| style.opacity(0.0))
+                    .child(
+                        icon("icons/git-branch.svg")
+                            .with_size(px(11.0))
+                            .text_color(theme.muted_foreground),
+                    )
+                    .child(
+                        div()
+                            .max_w(px(72.0))
+                            .text_size(crate::theme::FONT_META)
+                            .text_color(theme.muted_foreground)
+                            .truncate()
+                            .child(snapshot.branch.clone()),
+                    );
+                if snapshot.additions > 0 || snapshot.deletions > 0 {
+                    info = info
+                        .child(
+                            div()
+                                .text_size(crate::theme::FONT_META)
+                                .text_color(theme.success)
+                                .child(format!("+{}", snapshot.additions)),
+                        )
+                        .child(
+                            div()
+                                .text_size(crate::theme::FONT_META)
+                                .text_color(theme.danger)
+                                .child(format!("-{}", snapshot.deletions)),
+                        );
+                }
+                info.into_any_element()
+            });
         let status_element: Option<AnyElement> = status.map(|level| {
             div()
                 .absolute()
@@ -167,6 +219,7 @@ impl ShardlaneApp {
             .w_full()
             .group(history_action_group.clone())
             .child(row_element)
+            .when_some(git_element, |wrapper, el| wrapper.child(el))
             .when_some(status_element, |wrapper, el| wrapper.child(el))
             .child(
                 div()
@@ -242,11 +295,26 @@ impl ShardlaneApp {
             .agents
             .iter()
             .find(|agent| agent.tab_id.as_deref() == Some(tab.tab_id.as_str()));
+        // Service badge join: an observed service (process listening on a port)
+        // carries its owning Tab id, so a Terminal Tab's glyph gets a success
+        // dot exactly when one of this Tab's panes hosts a running service.
+        let has_running_service = self
+            .observed_services
+            .iter()
+            .any(|service| service.tab_id == tab.tab_id);
         let lead = tab_agent
             .and_then(agent_identity)
             .and_then(|identity| agent_brand_icon(identity, dark))
             .map(RowLead::Brand)
-            .unwrap_or(RowLead::Icon("icons/terminal.svg"));
+            .unwrap_or({
+                // Terminal-specific glyph (square-terminal): the generic
+                // terminal.svg read as a placeholder, not as a product icon.
+                if has_running_service {
+                    RowLead::IconService("icons/square-terminal.svg")
+                } else {
+                    RowLead::Icon("icons/square-terminal.svg")
+                }
+            });
         let tab_agent_status = tab_agent
             .and_then(|agent| {
                 agent

@@ -1,8 +1,9 @@
 //! [INPUT]: ShardlaneApp (crate root), gpui-component Popover/Input/Icon, theme tokens; device +
 //! instance data read through `ShardlaneApp`'s pub(crate) surface.
-//! [OUTPUT]: The workspace switcher panel (one device's workspaces: hover gears → workspace/device
-//! settings, running dots, click = jump/rebind) and the Tab switcher panel (same interaction, rows
-//! switch tabs) — both as Popover panels around any `Selectable` trigger; shared by the sidebar
+//! [OUTPUT]: The workspace switcher panel (one device's instances: hover gears → workspace/device
+//! settings, running dots, click = jump/rebind), the Tab switcher panel (same interaction, rows
+//! switch tabs), and the Project switcher panel (the bound instance's runtime workspaces; click =
+//! FocusIntent::project) — all as Popover panels around any `Selectable` trigger; shared by the sidebar
 //! footer chip and the content header breadcrumbs.
 //! [POS]: `crates/herdr-gui`'s switcher presentation; consumed by sidebar/shell.rs (footer) and
 //! header_view.rs (breadcrumbs).
@@ -377,6 +378,160 @@ pub(crate) fn workspace_switcher_panel(
 
 /// One row of the Tab switcher panel: (tab id, title, focused).
 pub(crate) type TabRow = (String, String, bool);
+
+/// One row of the Project switcher panel: (runtime workspace id, label, focused).
+pub(crate) type ProjectRow = (String, String, bool);
+
+/// The Project switcher panel — the middle breadcrumb layer between the
+/// instance switcher and the Tab switcher. Lists the bound instance's runtime
+/// workspaces (exactly the Sidebar Projects projection); click focuses the
+/// Project through the FocusIntent seam.
+pub(crate) fn project_switcher_panel(
+    herdr: Entity<ShardlaneApp>,
+    projects: Vec<ProjectRow>,
+    anchor: Corner,
+    popover_id: &'static str,
+    filter_key: &'static str,
+    mut trigger: impl Selectable + Styled + IntoElement + 'static,
+) -> Popover {
+    let trigger_style = trigger.style().clone();
+    Popover::new(SharedString::from(popover_id))
+        .anchor(anchor)
+        .trigger(trigger)
+        .trigger_style(trigger_style)
+        .content(move |_, window, cx| {
+            let popover = cx.entity();
+            let picker_herdr = herdr.clone();
+            let picker_theme = cx.theme().clone();
+            let filter_holder =
+                window.use_keyed_state(SharedString::from(filter_key), cx, |window, cx| {
+                    cx.new(|cx| {
+                        InputState::new(window, cx).placeholder(crate::i18n::t("project.filter"))
+                    })
+                });
+            let filter_input = filter_holder.read(cx).clone();
+            if !filter_input.read(cx).focus_handle(cx).is_focused(window) {
+                filter_input.update(cx, |state, cx| {
+                    state.focus(window, cx);
+                });
+            }
+            let filter = filter_input.read(cx).value().trim().to_lowercase();
+            let mut rows = v_flex().w_full().gap(px(2.0));
+            let mut shown = 0usize;
+            for (workspace_id, label, focused) in &projects {
+                shown += 1;
+                if !filter.is_empty() && !label.to_lowercase().contains(&filter) {
+                    continue;
+                }
+                let row_herdr = picker_herdr.clone();
+                let row_popover = popover.clone();
+                let workspace_id = workspace_id.clone();
+                rows =
+                    rows.child(
+                        h_flex()
+                            .group("project-row")
+                            .id(SharedString::from(format!("project-picker-{workspace_id}")))
+                            .w_full()
+                            .h(px(30.0))
+                            .px(px(10.0))
+                            .rounded(px(6.0))
+                            .gap(px(8.0))
+                            .items_center()
+                            .cursor_pointer()
+                            .hover(|s| {
+                                s.bg(picker_theme.foreground.opacity(crate::theme::WASH_HOVER))
+                            })
+                            .on_click(move |_, window, app| {
+                                row_popover.update(app, |state, cx| state.dismiss(window, cx));
+                                row_herdr.update(app, |this, cx| {
+                                    this.apply_focus_intent(
+                                        FocusIntent::project(workspace_id.clone()),
+                                        window,
+                                        cx,
+                                    );
+                                });
+                            })
+                            .child(div().size(px(7.0)).rounded_full().flex_shrink_0().bg(
+                                if *focused {
+                                    picker_theme.success
+                                } else {
+                                    picker_theme.muted_foreground.opacity(0.45)
+                                },
+                            ))
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .truncate()
+                                    .text_size(px(13.0))
+                                    .text_color(if *focused {
+                                        picker_theme.foreground
+                                    } else {
+                                        picker_theme.muted_foreground
+                                    })
+                                    .child(label.clone()),
+                            )
+                            .when(*focused, |row| {
+                                row.child(
+                                    Icon::empty()
+                                        .path("icons/check.svg")
+                                        .with_size(px(12.0))
+                                        .text_color(picker_theme.success)
+                                        .flex_shrink_0(),
+                                )
+                            }),
+                    );
+            }
+            if shown == 0 {
+                rows = rows.child(
+                    div()
+                        .w_full()
+                        .px(px(10.0))
+                        .py(px(8.0))
+                        .text_size(px(12.0))
+                        .text_color(picker_theme.muted_foreground)
+                        .child(crate::i18n::t("project.none")),
+                );
+            }
+            let filter_element = Input::new(&filter_input)
+                .small()
+                .appearance(false)
+                .w_full()
+                .text_size(px(12.0));
+            v_flex()
+                .w(px(320.0))
+                .py(px(4.0))
+                .child(
+                    div()
+                        .id(SharedString::from(format!("{popover_id}-scroll")))
+                        .w_full()
+                        .max_h(px(420.0))
+                        .overflow_y_scroll()
+                        .child(rows),
+                )
+                .child(
+                    h_flex()
+                        .w_full()
+                        .h(px(30.0))
+                        .mt(px(4.0))
+                        .mx(px(6.0))
+                        .px(px(6.0))
+                        .rounded(px(6.0))
+                        .border_1()
+                        .border_color(picker_theme.border)
+                        .gap(px(6.0))
+                        .items_center()
+                        .child(
+                            Icon::empty()
+                                .path("icons/list-filter.svg")
+                                .with_size(px(12.0))
+                                .text_color(picker_theme.muted_foreground)
+                                .flex_shrink_0(),
+                        )
+                        .child(filter_element),
+                )
+        })
+}
 
 /// The Tab switcher panel — the same interaction and styling as the workspace
 /// switcher, listing the focused workspace's Tabs; click focuses the Tab.

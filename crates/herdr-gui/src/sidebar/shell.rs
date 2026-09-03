@@ -36,10 +36,6 @@ impl ShardlaneApp {
         // path/script projection cost twice on every Sidebar repaint.
         let project_index = build_project_index(&self.state, &self.scripts);
         let visible_projects = visible_sidebar_projects_with_index(&self.state, &project_index);
-        let visible_project_runtime_ids: HashSet<String> = visible_projects
-            .iter()
-            .map(|project| project.runtime_workspace_id.clone())
-            .collect();
         // Multi-instance model (2026-09): the Projects section lists ONLY the
         // bound instance's runtime workspaces (herdr's own projects). Other
         // instances (= workspaces) live exclusively in the footer workspace
@@ -342,22 +338,6 @@ impl ShardlaneApp {
         // backfill recent history sessions in chronological order up to 10, with
         // a fixed trailing row "view more history sessions" → History.
         let sidebar_history_sessions = self.sidebar_agent_history_sessions(visible_agents.len());
-        // notate 2026-08-29: one-shot tasks (e.g. Commit) are not resident
-        // Services — the Services section lists only long-running service scripts.
-        // With no client-side grouping, every resident service script of the bound
-        // instance is visible (per-project cards resolve through the ProjectIndex).
-        let visible_scripts = self
-            .scripts
-            .scripts
-            .iter()
-            .filter(|script| script.kind == ScriptKind::Service && !script.one_shot)
-            .collect::<Vec<_>>();
-        let visible_observed_services = self
-            .observed_services
-            .iter()
-            .filter(|service| visible_project_runtime_ids.contains(&service.workspace_id))
-            .collect::<Vec<_>>();
-
         // Agents list roving focus: same interaction contract as Workspaces.
         self.sidebar_roving_agents.begin_frame();
         let agent_container_handle = self.sidebar_roving_agents.container_handle(cx);
@@ -407,121 +387,35 @@ impl ShardlaneApp {
             agent_scrolling = agent_scrolling.child(self.sidebar_history_more_row(cx));
         }
 
-        let mut services_scrolling = v_flex()
-            .id("shardlane-services-scroll")
-            .w_full()
-            .px(SIDEBAR_EDGE)
-            .pb(SPACE_SM)
-            .gap(SPACE_XS);
-        if !self.services_collapsed {
-            if visible_scripts.is_empty() && visible_observed_services.is_empty() {
-                services_scrolling =
-                    services_scrolling.child(sidebar_hint_row("No running services", cx));
-            }
-            let scripts_by_project = self.scripts.grouped_by_project();
-            for visible in &visible_projects {
-                let Some(workspace) = self
-                    .state
-                    .workspaces
-                    .iter()
-                    .find(|workspace| workspace.workspace_id == visible.runtime_workspace_id)
-                else {
-                    continue;
-                };
-                let project_scripts = project_index
-                    .for_runtime_id(&workspace.workspace_id)
-                    .and_then(|project| scripts_by_project.get(&project.key))
-                    .map(Vec::as_slice)
-                    .unwrap_or_default()
-                    .iter()
-                    .copied()
-                    .filter(|script| script.kind == ScriptKind::Service && !script.one_shot)
-                    .collect::<Vec<_>>();
-                let project_services = visible_observed_services
-                    .iter()
-                    .copied()
-                    .filter(|service| service.workspace_id == workspace.workspace_id)
-                    .collect::<Vec<_>>();
-                if project_scripts.is_empty() && project_services.is_empty() {
-                    continue;
-                }
-                let project_label = visible.label.clone();
-                for script in project_scripts {
-                    services_scrolling = services_scrolling
-                        .child(self.sidebar_service_script_card(script, &project_label, cx));
-                }
-                for service in project_services {
-                    services_scrolling = services_scrolling
-                        .child(self.sidebar_observed_service_card(service, &project_label, cx));
-                }
-            }
-        }
-
-        let summary = OperationalSummary {
-            blocked_agents: visible_agents
-                .iter()
-                .filter(|agent| agent.agent_status.as_deref() == Some("blocked"))
-                .count(),
-            working_agents: visible_agents
-                .iter()
-                .filter(|agent| agent.agent_status.as_deref() == Some("working"))
-                .count(),
-            failed_scripts: visible_scripts
-                .iter()
-                .filter(|script| script.runtime.status == ScriptStatus::Failed)
-                .count(),
-            active_scripts: visible_scripts
-                .iter()
-                .filter(|script| {
-                    matches!(
-                        script.runtime.status,
-                        ScriptStatus::Starting | ScriptStatus::Running
-                    )
-                })
-                .count()
-                + visible_observed_services.len(),
-        };
+        let blocked_agents = visible_agents
+            .iter()
+            .filter(|agent| agent.agent_status.as_deref() == Some("blocked"))
+            .count();
+        let working_agents = visible_agents
+            .iter()
+            .filter(|agent| agent.agent_status.as_deref() == Some("working"))
+            .count();
         // SBX-07: collapsed summaries use the shared glyph (status_glyph_container),
         // same state language as the Activity/bell rows.
-        let agent_header_summary = if self.agents_collapsed && summary.blocked_agents > 0 {
+        let agent_header_summary = if self.agents_collapsed && blocked_agents > 0 {
             Some(group_header_glyph(
                 crepuscularity_gpui::ElementId::Name("agents-collapse-glyph".into()),
                 crate::status::AttentionLevel::NeedsAttention,
-                summary.blocked_agents,
+                blocked_agents,
                 component_theme.danger,
                 cx,
             ))
-        } else if self.agents_collapsed && summary.working_agents > 0 {
+        } else if self.agents_collapsed && working_agents > 0 {
             Some(group_header_glyph(
                 crepuscularity_gpui::ElementId::Name("agents-collapse-glyph-working".into()),
                 crate::status::AttentionLevel::Working,
-                summary.working_agents,
+                working_agents,
                 component_theme.primary,
                 cx,
             ))
         } else {
             None
         };
-        let service_header_summary = if self.services_collapsed && summary.failed_scripts > 0 {
-            Some(group_header_glyph(
-                crepuscularity_gpui::ElementId::Name("services-collapse-glyph".into()),
-                crate::status::AttentionLevel::NeedsAttention,
-                summary.failed_scripts,
-                component_theme.danger,
-                cx,
-            ))
-        } else if self.services_collapsed && summary.active_scripts > 0 {
-            Some(group_header_glyph(
-                crepuscularity_gpui::ElementId::Name("services-collapse-glyph-working".into()),
-                crate::status::AttentionLevel::Working,
-                summary.active_scripts,
-                component_theme.success,
-                cx,
-            ))
-        } else {
-            None
-        };
-
         let project_header_herdr = herdr.clone();
         let project_header = group_header(
             "shardlane-projects-header",
@@ -610,18 +504,8 @@ impl ShardlaneApp {
             },
             cx,
         );
-        let services_header_herdr = herdr.clone();
-        let services_header = group_header(
-            "shardlane-services-header",
-            "Services",
-            self.services_collapsed,
-            service_header_summary,
-            move |_, _, app| {
-                services_header_herdr.update(app, |this, cx| this.toggle_services_section(cx));
-            },
-            cx,
-        );
-        // Three sidebar sections: content sizes naturally, the whole stack
+        // Two sidebar sections (Services moved to the right panel, 2026-09-03):
+        // content sizes naturally, the whole stack
         // scrolls. No fixed heights and no drag-to-resize anymore.
         let sections = div()
             .flex_1()
@@ -646,15 +530,6 @@ impl ShardlaneApp {
                             .child(project_header)
                             .when(!self.projects_collapsed, |section| {
                                 section.child(workspace_scrolling)
-                            }),
-                    )
-                    // Slot 2: Services.
-                    .child(
-                        v_flex()
-                            .w_full()
-                            .child(services_header)
-                            .when(!self.services_collapsed, |section| {
-                                section.child(services_scrolling)
                             }),
                     ),
             )

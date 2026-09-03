@@ -1,27 +1,29 @@
-//! [INPUT]: The browser, files, and lazygit submodules, gpui, gpui_component, theme
-//! [OUTPUT]: Provides RightPanelSurface (Browser{url,profile_id}: P1-6 freezes the profile as the surface identity at creation),
+//! [INPUT]: The browser, files, lazygit, and services_view submodules, gpui, gpui_component, theme
+//! [OUTPUT]: Provides RightPanelSurface (Files/Services/Lazygit/Browser{url,profile_id}: P1-6 freezes the profile as the surface identity at creation),
 //!           RightPanelState, LazygitSession, and ShardlaneApp's right-panel rendering and interaction implementations
-//! [POS]: Root module of the right-panel directory family in crates/herdr-gui
+//! [POS]: Root module of the right-panel directory family in crates/herdr-gui. Since 2026-09-03 the
+//! panel hosts the Services surface (moved from the Sidebar section); the File preview surface was
+//! replaced by the full-content file preview (file_preview.rs).
 
 pub(crate) mod browser;
 mod browser_view;
 mod chooser;
-mod file_viewer;
 pub(crate) mod files;
 mod files_view;
 mod header;
 pub(crate) mod lazygit;
 mod lazygit_view;
+mod services_view;
 #[cfg(target_os = "macos")]
 pub(crate) mod webview;
 
 use std::collections::HashSet;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use super::*;
 use crate::ContentSurfaceTheme;
 use browser::{display_url, is_secure_url, resolve_address, search_url, AddressTarget};
-use files::{collect_working_tree, file_icon_for_path, read_file_content, WorkingTreeEntry};
+use files::{collect_working_tree, WorkingTreeEntry};
 use gpui_component::menu::DropdownMenu as _;
 
 /// SBX-11: single definition of the built-in browser's default URL (previously
@@ -31,6 +33,9 @@ pub(crate) const BROWSER_DEFAULT_URL: &str = "http://localhost:3000";
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum RightPanelSurface {
     Files,
+    /// Resident service scripts + observed listening processes for the bound
+    /// instance. The Sidebar Services section moved here (2026-09-03).
+    Services,
     Lazygit,
     /// P1-6 (audit 2026-08-27): the profile belongs to the surface identity and
     /// is frozen at creation — render/close always use this id and never read
@@ -40,13 +45,13 @@ pub(crate) enum RightPanelSurface {
         url: String,
         profile_id: String,
     },
-    File(String),
 }
 
 impl RightPanelSurface {
     pub fn label(&self) -> String {
         match self {
             Self::Files => "Files".to_string(),
+            Self::Services => "Services".to_string(),
             Self::Lazygit => "Lazygit".to_string(),
             Self::Browser { url, .. } => {
                 if url.is_empty() {
@@ -55,20 +60,15 @@ impl RightPanelSurface {
                     display_url(url).to_string()
                 }
             }
-            Self::File(path) => Path::new(path)
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or(path)
-                .to_string(),
         }
     }
 
     pub fn icon_path(&self) -> &'static str {
         match self {
             Self::Files => "icons/folder.svg",
+            Self::Services => "icons/square-terminal.svg",
             Self::Lazygit => "icons/git-branch.svg",
             Self::Browser { .. } => "icons/globe.svg",
-            Self::File(path) => file_icon_for_path(path),
         }
     }
 }
@@ -87,7 +87,6 @@ pub struct RightPanelState {
     /// semantics: writes back only once after the surface URL changes, never
     /// overwriting user input frame by frame).
     pub address_synced_url: Option<String>,
-    pub file_content_cache: Option<(String, String)>,
     pub browser_url: String,
     pub browser_title: Option<String>,
     pub browser_history: Vec<String>,
@@ -106,7 +105,6 @@ impl Default for RightPanelState {
             files_expanded_paths: HashSet::new(),
             working_tree: Vec::new(),
             address_synced_url: None,
-            file_content_cache: None,
             browser_url: "http://localhost:3000".to_string(),
             browser_title: None,
             browser_history: vec!["http://localhost:3000".to_string()],
@@ -126,7 +124,6 @@ pub(crate) struct RightPanelProjectContent {
     pub files_expanded_paths: HashSet<PathBuf>,
     pub working_tree: Vec<WorkingTreeEntry>,
     pub address_synced_url: Option<String>,
-    pub file_content_cache: Option<(String, String)>,
     pub browser_url: String,
     pub browser_title: Option<String>,
     pub browser_history: Vec<String>,
@@ -143,7 +140,6 @@ impl RightPanelProjectContent {
             files_expanded_paths: panel.files_expanded_paths.clone(),
             working_tree: panel.working_tree.clone(),
             address_synced_url: panel.address_synced_url.clone(),
-            file_content_cache: panel.file_content_cache.clone(),
             browser_url: panel.browser_url.clone(),
             browser_title: panel.browser_title.clone(),
             browser_history: panel.browser_history.clone(),
@@ -159,7 +155,6 @@ impl RightPanelProjectContent {
         panel.files_expanded_paths = self.files_expanded_paths.clone();
         panel.working_tree = self.working_tree.clone();
         panel.address_synced_url = self.address_synced_url.clone();
-        panel.file_content_cache = self.file_content_cache.clone();
         panel.browser_url = self.browser_url.clone();
         panel.browser_title = self.browser_title.clone();
         panel.browser_history = self.browser_history.clone();
@@ -234,7 +229,7 @@ impl ShardlaneApp {
         self.refresh_right_panel_working_tree(cx);
     }
 
-    fn active_project_path_for_right_panel(&self) -> Option<PathBuf> {
+    pub(crate) fn active_project_path_for_right_panel(&self) -> Option<PathBuf> {
         // Multi-instance cwd model (2026-09): a Project has NO working
         // directory of its own — Herdr gives every Tab its own cwd. Files (and
         // the Lazygit tool) follow the focused Tab's cwd, nothing else.
@@ -335,6 +330,13 @@ impl ShardlaneApp {
         cx.notify();
     }
 
+    /// Single seam for "show Services" (Header summary button, Window menu,
+    /// the former Sidebar section header): opens the panel if closed and
+    /// activates the Services surface.
+    pub(crate) fn open_services_panel(&mut self, cx: &mut Context<Self>) {
+        self.open_right_panel_surface(RightPanelSurface::Services, cx);
+    }
+
     pub(crate) fn activate_right_panel_surface(&mut self, index: usize, cx: &mut Context<Self>) {
         if index >= self.right_panel.surfaces.len() {
             return;
@@ -347,7 +349,6 @@ impl ShardlaneApp {
         }
         cx.notify();
     }
-
     pub(crate) fn close_right_panel_surface(&mut self, index: usize, cx: &mut Context<Self>) {
         if index < self.right_panel.surfaces.len() {
             let closing_lazygit = matches!(
@@ -490,8 +491,8 @@ impl ShardlaneApp {
         {
             None => self.render_right_panel_chooser(content_theme, cx),
             Some(RightPanelSurface::Files) => self.render_right_panel_files(content_theme, cx),
-            Some(RightPanelSurface::File(path)) => {
-                self.render_right_panel_file_viewer(&path, content_theme, cx)
+            Some(RightPanelSurface::Services) => {
+                self.render_right_panel_services(content_theme, cx)
             }
             Some(RightPanelSurface::Lazygit) => {
                 self.render_right_panel_lazygit_view(content_theme, window, cx)
@@ -593,9 +594,9 @@ mod tests {
         };
         assert_eq!(browser_url.label(), "example.com");
 
-        let file = RightPanelSurface::File("src/main.rs".into());
-        assert_eq!(file.label(), "main.rs");
-        assert_eq!(file.icon_path(), "icons/file-types/rust.svg");
+        let services = RightPanelSurface::Services;
+        assert_eq!(services.label(), "Services");
+        assert_eq!(services.icon_path(), "icons/square-terminal.svg");
     }
 
     #[test]

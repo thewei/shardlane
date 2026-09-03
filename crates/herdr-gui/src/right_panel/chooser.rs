@@ -17,6 +17,7 @@ impl ShardlaneApp {
         let h_files = herdr.clone();
         let h_lazygit = herdr.clone();
         let h_browser = herdr.clone();
+        let h_services = herdr.clone();
 
         div()
             .id("right-panel-chooser")
@@ -52,6 +53,20 @@ impl ShardlaneApp {
                             .flex()
                             .flex_col()
                             .gap(px(8.0))
+                            .child(self.render_chooser_card(
+                                "Services",
+                                "icons/square-terminal.svg",
+                                "Running services and dev servers, with quick jump and links",
+                                theme,
+                                move |app| {
+                                    h_services.update(app, |this, cx| {
+                                        this.open_right_panel_surface(
+                                            RightPanelSurface::Services,
+                                            cx,
+                                        );
+                                    });
+                                },
+                            ))
                             .child(self.render_chooser_card(
                                 "Files",
                                 "icons/folder.svg",

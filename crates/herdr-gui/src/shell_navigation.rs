@@ -1778,28 +1778,86 @@ impl ShardlaneApp {
         }
     }
 
-    /// Active project git snapshot refresh: skip while fresh, otherwise collect in the background and write back (safe to call from the header every frame).
+    /// Git snapshot refresh for the active project (Header pill) and every
+    /// visible Sidebar Project: skip while fresh, otherwise collect all stale
+    /// paths in ONE sequential background task and write back per path (safe
+    /// to call every frame; bounded by the instance's runtime workspace count,
+    /// the 12s freshness window, and the in-flight guard — never a per-frame
+    /// git subprocess storm).
     pub(super) fn refresh_git_status(&self, cx: &mut Context<Self>) {
-        let Some(path) = self
+        let active_path = self
             .active_workspace()
             .and_then(|workspace| workspace.cwd.clone())
-        else {
-            return;
+            .unwrap_or_default();
+        let mut candidates: Vec<String> = self
+            .state
+            .workspaces
+            .iter()
+            .filter_map(|workspace| workspace.cwd.clone())
+            .collect();
+        if !active_path.is_empty() {
+            candidates.push(active_path.clone());
+        }
+        candidates.sort();
+        candidates.dedup();
+        let is_fresh = |snapshot: Option<&git_status::GitStatusSnapshot>, path: &str| {
+            snapshot.is_some_and(|snapshot| snapshot.is_fresh_for(path))
         };
-        if self
-            .git_status
-            .as_ref()
-            .is_some_and(|s| s.is_fresh_for(&path))
-        {
+        let mut stale: Vec<String> = Vec::new();
+        for path in candidates {
+            if path.is_empty() {
+                continue;
+            }
+            let fresh = if path == active_path {
+                is_fresh(self.git_status.as_ref(), &path)
+                    || is_fresh(self.sidebar_git_status.get(&path), &path)
+            } else {
+                is_fresh(self.sidebar_git_status.get(&path), &path)
+            };
+            let mut inflight = self
+                .git_inflight
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if fresh || inflight.contains(&path) {
+                continue;
+            }
+            inflight.insert(path.clone());
+            stale.push(path);
+        }
+        if stale.is_empty() {
             return;
         }
         cx.spawn(async move |this, cx| {
-            let snapshot = cx
+            // Sequential collection: one background worker for the whole
+            // batch keeps the git subprocess count at one-at-a-time.
+            let snapshots: Vec<_> = cx
                 .background_executor()
-                .spawn(async move { git_status::git_status_snapshot(&path) })
+                .spawn(async move {
+                    stale
+                        .iter()
+                        .filter_map(|path| {
+                            git_status::git_status_snapshot(path)
+                                .map(|snapshot| (path.clone(), snapshot))
+                        })
+                        .collect()
+                })
                 .await;
             let _ = this.update(cx, |view, cx| {
-                view.git_status = snapshot;
+                for (path, snapshot) in snapshots {
+                    view.git_inflight
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner)
+                        .remove(&path);
+                    view.sidebar_git_status
+                        .insert(path.clone(), snapshot.clone());
+                    if Some(path.as_str())
+                        == view
+                            .active_workspace()
+                            .and_then(|workspace| workspace.cwd.as_deref())
+                    {
+                        view.git_status = Some(snapshot);
+                    }
+                }
                 cx.notify();
             });
         })

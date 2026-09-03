@@ -36,3 +36,8 @@ Members:
 - `empty_state.rs`: section empty-state placeholder —
   `empty_state(text, muted_color)` (p16 + FONT_BODY + the given muted color);
   consumed by right_panel.
+- `syntax.rs`: lightweight preview syntax layer — `lang_for_path` +
+  `Highlighter::line` producing `SyntaxSpan`s (keyword/string/comment/number)
+  with one carried block-comment flag and Markdown fence state; a deliberate
+  per-line approximation, not a parser; std-only (token layer), colors applied
+  by the caller; consumed by file_preview.

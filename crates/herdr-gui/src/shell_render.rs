@@ -1,5 +1,5 @@
 //! [INPUT]: Depends on the ShardlaneApp type from the crate root (super) and existing types/imports (use super::*); no independent external dependencies.
-//! [OUTPUT]: Exposes ShardlaneApp's shell chrome render tree: client_shell/sidebar/search bar/overlay assembly (including the native-tab-strip placement of the work surface), plus the hosted Herdr TUI's GPUI native Pane context menu (Copy/Paste/Select All + Herdr Rename/Move/Swap/Split/Zoom/Close); mouse down/up wiring covers the full lifecycle of drag-selection and protocol mouse; terminal geometry (terminal_size/terminal_canvas_origin) accounts for the native tab strip height.
+//! [OUTPUT]: Exposes ShardlaneApp's shell chrome render tree: client_shell/sidebar/search bar/overlay assembly (including the native-tab-strip placement of the work surface and the full-content file_preview_page branch), plus the hosted Herdr TUI's GPUI native Pane context menu (Copy/Paste/Select All + Herdr Rename/Move/Swap/Split/Zoom/Close); mouse down/up wiring covers the full lifecycle of drag-selection and protocol mouse; terminal geometry (terminal_size/terminal_canvas_origin) accounts for the native tab strip height.
 //! [POS]: The `crates/herdr-gui` shell render responsibility domain, mechanically split out of main.rs; together with sibling shell_* modules it forms ShardlaneApp's method surface.
 use super::*;
 use crate::ui::menus::{menu_action, menu_action_cx};
@@ -111,6 +111,11 @@ impl ShardlaneApp {
             self.history_page(theme, window, cx)
         } else if self.new_agent_open {
             self.new_agent_page(window, cx)
+        } else if self.file_preview.is_some() {
+            // Full-content file preview: a native secondary surface covering
+            // the hosted TUI (which stays alive underneath) — the sanctioned
+            // cover-without-teardown semantics.
+            self.file_preview_page(theme, window, cx)
         } else {
             // TUI-only cutover: the normal work surface's only Terminal presentation
             // is the hosted Herdr TUI. Chat is a semantic sidecar presentation of the same Herdr Agent
@@ -384,7 +389,7 @@ impl ShardlaneApp {
     /// Audit A15: the single armed-move titlebar drag strip builder (mouse_down arms,
     /// mouse_move triggers one start_window_move, mouse_up/out disarm) — previously duplicated
     /// verbatim for the Settings sidebar and content surfaces.
-    fn titlebar_drag_strip(
+    pub(crate) fn titlebar_drag_strip(
         &self,
         id: &'static str,
         cx: &Context<Self>,

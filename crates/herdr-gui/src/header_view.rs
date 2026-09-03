@@ -1,4 +1,4 @@
-//! Header/titlebar presentation layer: Workspace/Tab breadcrumbs, the single bidirectional
+//! Header/titlebar presentation layer: instance/Project/Tab three-layer breadcrumbs, the single bidirectional
 //! Chat⇄Terminal switch, the Chat presentation mode's centered Agent identity+status title,
 //! the History secondary surface's Search/Refresh/Copy Markdown consolidation (to the left of the
 //! right-panel toggle) with compact-layout fallback, and operation indicators.
@@ -103,21 +103,26 @@ impl ShardlaneApp {
         window: &Window,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        let project_title = self
+        // Breadcrumb identity: layer 1 = the bound Herdr instance (its display
+        // name); layer 2 = the active Project (a Herdr runtime workspace inside
+        // the instance), falling back to the instance name before any runtime
+        // workspace is focused.
+        let instance_title = self
             .bound_project()
-            .map(|binding| binding.project_name.clone())
-            .or_else(|| {
-                self.active_workspace()
-                    .and_then(|workspace| workspace.label.as_deref().or(workspace.cwd.as_deref()))
-                    .and_then(|value| {
-                        std::path::Path::new(value)
-                            .file_name()
-                            .and_then(|name| name.to_str())
-                            .map(str::to_string)
-                            .or(Some(value.to_string()))
-                    })
+            .map(|binding| binding.project_name.clone());
+        let project_title = self
+            .active_workspace()
+            .and_then(|workspace| workspace.label.as_deref().or(workspace.cwd.as_deref()))
+            .and_then(|value| {
+                std::path::Path::new(value)
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .map(str::to_string)
+                    .or(Some(value.to_string()))
             })
+            .or_else(|| instance_title.clone())
             .unwrap_or_else(|| "Shardlane".to_string());
+        let instance_title = instance_title.unwrap_or_else(|| "Shardlane".to_string());
         let tab_title = self.active_tab().map(|tab| self.tab_title(tab));
         let secondary_header_title = if self.history.open {
             Some(("History", None))
@@ -196,6 +201,7 @@ impl ShardlaneApp {
         let can_nav_forward = !self.nav_forward_stack.is_empty();
         let search_header_herdr = herdr.clone();
         let workspace_picker_herdr = herdr.clone();
+        let project_picker_herdr = herdr.clone();
         let tab_picker_herdr = herdr.clone();
         let agent_summary_herdr = herdr.clone();
         let script_summary_herdr = herdr.clone();
@@ -247,17 +253,18 @@ impl ShardlaneApp {
             self.active_workspace()
                 .and_then(|workspace| workspace.cwd.clone())
         };
-        // When the sidebar is visible, a spacer pushes the title exactly to the content area's left
-        // margin (CONTENT_INSET): the TitleBar component carries macOS TITLE_BAR_LEFT_PADDING
-        // (mirrored as APP_TITLEBAR_LEFT_INSET=80), the header's left segment adds collapse
-        // button(26) + root gap(12), and the title itself has pl(14). Under-counting by 80px would
-        // push the title 80px into the content area (measured over three rounds on 08-29: title at
-        // 390, target 309). When collapsed, spacer=0.
-        let header_left_chrome = 26.0 + 12.0;
-        let sidebar_header_inner_width = if sidebar_visible {
-            (sidebar_width - APP_TITLEBAR_LEFT_INSET - header_left_chrome - 14.0
-                + f32::from(crate::ui_metrics::CONTENT_INSET))
-            .max(0.0)
+        // Breadcrumb alignment, single anchor: the TitleBar component carries macOS
+        // TITLE_BAR_LEFT_PADDING (mirrored as APP_TITLEBAR_LEFT_INSET=80), so the header
+        // content box starts at window x=80. An absolutely positioned breadcrumb whose
+        // left is (sidebar_width - APP_TITLEBAR_LEFT_INSET) + CONTENT_INSET therefore lands
+        // exactly on the content page's left inset — the same CONTENT_INSET constant the
+        // content pages use. No flow arithmetic over nav-button widths can drift this anchor
+        // again; the 08-29 three-round alignment bug came from under-counting exactly such
+        // chrome. When the sidebar is collapsed, the breadcrumb stays in flow after the
+        // nav cluster.
+        let breadcrumb_content_left = if sidebar_visible {
+            (sidebar_width - APP_TITLEBAR_LEFT_INSET).max(0.0)
+                + f32::from(crate::ui_metrics::CONTENT_INSET)
         } else {
             0.0
         };
@@ -719,13 +726,19 @@ impl ShardlaneApp {
                 .child(
                     div()
                         .min_w_0()
-                        .flex_1()
                         .flex()
                         .items_center()
                         .gap_1()
                         .text_size(theme::FONT_BODY)
                         .text_color(foreground)
-                        .child(div().w(px(sidebar_header_inner_width)).h_full().flex_none())
+                        .when(sidebar_visible, |row| {
+                            row.absolute()
+                                .top_0()
+                                .bottom_0()
+                                .left(px(breadcrumb_content_left))
+                                .max_w(relative(0.55))
+                        })
+                        .when(!sidebar_visible, |row| row.flex_1().pl(px(14.0)))
                         .when_some(chat_title.clone(), |row, chip| {
                             // Chat presentation mode: the Agent identity+status is the centered Header title
                             //(breadcrumbs yield; notate 2026-08-29). M8: the title is clickable, opening the
@@ -816,23 +829,24 @@ impl ShardlaneApp {
                             })
                             .when(!secondary_surface, |row| {
                                 // Breadcrumb levels are switcher triggers: the
-                                // workspace level opens the SAME panel as the
-                                // sidebar footer switcher; the Tab level opens
-                                // the matching Tab panel.
+                                // Three breadcrumb layers, each a switcher
+                                // trigger: instance → the SAME panel as the
+                                // sidebar footer switcher; Project → the
+                                // runtime workspace picker; Tab → the Tab panel.
                                 row.child({
                                     let machines =
                                         crate::switcher_panel::build_picker_machines(self);
                                     let selected_device =
                                         crate::switcher_panel::selected_panel_device(self);
-                                    let project_button = Button::new("titlebar-project-picker")
+                                    let instance_button = Button::new("titlebar-instance-picker")
                                         .custom(terminal_header_button)
                                         .xsmall()
                                         .min_w_0()
-                                        .max_w(relative(0.42))
+                                        .max_w(relative(0.26))
                                         .flex_shrink()
                                         .overflow_hidden()
-                                        .child(div().min_w_0().truncate().child(project_title.clone()))
-                                        .tooltip(format!("Switch workspace · {project_title}"));
+                                        .child(div().min_w_0().truncate().child(instance_title.clone()))
+                                        .tooltip(format!("Switch workspace · {instance_title}"));
                                     crate::switcher_panel::workspace_switcher_panel(
                                         workspace_picker_herdr.clone(),
                                         machines,
@@ -840,6 +854,58 @@ impl ShardlaneApp {
                                         gpui::Corner::TopLeft,
                                         "shardlane-header-workspace-popover",
                                         "shardlane-header-ws-filter",
+                                        instance_button,
+                                    )
+                                })
+                                .child(div().text_color(terminal_header_muted).child("/"))
+                                .child({
+                                    let projects: Vec<crate::switcher_panel::ProjectRow> = self
+                                        .state
+                                        .workspaces
+                                        .iter()
+                                        .map(|workspace| {
+                                            let focused = workspace.focused
+                                                || self.active_workspace_id().is_some_and(
+                                                    |focused| {
+                                                        focused == workspace.workspace_id
+                                                    },
+                                                );
+                                            let label = workspace
+                                                .label
+                                                .clone()
+                                                .or_else(|| {
+                                                    workspace.cwd.as_deref().and_then(|cwd| {
+                                                        std::path::Path::new(cwd)
+                                                            .file_name()
+                                                            .and_then(|name| name.to_str())
+                                                            .map(str::to_string)
+                                                    })
+                                                })
+                                                .unwrap_or_else(|| {
+                                                    workspace.workspace_id.clone()
+                                                });
+                                            (
+                                                workspace.workspace_id.clone(),
+                                                label,
+                                                focused,
+                                            )
+                                        })
+                                        .collect();
+                                    let project_button = Button::new("titlebar-project-picker")
+                                        .custom(terminal_header_button)
+                                        .xsmall()
+                                        .min_w_0()
+                                        .max_w(relative(0.3))
+                                        .flex_shrink()
+                                        .overflow_hidden()
+                                        .child(div().min_w_0().truncate().child(project_title.clone()))
+                                        .tooltip(format!("Switch project · {project_title}"));
+                                    crate::switcher_panel::project_switcher_panel(
+                                        project_picker_herdr.clone(),
+                                        projects,
+                                        gpui::Corner::TopLeft,
+                                        "shardlane-header-project-popover",
+                                        "shardlane-header-project-filter",
                                         project_button,
                                     )
                                 })

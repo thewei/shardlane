@@ -193,7 +193,6 @@ impl ShardlaneApp {
             self.sidebar_collapsed = self.config.ui.sidebar.collapsed;
             self.projects_collapsed = self.config.ui.sidebar.projects_collapsed;
             self.agents_collapsed = self.config.ui.sidebar.agents_collapsed;
-            self.services_collapsed = self.config.ui.sidebar.services_collapsed;
             self.notify_sidebar(cx);
         }
         if diff.terminal {

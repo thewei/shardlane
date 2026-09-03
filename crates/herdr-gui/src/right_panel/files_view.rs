@@ -1,5 +1,6 @@
 //! [INPUT]: The import surface and types of the right_panel module root (`use super::*`).
-//! [OUTPUT]: render_right_panel_files — the file-tree browsing view.
+//! [OUTPUT]: render_right_panel_files — the file-tree browsing view; clicking a file opens the
+//! full-content preview surface (ShardlaneApp::open_file_preview), not a right-panel surface.
 //! [POS]: The files_view responsibility slice of the right_panel directory.
 use super::*;
 
@@ -85,7 +86,9 @@ impl ShardlaneApp {
                         }
                         this.refresh_right_panel_working_tree(cx);
                     } else {
-                        this.open_right_panel_surface(RightPanelSurface::File(rel_clone), cx);
+                        // 2026-09-03: file preview moved to the full-content
+                        // surface (covers the hosted TUI, keeps it alive).
+                        this.open_file_preview(rel_clone, cx);
                     }
                 });
             }));

@@ -1,5 +1,5 @@
 //! [INPUT]: Constants, types, and root-level imports from the sidebar module root (`super`); full inheritance via `use super::*`.
-//! [OUTPUT]: Row-level primitives: the TextColored coloring trait, `icon`, `sidebar_action_row`, the RowLevel/RowLead row models, project/tab drag ghosts (with Render), `sidebar_hint_row`, `group_header`, and the general-purpose `sidebar_row` renderer.
+//! [OUTPUT]: Row-level primitives: the TextColored coloring trait, `icon`, `sidebar_action_row`, the RowLevel/RowLead row models (including the service-badged `IconService` lead), project/tab drag ghosts (with Render), `sidebar_hint_row`, `group_header`, the general-purpose `sidebar_row` renderer, and the two-line `sidebar_card_row` card renderer (Agents section).
 //! [POS]: Row-primitive layer of `crates/herdr-gui::sidebar`, consumed by shell/tree_rows/pane_rows/service_rows; mechanically split out of sidebar.rs and sharing the module-root namespace with its sibling submodules.
 use super::*;
 
@@ -69,7 +69,13 @@ pub(super) enum RowLevel {
 pub(super) enum RowLead {
     Icon(&'static str),
     Brand(&'static str),
-    Project { expanded: bool },
+    Project {
+        expanded: bool,
+    },
+    /// Terminal-family lead with a "service listening" badge: same glyph as
+    /// `Icon`, plus a success-colored dot pinned to the glyph's top-right
+    /// corner when an observed service runs inside this row's runtime object.
+    IconService(&'static str),
 }
 
 #[derive(Clone)]
@@ -322,6 +328,29 @@ pub(super) fn sidebar_row(
                                     theme.muted_foreground
                                 })
                                 .into_any_element(),
+                            RowLead::IconService(path) => div()
+                                .relative()
+                                .child(
+                                    icon(path)
+                                        .with_size(if sub { px(14.0) } else { px(15.0) })
+                                        .text_color(if active {
+                                            theme.sidebar_accent_foreground
+                                        } else {
+                                            theme.muted_foreground
+                                        }),
+                                )
+                                .child(
+                                    div()
+                                        .absolute()
+                                        .top(px(-1.0))
+                                        .right(px(-2.0))
+                                        .size(px(6.0))
+                                        .rounded_full()
+                                        .border_1()
+                                        .border_color(theme.sidebar)
+                                        .bg(theme.success),
+                                )
+                                .into_any_element(),
                             RowLead::Brand(path) => img(path).size(LEAD_BOX).into_any_element(),
                             RowLead::Project { expanded } => icon(if expanded {
                                 "icons/folder-open.svg"
@@ -389,6 +418,165 @@ pub(super) fn sidebar_row(
                             .text_color(theme.muted_foreground)
                             .child(n.to_string()),
                     )
+                }),
+        )
+}
+
+/// Two-line card row for the Agents section: bold title over a muted
+/// meta/subtitle line (project · model · context pressure). Same roving-list
+/// integration and active/hover/indicator language as `sidebar_row` — the
+/// card differs only in stacking two text lines, never in interaction.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn sidebar_card_row(
+    list: &Rc<RovingList>,
+    id: impl Into<SharedString>,
+    lead: RowLead,
+    title: impl Into<SharedString>,
+    subtitle: Option<SharedString>,
+    status: Option<crate::status::AttentionLevel>,
+    active: bool,
+    on_activate: impl Fn(&mut Window, &mut App) + 'static,
+    cx: &Context<ShardlaneApp>,
+) -> Stateful<Div> {
+    let theme = cx.theme();
+    let focus_key = id.into();
+    let focus_handle = list.row_handle(focus_key.as_ref(), cx);
+    let indicator_color = theme.accent;
+    div()
+        .id(ElementId::Name(focus_key.clone()))
+        .group("sidebar-item-row")
+        .w_full()
+        .min_h(ROW_HEIGHT)
+        .flex_shrink_0()
+        .pl(LEAD_INSET)
+        .pr(SIDEBAR_EDGE)
+        .py(px(4.0))
+        .rounded(theme.radius)
+        .cursor_pointer()
+        .relative()
+        .flex()
+        .items_center()
+        .child(
+            div()
+                .absolute()
+                .left_0()
+                .top(px(6.0))
+                .bottom(px(6.0))
+                .w(px(2.5))
+                .rounded(px(1.5))
+                .when(active, |bar| bar.bg(indicator_color))
+                .when(!active, |bar| {
+                    bar.invisible().group_hover("sidebar-item-row", |s| {
+                        s.visible().bg(indicator_color.opacity(0.5))
+                    })
+                }),
+        )
+        .when(active, |s| {
+            s.bg(theme.sidebar_accent)
+                .text_color(theme.sidebar_accent_foreground)
+        })
+        .when(!active, |s| {
+            s.text_color(theme.sidebar_foreground)
+                .hover(|s| s.bg(theme.sidebar_accent.opacity(INTERACTIVE_HOVER_OPACITY)))
+                .active(|s| s.bg(theme.sidebar_accent))
+        })
+        .shardlane_roving_row(
+            list,
+            focus_handle,
+            focus_key,
+            theme.primary.opacity(INTERACTIVE_FOCUS_OPACITY),
+            on_activate,
+        )
+        .child(
+            h_flex()
+                .w_full()
+                .gap(SPACE_SM)
+                .child(
+                    div()
+                        .w(LEAD_BOX)
+                        .flex_shrink_0()
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .child(match lead {
+                            RowLead::Icon(path) => icon(path)
+                                .with_size(px(15.0))
+                                .text_color(if active {
+                                    theme.sidebar_accent_foreground
+                                } else {
+                                    theme.muted_foreground
+                                })
+                                .into_any_element(),
+                            RowLead::IconService(path) => div()
+                                .relative()
+                                .child(icon(path).with_size(px(15.0)).text_color(if active {
+                                    theme.sidebar_accent_foreground
+                                } else {
+                                    theme.muted_foreground
+                                }))
+                                .child(
+                                    div()
+                                        .absolute()
+                                        .top(px(-1.0))
+                                        .right(px(-2.0))
+                                        .size(px(6.0))
+                                        .rounded_full()
+                                        .border_1()
+                                        .border_color(theme.sidebar)
+                                        .bg(theme.success),
+                                )
+                                .into_any_element(),
+                            RowLead::Brand(path) => img(path).size(LEAD_BOX).into_any_element(),
+                            RowLead::Project { expanded } => icon(if expanded {
+                                "icons/folder-open.svg"
+                            } else {
+                                "icons/folder.svg"
+                            })
+                            .with_size(px(15.0))
+                            .text_color(if active {
+                                theme.sidebar_accent_foreground
+                            } else {
+                                theme.muted_foreground
+                            })
+                            .into_any_element(),
+                        }),
+                )
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .flex()
+                        .flex_col()
+                        .gap(px(1.0))
+                        .child(
+                            div()
+                                .min_w_0()
+                                .truncate()
+                                .text_size(FONT_BODY)
+                                .font_weight(FontWeight::MEDIUM)
+                                .child(title.into()),
+                        )
+                        .when_some(subtitle, |line, text| {
+                            line.child(
+                                div()
+                                    .min_w_0()
+                                    .truncate()
+                                    .text_size(FONT_LABEL)
+                                    .text_color(if active {
+                                        theme.sidebar_accent_foreground.opacity(0.82)
+                                    } else {
+                                        theme.muted_foreground
+                                    })
+                                    .child(text),
+                            )
+                        }),
+                )
+                .when_some(status, |row, level| {
+                    row.child(crate::status::status_glyph_container(
+                        "sidebar-card-status",
+                        level,
+                        cx,
+                    ))
                 }),
         )
 }

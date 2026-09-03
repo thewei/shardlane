@@ -7,7 +7,6 @@ use super::*;
 enum SidebarSection {
     Projects,
     Agents,
-    Services,
 }
 
 impl ShardlaneApp {
@@ -317,10 +316,6 @@ impl ShardlaneApp {
                 self.config.ui.sidebar.agents_collapsed = collapsed;
                 self.agents_collapsed = collapsed;
             }
-            SidebarSection::Services => {
-                self.config.ui.sidebar.services_collapsed = collapsed;
-                self.services_collapsed = collapsed;
-            }
         }
         if reveal_sidebar {
             // set_sidebar_visible semantics: slide from the current rendered width so a
@@ -356,7 +351,9 @@ impl ShardlaneApp {
     }
 
     pub(super) fn reveal_services_section(&mut self, cx: &mut Context<Self>) {
-        self.set_section_collapsed(SidebarSection::Services, false, true, true, cx);
+        // The Sidebar Services section moved into the right panel (2026-09-03);
+        // "reveal" now means open/activate the Services surface there.
+        self.open_services_panel(cx);
     }
 
     pub(super) fn toggle_services(
@@ -365,7 +362,7 @@ impl ShardlaneApp {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.toggle_services_section(cx);
+        self.open_services_panel(cx);
     }
 
     pub(super) fn new_script(
