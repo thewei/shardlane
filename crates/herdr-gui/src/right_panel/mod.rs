@@ -25,12 +25,14 @@ use crate::ContentSurfaceTheme;
 use browser::{display_url, is_secure_url, resolve_address, search_url, AddressTarget};
 use files::{collect_working_tree, WorkingTreeEntry};
 use gpui_component::menu::DropdownMenu as _;
+use serde::{Deserialize, Serialize};
 
 /// SBX-11: single definition of the built-in browser's default URL (previously
 /// hardcoded in three places).
 pub(crate) const BROWSER_DEFAULT_URL: &str = "http://localhost:3000";
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", content = "detail", rename_all = "snake_case")]
 pub(crate) enum RightPanelSurface {
     Files,
     /// Resident service scripts + observed listening processes for the bound
@@ -131,7 +133,7 @@ pub(crate) struct RightPanelProjectContent {
 }
 
 impl RightPanelProjectContent {
-    fn from_panel(panel: &RightPanelState) -> Self {
+    pub(crate) fn from_panel(panel: &RightPanelState) -> Self {
         Self {
             surfaces: panel.surfaces.clone(),
             active_surface: panel.active_surface,
@@ -163,7 +165,7 @@ impl RightPanelProjectContent {
 }
 
 impl ShardlaneApp {
-    fn active_right_panel_context_runtime_id(&self) -> Option<String> {
+    pub(crate) fn active_right_panel_context_runtime_id(&self) -> Option<String> {
         self.new_agent_context_workspace_id
             .clone()
             .or_else(|| self.state.focused_workspace_id.clone())
@@ -222,6 +224,7 @@ impl ShardlaneApp {
                 self.ensure_lazygit_session(cx);
             }
         }
+        self.persist_current_workspace_state();
         cx.notify();
     }
 
@@ -327,6 +330,7 @@ impl ShardlaneApp {
             self.stop_lazygit_session(cx);
         }
         self.refresh_right_panel_state(cx);
+        self.persist_current_workspace_state();
         cx.notify();
     }
 
@@ -347,8 +351,10 @@ impl ShardlaneApp {
         } else {
             self.stop_lazygit_session(cx);
         }
+        self.persist_current_workspace_state();
         cx.notify();
     }
+
     pub(crate) fn close_right_panel_surface(&mut self, index: usize, cx: &mut Context<Self>) {
         if index < self.right_panel.surfaces.len() {
             let closing_lazygit = matches!(
@@ -415,6 +421,7 @@ impl ShardlaneApp {
                 self.stop_lazygit_session(cx);
             }
         }
+        self.persist_current_workspace_state();
         cx.notify();
     }
 

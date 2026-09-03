@@ -1,11 +1,131 @@
 //! [INPUT]: Depends on the ShardlaneApp type from the crate root (super) and existing types/imports (use super::*); no independent external dependencies.
 //! [OUTPUT]: Exposes ShardlaneApp's settings persistence and window preferences: config read/write/reload/font size/always-on-top
 //!           (including applying `ConfigDiff::language` to the i18n locale on reload),
-//!           plus parking the Lazygit auxiliary session while Settings is open and restoring it when the visible right panel returns.
+//!           plus parking the Lazygit auxiliary session while Settings is open and restoring it when the visible right panel returns,
+//!           and the per-instance workspace UI state capture/persist/restore contract (config.json `workspace_state`).
 //! [POS]: The `crates/herdr-gui` shell settings responsibility domain, mechanically split out of main.rs; together with sibling shell_* modules it forms ShardlaneApp's method surface.
 use super::*;
+use std::path::PathBuf;
 
 impl ShardlaneApp {
+    /// Builds the durable per-instance record from the LIVE bound instance.
+    /// Client-owned presentation only: no tab/pane layout, no cwd, no
+    /// scrollback — Herdr's session.json is the sole runtime authority.
+    fn current_workspace_state_record(&self) -> Option<settings::WorkspaceStateRecord> {
+        self.bound_project()?;
+        let surfaces = self.right_panel.surfaces.clone();
+        Some(settings::WorkspaceStateRecord {
+            focused_tab_id: self.state.focused_tab_id.clone(),
+            chat_mode: self.chat.model.mode == crate::chat::WorkSurfaceMode::Chat,
+            right_panel: Some(settings::RightPanelStateRecord {
+                open: self.right_panel.open,
+                width: self.right_panel.width,
+                surfaces,
+                active_surface: self.right_panel.active_surface,
+                file_tree_width: self.right_panel.file_tree_width,
+                files_selected_path: self.right_panel.files_selected_path.clone(),
+                files_expanded_paths: self
+                    .right_panel
+                    .files_expanded_paths
+                    .iter()
+                    .map(|path| path.to_string_lossy().into_owned())
+                    .collect(),
+            }),
+        })
+    }
+
+    /// Write-through: persists the CURRENT bound instance's UI state into
+    /// config.json. Cheap (small JSON, load-modify-save) and only called from
+    /// low-frequency user actions (navigation, panel toggles, unbind, quit).
+    pub(crate) fn persist_current_workspace_state(&self) {
+        let Some(binding) = self.bound_project() else {
+            return;
+        };
+        let Some(record) = self.current_workspace_state_record() else {
+            return;
+        };
+        settings::ApplicationConfig::persist_workspace_state(binding.project_id.clone(), record);
+    }
+
+    /// Restore-on-bind: re-applies the persisted instance state after the
+    /// runtime snapshot landed. Every step degrades silently when the saved
+    /// ids no longer resolve (Herdr may have restarted with fresh runtime
+    /// ids) — Herdr's own focus remains the fallback authority.
+    pub(crate) fn restore_workspace_state(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(binding) = self.bound_project() else {
+            return;
+        };
+        let Some(record) = self
+            .config
+            .workspace_state
+            .get(&binding.project_id)
+            .cloned()
+        else {
+            return;
+        };
+        // (a) Last client-selected tab, re-applied through the FocusIntent seam.
+        if let Some(tab_id) = record.focused_tab_id {
+            if self.state.tabs.iter().any(|tab| tab.tab_id == tab_id) {
+                if let Some(workspace_id) = self.state.focused_workspace_id.clone() {
+                    self.workspace_tab_selection_memory
+                        .insert(workspace_id, tab_id.clone());
+                }
+                // Already Herdr's focused tab: keep the memory, skip the RPC.
+                if self.state.focused_tab_id.as_deref() != Some(tab_id.as_str()) {
+                    self.apply_focus_intent(FocusIntent::tab(tab_id), window, cx);
+                }
+            }
+        }
+        // (b) Chat presentation mode: only when a supported agent is focused,
+        // and only while the current presentation is Terminal.
+        if record.chat_mode
+            && self.chat.model.mode == crate::chat::WorkSurfaceMode::Terminal
+            && self.focused_chat_agent().is_some()
+        {
+            self.chat.model.mode = crate::chat::WorkSurfaceMode::Chat;
+            self.ensure_chat_source(cx);
+            self.start_chat_sync_worker(cx);
+        }
+        // (c) Right panel chrome/content. Register the snapshot under the
+        // current runtime id too, so the first project-context sync is a
+        // no-op instead of wiping the restored panel with a fresh default.
+        if let Some(rp) = record.right_panel {
+            self.right_panel.open = rp.open;
+            self.right_panel.width = rp.width.clamp(280.0, 1000.0);
+            self.right_panel.file_tree_width = rp.file_tree_width.clamp(140.0, 480.0);
+            self.right_panel.files_selected_path = rp.files_selected_path;
+            self.right_panel.files_expanded_paths = rp
+                .files_expanded_paths
+                .into_iter()
+                .map(PathBuf::from)
+                .collect();
+            self.right_panel.surfaces = rp.surfaces;
+            self.right_panel.active_surface = rp
+                .active_surface
+                .filter(|index| *index < self.right_panel.surfaces.len());
+            let runtime_id = self.active_right_panel_context_runtime_id();
+            self.right_panel_runtime_id = runtime_id.clone();
+            if let Some(id) = runtime_id {
+                let snapshot =
+                    crate::right_panel::RightPanelProjectContent::from_panel(&self.right_panel);
+                self.right_panel_projects.insert(id, snapshot);
+            }
+            if self.right_panel.open {
+                self.refresh_right_panel_state(cx);
+                let lazygit_active = self
+                    .right_panel
+                    .active_surface
+                    .and_then(|index| self.right_panel.surfaces.get(index))
+                    .is_some_and(|surface| {
+                        matches!(surface, crate::right_panel::RightPanelSurface::Lazygit)
+                    });
+                if lazygit_active {
+                    self.ensure_lazygit_session(cx);
+                }
+            }
+        }
+    }
+
     pub(super) fn toggle_settings(
         &mut self,
         _: &ToggleSettings,

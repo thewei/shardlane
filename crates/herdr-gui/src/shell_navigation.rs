@@ -967,6 +967,7 @@ impl ShardlaneApp {
             self.workspace_tab_selection_memory
                 .insert(workspace_id.to_string(), tab_id.clone());
         }
+        self.persist_current_workspace_state();
         derive_selection_flags(&mut self.state);
         self.sync_terminal_application_focus(cx);
         self.notify_sidebar(cx);

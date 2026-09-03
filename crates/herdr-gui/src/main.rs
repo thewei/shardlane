@@ -2614,6 +2614,7 @@ impl ShardlaneApp {
     /// that owns `self` contributes its row directly (no `view.update` on
     /// self); only *other* live windows are read across the entity boundary.
     pub(crate) fn sync_open_workspaces(&self, cx: &mut App) {
+        self.persist_current_workspace_state();
         let mut records = Vec::new();
         if let Some(record) = self.open_workspace_record() {
             records.push(record);
@@ -2799,6 +2800,10 @@ impl ShardlaneApp {
                             view.notify_sidebar(cx);
                             view.notify_status_bar();
                             view.sync_open_workspaces(cx);
+                            // Restore-on-bind: re-apply the persisted per-instance
+                            // UI state (last tab, chat mode, right panel) once the
+                            // runtime snapshot landed.
+                            view.restore_workspace_state(window, cx);
                             // Refresh the shared instance cache off the UI thread
                             // so the workspace switcher's running/停止 states
                             // reflect the instance this window just (re)started.
@@ -2834,6 +2839,9 @@ impl ShardlaneApp {
     /// running (Remote viewers may be attached); a named session's child dies with
     /// this window's manager Arc on the next bind.
     pub(crate) fn teardown_binding(&mut self, cx: &mut Context<Self>) {
+        // Capture the OUTGOING instance's UI state before anything is cleared —
+        // this single point covers switch-away, rebind, and quit.
+        self.persist_current_workspace_state();
         if let Some(binding) = self.binding.take() {
             if let Some(id) = self.window_handle.as_ref().map(|handle| handle.window_id()) {
                 self.shared.clear_project_window(&binding.project_id, id);

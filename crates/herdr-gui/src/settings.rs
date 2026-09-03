@@ -6,7 +6,8 @@
 //! reload this same typed model.
 //!
 //! [INPUT]: Depends on serde/notify/async-channel for persistence and file watching
-//! [OUTPUT]: Exposes `ApplicationConfig` (including `TerminalConfig`'s font/padding/theme/
+//! [OUTPUT]: Exposes `ApplicationConfig` (including per-instance `WorkspaceStateRecord`
+//!           UI-state restore records, `TerminalConfig`'s font/padding/theme/
 //!           cursor shape and blink preferences, the `Language` i18n preference,
 //!           `BehaviorConfig` and other typed enums,
 //!           plus the Lazygit auxiliary tool config), load/save/normalize, and the config-change channel
@@ -16,6 +17,7 @@ use crate::sidebar::SIDEBAR_DEFAULT_WIDTH;
 use async_channel::Receiver;
 use notify::{RecursiveMode, Watcher};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 
@@ -93,6 +95,48 @@ pub struct OpenWorkspaceRecord {
     pub height: f64,
 }
 
+/// Client-owned per-instance UI state for instant restore (the "switch back to
+/// a workspace and it looks like you left it" contract). The map key is the
+/// STABLE Herdr session key — the same identity as `open_workspaces.session`,
+/// never the ephemeral runtime workspace id. Runtime truth (tabs, panes,
+/// layout, per-Tab cwd, scrollback, agent processes) stays in Herdr's
+/// session.json; this record stores only presentation preferences the client
+/// re-applies on (re)bind through the FocusIntent seam.
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
+pub struct WorkspaceStateRecord {
+    /// Last tab the client focused in this instance. Stale after a Herdr
+    /// restart with different tab ids degrades silently to Herdr's own focus.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub focused_tab_id: Option<String>,
+    /// Was the Chat presentation active when this instance was last visible?
+    #[serde(default)]
+    pub chat_mode: bool,
+    /// Right-panel chrome/content snapshot (surfaces, active surface, widths,
+    /// tree-expanded paths, selected file).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub right_panel: Option<RightPanelStateRecord>,
+}
+
+/// The durable subset of the right-panel state. The working-tree projection is
+/// deliberately NOT persisted — it is rebuilt from disk on demand.
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
+pub struct RightPanelStateRecord {
+    #[serde(default)]
+    pub open: bool,
+    #[serde(default)]
+    pub width: f32,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub surfaces: Vec<crate::right_panel::RightPanelSurface>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub active_surface: Option<usize>,
+    #[serde(default)]
+    pub file_tree_width: f32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub files_selected_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub files_expanded_paths: Vec<String>,
+}
+
 /// Workspaces are Herdr instances (multi-instance model): Shardlane keeps NO
 /// workspace registry — instances are enumerated from `herdr session list`.
 /// The only Shardlane-side data is cosmetic: per-session display-name
@@ -110,6 +154,9 @@ pub struct ApplicationConfig {
     /// B4/C4: the workspace windows currently open (restored at launch).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub open_workspaces: Vec<OpenWorkspaceRecord>,
+    /// Per-instance client UI state (see [`WorkspaceStateRecord`]).
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub workspace_state: HashMap<String, WorkspaceStateRecord>,
     pub ui: UiConfig,
     pub terminal: TerminalConfig,
     pub behavior: BehaviorConfig,
@@ -149,6 +196,7 @@ impl Default for ApplicationConfig {
             version: CONFIG_VERSION,
             devices: vec![DeviceEntry::local()],
             open_workspaces: Vec::new(),
+            workspace_state: HashMap::new(),
             ui: UiConfig::default(),
             terminal: TerminalConfig::default(),
             behavior: BehaviorConfig::default(),
@@ -621,6 +669,16 @@ impl ApplicationConfig {
             return;
         };
         config.open_workspaces = records;
+        config.save();
+    }
+
+    /// Per-instance UI state persistence: load-modify-save, same
+    /// no-clobber contract as `persist_open_workspaces`.
+    pub(crate) fn persist_workspace_state(key: String, record: WorkspaceStateRecord) {
+        let Ok(mut config) = Self::load_strict() else {
+            return;
+        };
+        config.workspace_state.insert(key, record);
         config.save();
     }
 

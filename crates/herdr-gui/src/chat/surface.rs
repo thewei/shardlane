@@ -5,6 +5,8 @@
 //! projection), and shardlane-history's HistoryCatalog/LiveSession/LiveSync.
 //! [OUTPUT]: Provides ChatUi (GUI-domain state) and ShardlaneApp's chat method group
 //! (toggle_chat_surface / chat_surface_view / submit_chat_prompt, etc.) to the crate.
+//! toggle_chat_surface writes the Chat/Terminal choice through to the per-instance
+//! persisted workspace state (config.json workspace_state).
 //! [POS]: The surface domain of herdr-gui `chat`. The TUI always stays alive; Chat is
 //! only the semantic sidecar presentation of the same Herdr Agent: it never launches
 //! provider processes, never parses TUI/ANSI, and ordinary prompts go only through
@@ -273,6 +275,7 @@ impl ShardlaneApp {
             self.chat.sync_job = None;
             self.chat.prompt_focused = false;
         }
+        self.persist_current_workspace_state();
         cx.notify();
     }
 
