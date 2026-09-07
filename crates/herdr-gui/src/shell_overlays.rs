@@ -236,6 +236,12 @@ impl ShardlaneApp {
         list.update(cx, |state, list_cx| {
             if !state.delegate().results.is_empty() {
                 state.set_selected_index(Some(IndexPath::new(0)), window, list_cx);
+                state.scroll_to_item(
+                    IndexPath::new(0),
+                    ::gpui::ScrollStrategy::Top,
+                    window,
+                    list_cx,
+                );
             }
         });
     }

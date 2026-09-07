@@ -23,51 +23,50 @@ pub(super) fn client_search_result_item(
     cx: &Context<ListState<ClientSearchDelegate>>,
 ) -> ListItem {
     let kind_label = item.target.kind_label();
-    // notate 08-29 round four: give the text column an explicit pixel width — nested w_full +
-    // flex_1 columns collapse to min-content under List virtualized measurement (the title would
-    // shrink to a single word like "Reg").
-    // Reserve = ListItem side padding (11×2) + icon 20 + two gaps 10×2 + the widest
-    // right-side kind badge ("Workspace" ≈96).
-    const SEARCH_ROW_TEXT_RESERVE: f32 = 158.0;
-    let text_width = (result_width - SEARCH_ROW_TEXT_RESERVE).max(160.0);
     // Palette row: px(11)/rounded(9), 16px icon in a 20px box, 14px foreground title,
-    // 12.5px muted detail, kind badge as a shortcut chip (h22/min28/r7).
-    let body = div()
+    // 12.5px muted detail, kind badge as a shortcut chip (h22/min28/r7) aligned right.
+    // Explicit pixel width on the text column prevents MinContent collapse in List virtualized measurement.
+    const SEARCH_ROW_TEXT_RESERVE: f32 = 130.0;
+    let text_width = (result_width - SEARCH_ROW_TEXT_RESERVE).max(160.0);
+    let body = h_flex()
         .w_full()
         .min_w_0()
-        .flex()
         .items_center()
-        .gap(px(10.0))
+        .justify_between()
         .child(
-            div()
-                .flex_none()
-                .size(px(20.0))
-                .flex()
+            h_flex()
                 .items_center()
-                .justify_center()
-                .child(Icon::new(item.icon.clone()).with_size(px(16.0))),
-        )
-        .child(
-            v_flex()
-                .flex_none()
-                .w(px(text_width))
-                .gap(px(2.0))
+                .gap(px(10.0))
                 .child(
-                    // Inside a fixed-width container, `.truncate()` (nowrap) is the standard single-line ellipsis.
                     div()
-                        .w(px(text_width))
-                        .truncate()
-                        .text_size(crate::theme::FONT_SECTION_TITLE)
-                        .text_color(cx.theme().foreground)
-                        .child(item.title.clone()),
+                        .flex_none()
+                        .size(px(20.0))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .child(Icon::new(item.icon.clone()).with_size(px(16.0))),
                 )
                 .child(
-                    div()
+                    v_flex()
+                        .flex_none()
                         .w(px(text_width))
-                        .truncate()
-                        .text_size(crate::theme::FONT_BODY)
-                        .text_color(cx.theme().muted_foreground)
-                        .child(item.detail.clone()),
+                        .gap(px(2.0))
+                        .child(
+                            div()
+                                .w(px(text_width))
+                                .truncate()
+                                .text_size(crate::theme::FONT_SECTION_TITLE)
+                                .text_color(cx.theme().foreground)
+                                .child(item.title.clone()),
+                        )
+                        .child(
+                            div()
+                                .w(px(text_width))
+                                .truncate()
+                                .text_size(crate::theme::FONT_BODY)
+                                .text_color(cx.theme().muted_foreground)
+                                .child(item.detail.clone()),
+                        ),
                 ),
         )
         .child(

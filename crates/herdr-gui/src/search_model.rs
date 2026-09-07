@@ -10,6 +10,7 @@
 
 use super::*;
 use crate::search_view::client_search_empty_state;
+use ::gpui::ScrollStrategy;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum ClientSearchTarget {
@@ -401,7 +402,8 @@ impl ClientSearchDelegate {
         IndexPath::new(0)
     }
 
-    /// Card-level ↑/↓: wrap the selection around; go through defer into ListState::set_selected_index so scrolling stays linked.
+    /// Card-level ↑/↓: move selection without wrap-around (clamps at top and bottom);
+    /// go through defer into ListState::set_selected_index and scroll_to_item so scrolling stays linked.
     pub(super) fn move_selection(
         &mut self,
         delta: isize,
@@ -412,12 +414,25 @@ impl ClientSearchDelegate {
         if len == 0 {
             return;
         }
-        let current = self.selected_ix.unwrap_or(0) as isize;
-        let next = (current + delta).rem_euclid(len as isize) as usize;
+        let current = self.selected_ix.unwrap_or(0);
+        let next = if delta > 0 {
+            (current + 1).min(len - 1)
+        } else {
+            current.saturating_sub(1)
+        };
+        if next == current && self.selected_ix.is_some() {
+            return;
+        }
         self.selected_ix = Some(next);
         let ix = self.index_path_for_flat(next);
+        let strategy = if delta > 0 {
+            ScrollStrategy::Bottom
+        } else {
+            ScrollStrategy::Top
+        };
         cx.defer_in(window, move |state, window, cx| {
             state.set_selected_index(Some(ix), window, cx);
+            state.scroll_to_item(ix, strategy, window, cx);
         });
     }
 
@@ -457,6 +472,9 @@ impl ListDelegate for ClientSearchDelegate {
         let has_results = !self.results.is_empty();
         cx.defer_in(window, move |state, window, cx| {
             state.set_selected_index(has_results.then_some(IndexPath::new(0)), window, cx);
+            if has_results {
+                state.scroll_to_item(IndexPath::new(0), ScrollStrategy::Top, window, cx);
+            }
         });
         cx.notify();
 
@@ -549,6 +567,7 @@ impl ListDelegate for ClientSearchDelegate {
                 if delegate.selected_ix.is_none() && !delegate.results.is_empty() {
                     delegate.selected_ix = Some(0);
                     state.set_selected_index(Some(IndexPath::new(0)), window, cx);
+                    state.scroll_to_item(IndexPath::new(0), ScrollStrategy::Top, window, cx);
                 }
                 cx.notify();
             });
@@ -796,5 +815,23 @@ mod tests {
         assert!(parsed.scopes.is_empty());
         assert_eq!(parsed.scope_completion, None);
         assert_eq!(parsed.in_memory_query, "#p shell");
+    }
+
+    #[test]
+    fn move_selection_clamps_at_boundaries() {
+        let len = 5;
+        let current = 0usize;
+        let next_up = current.saturating_sub(1);
+        assert_eq!(next_up, 0, "moving up at index 0 must clamp to 0");
+
+        let next_down = (current + 1).min(len - 1);
+        assert_eq!(next_down, 1);
+
+        let last = 4usize;
+        let next_down_from_last = (last + 1).min(len - 1);
+        assert_eq!(
+            next_down_from_last, 4,
+            "moving down at last item must clamp to last"
+        );
     }
 }
