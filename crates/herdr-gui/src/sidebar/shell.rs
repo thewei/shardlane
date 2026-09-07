@@ -32,6 +32,27 @@ impl ShardlaneApp {
         // with its running dot.
         let dark = theme.bg <= 0x808080;
         self.refresh_git_status(cx);
+
+        // Preload any workspace panes not yet cached so every project has cwd & git status
+        let missing_panes_ws: Vec<String> = self
+            .state
+            .workspaces
+            .iter()
+            .filter(|ws| !self.panes_by_project.contains_key(&ws.workspace_id))
+            .map(|ws| ws.workspace_id.clone())
+            .collect();
+        if !missing_panes_ws.is_empty() {
+            let herdr_entity = cx.entity().clone();
+            cx.spawn(async move |_this, cx| {
+                let _ = herdr_entity.update(cx, |this, cx| {
+                    for ws_id in missing_panes_ws {
+                        this.load_sidebar_project_panes(ws_id, cx);
+                    }
+                });
+            })
+            .detach();
+        }
+
         // Sidebar render owns one ProjectIndex snapshot. Previously the visible-project
         // projection and the Sidebar itself each rebuilt the same index, paying the
         // path/script projection cost twice on every Sidebar repaint.
@@ -47,7 +68,19 @@ impl ShardlaneApp {
             let path = visible_projects
                 .iter()
                 .find(|visible| visible.runtime_workspace_id == workspace.workspace_id)
-                .and_then(|visible| visible.project_path.clone());
+                .and_then(|visible| visible.project_path.clone())
+                .or_else(|| {
+                    self.panes_by_project
+                        .get(&workspace.workspace_id)
+                        .and_then(|panes| {
+                            panes.iter().find_map(|pane| {
+                                pane.cwd
+                                    .as_deref()
+                                    .filter(|p| !p.trim().is_empty())
+                                    .map(|p| p.to_string())
+                            })
+                        })
+                });
             sidebar_project_entries.push((workspace.clone(), path));
         }
         let visible_project_count = sidebar_project_entries.len();

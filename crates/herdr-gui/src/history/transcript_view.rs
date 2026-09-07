@@ -230,29 +230,16 @@ pub(super) fn render_transcript(
         );
 
     // ── Shared Conversation projection (agent_ui::conversation) ──
-    // Turn boundaries and the Worked fold come from the shared layer; History
-    // only supplies expansion state and rendering.
-    // The fold/expand key is the seq of the turn's first message — stable
-    // across pages.
+    // Turn boundaries come from the shared layer; History supplies only
+    // per-row expansion state (thinking pills / tool details) and rendering.
     let turns = crate::agent_ui::conversation::derive_turns(&transcript.messages);
-    let expanded_turns: HashSet<usize> = expanded_content
-        .iter()
-        .filter_map(|content| match content {
-            HistoryExpandedContent::Turn(seq) => turns.iter().position(|turn| {
-                transcript
-                    .messages
-                    .get(turn.start)
-                    .is_some_and(|message| message.seq == *seq)
-            }),
-            _ => None,
-        })
-        .collect();
     let rows = crate::agent_ui::conversation::folded_conversation_rows(
         &transcript.messages,
         &turns,
-        &HashSet::new(),
-        &expanded_turns,
         false,
+        false,
+        false,
+        &expanded_tool_groups_of(expanded_content),
     );
 
     // Row signatures → minimal splice accounting in the shared viewport (same
@@ -262,6 +249,7 @@ pub(super) fn render_transcript(
         .map(|row| {
             crate::agent_ui::conversation_surface::conversation_row_signature(
                 &transcript.messages,
+                &turns,
                 row,
             )
         })
@@ -416,21 +404,31 @@ impl ShardlaneApp {
                     card,
                 )
             }
-            crate::agent_ui::conversation::ConversationRow::Reasoning(message_index) => {
-                let message = &transcript.messages[message_index];
-                if message
-                    .thinking
-                    .as_ref()
-                    .is_none_or(|t| t.trim().is_empty())
-                {
+            crate::agent_ui::conversation::ConversationRow::TurnThinking(turn_index) => {
+                let Some(turn) = turns.get(turn_index) else {
+                    return div().into_any_element();
+                };
+                let thinking =
+                    crate::agent_ui::conversation::turn_thinking_text(&transcript.messages, turn);
+                if thinking.trim().is_empty() {
                     return div().into_any_element();
                 }
-                let content = HistoryExpandedContent::Thinking(message.seq);
+                let Some(turn_seq) = transcript.messages.get(turn.start).map(|m| m.seq) else {
+                    return div().into_any_element();
+                };
+                // The expansion key is the turn's first message seq (stable
+                // across pages) — same family as the old per-message key.
+                let content = HistoryExpandedContent::Thinking(turn_seq);
                 let expanded = expanded_content.contains(&content);
                 let toggle_herdr = cx.entity();
+                let duration = crate::agent_ui::conversation::turn_thinking_duration(
+                    &transcript.messages,
+                    turn,
+                );
                 let reasoning = crate::agent_ui::conversation_view::reasoning_row(
-                    message,
+                    &thinking,
                     crate::agent_ui::conversation_view::ReasoningPresentation::Expandable {
+                        duration,
                         expanded,
                         on_toggle: std::rc::Rc::new(move |_window, app| {
                             toggle_herdr
@@ -441,7 +439,7 @@ impl ShardlaneApp {
                 );
                 (
                     RenderedRow::Message {
-                        seq: message.seq,
+                        seq: turn_seq,
                         copy_text: String::new(),
                     },
                     reasoning,
@@ -451,6 +449,13 @@ impl ShardlaneApp {
                 message: message_index,
                 tool: tool_index,
             } => {
+                // Rows re-emitted from an expanded group indent under the
+                // group header (same as Live).
+                let in_group = ix > 0
+                    && matches!(
+                        rows.get(ix - 1),
+                        Some(crate::agent_ui::conversation::ConversationRow::ToolGroup { .. })
+                    );
                 let message = &transcript.messages[message_index];
                 let Some(tool_call) = message.tool_calls.get(tool_index) else {
                     return div().into_any_element();
@@ -459,7 +464,11 @@ impl ShardlaneApp {
                 let expanded = expanded_content.contains(&content);
                 let activity_herdr = cx.entity();
                 let tool_for_row = tool_call.clone();
-                let mut cluster = v_flex().w_full().min_w_0().gap(px(4.0));
+                let mut cluster = v_flex()
+                    .w_full()
+                    .min_w_0()
+                    .when(in_group, |cluster| cluster.pl(px(14.0)))
+                    .gap(px(4.0));
                 cluster = cluster.child(crate::agent_ui::activity::render_activity_row(
                     SharedString::from(format!("history-activity-{}-{tool_index}", message.seq)),
                     &tool_for_row,
@@ -496,39 +505,42 @@ impl ShardlaneApp {
             }
             crate::agent_ui::conversation::ConversationRow::ContextBoundary(message_index) => {
                 let message = &transcript.messages[message_index];
+                let content = HistoryExpandedContent::Context(message.seq);
+                let expanded = expanded_content.contains(&content);
+                let toggle_herdr = cx.entity();
                 (
                     RenderedRow::Message {
                         seq: message.seq,
                         copy_text: message.text.clone(),
                     },
-                    crate::agent_ui::conversation_view::context_boundary_row(message, theme),
+                    crate::agent_ui::conversation_view::context_boundary_row(
+                        message,
+                        expanded,
+                        Some(std::rc::Rc::new(move |_, app| {
+                            toggle_herdr
+                                .update(app, |view, cx| view.toggle_history_content(content, cx));
+                        })),
+                        theme,
+                    ),
                 )
             }
-            crate::agent_ui::conversation::ConversationRow::TurnFold(turn_index) => {
-                let Some(turn) = turns.get(turn_index) else {
+            crate::agent_ui::conversation::ConversationRow::ToolGroup {
+                message: message_index,
+                tool,
+                count,
+            } => {
+                let Some(message) = transcript.messages.get(message_index) else {
                     return div().into_any_element();
                 };
-                let Some(fold_seq) = transcript.messages.get(turn.start).map(|m| m.seq) else {
-                    return div().into_any_element();
-                };
-                let step_count = crate::agent_ui::conversation::turn_work_step_count(
-                    &transcript.messages,
-                    &turns,
-                    turn_index,
-                );
-                let duration = crate::agent_ui::activity::turn_work_duration(
-                    &transcript.messages,
-                    turn.range.clone(),
-                );
-                let content = HistoryExpandedContent::Turn(fold_seq);
-                let expanded = self.history.expanded_content.contains(&content);
+                let seq = message.seq;
+                let content = HistoryExpandedContent::ToolGroup(seq, tool);
+                let expanded = expanded_content.contains(&content);
                 let toggle_herdr = cx.entity();
-                let label = crate::agent_ui::activity::worked_summary_label(step_count, duration);
                 (
                     RenderedRow::Static,
-                    crate::agent_ui::activity::render_worked_fold_row(
-                        SharedString::from(format!("history-turn-fold-{fold_seq}")),
-                        label,
+                    crate::agent_ui::activity::render_tool_group_row(
+                        SharedString::from(format!("history-tool-group-{seq}-{tool}")),
+                        count,
                         expanded,
                         move |_, app| {
                             toggle_herdr
@@ -538,6 +550,10 @@ impl ShardlaneApp {
                     )
                     .into_any_element(),
                 )
+            }
+            // History's static projection never reports a live failure.
+            crate::agent_ui::conversation::ConversationRow::TurnStopped(_) => {
+                (RenderedRow::Static, div().into_any_element())
             }
             crate::agent_ui::conversation::ConversationRow::ResponseFooter(turn_index) => {
                 let Some(turn) = turns.get(turn_index) else {

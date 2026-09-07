@@ -120,6 +120,16 @@ pub(crate) fn chat_send_capability(
     }
 }
 
+/// Working-family Herdr statuses (the agent is actively running).
+pub(crate) fn is_working_family(status: &str) -> bool {
+    matches!(status, "working" | "launch_pending")
+}
+
+/// Minimum continuous busy time before the Working row engages (anti-flicker:
+/// instant completions never flash).
+pub(crate) const WORKING_INDICATOR_DELAY: std::time::Duration =
+    std::time::Duration::from_millis(500);
+
 /// Local pending submission (plan §11.2): a temporary user row shown right
 /// after agent.prompt succeeds; when the provider-source echo arrives it is
 /// reconciled exactly once using content+order evidence. `pane_key` pins the
@@ -186,7 +196,7 @@ pub(crate) enum RowSplice {
 
 /// Compute the list's minimal splice from last-frame/current-frame row-signature
 /// sequences: pure appends only register the additions; mid-stream structural
-/// changes (fold/expand, turn settlement, truncation) replace only the window
+/// changes (row add/remove, turn settlement, truncation) replace only the window
 /// between the shared prefix and suffix.
 pub(crate) fn plan_row_splice(old: &[u64], new: &[u64]) -> RowSplice {
     if old == new {
@@ -228,8 +238,24 @@ pub(crate) struct ChatModel {
     pub unavailable: Option<String>,
     pub snapshot: Option<LiveSnapshot>,
     pub load_generation: u64,
-    pub expanded_turns: HashSet<i64>,
+    /// User-pinned turn thinking blocks, keyed by the turn's first message seq
+    /// (stable across snapshots; purely presentational — never affects row
+    /// structure).
+    pub expanded_reasoning: HashSet<i64>,
+    /// User-collapsed thinking blocks while their turn is still streaming
+    /// (streaming blocks default to expanded; the explicit collapse wins until
+    /// the turn settles).
+    collapsed_reasoning: HashSet<i64>,
+    /// User-expanded context-compaction bodies, keyed by the boundary
+    /// message's seq.
+    expanded_context: HashSet<i64>,
+    /// User-expanded compact tool groups, keyed by (first call's message seq,
+    /// first call's tool index).
+    pub expanded_tool_groups: HashSet<(i64, usize)>,
     pub herdr_status: Option<String>,
+    /// When the current working status began (drives the Working row's
+    /// anti-flicker delay: instant completions never show it).
+    busy_since: Option<std::time::Instant>,
     pub pending: Option<PendingSubmission>,
     /// M4: presentation projection of the Host queue (None = no queued follow-up).
     pub queued_follow_up: Option<QueuedFollowUpView>,
@@ -238,7 +264,7 @@ pub(crate) struct ChatModel {
     pub insight: Option<shardlane_host::AgentSessionInsight>,
     pub submitting: bool,
     pub last_error: Option<String>,
-    /// Projection cache (the frame path does not re-fold).
+    /// Projection cache (the frame path does not re-project).
     rows: Vec<ConversationRow>,
     turns: Vec<ConversationTurn>,
     rows_fingerprint: u64,
@@ -253,8 +279,12 @@ impl Default for ChatModel {
             unavailable: None,
             snapshot: None,
             load_generation: 0,
-            expanded_turns: HashSet::new(),
+            expanded_reasoning: HashSet::new(),
+            collapsed_reasoning: HashSet::new(),
+            expanded_context: HashSet::new(),
+            expanded_tool_groups: HashSet::new(),
             herdr_status: None,
+            busy_since: None,
             pending: None,
             queued_follow_up: None,
             insight: None,
@@ -388,6 +418,12 @@ impl ChatModel {
     /// unchanged the caller must not trigger a repaint).
     pub fn set_herdr_status(&mut self, status: Option<String>) -> bool {
         if self.herdr_status != status {
+            self.busy_since = match status.as_deref() {
+                Some(s) if is_working_family(s) => {
+                    Some(self.busy_since.unwrap_or_else(std::time::Instant::now))
+                }
+                _ => None,
+            };
             self.herdr_status = status;
             self.reproject();
             true
@@ -396,13 +432,55 @@ impl ChatModel {
         }
     }
 
-    /// The fold/expand key is the turn's first message seq (same semantics as
-    /// History; stable across snapshots).
-    pub fn toggle_turn_fold(&mut self, turn_start_seq: i64) {
-        if !self.expanded_turns.insert(turn_start_seq) {
-            self.expanded_turns.remove(&turn_start_seq);
+    /// Toggle a turn thinking block (key: the turn's first message seq).
+    /// Streaming blocks default to expanded — clicking collapses them
+    /// explicitly; settled blocks default to collapsed — clicking pins them
+    /// open. Either way the click must both expand AND collapse.
+    pub fn toggle_reasoning(&mut self, turn_seq: i64, streaming: bool) {
+        if streaming {
+            if !self.collapsed_reasoning.insert(turn_seq) {
+                self.collapsed_reasoning.remove(&turn_seq);
+            }
+        } else if !self.expanded_reasoning.insert(turn_seq) {
+            self.expanded_reasoning.remove(&turn_seq);
+        }
+    }
+
+    /// Effective expansion for a thinking block: user pin wins when settled;
+    /// while streaming the default is expanded unless explicitly collapsed.
+    pub fn reasoning_expanded(&self, turn_seq: i64, streaming: bool) -> bool {
+        if streaming {
+            !self.collapsed_reasoning.contains(&turn_seq)
+        } else {
+            self.expanded_reasoning.contains(&turn_seq)
+        }
+    }
+
+    /// Toggle a context-compaction body (key: boundary message seq).
+    pub fn toggle_context_boundary(&mut self, message_seq: i64) {
+        if !self.expanded_context.insert(message_seq) {
+            self.expanded_context.remove(&message_seq);
+        }
+    }
+
+    pub fn context_boundary_expanded(&self, message_seq: i64) -> bool {
+        self.expanded_context.contains(&message_seq)
+    }
+
+    /// Toggle a compact tool group's expansion (key mirrors the projection's
+    /// group key; structural — changes the row list).
+    pub fn toggle_tool_group(&mut self, message_seq: i64, tool_index: usize) {
+        if !self.expanded_tool_groups.insert((message_seq, tool_index)) {
+            self.expanded_tool_groups.remove(&(message_seq, tool_index));
         }
         self.reproject();
+    }
+
+    /// Tool-group lookup helper for the surface (message seq + tool index of
+    /// the group's first call).
+    pub fn tool_group_expanded(&self, message_seq: i64, tool_index: usize) -> bool {
+        self.expanded_tool_groups
+            .contains(&(message_seq, tool_index))
     }
 
     fn reproject(&mut self) {
@@ -413,45 +491,33 @@ impl ChatModel {
             return;
         };
         let turns = conversation::derive_turns(&snapshot.messages);
-        let agent_working = self
-            .herdr_status
-            .as_deref()
-            .is_some_and(|status| matches!(status, "working" | "launch_pending"));
-        let mut running: HashSet<usize> = HashSet::new();
-        if agent_working {
-            if let Some(last_turn) = turns.len().checked_sub(1) {
-                running.insert(last_turn);
-            }
-        }
-        let expanded: HashSet<usize> = self
-            .expanded_turns
-            .iter()
-            .filter_map(|seq| {
-                turns.iter().position(|turn| {
-                    snapshot
-                        .messages
-                        .get(turn.start)
-                        .is_some_and(|m| m.seq == *seq)
-                })
-            })
-            .collect();
-        // Active turn = the last turn when the running set is non-empty;
-        // busy_working is only meaningful when it exists.
-        let busy_working = !running.is_empty();
+        // Herdr is the authoritative live status: while it works the last turn
+        // holds back its footer immediately (in_progress), while the Working
+        // row only appears once busy has persisted briefly (anti-flicker: a
+        // near-instant completion never flashes an indicator).
+        let in_progress = self.herdr_status.as_deref().is_some_and(is_working_family);
+        let show_working = in_progress
+            && self
+                .busy_since
+                .is_some_and(|since| since.elapsed() >= WORKING_INDICATOR_DELAY);
+        // Codex contract: a failed run keeps its scene and says so.
+        let last_turn_failed = self.herdr_status.as_deref() == Some("failed");
         self.rows = conversation::folded_conversation_rows(
             &snapshot.messages,
             &turns,
-            &running,
-            &expanded,
-            busy_working,
+            in_progress,
+            show_working,
+            last_turn_failed,
+            &self.expanded_tool_groups,
         );
         self.turns = turns;
         self.rows_fingerprint = conversation::rows_fingerprint(
             &snapshot.messages,
             &self.turns,
-            &running,
-            &expanded,
-            busy_working,
+            in_progress,
+            show_working,
+            last_turn_failed,
+            &self.expanded_tool_groups,
         );
     }
 
@@ -469,16 +535,6 @@ impl ChatModel {
     #[allow(dead_code)]
     pub fn rows_fingerprint(&self) -> u64 {
         self.rows_fingerprint
-    }
-
-    /// First message seq of a turn (the fold key).
-    pub fn turn_start_seq(&self, turn_index: usize) -> Option<i64> {
-        let turn = self.turns.get(turn_index)?;
-        self.snapshot
-            .as_ref()?
-            .messages
-            .get(turn.start)
-            .map(|message| message.seq)
     }
 
     /// Status-surface judgment (whether the text is non-empty is provided by
@@ -786,7 +842,7 @@ mod tests {
                 count: 1
             }
         );
-        // Turn settlement fold: mid-stream replacement, head and tail preserved.
+        // Mid-stream replacement: head and tail preserved.
         assert_eq!(
             plan_row_splice(&[1, 2, 3, 4, 5], &[1, 9, 5]),
             RowSplice::Replace {
@@ -821,12 +877,95 @@ mod tests {
             generation: 0,
         });
         assert!(!model.rows().contains(&ConversationRow::WorkingIndicator));
-        // Herdr working: the Working row appears before any new source content.
+        // Herdr working: a FRESH busy state does not flash the row yet
+        // (anti-flicker).
         model.set_herdr_status(Some("working".into()));
+        assert!(!model.rows().contains(&ConversationRow::WorkingIndicator));
+        // Once busy persists past the delay, the Working row appears before
+        // any new source content.
+        model.busy_since = Some(
+            std::time::Instant::now()
+                - (WORKING_INDICATOR_DELAY + std::time::Duration::from_millis(1)),
+        );
+        model.reproject();
         assert!(model.rows().contains(&ConversationRow::WorkingIndicator));
         // Settled: it disappears.
         model.set_herdr_status(Some("done".into()));
         assert!(!model.rows().contains(&ConversationRow::WorkingIndicator));
+    }
+
+    #[test]
+    fn failed_status_appends_stopped_marker_until_the_next_run() {
+        let mut model = ChatModel::default();
+        model.install_snapshot(LiveSnapshot {
+            messages: vec![user_message("q"), assistant_message("partial answer")],
+            facts: Default::default(),
+            generation: 0,
+        });
+        model.set_herdr_status(Some("failed".into()));
+        assert!(model
+            .rows()
+            .iter()
+            .any(|row| matches!(row, ConversationRow::TurnStopped(0))));
+        // The next run clears the marker (a live turn replaces the failure).
+        model.set_herdr_status(Some("working".into()));
+        assert!(!model
+            .rows()
+            .iter()
+            .any(|row| matches!(row, ConversationRow::TurnStopped(_))));
+    }
+
+    #[test]
+    fn toggle_tool_group_expands_the_compacted_run() {
+        let mut model = ChatModel::default();
+        let messages = vec![
+            user_message("task"),
+            TranscriptMessage {
+                tool_calls: vec![
+                    test_tool("t1"),
+                    test_tool("t2"),
+                    test_tool("t3"),
+                    test_tool("t4"),
+                ],
+                ..assistant_message("running checks")
+            },
+        ];
+        model.install_snapshot(LiveSnapshot {
+            messages,
+            facts: Default::default(),
+            generation: 0,
+        });
+        assert!(model
+            .rows()
+            .iter()
+            .any(|row| matches!(row, ConversationRow::ToolGroup { count: 4, .. })));
+        // Both test helpers default seq to 0, so the group key is (0, 0).
+        model.toggle_tool_group(0, 0);
+        assert_eq!(
+            model
+                .rows()
+                .iter()
+                .filter(|row| matches!(row, ConversationRow::ToolActivity { .. }))
+                .count(),
+            4
+        );
+        // The expanded group keeps its header row as the anchor.
+        assert!(model
+            .rows()
+            .iter()
+            .any(|row| matches!(row, ConversationRow::ToolGroup { count: 4, .. })));
+    }
+
+    fn test_tool(id: &str) -> shardlane_history::ToolCall {
+        shardlane_history::ToolCall {
+            id: id.into(),
+            name: "Bash".into(),
+            input_preview: String::new(),
+            input: None,
+            output: Some("ok".into()),
+            is_error: false,
+            sidechain_ref: None,
+        }
     }
 
     #[test]
@@ -847,11 +986,14 @@ mod tests {
     }
 
     #[test]
-    fn toggle_turn_fold_is_idempotent_and_stable_across_snapshots() {
+    fn toggle_reasoning_is_idempotent_and_stable_across_snapshots() {
         let mut model = ChatModel::default();
         let messages = vec![
             user_message("task"),
-            assistant_message("thought"),
+            TranscriptMessage {
+                thinking: Some("deliberating".into()),
+                ..assistant_message("thought")
+            },
             assistant_message("final"),
         ];
         model.install_snapshot(LiveSnapshot {
@@ -859,22 +1001,39 @@ mod tests {
             facts: Default::default(),
             generation: 0,
         });
-        let fingerprint_folded = model.rows_fingerprint();
-        model.toggle_turn_fold(0);
-        assert!(model.expanded_turns.contains(&0));
-        let fingerprint_expanded = model.rows_fingerprint();
-        assert_ne!(fingerprint_folded, fingerprint_expanded);
-        model.toggle_turn_fold(0);
-        assert!(!model.expanded_turns.contains(&0));
-        // After a new snapshot (same content reinstalled) the expanded set's
-        // keys remain stable.
-        model.toggle_turn_fold(0);
+        // The settled block's seq is the pin key; expansion is purely
+        // presentational and never changes the structural projection.
+        let structural_fingerprint = model.rows_fingerprint();
+        model.toggle_reasoning(1, false);
+        assert!(model.expanded_reasoning.contains(&1));
+        assert_eq!(model.rows_fingerprint(), structural_fingerprint);
+        model.toggle_reasoning(1, false);
+        assert!(!model.expanded_reasoning.contains(&1));
+        // After a new snapshot (same content reinstalled) the pin set's keys
+        // remain stable.
+        model.toggle_reasoning(1, false);
         model.install_snapshot(LiveSnapshot {
             messages,
             facts: Default::default(),
             generation: 1,
         });
-        assert!(model.expanded_turns.contains(&0));
+        assert!(model.expanded_reasoning.contains(&1));
+    }
+
+    #[test]
+    fn streaming_thinking_collapses_expands_explicitly() {
+        let mut model = ChatModel::default();
+        model.set_herdr_status(Some("working".into()));
+        // Streaming default: expanded.
+        assert!(model.reasoning_expanded(7, true));
+        // Click once: explicitly collapsed.
+        model.toggle_reasoning(7, true);
+        assert!(!model.reasoning_expanded(7, true));
+        // Click again: back to expanded.
+        model.toggle_reasoning(7, true);
+        assert!(model.reasoning_expanded(7, true));
+        // Settled ignores the streaming-collapse record.
+        assert!(!model.reasoning_expanded(7, false));
     }
 
     #[test]

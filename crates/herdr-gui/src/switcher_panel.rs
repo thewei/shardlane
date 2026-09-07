@@ -12,9 +12,19 @@ use ::gpui::Corner;
 use gpui_component::popover::{Popover, PopoverState};
 use gpui_component::Selectable;
 
+/// One workspace item in the switcher picker.
+#[derive(Clone, Debug)]
+pub(crate) struct PickerInstanceItem {
+    pub(crate) key: String,
+    pub(crate) label: String,
+    pub(crate) backend: &'static str,
+    pub(crate) running: bool,
+    pub(crate) bound: bool,
+}
+
 /// One workspace-switcher device section: (device id, display name, is-local,
-/// its instances). Each instance row is (jump key, label, running, bound).
-pub(crate) type PickerMachine = (String, String, bool, Vec<(String, String, bool, bool)>);
+/// its instances).
+pub(crate) type PickerMachine = (String, String, bool, Vec<PickerInstanceItem>);
 
 /// Builds the switcher's device sections: the local machine first, then every
 /// live SSH bridge's sessions. Labels come from the session metadata (raw
@@ -38,16 +48,15 @@ pub(crate) fn build_picker_machines(app: &ShardlaneApp) -> Vec<PickerMachine> {
         .instance_list()
         .iter()
         .map(|instance| {
-            // Same-named instances on different backends would render as two
-            // identical rows (a Herdr session and the user's tmux default
-            // server are both "default"); tag the non-Herdr rows so the
-            // picker stays readable.
-            let mut label = app.shared.display_name(&instance.label_key);
-            if instance.backend == "tmux" {
-                label = format!("{label} · tmux");
-            }
+            let label = app.shared.display_name(&instance.label_key);
             let bound = bound_key.as_deref() == Some(instance.label_key.as_str());
-            (instance.label_key.clone(), label, instance.running, bound)
+            PickerInstanceItem {
+                key: instance.label_key.clone(),
+                label,
+                backend: instance.backend,
+                running: instance.running,
+                bound,
+            }
         })
         .collect::<Vec<_>>();
     machines.push((
@@ -68,7 +77,13 @@ pub(crate) fn build_picker_machines(app: &ShardlaneApp) -> Vec<PickerMachine> {
                 let key = format!("ssh:{}:{}", device.id, session.name);
                 let label = app.shared.display_name(&key);
                 let bound = bound_key.as_deref() == Some(key.as_str());
-                (key, label, session.running, bound)
+                PickerInstanceItem {
+                    key,
+                    label,
+                    backend: "herdr",
+                    running: session.running,
+                    bound,
+                }
             })
             .collect::<Vec<_>>();
         machines.push((device.id.clone(), device.name.clone(), false, instances));
@@ -107,6 +122,7 @@ pub(crate) fn workspace_switcher_device_sections(
     filter: &str,
     dismiss: Option<&Entity<PopoverState>>,
     theme: &gpui_component::Theme,
+    collapsed_groups: &HashSet<String>,
 ) -> gpui::Div {
     let picker_herdr = herdr.clone();
     let picker_theme = theme.clone();
@@ -117,13 +133,13 @@ pub(crate) fn workspace_switcher_device_sections(
         if device_id != selected_device {
             continue;
         }
-        let matches: Vec<_> = instances
+        let has_any_match = instances
             .iter()
-            .filter(|(_, label, _, _)| filter.is_empty() || label.to_lowercase().contains(filter))
-            .collect();
-        if !filter.is_empty() && matches.is_empty() {
+            .any(|item| filter.is_empty() || item.label.to_lowercase().contains(filter));
+        if !filter.is_empty() && !has_any_match {
             continue;
         }
+
         let device_gear_herdr = picker_herdr.clone();
         sections = sections.child(
             h_flex()
@@ -131,7 +147,7 @@ pub(crate) fn workspace_switcher_device_sections(
                 .w_full()
                 .px(px(10.0))
                 .pt(px(6.0))
-                .pb(px(2.0))
+                .pb(px(4.0))
                 .gap(px(6.0))
                 .items_center()
                 .child(
@@ -180,99 +196,207 @@ pub(crate) fn workspace_switcher_device_sections(
                         ),
                 ),
         );
-        for (key, label, running, bound) in matches {
-            rendered_rows += 1;
-            let key = key.clone();
-            let row_herdr = picker_herdr.clone();
-            let row_popover = dismiss.cloned();
-            let row_gear_herdr = picker_herdr.clone();
-            let row_gear_popover = dismiss.cloned();
-            let gear_key = key.clone();
+
+        // Group instances by backend:
+        // Canonical backend ordering: herdr, uuyc, tmux, then others
+        let mut backends_present: Vec<&'static str> = Vec::new();
+        for item in instances {
+            if !backends_present.contains(&item.backend) {
+                backends_present.push(item.backend);
+            }
+        }
+        backends_present.sort_by_key(|&b| match b {
+            "herdr" => 0,
+            "uuyc" => 1,
+            "tmux" => 2,
+            _ => 3,
+        });
+
+        let mut rendered_groups = 0usize;
+        for backend in backends_present {
+            let group_matches: Vec<&PickerInstanceItem> = instances
+                .iter()
+                .filter(|item| item.backend == backend)
+                .filter(|item| filter.is_empty() || item.label.to_lowercase().contains(filter))
+                .collect();
+
+            if group_matches.is_empty() {
+                continue;
+            }
+
+            rendered_groups += 1;
+            // Divider between groups
+            if rendered_groups > 1 {
+                sections = sections.child(
+                    div().w_full().my(px(4.0)).px(px(6.0)).child(
+                        div()
+                            .w_full()
+                            .h(px(1.0))
+                            .bg(picker_theme.border.opacity(0.7)),
+                    ),
+                );
+            }
+
+            let group_key = format!("{device_id}:{backend}");
+            let is_collapsed = filter.is_empty() && collapsed_groups.contains(&group_key);
+            let group_title = match backend {
+                "herdr" => crate::i18n::t("workspace.group_herdr"),
+                "uuyc" => crate::i18n::t("workspace.group_uuyc"),
+                "tmux" => crate::i18n::t("workspace.group_tmux"),
+                other => SharedString::from(other.to_string()),
+            };
+            let group_herdr = picker_herdr.clone();
+            let gkey = group_key.clone();
+
             sections = sections.child(
                 h_flex()
-                    .group("ws-row")
-                    .id(SharedString::from(format!("ws-picker-{key}")))
+                    .id(SharedString::from(format!("ws-group-{gkey}")))
+                    .group("ws-group-header")
                     .w_full()
-                    .h(px(30.0))
-                    .px(px(10.0))
-                    .rounded(px(6.0))
-                    .gap(px(8.0))
+                    .h(px(24.0))
+                    .px(px(8.0))
+                    .rounded(px(4.0))
+                    .gap(px(6.0))
                     .items_center()
                     .cursor_pointer()
                     .hover(|s| s.bg(picker_theme.foreground.opacity(crate::theme::WASH_HOVER)))
-                    .on_click(move |_, window, app| {
-                        if let Some(popover) = &row_popover {
-                            popover.update(app, |state, cx| state.dismiss(window, cx));
-                        }
-                        row_herdr
-                            .update(app, |this, cx| this.open_or_jump_project(&key, window, cx));
+                    .on_click(move |_, _window, app| {
+                        group_herdr.update(app, |this, cx| {
+                            if this.collapsed_switcher_groups.contains(&gkey) {
+                                this.collapsed_switcher_groups.remove(&gkey);
+                            } else {
+                                this.collapsed_switcher_groups.insert(gkey.clone());
+                            }
+                            cx.notify();
+                        });
                     })
                     .child(
-                        div()
-                            .size(px(7.0))
-                            .rounded_full()
-                            .flex_shrink_0()
-                            .bg(if *running {
-                                picker_theme.success
-                            } else {
-                                picker_theme.muted_foreground.opacity(0.45)
-                            }),
-                    )
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w_0()
-                            .truncate()
-                            .text_size(px(13.0))
-                            .text_color(if *bound {
-                                picker_theme.foreground
-                            } else {
-                                picker_theme.muted_foreground
-                            })
-                            .child(label.clone()),
-                    )
-                    .child(if *bound {
                         Icon::empty()
-                            .path("icons/check.svg")
-                            .with_size(px(12.0))
-                            .text_color(picker_theme.success)
-                            .flex_shrink_0()
-                            .into_any_element()
-                    } else {
-                        div().into_any_element()
-                    })
+                            .path(if is_collapsed {
+                                "icons/chevron-right.svg"
+                            } else {
+                                "icons/chevron-down.svg"
+                            })
+                            .with_size(px(10.0))
+                            .text_color(picker_theme.muted_foreground),
+                    )
                     .child(
                         div()
-                            .id(SharedString::from(format!("ws-row-gear-{gear_key}")))
-                            .size(px(18.0))
-                            .flex_shrink_0()
-                            .flex()
+                            .text_size(px(11.0))
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .text_color(picker_theme.muted_foreground)
+                            .child(group_title),
+                    )
+                    .child(
+                        div()
+                            .text_size(px(10.0))
+                            .text_color(picker_theme.muted_foreground.opacity(0.6))
+                            .child(format!("({})", group_matches.len())),
+                    ),
+            );
+
+            if !is_collapsed {
+                for item in group_matches {
+                    rendered_rows += 1;
+                    let key = item.key.clone();
+                    let row_herdr = picker_herdr.clone();
+                    let row_popover = dismiss.cloned();
+                    let row_gear_herdr = picker_herdr.clone();
+                    let row_gear_popover = dismiss.cloned();
+                    let gear_key = key.clone();
+                    sections = sections.child(
+                        h_flex()
+                            .group("ws-row")
+                            .id(SharedString::from(format!("ws-picker-{key}")))
+                            .w_full()
+                            .h(px(30.0))
+                            .px(px(10.0))
+                            .rounded(px(6.0))
+                            .gap(px(8.0))
                             .items_center()
-                            .justify_center()
-                            .rounded(px(4.0))
                             .cursor_pointer()
-                            .opacity(0.0)
-                            .group_hover("ws-row", |s| s.opacity(1.0))
                             .hover(|s| {
                                 s.bg(picker_theme.foreground.opacity(crate::theme::WASH_HOVER))
                             })
                             .on_click(move |_, window, app| {
-                                app.stop_propagation();
-                                if let Some(popover) = &row_gear_popover {
+                                if let Some(popover) = &row_popover {
                                     popover.update(app, |state, cx| state.dismiss(window, cx));
                                 }
-                                row_gear_herdr.update(app, |this, cx| {
-                                    this.open_workspace_settings(gear_key.clone(), window, cx)
+                                row_herdr.update(app, |this, cx| {
+                                    this.open_or_jump_project(&key, window, cx)
                                 });
                             })
+                            .child(div().size(px(7.0)).rounded_full().flex_shrink_0().bg(
+                                if item.running {
+                                    picker_theme.success
+                                } else {
+                                    picker_theme.muted_foreground.opacity(0.45)
+                                },
+                            ))
                             .child(
+                                div()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .truncate()
+                                    .text_size(px(13.0))
+                                    .text_color(if item.bound {
+                                        picker_theme.foreground
+                                    } else {
+                                        picker_theme.muted_foreground
+                                    })
+                                    .child(item.label.clone()),
+                            )
+                            .child(if item.bound {
                                 Icon::empty()
-                                    .path("icons/settings.svg")
+                                    .path("icons/check.svg")
                                     .with_size(px(12.0))
-                                    .text_color(picker_theme.muted_foreground),
+                                    .text_color(picker_theme.success)
+                                    .flex_shrink_0()
+                                    .into_any_element()
+                            } else {
+                                div().into_any_element()
+                            })
+                            .child(
+                                div()
+                                    .id(SharedString::from(format!("ws-row-gear-{gear_key}")))
+                                    .size(px(18.0))
+                                    .flex_shrink_0()
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .rounded(px(4.0))
+                                    .cursor_pointer()
+                                    .opacity(0.0)
+                                    .group_hover("ws-row", |s| s.opacity(1.0))
+                                    .hover(|s| {
+                                        s.bg(picker_theme
+                                            .foreground
+                                            .opacity(crate::theme::WASH_HOVER))
+                                    })
+                                    .on_click(move |_, window, app| {
+                                        app.stop_propagation();
+                                        if let Some(popover) = &row_gear_popover {
+                                            popover
+                                                .update(app, |state, cx| state.dismiss(window, cx));
+                                        }
+                                        row_gear_herdr.update(app, |this, cx| {
+                                            this.open_workspace_settings(
+                                                gear_key.clone(),
+                                                window,
+                                                cx,
+                                            )
+                                        });
+                                    })
+                                    .child(
+                                        Icon::empty()
+                                            .path("icons/settings.svg")
+                                            .with_size(px(12.0))
+                                            .text_color(picker_theme.muted_foreground),
+                                    ),
                             ),
-                    ),
-            );
+                    );
+                }
+            }
         }
     }
     if rendered_rows == 0 {
@@ -328,6 +452,7 @@ pub(crate) fn workspace_switcher_panel(
                 });
             }
             let filter = filter_input.read(cx).value().trim().to_lowercase();
+            let collapsed_groups = &herdr.read(cx).collapsed_switcher_groups;
             let sections = workspace_switcher_device_sections(
                 &herdr,
                 &machines,
@@ -335,6 +460,7 @@ pub(crate) fn workspace_switcher_panel(
                 &filter,
                 Some(&popover),
                 cx.theme(),
+                collapsed_groups,
             );
             let filter_element = Input::new(&filter_input)
                 .small()

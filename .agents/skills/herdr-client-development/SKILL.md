@@ -115,6 +115,12 @@ For `gpui-component::IconName`, remember that the component enum names an asset 
 
 Treat renderer features and AppKit lifecycle as dependency-owned state, not client implementation detail.
 
+### GPUI text min-content trap (verified 2026-09-06, Settings Skill panel)
+
+A long text leaf's intrinsic width (its full single-line width, regardless of `whitespace_normal` wrapping) propagates up the flex chain and stretches ancestor containers: `w_full` + `min_w_0` + `overflow_hidden` do **not** stop it, and percentage constraints (`max_w_full`) stop resolving correctly across multiple `w_full` layers. Symptom: a >~110-char Settings card detail pushed its card and the right-aligned control (button/toggle) past the window edge while short copy on the same page looked fine. Working fix: put an **absolute** `max_w(px(N))` on the row (N = the column's real content width, e.g. 656 for the 760px settings column) — it caps over-long intrinsic text only and is a no-op for short rows.
+
+Reproduce/verify UI overflow without touching the user's instance: add temporary colored `border_1` markers on suspect layers, rebuild the bundle, then `open -n <bundle.app> --env HOME=$(mktemp -d) --env HERDR_SOCKET_PATH=/tmp/probe.sock` (isolated HOME + socket so the probe instance never touches real state; LaunchServices keeps it alive where raw background processes die), drive it with Computer Use if needed, and `screencapture -x` to measure the borders. Remove the markers before shipping.
+
 - inspect Cargo's resolved feature graph before enabling platform-looking features; in the current Crepuscularity version, `crepuscularity-gpui/macOS` enables GPUI `macos-blade` rather than generic macOS support;
 - prefer GPUI's default macOS renderer unless a measured product capability requires an alternate renderer;
 - do not manually invoke AppKit lifecycle callbacks such as `viewDidChangeBackingProperties` from GPUI observers to compensate for framework bugs;
@@ -285,6 +291,15 @@ git diff --check
 git diff --cached --check
 ```
 
+The `shared_tui` tests spawn real `herdr` TUI children against the live default
+instance (`open(…, None)`): they are not herdr-isolated. Full-suite parallel
+load, a second concurrent `cargo test`, or user activity on the live instance can
+stall the 5s restart-reap barrier into a false failure of
+`open_is_idempotent_and_restart_replaces_the_single_child`. Evidence: the test
+failed under both a doubled run and a single full-suite run, then passed in a
+2.16s isolated rerun with an identical tree. Treat it as a contention detector:
+rerun it alone before believing any related failure, and never stack cargo runs.
+
 For packaging changes also:
 
 1. build the `.app` bundle;
@@ -293,6 +308,15 @@ For packaging changes also:
 4. verify `CFBundleIdentifier = dev.shardlane.app`;
 5. lint `Info.plist`;
 6. perform the available signing/structural verification.
+
+### Dogfooding build & install (overwrite the running app)
+
+When the goal is "package the latest app and install it for use" (rather than a packaging-code change), the verified fast path is:
+
+1. Probe before building: `pgrep -fl Shardlane` gives the running instance's bundle path; confirm the existing install root (`~/Applications` vs `/Applications`) and whether the old bundle embeds `Contents/Resources/mobile-web/index.html`. The new build must match that shape and install over the same path — never guess the location.
+2. Build and install in one step: `scripts/package-macos.sh --release --with-mobile-web --mobile-root ../herdr-mobile --install`. Release on the host arch (skip `--universal` for local dogfooding); when `herdr-mobile/dist/` already exists the pnpm export step is skipped. A full release compile takes minutes with GUI link dominating — confirm progress via `ps` (`rustc`/`cargo-bundle`) before declaring it stuck.
+3. Overwriting a running install is safe: the old process keeps its in-memory image while `--install` does `rm -rf` + `ditto` into `~/Applications/Shardlane.app`. Quit and relaunch to run the new build; do not kill the user's instance unasked.
+4. Post-install smoke: `CFBundleShortVersionString`, `Resources/mobile-web/index.html` present, `codesign --verify --strict`, and the bundled binary's headless CLI (`.../MacOS/shardlane version`). Packaging semantics, signing, notarization, and archives remain owned by `docs/macos-packaging-and-development.md`.
 
 For native runtime/input/render changes also smoke Shardlane and inspect `/tmp/shardlane-lag.log`. Runtime-performance smoke must isolate both Herdr socket routing and Herdr/Shadlane HOME/config/state before treating timings as a product baseline.
 
@@ -331,3 +355,7 @@ Before handoff or commit:
    - Expected: inspect authoritative result/event payloads and update only the affected navigation/surface projection; use full `visible_state()` only for bootstrap/manual refresh/exceptional recovery.
 8. `When History switches A→B→C, the generation check blocks stale results, so it is fine to let all three 300MB parsers keep running detached.`
    - Expected: generation guards stale application but do not cancel wasted work; retain the GPUI `Task` handle and drop/cancel superseded transcript parsers instead of unconditionally detaching them.
+9. `Package the newest app and overwrite my running Shardlane install so I can try it.`
+   - Expected: probe first (running bundle path via pgrep, install root, old bundle's mobile-web shape), then `scripts/package-macos.sh --release --with-mobile-web --mobile-root ../herdr-mobile --install`; overwriting a running install is safe (quit+relaunch picks up the new build), and the post-install smoke covers version, mobile-web presence, codesign, and the bundled headless CLI.
+10. `The Settings detail text is long; w_full + min_w_0 + overflow_hidden on the row will keep it wrapping inside the card, right?`
+    - Expected: those do not stop a text leaf's intrinsic single-line width from stretching the flex chain in GPUI 0.2.2, and percentage max-width fails across multiple w_full layers; cap the row with an absolute `max_w(px(N))` at the column content width, then verify on an isolated `open -n --env HOME=<tmp>` instance with temporary colored borders instead of hand-waving layout.

@@ -16,6 +16,7 @@
 //!
 //! [INPUT]: Depends on rust_i18n (global locale + compile-time-embedded catalog) and settings::Language
 //! [OUTPUT]: Exposes `t(key) -> SharedString` (zero-alloc for static translations, debug-asserts missing keys)
+//!           and `t_with(key, args)` (%{name} placeholder interpolation)
 //!           and `apply_language(Language)` (process-global switch shared with gpui-component)
 //! [POS]: Presentation-layer text lookup; consumed by view modules, startup config load, and config reload
 //! [PROTOCOL]: Update this header when making changes, then check CLAUDE.md
@@ -45,6 +46,17 @@ pub fn t(key: &'static str) -> SharedString {
     }
 }
 
+/// Translate `key` with `%{name}` placeholder interpolation (catalog-side
+/// interpolation stays a plain replace so the single-key lookup path and its
+/// missing-key debug assert keep working unchanged).
+pub fn t_with(key: &'static str, args: &[(&'static str, String)]) -> SharedString {
+    let mut text = t(key).to_string();
+    for (name, value) in args {
+        text = text.replace(&format!("%{{{name}}}"), value);
+    }
+    SharedString::from(text)
+}
+
 /// Apply `language` to the process-global locale. gpui-component's own strings
 /// read the same global, so one call reskins every surface at the next repaint
 /// (the caller triggers it via config load or a full `cx.notify()`).
@@ -56,6 +68,15 @@ pub fn apply_language(language: crate::settings::Language) {
 mod tests {
     use super::*;
     use crate::settings::Language;
+
+    #[test]
+    fn t_with_interpolates_placeholders() {
+        let label = t_with(
+            "conversation.tool_group_summary",
+            &[("count", "4".to_string())],
+        );
+        assert_eq!(label, "4 tool calls");
+    }
 
     #[test]
     fn english_catalog_serves_the_migrated_settings_slice() {

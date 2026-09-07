@@ -12,6 +12,7 @@ use ::gpui::img;
 use gpui_component::button::ButtonRounded;
 use gpui_component::menu::DropdownMenu as _;
 use gpui_component::Disableable as _;
+use gpui_component::InteractiveElementExt as _;
 
 #[allow(clippy::too_many_arguments)]
 fn title_chip_children(
@@ -426,6 +427,7 @@ impl ShardlaneApp {
                     None => "New Script".to_string(),
                 })
                 .on_click(move |_, window, app| {
+                    app.stop_propagation();
                     if let Some(script_id) = primary_click_script_id.clone() {
                         primary_click_herdr
                             .update(app, |this, cx| this.run_script_id(script_id, window, cx));
@@ -480,7 +482,7 @@ impl ShardlaneApp {
                     }
                     let add_herdr = add_herdr.clone();
                     menu.item(
-                        PopupMenuItem::new("New Workflow…")
+                        PopupMenuItem::new("New Script…")
                             .icon(Icon::new(ComponentIconName::Plus).xsmall())
                             .on_click(move |_, window, app| {
                                 let add_herdr = add_herdr.clone();
@@ -617,9 +619,11 @@ impl ShardlaneApp {
                 .child(
                     // sidebar toggle + navigation back/forward buttons, arranged horizontally
                     h_flex()
+                        .id("titlebar-nav-cluster")
                         .flex_none()
                         .items_center()
                         .gap(px(2.0))
+                        .on_double_click(|_, _, app| app.stop_propagation())
                         // sidebar toggle
                         .child(
                             // Sidebar toggle: right of the traffic lights, 26×26 r6 panel-left 14px
@@ -647,6 +651,7 @@ impl ShardlaneApp {
                                 .on_click({
                                     let toggle_herdr = sidebar_herdr.clone();
                                     move |_, window, app| {
+                                        app.stop_propagation();
                                         toggle_herdr.update(app, |this, cx| {
                                             this.toggle_sidebar(&ToggleSidebar, window, cx)
                                         });
@@ -672,6 +677,7 @@ impl ShardlaneApp {
                                         .on_click({
                                             let back_herdr = nav_back_herdr.clone();
                                             move |_, window, app| {
+                                                app.stop_propagation();
                                                 back_herdr.update(app, |this, cx| {
                                                     this.navigate_back(&NavigateBack, window, cx)
                                                 });
@@ -705,6 +711,7 @@ impl ShardlaneApp {
                                         .on_click({
                                             let fwd_herdr = nav_forward_herdr.clone();
                                             move |_, window, app| {
+                                                app.stop_propagation();
                                                 fwd_herdr.update(app, |this, cx| {
                                                     this.navigate_forward(
                                                         &NavigateForward,
@@ -725,12 +732,14 @@ impl ShardlaneApp {
                 )
                 .child(
                     div()
+                        .id("titlebar-breadcrumbs")
                         .min_w_0()
                         .flex()
                         .items_center()
                         .gap_1()
                         .text_size(theme::FONT_BODY)
                         .text_color(foreground)
+                        .on_double_click(|_, _, app| app.stop_propagation())
                         .when(sidebar_visible, |row| {
                             row.absolute()
                                 .top_0()
@@ -765,6 +774,7 @@ impl ShardlaneApp {
                                     .hover(|hover| hover.bg(gpui::transparent_white()))
                                     .cursor_pointer()
                                     .on_click(move |_, _window, app| {
+                                        app.stop_propagation();
                                         title_entity.update(app, |this, cx| {
                                             this.chat.hud_open = !this.chat.hud_open;
                                             cx.notify();
@@ -1018,6 +1028,7 @@ impl ShardlaneApp {
                                         "Show Agents"
                                     })
                                     .on_click(move |_, window, app| {
+                                        app.stop_propagation();
                                         let target = summary_agent_target.clone();
                                         agent_summary_herdr.update(app, |this, cx| {
                                             if sidebar_auto_collapsed {
@@ -1060,6 +1071,7 @@ impl ShardlaneApp {
                                         "Show Services"
                                     })
                                     .on_click(move |_, window, app| {
+                                        app.stop_propagation();
                                         let script_id = summary_script_id.clone();
                                         script_summary_herdr.update(app, |this, cx| {
                                             if sidebar_auto_collapsed {
@@ -1096,7 +1108,8 @@ impl ShardlaneApp {
                                     .tooltip(format!(
                                         "{files} files changed · click to reveal in Finder"
                                     ))
-                                    .on_click(move |_, _, _| {
+                                    .on_click(move |_, _, app| {
+                                        app.stop_propagation();
                                         let _ = std::process::Command::new("open")
                                             .arg("-R")
                                             .arg(&reveal_path)
@@ -1108,12 +1121,14 @@ impl ShardlaneApp {
                 )
                 .child(
                     div()
+                        .id("titlebar-actions")
                         .flex_none()
                         .flex()
                         .items_center()
                         .gap_1()
                         .text_size(theme::FONT_DECORATIVE)
                         .text_color(muted)
+                        .on_double_click(|_, _, app| app.stop_propagation())
                         .when(
                             !(compact_header
                                 || secondary_surface
@@ -1148,6 +1163,7 @@ impl ShardlaneApp {
                                              client resized it",
                                         )
                                         .on_click(move |_, _, app| {
+                                            app.stop_propagation();
                                             restore_herdr.update(app, |this, cx| {
                                                 this.restore_tui_grid_on_activation(cx)
                                             });
@@ -1192,6 +1208,7 @@ impl ShardlaneApp {
                                         .label(label)
                                         .tooltip(tooltip)
                                         .on_click(move |_, window, app| {
+                                            app.stop_propagation();
                                             chat_toggle_herdr.update(app, |this, cx| {
                                                 this.toggle_chat_surface(window, cx)
                                             });
@@ -1367,6 +1384,7 @@ impl ShardlaneApp {
                                     .icon(ComponentIconName::Search)
                                     .tooltip("Search full conversation text")
                                     .on_click(move |_, window, app| {
+                                        app.stop_propagation();
                                         history_search_herdr.update(app, |view, cx| {
                                             view.open_history_search(window, cx)
                                         });
@@ -1388,6 +1406,7 @@ impl ShardlaneApp {
                                     })
                                     .disabled(self.history.loading)
                                     .on_click(move |_, _window, app| {
+                                        app.stop_propagation();
                                         history_refresh_herdr.update(app, |view, cx| {
                                             if !view.history.loading {
                                                 view.refresh_history(true, cx);
@@ -1406,6 +1425,7 @@ impl ShardlaneApp {
                                             .label("Copy Markdown")
                                             .tooltip("Copy full conversation as Markdown")
                                             .on_click(move |_, window, app| {
+                                                app.stop_propagation();
                                                 let md = crate::history::history_export_cached_window_markdown(
                                                     &transcript,
                                                 );
@@ -1431,6 +1451,7 @@ impl ShardlaneApp {
                                     .icon(ComponentIconName::Search)
                                     .tooltip("Search (⌘K)")
                                     .on_click(move |_, window, app| {
+                                        app.stop_propagation();
                                         search_header_herdr.update(app, |this, cx| {
                                             this.open_search(&OpenSearch, window, cx)
                                         });
@@ -1446,6 +1467,7 @@ impl ShardlaneApp {
                                     .tooltip("History")
                                     .selected(self.history.open)
                                     .on_click(move |_, window, app| {
+                                        app.stop_propagation();
                                         history_header_herdr.update(app, |this, cx| {
                                             this.toggle_history(&OpenHistory, window, cx)
                                         });
@@ -1466,6 +1488,7 @@ impl ShardlaneApp {
                                     .label("Offline")
                                     .tooltip("Reconnect to Herdr")
                                     .on_click(move |_, window, app| {
+                                        app.stop_propagation();
                                         reconnect_header_herdr.update(app, |this, cx| {
                                             this.refresh(&Refresh, window, cx)
                                         });

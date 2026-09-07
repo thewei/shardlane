@@ -612,6 +612,24 @@ impl ShardlaneApp {
         self.apply_focus_intent(FocusIntent::project(workspace_id), window, cx);
     }
 
+    pub(super) fn merge_workspace_panes(
+        &mut self,
+        workspace_id: &str,
+        loaded_panes: Vec<Pane>,
+        cx: &mut Context<Self>,
+    ) {
+        self.panes_by_project
+            .insert(workspace_id.to_string(), loaded_panes.clone());
+        if self.state.focused_workspace_id.as_deref() == Some(workspace_id) {
+            self.state
+                .panes
+                .retain(|pane| pane.workspace_id.as_deref() != Some(workspace_id));
+            self.state.panes.extend(loaded_panes);
+        }
+        self.refresh_git_status(cx);
+        cx.notify();
+    }
+
     pub(super) fn load_sidebar_project_panes(
         &mut self,
         workspace_id: String,
@@ -627,15 +645,24 @@ impl ShardlaneApp {
             return;
         }
         let sidebar = self.sidebar_pane.clone();
-        cx.spawn(async move |_this, cx| {
-            let load_workspace_id = workspace_id.clone();
+        cx.spawn(async move |this, cx| {
+            let rpc_workspace_id = workspace_id.clone();
             let panes = cx
                 .background_executor()
-                .spawn(async move { client.workspace_panes(&load_workspace_id) })
+                .spawn(async move { client.workspace_panes(&rpc_workspace_id) })
                 .await;
             let sidebar_workspace_id = workspace_id.clone();
+            let (sidebar_panes, app_panes) = match panes {
+                Ok(panes) => (Ok(panes.clone()), Some(panes)),
+                Err(err) => (Err(err), None),
+            };
             let _ = sidebar.update(cx, |pane, cx| {
-                pane.finish_project_pane_load(sidebar_workspace_id, panes, cx);
+                pane.finish_project_pane_load(sidebar_workspace_id, sidebar_panes, cx);
+            });
+            let _ = this.update(cx, |app, cx| {
+                if let Some(loaded_panes) = app_panes {
+                    app.merge_workspace_panes(&workspace_id, loaded_panes, cx);
+                }
             });
         })
         .detach();

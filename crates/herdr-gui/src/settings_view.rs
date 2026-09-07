@@ -1250,6 +1250,9 @@ impl ShardlaneApp {
                     })
                     .when(selected_section == SettingsSection::Browser, |page| {
                         page.child(self.render_browser_settings(window, cx))
+                    })
+                    .when(selected_section == SettingsSection::Skill, |page| {
+                        page.child(self.skill_settings_content(window, cx))
                     }),
             )
             .into_any_element()
@@ -1320,6 +1323,12 @@ pub(crate) fn settings_card_row(title: &str, detail: &str, control: AnyElement) 
     div()
         .w_full()
         .min_w_0()
+        // Skill-panel audit (2026-09-06): percentage max/width constraints fail to resolve
+        // across this card row chain (a 250-char detail still measured its full single-line
+        // width and pushed the control row past the card), so the row carries an absolute
+        // cap equal to the 760px column content width (760 - 2*32 page padding - 2*20 row
+        // padding = 656). It only caps over-long intrinsic text; short rows are unaffected.
+        .max_w(px(656.0))
         .min_h(px(60.0))
         .px(px(20.0))
         .py(px(12.0))
@@ -1337,12 +1346,21 @@ pub(crate) fn settings_card_row(title: &str, detail: &str, control: AnyElement) 
                     div()
                         .text_size(crate::theme::FONT_SECTION_TITLE)
                         .font_weight(FontWeight::MEDIUM)
+                        .whitespace_normal()
                         .child(title.to_string()),
                 )
                 .child(
                     div()
                         .w_full()
                         .min_w_0()
+                        .max_w_full()
+                        // Audit (2026-09-06, Skill panel): a text leaf's intrinsic width still
+                        // contributes its full single-line width to the flex min-content chain,
+                        // so a long detail (>~110 chars) could push the whole 760px settings
+                        // column past the window and clip the right-aligned controls.
+                        // overflow_hidden zeroes the automatic min size (Taffy) so the text
+                        // wraps inside the column instead of stretching it.
+                        .overflow_hidden()
                         .text_size(crate::theme::FONT_BODY)
                         .line_height(px(18.0))
                         .opacity(0.72)

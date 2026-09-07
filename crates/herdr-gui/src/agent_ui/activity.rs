@@ -1,29 +1,27 @@
-//! Shared tool activity / work fold presentation primitives (shared by History
-//! Detail and Live Chat).
+//! Shared tool activity / turn footer presentation primitives (shared by
+//! History Detail and Live Chat).
 //!
 //! [INPUT]: depends on shardlane-history's TranscriptMessage/ToolCall,
 //! gpui-component Icon/Button, and the crate root's ContentSurfaceTheme;
 //! callbacks are injected by the caller.
 //! [OUTPUT]: classify_tool/activity_icon (tool name → semantic class/icon),
-//! turn_work_summary (Worked fold row label and duration), diff_lines_from_tool
-//! (explicit old/new or unified diff text → colored lines),
-//! render_activity_row / render_worked_fold_row / render_turn_footer.
+//! diff_lines_from_tool (explicit old/new or unified diff text → colored
+//! lines), render_activity_row / render_tool_group_row / render_turn_footer.
 //! [POS]: activity presentation primitives for herdr-gui `agent_ui`. Row
 //! geometry/icons/status colors are the SSOT of the shared visual language:
-//! History and Chat both render tool activity and Worked folds through here and
-//! must not duplicate it. Owns no expansion state (caller provides expanded +
-//! on_toggle).
+//! History and Chat both render tool activity and turn footers through here
+//! and must not duplicate it. Owns no expansion state (caller provides
+//! expanded + on_toggle). The former "Worked" turn-level fold row is retired
+//! with the ChatGPT process semantics (text visible, per-row collapse).
 
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    div, px, AnyElement, FontWeight, Hsla, InteractiveElement as _, IntoElement,
-    ParentElement as _, SharedString, StatefulInteractiveElement as _, Styled as _,
+    div, px, AnyElement, Hsla, InteractiveElement as _, IntoElement, ParentElement as _,
+    SharedString, StatefulInteractiveElement as _, Styled as _,
 };
-use gpui_component::{
-    h_flex, v_flex, Icon, IconName as ComponentIconName, Sizable as _, WindowExt as _,
-};
+use gpui_component::{h_flex, v_flex, Icon, IconName as ComponentIconName, Sizable as _};
+use gpui_component::{spinner::Spinner, WindowExt as _};
 use shardlane_history::{Role, ToolCall, TranscriptMessage};
-use std::time::Duration;
 
 use crate::theme;
 use crate::ui_metrics::SPACE_ICON;
@@ -79,52 +77,6 @@ pub(crate) fn activity_icon(kind: ActivityKind) -> ComponentIconName {
         ActivityKind::Plan => ComponentIconName::BookOpen,
         ActivityKind::Generic => ComponentIconName::Ellipsis,
     }
-}
-
-/// Worked fold row label: "Worked for Xs" when a duration can be derived,
-/// otherwise "Worked"; the step count is always shown (number of hidden work
-/// rows).
-pub(crate) fn worked_summary_label(steps: usize, duration: Option<Duration>) -> String {
-    let base = match duration {
-        Some(duration) if duration.as_secs_f32() >= 1.0 => {
-            format!("Worked for {:.0}s", duration.as_secs_f32())
-        }
-        Some(duration) if duration.as_secs_f32() > 0.0 => {
-            format!("Worked for {:.1}s", duration.as_secs_f32())
-        }
-        _ => "Worked".to_string(),
-    };
-    format!("{base} · {steps} steps")
-}
-
-/// Derive work duration from turn message timestamps (last minus first; None
-/// without valid timestamps).
-pub(crate) fn turn_work_duration(
-    messages: &[TranscriptMessage],
-    range: std::ops::Range<usize>,
-) -> Option<Duration> {
-    let stamps: Vec<i64> = messages[range]
-        .iter()
-        .filter_map(|message| message.timestamp)
-        .filter(|ts| *ts > 0)
-        .collect();
-    let first = *stamps.first()?;
-    let last = *stamps.last()?;
-    // Timestamps come in both seconds and milliseconds: normalize the pair by
-    // magnitude before differencing.
-    let (first, last) = normalize_stamp_pair(first, last);
-    (last > first).then(|| Duration::from_millis((last - first) as u64))
-}
-
-fn normalize_stamp_pair(a: i64, b: i64) -> (i64, i64) {
-    fn to_ms(ts: i64) -> i64 {
-        if ts > 1_000_000_000_000 {
-            ts
-        } else {
-            ts * 1000
-        }
-    }
-    (to_ms(a), to_ms(b))
 }
 
 /// One line of diff inside expanded details.
@@ -296,7 +248,9 @@ pub(crate) fn render_tool_detail(
 }
 
 /// Compact tool activity row (shared visual language): chevron + class icon +
-/// tool name + preview + status dot; click expands/collapses the detail.
+/// tool name + preview + status; click expands/collapses the detail. Visually
+/// demoted (ChatGPT contract): the chip is quieter than the narration text
+/// around it, and a call still running shows a spinner.
 pub(crate) fn render_activity_row(
     id: impl Into<gpui::ElementId>,
     tool: &ToolCall,
@@ -305,14 +259,73 @@ pub(crate) fn render_activity_row(
     theme: &crate::ContentSurfaceTheme,
 ) -> AnyElement {
     let kind = classify_tool(&tool.name);
-    let status_color = if tool.is_error {
-        theme.danger
-    } else if tool.output.is_some() {
-        theme.success
-    } else {
-        theme.muted.opacity(0.5)
-    };
     let preview = tool.input_preview.trim();
+    let mut row = h_flex()
+        .id(id.into())
+        .group("shardlane-turn-footer")
+        .w_full()
+        .min_w_0()
+        .gap(SPACE_ICON)
+        .py(px(3.0))
+        .items_center()
+        .cursor_pointer()
+        .text_size(theme::FONT_META)
+        .text_color(theme.muted)
+        .child(
+            Icon::new(ComponentIconName::ChevronRight)
+                .with_size(px(11.0))
+                .flex_shrink_0()
+                .when(expanded, |icon| {
+                    icon.rotate(gpui::Radians(std::f32::consts::FRAC_PI_2))
+                }),
+        )
+        .child(Icon::new(activity_icon(kind)).with_size(px(12.0)))
+        .child(
+            div()
+                .flex_shrink_0()
+                .font_family("monospace")
+                .text_color(theme.foreground.opacity(0.7))
+                .child(tool.name.clone()),
+        )
+        .child(
+            div()
+                .flex_1()
+                .min_w_0()
+                .truncate()
+                .when(preview.is_empty(), |el| el.child("—"))
+                .when(!preview.is_empty(), |el| el.child(preview.to_string())),
+        );
+    // Status annotations (user feedback 2026-09-06): only a running spinner
+    // and a failure mark — settled success stays silent.
+    if tool.is_error {
+        row = row.child(
+            div()
+                .size(px(6.0))
+                .rounded_full()
+                .flex_shrink_0()
+                .bg(theme.danger),
+        );
+    } else if tool.output.is_none() {
+        row = row.child(Spinner::new().xsmall());
+    }
+    row.hover(|style| style.text_color(theme.foreground))
+        .on_click(move |_, window, app| on_toggle(window, app))
+        .into_any_element()
+}
+
+/// Compact tool-group summary row ("+N tool calls"): one muted line for a long
+/// run of consecutive calls; click expands them back into individual chips.
+pub(crate) fn render_tool_group_row(
+    id: impl Into<gpui::ElementId>,
+    count: usize,
+    expanded: bool,
+    on_toggle: impl Fn(&mut gpui::Window, &mut gpui::App) + 'static,
+    theme: &crate::ContentSurfaceTheme,
+) -> AnyElement {
+    let label = crate::i18n::t_with(
+        "conversation.tool_group_summary",
+        &[("count", count.to_string())],
+    );
     h_flex()
         .id(id.into())
         .w_full()
@@ -333,76 +346,14 @@ pub(crate) fn render_activity_row(
                     icon.rotate(gpui::Radians(std::f32::consts::FRAC_PI_2))
                 }),
         )
-        .child(Icon::new(activity_icon(kind)).with_size(px(12.0)))
-        .child(
-            div()
-                .flex_shrink_0()
-                .font_family("monospace")
-                .font_weight(FontWeight::SEMIBOLD)
-                .text_color(theme.foreground.opacity(0.9))
-                .child(tool.name.clone()),
-        )
-        .child(
-            div()
-                .flex_1()
-                .min_w_0()
-                .truncate()
-                .when(preview.is_empty(), |el| el.child("—"))
-                .when(!preview.is_empty(), |el| el.child(preview.to_string())),
-        )
-        .child(
-            div()
-                .size(px(6.0))
-                .rounded_full()
-                .flex_shrink_0()
-                .bg(status_color),
-        )
-        .into_any_element()
-}
-
-/// "Worked …" fold row (anchored at the start of the work; when expanded the
-/// caller renders the hidden rows below it).
-pub(crate) fn render_worked_fold_row(
-    id: impl Into<gpui::ElementId>,
-    label: String,
-    expanded: bool,
-    on_toggle: impl Fn(&mut gpui::Window, &mut gpui::App) + 'static,
-    theme: &crate::ContentSurfaceTheme,
-) -> AnyElement {
-    h_flex()
-        .id(id.into())
-        .w_full()
-        .min_w_0()
-        .gap(SPACE_ICON)
-        .py(px(4.0))
-        .px(px(8.0))
-        .rounded(px(7.0))
-        .bg(theme.hover.opacity(0.5))
-        .cursor_pointer()
-        .items_center()
-        .text_size(theme::FONT_META)
-        .text_color(theme.muted)
-        .hover(|style| style.bg(theme.hover).text_color(theme.foreground))
-        .on_click(move |_, window, app| on_toggle(window, app))
-        .child(
-            Icon::new(ComponentIconName::ChevronRight)
-                .with_size(px(11.0))
-                .flex_shrink_0()
-                .when(expanded, |icon| {
-                    icon.rotate(gpui::Radians(std::f32::consts::FRAC_PI_2))
-                }),
-        )
-        .child(
-            Icon::new(ComponentIconName::CircleCheck)
-                .with_size(px(12.0))
-                .text_color(theme.success),
-        )
         .child(div().min_w_0().truncate().child(label))
         .into_any_element()
 }
 
 /// Turn footer: belongs to the turn as a whole (copy grabs the turn's full
-/// answer text); the time is optional.
+/// answer text); the time is optional. The copy action is an icon at the far
+/// right, revealed on hover (user feedback 2026-09-06: no check icon, no
+/// text button).
 pub(crate) fn render_turn_footer(
     id: impl Into<gpui::ElementId>,
     time_label: Option<String>,
@@ -418,26 +369,25 @@ pub(crate) fn render_turn_footer(
         .pb(px(6.0))
         .items_center()
         .text_size(theme::FONT_META)
-        .text_color(theme.muted.opacity(0.8))
-        .child(
-            Icon::new(ComponentIconName::CircleCheck)
-                .with_size(px(11.0))
-                .text_color(theme.success.opacity(0.8)),
-        );
+        .text_color(theme.muted.opacity(0.8));
     if let Some(time_label) = time_label {
         row = row.child(div().child(time_label));
     }
+    // Flexible spacer pushes the copy icon to the far right.
+    row = row.child(div().flex_1());
     row = row.child(
         div()
             .id("turn-footer-copy")
+            .invisible()
+            .group_hover("shardlane-turn-footer", |style| style.visible())
             .cursor_pointer()
             .hover(|style| style.text_color(theme.foreground))
-            .child("Copy answer")
+            .child(Icon::empty().path("icons/copy.svg").with_size(px(12.0)))
             .on_click(move |_, window, app| {
                 app.write_to_clipboard(crepuscularity_gpui::ClipboardItem::new_string(
                     copy_text.clone(),
                 ));
-                window.push_notification("Answer copied", app);
+                window.push_notification(crate::i18n::t("conversation.answer_copied"), app);
             }),
     );
     row.into_any_element()

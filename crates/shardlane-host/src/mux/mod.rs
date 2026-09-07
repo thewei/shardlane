@@ -17,6 +17,7 @@ pub mod herdr;
 pub mod kit;
 pub mod registry;
 pub mod tmux;
+pub mod uuyc;
 
 pub use registry::MuxRegistry;
 

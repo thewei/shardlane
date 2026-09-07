@@ -4,7 +4,7 @@
 //! hosted Herdr TUI instead of as Sidebar rows. The strip is presentation only: the Tab order,
 //! titles, and lifecycle stay Herdr-authoritative (`state.tabs`, `tab.moved` events, `tab.move`/
 //! `tab.close`/`tab.rename` RPCs), exactly mirroring the Sidebar tab row's actions (Pin, Rename,
-//! Close, drag reorder) so hosting the strip never removes runtime capabilities.
+//! Copy Tab ID, Close, drag reorder) so hosting the strip never removes runtime capabilities.
 //!
 //! [INPUT]: ShardlaneApp state/config from the crate root (`super`), herdr Tab/Agent projections, gpui-component tab/menu/button/tooltip, sidebar's agent identity helper, ui drag-ghost/menu helpers.
 //! [OUTPUT]: `ShardlaneApp::native_tabs_enabled`/`native_tab_bar_height`/`native_tab_bar` (the strip renderer), `NATIVE_TAB_BAR_HEIGHT`, and `NativeTabDrag` (drag payload + ghost).
@@ -392,6 +392,16 @@ impl ShardlaneApp {
                 menu_action("Rename Tab…", &menu_herdr, move |this, window, cx| {
                     this.open_tab_rename(tab_id.clone(), label.clone(), window, cx);
                 })
+            })
+            .item({
+                let tab_id = menu_tab_id.clone();
+                menu_action(
+                    crate::i18n::t("shell.copy_tab_id"),
+                    &menu_herdr,
+                    move |this, window, cx| {
+                        this.copy_runtime_id(tab_id.clone(), window, cx);
+                    },
+                )
             })
             .item(PopupMenuItem::separator())
             .item({

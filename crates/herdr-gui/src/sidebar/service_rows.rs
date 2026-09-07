@@ -4,41 +4,157 @@
 use super::*;
 use crate::ui::menus::menu_action;
 
-fn project_dir_name(agent: &Agent) -> Option<String> {
-    agent
-        .foreground_cwd
+fn agent_project_info(agent: &Agent, workspaces: &[Workspace]) -> (Option<String>, Option<String>) {
+    let ws = agent
+        .workspace_id
         .as_deref()
-        .or(agent.cwd.as_deref())
-        .and_then(|cwd| std::path::Path::new(cwd).file_name())
-        .and_then(|name| name.to_str())
+        .and_then(|id| workspaces.iter().find(|w| w.workspace_id == id));
+    let cwd = agent
+        .foreground_cwd
+        .clone()
+        .or_else(|| agent.cwd.clone())
+        .or_else(|| ws.and_then(|w| w.cwd.clone()));
+    let name = ws
+        .and_then(|w| w.label.clone())
         .filter(|s| !s.is_empty())
-        .map(String::from)
+        .or_else(|| {
+            cwd.as_deref().and_then(|c| {
+                std::path::Path::new(c)
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .filter(|s| !s.is_empty())
+                    .map(String::from)
+            })
+        });
+    (name, cwd)
 }
 
-pub(super) fn agent_row_label(
-    identity: &str,
-    has_brand: bool,
-    title: Option<&str>,
-    project: Option<&str>,
-) -> (String, Option<String>) {
-    let label = if let Some(t) = title {
+pub(super) fn agent_row_label(identity: &str, title: Option<&str>) -> String {
+    if let Some(t) = title {
         crate::ui_metrics::single_line_label(t)
-    } else if has_brand {
-        project
-            .map(String::from)
-            .unwrap_or_else(|| identity.to_string())
     } else {
-        match project {
-            Some(p) => format!("{identity} · {p}"),
-            None => identity.to_string(),
+        identity.to_string()
+    }
+}
+
+fn agent_card_meta_element(
+    project_name: Option<&str>,
+    git_snapshot: Option<&git_status::GitStatusSnapshot>,
+    live_insight: Option<&shardlane_host::AgentSessionInsight>,
+    theme: &gpui_component::Theme,
+) -> Option<AnyElement> {
+    let has_project = project_name.is_some();
+    let has_git = git_snapshot.is_some();
+    let has_insight = live_insight
+        .as_ref()
+        .is_some_and(|i| i.model.is_some() || i.context_used_percent.is_some());
+
+    if !has_project && !has_git && !has_insight {
+        return None;
+    }
+
+    let mut row = h_flex().min_w_0().items_center().gap(px(3.0));
+
+    // 1. Project name
+    if let Some(project) = project_name {
+        row = row.child(
+            div()
+                .flex_shrink_0()
+                .max_w(px(85.0))
+                .truncate()
+                .text_size(crate::theme::FONT_META)
+                .text_color(theme.muted_foreground)
+                .child(project.to_string()),
+        );
+    }
+
+    // 2. Branch name & Git change status
+    if let Some(snapshot) = git_snapshot {
+        if has_project {
+            row = row.child(
+                div()
+                    .flex_shrink_0()
+                    .text_size(crate::theme::FONT_META)
+                    .text_color(theme.muted_foreground.opacity(0.5))
+                    .child("·"),
+            );
         }
-    };
-    let meta = if has_brand && title.is_some() {
-        project.map(String::from)
-    } else {
-        None
-    };
-    (label, meta)
+        row = row
+            .child(
+                icon("icons/git-branch.svg")
+                    .with_size(px(10.5))
+                    .text_color(theme.muted_foreground.opacity(0.7)),
+            )
+            .child(
+                div()
+                    .flex_shrink_0()
+                    .max_w(px(70.0))
+                    .text_size(crate::theme::FONT_META)
+                    .text_color(theme.muted_foreground.opacity(0.85))
+                    .truncate()
+                    .child(snapshot.branch.clone()),
+            );
+
+        if snapshot.additions > 0 || snapshot.deletions > 0 {
+            row = row.child(
+                h_flex()
+                    .gap(px(2.0))
+                    .items_center()
+                    .flex_shrink_0()
+                    .when(snapshot.additions > 0, |r| {
+                        r.child(
+                            div()
+                                .text_size(crate::theme::FONT_META)
+                                .text_color(theme.success)
+                                .child(format!("+{}", snapshot.additions)),
+                        )
+                    })
+                    .when(snapshot.deletions > 0, |r| {
+                        r.child(
+                            div()
+                                .text_size(crate::theme::FONT_META)
+                                .text_color(theme.danger)
+                                .child(format!("-{}", snapshot.deletions)),
+                        )
+                    }),
+            );
+        }
+    }
+
+    // 3. Live insight (Model & Context Pressure)
+    if let Some(insight) = live_insight {
+        if let Some(model) = insight.model.as_deref() {
+            if has_project || has_git {
+                row = row.child(
+                    div()
+                        .flex_shrink_0()
+                        .text_size(crate::theme::FONT_META)
+                        .text_color(theme.muted_foreground.opacity(0.5))
+                        .child("·"),
+                );
+            }
+            row = row.child(
+                div()
+                    .flex_shrink_0()
+                    .max_w(px(70.0))
+                    .truncate()
+                    .text_size(crate::theme::FONT_META)
+                    .text_color(theme.muted_foreground.opacity(0.7))
+                    .child(model.to_string()),
+            );
+        }
+        if let Some(pct) = insight.context_used_percent {
+            row = row.child(
+                div()
+                    .flex_shrink_0()
+                    .text_size(crate::theme::FONT_META)
+                    .text_color(theme.muted_foreground.opacity(0.7))
+                    .child(format!("{pct:.0}% ctx")),
+            );
+        }
+    }
+
+    Some(row.into_any_element())
 }
 
 impl ShardlaneApp {
@@ -52,17 +168,14 @@ impl ShardlaneApp {
         let tab_id = agent.tab_id.clone();
         let pane_id = agent.pane_id.clone();
         let identity = agent_identity(agent).unwrap_or("Agent");
-        let has_brand = agent_brand_icon(identity, dark).is_some();
-        let project_name = project_dir_name(agent);
-        let (label, meta) = agent_row_label(
-            identity,
-            has_brand,
-            agent.title.as_deref(),
-            project_name.as_deref(),
-        );
-        // Card second line: project meta plus, ONLY for the live subscribed
-        // session, the insight projection's model and context pressure. Non-
-        // subscribed agents never get transcript parsing just for display.
+        let (project_name, project_cwd) = agent_project_info(agent, &self.state.workspaces);
+        let label = agent_row_label(identity, agent.title.as_deref());
+        let git_snapshot = project_cwd
+            .as_deref()
+            .and_then(|cwd| self.find_sidebar_git_status(cwd));
+
+        // Card second line: project name, git branch + changes, and ONLY for the
+        // live subscribed session, the insight projection's model and context pressure.
         let live_insight = self
             .chat
             .model
@@ -74,19 +187,13 @@ impl ShardlaneApp {
                     .then(|| self.chat.model.insight.clone())
             })
             .flatten();
-        let mut meta_parts: Vec<String> = Vec::new();
-        if let Some(meta) = &meta {
-            meta_parts.push(meta.clone());
-        }
-        if let Some(insight) = &live_insight {
-            if let Some(model) = insight.model.as_deref() {
-                meta_parts.push(model.to_string());
-            }
-            if let Some(pct) = insight.context_used_percent {
-                meta_parts.push(format!("{pct:.0}% ctx"));
-            }
-        }
-        let subtitle = (!meta_parts.is_empty()).then(|| SharedString::from(meta_parts.join(" · ")));
+        let theme = cx.theme();
+        let subtitle = agent_card_meta_element(
+            project_name.as_deref(),
+            git_snapshot,
+            live_insight.as_ref(),
+            theme,
+        );
         let lead = agent_brand_icon(identity, dark)
             .map(RowLead::Brand)
             .unwrap_or(RowLead::Icon("icons/square-terminal.svg"));
@@ -155,59 +262,67 @@ impl ShardlaneApp {
 
 #[cfg(test)]
 mod tests {
-    use super::agent_row_label;
+    use super::{agent_project_info, agent_row_label};
+    use shardlane_host::herdr::{Agent, Workspace};
 
     #[test]
-    fn brand_agent_with_title_shows_title_and_project_meta() {
-        let (label, meta) =
-            agent_row_label("Claude Code", true, Some("Fix login bug"), Some("my-app"));
+    fn agent_with_title_shows_title() {
+        let label = agent_row_label("Claude Code", Some("Fix login bug"));
         assert_eq!(label, "Fix login bug");
-        assert_eq!(meta.as_deref(), Some("my-app"));
     }
 
     #[test]
-    fn brand_agent_without_title_shows_project_as_label() {
-        let (label, meta) = agent_row_label("Claude Code", true, None, Some("my-app"));
-        assert_eq!(label, "my-app");
-        assert!(meta.is_none());
-    }
-
-    #[test]
-    fn brand_agent_without_title_or_project_shows_identity() {
-        let (label, meta) = agent_row_label("Claude Code", true, None, None);
+    fn agent_without_title_shows_identity() {
+        let label = agent_row_label("Claude Code", None);
         assert_eq!(label, "Claude Code");
-        assert!(meta.is_none());
     }
 
     #[test]
-    fn non_brand_agent_with_project_shows_identity_dot_project() {
-        let (label, meta) = agent_row_label("unknown-cli", false, None, Some("my-app"));
-        assert_eq!(label, "unknown-cli · my-app");
-        assert!(meta.is_none());
-    }
-
-    #[test]
-    fn non_brand_agent_without_project_shows_identity() {
-        let (label, meta) = agent_row_label("unknown-cli", false, None, None);
+    fn non_brand_agent_without_title_shows_identity() {
+        let label = agent_row_label("unknown-cli", None);
         assert_eq!(label, "unknown-cli");
-        assert!(meta.is_none());
     }
 
     #[test]
-    fn title_always_wins_regardless_of_brand() {
-        let (label, _meta) = agent_row_label(
-            "unknown-cli",
-            false,
-            Some("Implementing API"),
-            Some("backend"),
-        );
+    fn title_always_wins_over_identity() {
+        let label = agent_row_label("unknown-cli", Some("Implementing API"));
         assert_eq!(label, "Implementing API");
     }
 
     #[test]
-    fn brand_agent_title_without_project_has_no_meta() {
-        let (label, meta) = agent_row_label("Codex", true, Some("Review PR"), None);
-        assert_eq!(label, "Review PR");
-        assert!(meta.is_none());
+    fn project_info_prefers_workspace_label() {
+        let agent = Agent {
+            terminal_id: "term-1".into(),
+            workspace_id: Some("ws-1".into()),
+            cwd: Some("/path/to/my-repo".into()),
+            ..Default::default()
+        };
+        let workspaces = vec![Workspace {
+            workspace_id: "ws-1".into(),
+            label: Some("CustomProject".into()),
+            cwd: Some("/path/to/my-repo".into()),
+            agent_status: None,
+            active_tab_id: None,
+            focused: false,
+            tab_count: None,
+            pane_count: None,
+            number: None,
+        }];
+        let (name, cwd) = agent_project_info(&agent, &workspaces);
+        assert_eq!(name.as_deref(), Some("CustomProject"));
+        assert_eq!(cwd.as_deref(), Some("/path/to/my-repo"));
+    }
+
+    #[test]
+    fn project_info_falls_back_to_dir_name() {
+        let agent = Agent {
+            terminal_id: "term-1".into(),
+            workspace_id: None,
+            foreground_cwd: Some("/path/to/repo-name".into()),
+            ..Default::default()
+        };
+        let (name, cwd) = agent_project_info(&agent, &[]);
+        assert_eq!(name.as_deref(), Some("repo-name"));
+        assert_eq!(cwd.as_deref(), Some("/path/to/repo-name"));
     }
 }

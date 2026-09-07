@@ -21,6 +21,9 @@ use std::sync::Arc;
 pub struct InstanceSummary {
     pub id: String,
     pub name: String,
+    /// Backend that serves this instance (e.g. "herdr", "tmux"). Non-Herdr
+    /// instances carry capability degradations (docs/multiplexer-api.md §7).
+    pub backend: String,
     /// The Herdr session name this instance runs on.
     pub session: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -37,6 +40,21 @@ pub struct InstanceSummary {
     /// Remote API version (mirrors hello; convenience for clients that only
     /// call this endpoint first).
     pub remote_api_version: u32,
+    /// Best-effort live agent count for this instance (0 when the instance is
+    /// stopped, unreachable, or the backend has no agent capability).
+    pub agent_count: usize,
+}
+
+/// The wire id for a registry listing: Herdr instances keep their bare
+/// session name (wire compatibility with the pinned multi-instance fixtures);
+/// other backends are backend-qualified ("tmux:default") so two backends can
+/// never collide on one id.
+pub(crate) fn qualified_instance_id(listing: &shardlane_host::mux::InstanceListing) -> String {
+    if listing.backend == "herdr" {
+        listing.name.clone()
+    } else {
+        format!("{}:{}", listing.backend, listing.name)
+    }
 }
 
 pub async fn list_instances(State(state): State<Arc<RemoteState>>) -> Response {
@@ -47,16 +65,47 @@ pub async fn list_instances(State(state): State<Arc<RemoteState>>) -> Response {
     let listings = tokio::task::spawn_blocking(move || registry.list_instances())
         .await
         .unwrap_or_default();
-    let instances: Vec<InstanceSummary> = listings
+    // Per-instance live agent counts, probed in parallel (picker-facing data:
+    // "which workspace has agents" is a quick-entry affordance).
+    let count_handles: Vec<_> = listings
         .iter()
         .map(|listing| {
+            let state = state.clone();
+            let id = qualified_instance_id(listing);
+            tokio::task::spawn_blocking(move || {
+                crate::bootstrap::connect_instance_for(&state, Some(&id))
+                    .ok()
+                    .and_then(|connection| connection.host_bootstrap_state().ok())
+                    .map(|snapshot| snapshot.agents.len())
+                    .unwrap_or(0)
+            })
+        })
+        .collect();
+    let counts = futures_util::future::join_all(count_handles)
+        .await
+        .into_iter()
+        .map(|joined| joined.unwrap_or(0))
+        .collect::<Vec<usize>>();
+    let instances: Vec<InstanceSummary> = listings
+        .iter()
+        .enumerate()
+        .map(|(index, listing)| {
             let display_name = listing
                 .display_name
                 .clone()
                 .unwrap_or_else(|| listing.name.clone());
+            let id = qualified_instance_id(listing);
+            // Non-Herdr rows carry a qualified name too, so the label alone
+            // tells the two backends apart (desktop picker parity).
+            let name = if listing.backend == "herdr" {
+                listing.name.clone()
+            } else {
+                id.clone()
+            };
             InstanceSummary {
-                id: listing.name.clone(),
-                name: listing.name.clone(),
+                id,
+                name,
+                backend: listing.backend.clone(),
                 display_name,
                 session: listing.name.clone(),
                 device_id: None,
@@ -64,6 +113,7 @@ pub async fn list_instances(State(state): State<Arc<RemoteState>>) -> Response {
                 running: listing.running,
                 is_default: listing.is_default,
                 remote_api_version: crate::config::REMOTE_API_VERSION,
+                agent_count: counts[index],
             }
         })
         .collect();
@@ -95,7 +145,10 @@ pub async fn rename_instance(
     let registry = state.mux_registry.clone();
     let probe_id = id.clone();
     let known = tokio::task::spawn_blocking(move || {
-        probe_id == "default" || registry.list_instances().iter().any(|l| l.name == probe_id)
+        probe_id == "default"
+            || registry.list_instances().iter().any(|listing| {
+                qualified_instance_id(listing) == probe_id || listing.name == probe_id
+            })
     })
     .await
     .unwrap_or_default();
@@ -105,12 +158,19 @@ pub async fn rename_instance(
     }
     let registry = state.mux_registry.clone();
     let write = tokio::task::spawn_blocking(move || {
+        // Route the rename to the listing's own backend (qualified ids select
+        // the backend; bare herdr ids keep the wire-compatible path).
+        let listing = registry
+            .list_instances()
+            .into_iter()
+            .find(|listing| qualified_instance_id(listing) == id || listing.name == id)
+            .ok_or_else(|| format!("unknown instance: {id}"))?;
         registry
-            .backend("herdr")
-            .ok_or_else(|| "herdr backend is not registered".to_string())
+            .backend(&listing.backend)
+            .ok_or_else(|| format!("backend {:?} is not registered", listing.backend))
             .and_then(|backend| {
                 backend
-                    .rename_instance(&id, &name)
+                    .rename_instance(&listing.name, &name)
                     .map_err(|e| e.to_string())
             })
     })

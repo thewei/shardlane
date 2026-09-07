@@ -530,7 +530,11 @@ mod tests {
             ok_result(json!({"protocol": 20, "version": "mux-kit"})),
         )]));
         let registry = MuxRegistry::with_builtins();
-        assert_eq!(registry.backends().len(), 2, "builtins = herdr + tmux");
+        assert_eq!(
+            registry.backends().len(),
+            3,
+            "builtins = herdr + tmux + uuyc"
+        );
 
         let connection = registry
             .connect_instance(&server.reference())

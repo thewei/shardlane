@@ -408,11 +408,14 @@ impl ShardlaneApp {
                                 lead,
                                 session.title.clone(),
                                 Some(SharedString::from(description)),
-                                Some(SharedString::from(format!(
-                                    "{} · {}",
-                                    session.agent.display_name(),
-                                    project_path_label
-                                ))),
+                                Some(crate::ui::list_card::list_card_text_meta(
+                                    format!(
+                                        "{} · {}",
+                                        session.agent.display_name(),
+                                        project_path_label
+                                    ),
+                                    list_theme.foreground.opacity(0.62),
+                                )),
                                 None,
                                 Some(px(SESSION_ROW_HEIGHT)),
                             )

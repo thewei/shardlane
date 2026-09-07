@@ -43,7 +43,7 @@ pub(crate) fn list_card(
     lead: AnyElement,
     title: impl Into<SharedString>,
     description: Option<SharedString>,
-    meta: Option<SharedString>,
+    meta: Option<AnyElement>,
     trailing: Option<AnyElement>,
     fixed_height: Option<Pixels>,
 ) -> Div {
@@ -101,15 +101,18 @@ pub(crate) fn list_card(
                         .text_color(colors.secondary)
                         .child(description)
                 }))
-                .children(meta.map(|meta| {
-                    div()
-                        .min_w_0()
-                        .truncate()
-                        .text_size(theme::FONT_META)
-                        .text_color(colors.secondary)
-                        .child(meta)
-                })),
+                .children(meta.map(|meta| div().min_w_0().child(meta))),
         )
+}
+
+pub(crate) fn list_card_text_meta(text: impl Into<SharedString>, color: Hsla) -> AnyElement {
+    div()
+        .min_w_0()
+        .truncate()
+        .text_size(theme::FONT_META)
+        .text_color(color)
+        .child(text.into())
+        .into_any_element()
 }
 
 /// The History catalog's brand-or-fallback lead: the session's Agent brand

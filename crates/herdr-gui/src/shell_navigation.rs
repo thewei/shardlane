@@ -1779,6 +1779,28 @@ impl ShardlaneApp {
         }
     }
 
+    pub(crate) fn find_sidebar_git_status(
+        &self,
+        path: &str,
+    ) -> Option<&git_status::GitStatusSnapshot> {
+        let trimmed = path.trim().trim_end_matches('/');
+        if trimmed.is_empty() {
+            return None;
+        }
+        if let Some(snapshot) = self.sidebar_git_status.get(trimmed) {
+            return Some(snapshot);
+        }
+        if let Some(snapshot) = self.sidebar_git_status.get(path) {
+            return Some(snapshot);
+        }
+        self.sidebar_git_status.values().find(|snapshot| {
+            let snap_path = snapshot.path.trim_end_matches('/');
+            trimmed == snap_path
+                || (trimmed.starts_with(snap_path)
+                    && trimmed.as_bytes().get(snap_path.len()) == Some(&b'/'))
+        })
+    }
+
     /// Git snapshot refresh for the active project (Header pill) and every
     /// visible Sidebar Project: skip while fresh, otherwise collect all stale
     /// paths in ONE sequential background task and write back per path (safe
@@ -1796,6 +1818,41 @@ impl ShardlaneApp {
             .iter()
             .filter_map(|workspace| workspace.cwd.clone())
             .collect();
+        for pane in &self.state.panes {
+            if let Some(cwd) = pane.cwd.as_deref() {
+                if !cwd.is_empty() {
+                    candidates.push(cwd.to_string());
+                }
+            }
+        }
+        for panes in self.panes_by_project.values() {
+            for pane in panes {
+                if let Some(cwd) = pane.cwd.as_deref() {
+                    if !cwd.is_empty() {
+                        candidates.push(cwd.to_string());
+                    }
+                }
+            }
+        }
+        for agent in &self.state.agents {
+            if let Some(cwd) = agent.foreground_cwd.as_deref().or(agent.cwd.as_deref()) {
+                if !cwd.is_empty() {
+                    candidates.push(cwd.to_string());
+                }
+            }
+        }
+        let project_index = crate::workspace_model::build_project_index(&self.state, &self.scripts);
+        let visible_projects = crate::workspace_model::visible_sidebar_projects_with_index(
+            &self.state,
+            &project_index,
+        );
+        for project in visible_projects {
+            if let Some(path) = project.project_path {
+                if !path.is_empty() {
+                    candidates.push(path);
+                }
+            }
+        }
         if !active_path.is_empty() {
             candidates.push(active_path.clone());
         }
@@ -1836,30 +1893,33 @@ impl ShardlaneApp {
                 .spawn(async move {
                     stale
                         .iter()
-                        .filter_map(|path| {
-                            git_status::git_status_snapshot(path)
-                                .map(|snapshot| (path.clone(), snapshot))
-                        })
+                        .map(|path| (path.clone(), git_status::git_status_snapshot(path)))
                         .collect()
                 })
                 .await;
             let _ = this.update(cx, |view, cx| {
-                for (path, snapshot) in snapshots {
+                let mut changed = false;
+                for (path, snapshot_opt) in snapshots {
                     view.git_inflight
                         .lock()
                         .unwrap_or_else(std::sync::PoisonError::into_inner)
                         .remove(&path);
-                    view.sidebar_git_status
-                        .insert(path.clone(), snapshot.clone());
-                    if Some(path.as_str())
-                        == view
-                            .active_workspace()
-                            .and_then(|workspace| workspace.cwd.as_deref())
-                    {
-                        view.git_status = Some(snapshot);
+                    if let Some(snapshot) = snapshot_opt {
+                        view.sidebar_git_status
+                            .insert(path.clone(), snapshot.clone());
+                        if Some(path.as_str())
+                            == view
+                                .active_workspace()
+                                .and_then(|workspace| workspace.cwd.as_deref())
+                        {
+                            view.git_status = Some(snapshot);
+                        }
+                        changed = true;
                     }
                 }
-                cx.notify();
+                if changed {
+                    cx.notify();
+                }
             });
         })
         .detach();

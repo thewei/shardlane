@@ -1432,9 +1432,10 @@ fn resolved_theme_preset_is_the_single_auto_switch_aware_rule() {
 }
 
 #[test]
-fn settings_sidebar_orders_providers_before_mobile_and_browser() {
+fn settings_sidebar_orders_providers_before_skill_mobile_and_browser() {
     // Audit E24: Providers decides whether New Task/History can work at all, so it outranks
-    // the Mobile/Browser surfaces in the Settings sidebar order.
+    // the Skill/Mobile/Browser surfaces in the Settings sidebar order (Skill is the
+    // agent-facing installer and shares the agent-ecosystem tier).
     let all = super::SettingsSection::ALL;
     let providers = all
         .iter()
@@ -1445,12 +1446,14 @@ fn settings_sidebar_orders_providers_before_mobile_and_browser() {
     let browser = all
         .iter()
         .position(|s| *s == super::SettingsSection::Browser);
+    let skill = all.iter().position(|s| *s == super::SettingsSection::Skill);
     assert!(
         providers
+            .zip(skill)
             .zip(mobile)
             .zip(browser)
-            .is_some_and(|((p, m), b)| p < m && p < b),
-        "Providers must be listed before Mobile and Browser"
+            .is_some_and(|(((p, s), m), b)| p < s && p < m && p < b),
+        "Providers must be listed before Skill, Mobile, and Browser"
     );
 }
 

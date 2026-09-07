@@ -92,5 +92,15 @@
       "prompt": "Both Ghostty and Shardlane started successfully, so write their visual and Metal latency up as completed A/B evidence.",
       "expected_output": "A/B claims require the same isolated HOME/socket, confirmable focus, and synchronized input timelines; otherwise record only Shardlane/PTY quantitative trace plus Ghostty manual interaction observations, and state explicitly that IME candidates, momentum wheel, packaged App, or visual comparison remain manual/open."
     }
+    ,
+    {
+      "prompt": "Package the newest app and overwrite my running Shardlane install so I can try it.",
+      "expected_output": "Probe before building: find the running instance's bundle path via pgrep -fl Shardlane, confirm the existing install root and whether the old bundle embeds Resources/mobile-web, then run scripts/package-macos.sh --release --with-mobile-web --mobile-root ../herdr-mobile --install to match that shape over the same path. Overwriting a running install is safe (the old process keeps its in-memory image; quit+relaunch picks up the new build; never kill the user's instance unasked). Post-install smoke checks CFBundleShortVersionString, mobile-web presence, codesign --verify --strict, and the bundled binary's headless CLI (shardlane version)."
+    }
+    ,
+    {
+      "prompt": "The Settings card detail text is long, but the row already has w_full + min_w_0 + overflow_hidden + whitespace_normal, so the layout is safe; just also add max_w_full for extra safety.",
+      "expected_output": "Those do not stop a long text leaf's intrinsic single-line width from stretching the flex chain in GPUI 0.2.2, and percentage max-width fails to resolve across multiple w_full layers (verified on the Skill panel: the card still overflowed and the right-aligned control vanished). Cap the row with an absolute max_w(px(N)) at the column content width, then verify with temporary colored borders on an isolated open -n --env HOME=<tmp> instance plus screencapture measurement instead of claiming safety from the style chain alone."
+    }
   ]
 }

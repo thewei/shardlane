@@ -3,23 +3,27 @@
     {
       "id": "default",
       "name": "default",
+      "backend": "herdr",
       "display_name": "Default",
       "session": "default",
       "device_id": null,
       "adopted": false,
       "running": true,
       "is_default": true,
+      "agent_count": 1,
       "remote_api_version": 3
     },
     {
       "id": "shardlane-project-1",
       "name": "shardlane-project-1",
+      "backend": "herdr",
       "display_name": "frontend",
       "session": "shardlane-project-1",
       "device_id": null,
       "adopted": false,
       "running": false,
       "is_default": false,
+      "agent_count": 0,
       "remote_api_version": 3
     }
   ]

@@ -49,11 +49,12 @@ use crate::agent_ui::conversation_surface::{
     conversation_row_signature, conversation_surface, ConversationSurfaceProps,
     ConversationViewportState, PENDING_ROW_SIGNATURE,
 };
-use crate::agent_ui::conversation_view::{self, ReasoningPresentation};
+use crate::agent_ui::conversation_view;
 use crate::agent_ui::markdown::palette_source_from_active;
 use crate::agent_ui::markdown::render::{Metrics, Palette};
 use crate::ui_metrics::SPACE_ICON;
 use crate::{ContentSurfaceTheme, ShardlaneApp};
+use gpui::prelude::FluentBuilder as _;
 
 /// Slow-paced retry while unbound (source not ready yet).
 const CHAT_UNBOUND_RETRY: Duration = Duration::from_secs(2);
@@ -61,10 +62,10 @@ const CHAT_UNBOUND_RETRY: Duration = Duration::from_secs(2);
 /// the normal path when the watcher is established).
 /// audit CHAT-A04: events are the primary path; the timer is only a safety net
 /// for an unavailable watcher or lost events.
-const CHAT_SYNC_FALLBACK: Duration = Duration::from_secs(2);
+const CHAT_SYNC_FALLBACK: Duration = Duration::from_secs(1);
 /// Minimum interval for the status fallback RPC (time-driven; decoupled from
 /// the event sync cadence).
-const CHAT_STATUS_POLL_INTERVAL: Duration = Duration::from_secs(2);
+const CHAT_STATUS_POLL_INTERVAL: Duration = Duration::from_secs(1);
 /// Upper bound on the settle wait for M4 follow-up delivery; on timeout the
 /// queue is kept and re-driven by status polling.
 /// Raw source-byte budget for the Markdown view cache (the parsed structure is
@@ -768,6 +769,15 @@ impl ShardlaneApp {
                             .await;
                         this.update(cx, |view, cx| {
                             if view.chat.model.set_herdr_status(status) {
+                                if view
+                                    .chat
+                                    .model
+                                    .herdr_status
+                                    .as_deref()
+                                    .is_some_and(crate::chat::model::is_working_family)
+                                {
+                                    view.schedule_working_indicator_repaint(cx);
+                                }
                                 cx.notify();
                             }
                             // M4: re-drive queued follow-ups after settle/unblock.
@@ -778,6 +788,20 @@ impl ShardlaneApp {
                 }
             }
         }));
+    }
+
+    /// One-shot delayed repaint for the anti-flicker Working indicator: the
+    /// projection only reveals the Working row after the delay, and a quiet
+    /// transcript produces no other wake — without this repaint the row would
+    /// stay invisible until the next file activity.
+    fn schedule_working_indicator_repaint(&mut self, cx: &mut Context<Self>) {
+        cx.spawn(async move |this, cx| {
+            cx.background_executor()
+                .timer(crate::chat::model::WORKING_INDICATOR_DELAY)
+                .await;
+            this.update(cx, |_, cx| cx.notify()).ok();
+        })
+        .detach();
     }
 
     /// Apply one sync result from the worker. Unchanged means zero action and
@@ -1583,8 +1607,7 @@ impl ShardlaneApp {
         let ix = rows.iter().position(|row| match row {
             crate::agent_ui::conversation::ConversationRow::UserPrompt(index)
             | crate::agent_ui::conversation::ConversationRow::ContextBoundary(index)
-            | crate::agent_ui::conversation::ConversationRow::Answer(index)
-            | crate::agent_ui::conversation::ConversationRow::Reasoning(index) => messages
+            | crate::agent_ui::conversation::ConversationRow::Answer(index) => messages
                 .and_then(|snapshot| snapshot.messages.get(*index))
                 .is_some_and(|message| message.seq == seq),
             crate::agent_ui::conversation::ConversationRow::ToolActivity { message, .. } => {
@@ -1592,6 +1615,10 @@ impl ShardlaneApp {
                     .and_then(|snapshot| snapshot.messages.get(*message))
                     .is_some_and(|message| message.seq == seq)
             }
+            // A find hit inside a compacted run still scrolls to the group.
+            crate::agent_ui::conversation::ConversationRow::ToolGroup { message, .. } => messages
+                .and_then(|snapshot| snapshot.messages.get(*message))
+                .is_some_and(|message| message.seq == seq),
             _ => false,
         });
         if let Some(ix) = ix {
@@ -1620,7 +1647,16 @@ impl ShardlaneApp {
                 .agent_status
                 .clone()
                 .or_else(|| agent.custom_status.clone());
-            self.chat.model.set_herdr_status(status);
+            if self.chat.model.set_herdr_status(status)
+                && self
+                    .chat
+                    .model
+                    .herdr_status
+                    .as_deref()
+                    .is_some_and(crate::chat::model::is_working_family)
+            {
+                self.schedule_working_indicator_repaint(cx);
+            }
         }
         let palette = Palette::from_source(palette_source_from_active(cx));
         let connecting = self.chat.model.snapshot.is_none();
@@ -1721,7 +1757,7 @@ impl ShardlaneApp {
             .model
             .rows()
             .iter()
-            .map(|row| conversation_row_signature(messages, row))
+            .map(|row| conversation_row_signature(messages, self.chat.model.turns(), row))
             .collect();
         if self.chat.model.pending.is_some() {
             signatures.push(PENDING_ROW_SIGNATURE);
@@ -1780,35 +1816,113 @@ impl ShardlaneApp {
                 }
             }
             Some(ConversationRow::ContextBoundary(message_index)) => {
-                let message = self
+                let Some(message) = self
                     .chat
                     .model
                     .snapshot
                     .as_ref()
                     .and_then(|snapshot| snapshot.messages.get(message_index))
-                    .cloned();
-                match message {
-                    Some(message) => {
-                        copy_text = Some(message.text.clone());
-                        conversation_view::context_boundary_row(&message, theme)
-                    }
-                    None => div().into_any_element(),
-                }
+                    .cloned()
+                else {
+                    return div().into_any_element();
+                };
+                let seq = message.seq;
+                let expanded = self.chat.model.context_boundary_expanded(seq);
+                let toggle_herdr = cx.entity();
+                div()
+                    .w_full()
+                    .min_w_0()
+                    .child(conversation_view::context_boundary_row(
+                        &message,
+                        expanded,
+                        Some(std::rc::Rc::new(move |_, app| {
+                            toggle_herdr.update(app, |this, cx| {
+                                this.chat.model.toggle_context_boundary(seq);
+                                cx.notify();
+                            });
+                        })),
+                        theme,
+                    ))
+                    .into_any_element()
             }
-            Some(ConversationRow::Reasoning(message_index)) => {
-                let message = self
+            Some(ConversationRow::TurnThinking(turn_index)) => {
+                let Some(turn) = self.chat.model.turns().get(turn_index).cloned() else {
+                    return div().into_any_element();
+                };
+                let Some(snapshot) = self.chat.model.snapshot.as_ref() else {
+                    return div().into_any_element();
+                };
+                let thinking =
+                    crate::agent_ui::conversation::turn_thinking_text(&snapshot.messages, &turn);
+                if thinking.trim().is_empty() {
+                    return div().into_any_element();
+                }
+                let live = self
                     .chat
                     .model
-                    .snapshot
-                    .as_ref()
-                    .and_then(|snapshot| snapshot.messages.get(message_index))
-                    .cloned();
-                match message {
-                    Some(message) => chat_reasoning_row(&message, theme),
-                    None => div().into_any_element(),
-                }
+                    .herdr_status
+                    .as_deref()
+                    .is_some_and(|status| matches!(status, "working" | "launch_pending"));
+                let is_last_turn = self.chat.model.turns().len().saturating_sub(1) == turn_index;
+                // ChatGPT contract: the block streams its tail while the turn
+                // is still thinking (busy, newest turn, no text yet); it
+                // collapses with a measured duration once the turn talks. The
+                // user's pin overrides everything.
+                let streaming_thinking = live
+                    && is_last_turn
+                    && !crate::agent_ui::conversation::turn_has_visible_text(
+                        &snapshot.messages,
+                        &turn,
+                    );
+                let duration = if streaming_thinking {
+                    None
+                } else {
+                    crate::agent_ui::conversation::turn_thinking_duration(&snapshot.messages, &turn)
+                };
+                let turn_seq = snapshot
+                    .messages
+                    .get(turn.start)
+                    .map(|message| message.seq)
+                    .unwrap_or(0);
+                let expanded = self
+                    .chat
+                    .model
+                    .reasoning_expanded(turn_seq, streaming_thinking);
+                let toggle_herdr = cx.entity();
+                let streaming_for_toggle = streaming_thinking;
+                let pill = crate::agent_ui::conversation_view::reasoning_row(
+                    &thinking,
+                    crate::agent_ui::conversation_view::ReasoningPresentation::Live {
+                        streaming_thinking,
+                        duration,
+                        expanded,
+                        on_toggle: std::rc::Rc::new(move |_, app| {
+                            toggle_herdr.update(app, |this, cx| {
+                                this.chat
+                                    .model
+                                    .toggle_reasoning(turn_seq, streaming_for_toggle);
+                                cx.notify();
+                            });
+                        }),
+                    },
+                    theme,
+                );
+                div()
+                    .w_full()
+                    .min_w_0()
+                    .px(px(16.0))
+                    .py(px(4.0))
+                    .child(pill)
+                    .into_any_element()
             }
             Some(ConversationRow::ToolActivity { message, tool }) => {
+                // Rows re-emitted from an expanded group indent under the
+                // group header.
+                let in_group = ix > 0
+                    && matches!(
+                        self.chat.model.rows().get(ix - 1),
+                        Some(ConversationRow::ToolGroup { .. })
+                    );
                 let tool_call = self
                     .chat
                     .model
@@ -1818,17 +1932,47 @@ impl ShardlaneApp {
                     .and_then(|message| message.tool_calls.get(tool))
                     .cloned();
                 match tool_call {
-                    Some(tool_call) => self.chat_tool_row(message, tool, &tool_call, theme, cx),
+                    Some(tool_call) => {
+                        self.chat_tool_row(message, tool, &tool_call, in_group, theme, cx)
+                    }
                     None => div().into_any_element(),
                 }
             }
-            Some(ConversationRow::TurnFold(turn_index)) => {
-                self.chat_turn_fold_row(turn_index, theme, cx)
+            Some(ConversationRow::ToolGroup {
+                message,
+                tool,
+                count,
+            }) => {
+                let Some(seq) = self
+                    .chat
+                    .model
+                    .snapshot
+                    .as_ref()
+                    .and_then(|snapshot| snapshot.messages.get(message))
+                    .map(|message| message.seq)
+                else {
+                    return div().into_any_element();
+                };
+                let expanded = self.chat.model.tool_group_expanded(seq, tool);
+                let toggle_herdr = cx.entity();
+                crate::agent_ui::activity::render_tool_group_row(
+                    SharedString::from(format!("chat-tool-group-{seq}-{tool}")),
+                    count,
+                    expanded,
+                    move |_, app| {
+                        toggle_herdr.update(app, |this, cx| {
+                            this.chat.model.toggle_tool_group(seq, tool);
+                            cx.notify();
+                        });
+                    },
+                    theme,
+                )
             }
             Some(ConversationRow::ResponseFooter(turn_index)) => {
                 self.chat_turn_footer_row(turn_index, theme)
             }
             Some(ConversationRow::WorkingIndicator) => conversation_view::working_row(theme),
+            Some(ConversationRow::TurnStopped(_)) => conversation_view::stopped_row(theme),
             None => {
                 // Virtual pending row slot (only when pending exists and ix is
                 // exactly the last row).
@@ -2334,6 +2478,7 @@ impl ShardlaneApp {
         message_index: usize,
         tool_index: usize,
         tool_call: &shardlane_history::ToolCall,
+        in_group: bool,
         theme: &ContentSurfaceTheme,
         cx: &mut Context<Self>,
     ) -> AnyElement {
@@ -2351,7 +2496,11 @@ impl ShardlaneApp {
         let detail = expanded.then(|| activity::render_tool_detail(tool_call, theme));
         let toggle_herdr = cx.entity();
         let key_for_toggle = tool_key.clone();
-        let mut cluster = v_flex().w_full().min_w_0().gap(px(4.0));
+        let mut cluster = v_flex()
+            .w_full()
+            .min_w_0()
+            .when(in_group, |cluster| cluster.pl(px(14.0)))
+            .gap(px(4.0));
         cluster = cluster.child(activity::render_activity_row(
             SharedString::from(format!("chat-activity-{tool_key}")),
             &tool_for_row,
@@ -2378,51 +2527,6 @@ impl ShardlaneApp {
             .px(px(16.0))
             .py(px(1.0))
             .child(cluster)
-            .into_any_element()
-    }
-
-    fn chat_turn_fold_row(
-        &mut self,
-        turn_index: usize,
-        theme: &ContentSurfaceTheme,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let step_count = crate::agent_ui::conversation::turn_work_step_count(
-            self.chat
-                .model
-                .snapshot
-                .as_ref()
-                .map(|snapshot| snapshot.messages.as_slice())
-                .unwrap_or(&[]),
-            self.chat.model.turns(),
-            turn_index,
-        );
-        let duration = self.chat.model.turns().get(turn_index).and_then(|turn| {
-            self.chat.model.snapshot.as_ref().and_then(|snapshot| {
-                activity::turn_work_duration(&snapshot.messages, turn.range.clone())
-            })
-        });
-        let fold_seq = self.chat.model.turn_start_seq(turn_index).unwrap_or(0);
-        let expanded = self.chat.model.expanded_turns.contains(&fold_seq);
-        let label = activity::worked_summary_label(step_count, duration);
-        let toggle_herdr = cx.entity();
-        div()
-            .w_full()
-            .min_w_0()
-            .px(px(16.0))
-            .py(px(2.0))
-            .child(activity::render_worked_fold_row(
-                SharedString::from(format!("chat-turn-fold-{fold_seq}")),
-                label,
-                expanded,
-                move |_, app_cx| {
-                    toggle_herdr.update(app_cx, |this, cx| {
-                        this.chat.model.toggle_turn_fold(fold_seq);
-                        cx.notify();
-                    });
-                },
-                theme,
-            ))
             .into_any_element()
     }
 
@@ -2552,14 +2656,6 @@ fn chat_pending_prompt_row(text: &str, theme: &ContentSurfaceTheme) -> AnyElemen
         .pb(px(6.0))
         .child(conversation_view::user_prompt_card(None, true, body, theme))
         .into_any_element()
-}
-
-/// Chat reasoning row: the shared primitive's Live hint mode.
-fn chat_reasoning_row(
-    message: &shardlane_history::TranscriptMessage,
-    theme: &ContentSurfaceTheme,
-) -> AnyElement {
-    conversation_view::reasoning_row(message, ReasoningPresentation::LiveHint, theme)
 }
 
 fn history_msg_time_label(timestamp: i64) -> String {

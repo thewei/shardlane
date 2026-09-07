@@ -14,6 +14,7 @@ settings:
     behavior: Behavior
     window: Window
     providers: Providers
+    skill: Skill
     mobile: Mobile
     browser: Browser
   theme_category:
@@ -32,14 +33,50 @@ settings:
     notice_auto_both: 'Both selections are used: the light theme in light appearance, the dark theme in dark appearance.'
     language_title: Language
     language_subtitle: Interface language for Shardlane's native shell. Additional languages will arrive in future releases.
+  skill:
+    overview_title: Shardlane Agent Skill
+    overview_body: Installs a skill file named `shardlane` that teaches coding agents the read-only `shardlane` CLI (Workspaces, Projects, live agents) and the exact HERDR_SESSION targeting rules for managing them through the herdr CLI. Herdr stays the single runtime authority.
+    state_installed: Installed (up to date)
+    state_outdated: Installed (different content; install refreshes it to the bundled version)
+    state_missing: Not installed
+    state_external: Symlinked — managed externally, left untouched
+    install_action: Install
+    refresh_action: Refresh
+    remove_action: Remove
 workspace:
   local: (local)
   new: New Workspace…
   filter: Filter workspaces…
   none: No workspaces yet
+  group_herdr: Herdr Workspaces
+  group_tmux: tmux Sessions
+  group_uuyc: UU Remote Terminal
 tab:
   filter: Filter tabs…
   none: No tabs in this workspace
 project:
   filter: Filter projects…
   none: No projects in this instance
+conversation:
+  tool_group_summary: "%{count} tool calls"
+  thought_for: "Thought for %{duration}"
+  stopped: Stopped
+  thinking_live: Thinking…
+  thought_process: Thought process
+  thinking: Thinking
+  hide_thinking: Hide thinking
+  show_thinking: Show thinking
+  copy_message: Copy message
+  message_copied: Message copied
+  copy_answer: Copy answer
+  answer_copied: Answer copied
+  you: You
+  sending: Sending…
+  working: Working…
+  context_compacted: Context compacted
+shell:
+  copy_ids: Copy IDs
+  copy_pane_id: Copy Pane ID
+  copy_tab_id: Copy Tab ID
+  copy_session_id: Copy Session ID
+  id_copied: "Copied: %{id}"

@@ -52,8 +52,54 @@ impl ShardlaneApp {
         let history_action_herdr = herdr.clone();
         let rename_title = title.clone();
         let project_cwd = resolved_project_path
-            .unwrap_or_else(|| workspace.cwd.as_deref().unwrap_or(""))
-            .to_string();
+            .filter(|p| !p.trim().is_empty())
+            .map(|p| p.to_string())
+            .or_else(|| {
+                workspace
+                    .cwd
+                    .as_deref()
+                    .filter(|p| !p.trim().is_empty())
+                    .map(|p| p.to_string())
+            })
+            .or_else(|| {
+                self.panes_by_project
+                    .get(&workspace.workspace_id)
+                    .and_then(|panes| {
+                        panes.iter().find_map(|pane| {
+                            pane.cwd
+                                .as_deref()
+                                .filter(|p| !p.trim().is_empty())
+                                .map(|p| p.to_string())
+                        })
+                    })
+            })
+            .or_else(|| {
+                self.state
+                    .panes
+                    .iter()
+                    .filter(|pane| pane.workspace_id.as_deref() == Some(workspace_id.as_str()))
+                    .find_map(|pane| {
+                        pane.cwd
+                            .as_deref()
+                            .filter(|p| !p.trim().is_empty())
+                            .map(|p| p.to_string())
+                    })
+            })
+            .or_else(|| {
+                self.state
+                    .agents
+                    .iter()
+                    .filter(|agent| agent.workspace_id.as_deref() == Some(workspace_id.as_str()))
+                    .find_map(|agent| {
+                        agent
+                            .foreground_cwd
+                            .as_deref()
+                            .or(agent.cwd.as_deref())
+                            .filter(|p| !p.trim().is_empty())
+                            .map(|p| p.to_string())
+                    })
+            })
+            .unwrap_or_default();
         let drag = SidebarProjectDrag {
             workspace_id: workspace.workspace_id.clone(),
             label: title.clone(),
@@ -69,55 +115,78 @@ impl ShardlaneApp {
         let history_action_group = format!("shardlane-project-history-{workspace_id}");
         let component_theme = cx.theme().clone();
 
+        let git_snapshot = self
+            .find_sidebar_git_status(&project_cwd)
+            .or_else(|| {
+                self.panes_by_project
+                    .get(&workspace.workspace_id)
+                    .and_then(|panes| {
+                        panes.iter().find_map(|pane| {
+                            pane.cwd
+                                .as_deref()
+                                .and_then(|cwd| self.find_sidebar_git_status(cwd))
+                        })
+                    })
+            })
+            .or_else(|| {
+                self.state
+                    .panes
+                    .iter()
+                    .filter(|pane| pane.workspace_id.as_deref() == Some(workspace_id.as_str()))
+                    .find_map(|pane| {
+                        pane.cwd
+                            .as_deref()
+                            .and_then(|cwd| self.find_sidebar_git_status(cwd))
+                    })
+            });
+
         // Git identity displayed directly to the right of the project item title:
         // branch icon + branch name + file change +/- counts.
-        let git_element: Option<AnyElement> = self
-            .sidebar_git_status
-            .get(project_cwd.as_str())
-            .map(|snapshot| {
-                let theme = component_theme.clone();
-                h_flex()
-                    .flex_shrink_0()
-                    .items_center()
-                    .gap(px(3.0))
-                    .child(
-                        icon("icons/git-branch.svg")
-                            .with_size(px(10.5))
-                            .text_color(theme.muted_foreground.opacity(0.7)),
+        let git_element: Option<AnyElement> = git_snapshot.map(|snapshot| {
+            let theme = component_theme.clone();
+            h_flex()
+                .min_w_0()
+                .flex_shrink_0()
+                .items_center()
+                .gap(px(3.0))
+                .child(
+                    icon("icons/git-branch.svg")
+                        .with_size(px(10.5))
+                        .text_color(theme.muted_foreground.opacity(0.7)),
+                )
+                .child(
+                    div()
+                        .max_w(px(72.0))
+                        .text_size(crate::theme::FONT_META)
+                        .text_color(theme.muted_foreground.opacity(0.85))
+                        .truncate()
+                        .child(snapshot.branch.clone()),
+                )
+                .when(snapshot.additions > 0 || snapshot.deletions > 0, |row| {
+                    row.child(
+                        h_flex()
+                            .gap(px(2.0))
+                            .items_center()
+                            .when(snapshot.additions > 0, |r| {
+                                r.child(
+                                    div()
+                                        .text_size(crate::theme::FONT_META)
+                                        .text_color(theme.success)
+                                        .child(format!("+{}", snapshot.additions)),
+                                )
+                            })
+                            .when(snapshot.deletions > 0, |r| {
+                                r.child(
+                                    div()
+                                        .text_size(crate::theme::FONT_META)
+                                        .text_color(theme.danger)
+                                        .child(format!("-{}", snapshot.deletions)),
+                                )
+                            }),
                     )
-                    .child(
-                        div()
-                            .max_w(px(72.0))
-                            .text_size(crate::theme::FONT_META)
-                            .text_color(theme.muted_foreground.opacity(0.85))
-                            .truncate()
-                            .child(snapshot.branch.clone()),
-                    )
-                    .when(snapshot.additions > 0 || snapshot.deletions > 0, |row| {
-                        row.child(
-                            h_flex()
-                                .gap(px(2.0))
-                                .items_center()
-                                .when(snapshot.additions > 0, |r| {
-                                    r.child(
-                                        div()
-                                            .text_size(crate::theme::FONT_META)
-                                            .text_color(theme.success)
-                                            .child(format!("+{}", snapshot.additions)),
-                                    )
-                                })
-                                .when(snapshot.deletions > 0, |r| {
-                                    r.child(
-                                        div()
-                                            .text_size(crate::theme::FONT_META)
-                                            .text_color(theme.danger)
-                                            .child(format!("-{}", snapshot.deletions)),
-                                    )
-                                }),
-                        )
-                    })
-                    .into_any_element()
-            });
+                })
+                .into_any_element()
+        });
 
         let row_element = sidebar_row(
             &self.sidebar_roving_workspaces,
@@ -505,6 +574,14 @@ impl ShardlaneApp {
                     menu_action("Rename Tab…", &herdr, move |this, window, cx| {
                         this.open_tab_rename(tab_id.clone(), label.clone(), window, cx)
                     })
+                })
+                .item({
+                    let tab_id = rename_id.clone();
+                    menu_action(
+                        crate::i18n::t("shell.copy_tab_id"),
+                        &herdr,
+                        move |this, window, cx| this.copy_runtime_id(tab_id.clone(), window, cx),
+                    )
                 })
                 .item(PopupMenuItem::separator())
                 .item({

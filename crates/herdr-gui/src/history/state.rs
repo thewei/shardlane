@@ -7,9 +7,24 @@ use super::*;
 pub(super) enum HistoryExpandedContent {
     Thinking(i64),
     Tools(i64),
-    /// Expanded state of the Worked fold: value is the seq of the turn's first
-    /// message (a stable key across pages).
-    Turn(i64),
+    /// Expanded context-compaction body: boundary message seq.
+    Context(i64),
+    /// Expanded compact tool group: (first call's message seq, tool index).
+    ToolGroup(i64, usize),
+}
+
+/// Derive the shared projection's expanded-tool-group keys from the History
+/// expansion set (same mapping in the transcript renderer and find/scroll).
+pub(super) fn expanded_tool_groups_of(
+    content: &HashSet<HistoryExpandedContent>,
+) -> HashSet<(i64, usize)> {
+    content
+        .iter()
+        .filter_map(|entry| match entry {
+            HistoryExpandedContent::ToolGroup(seq, tool) => Some((*seq, *tool)),
+            _ => None,
+        })
+        .collect()
 }
 
 /// Conversation list sort keys (same three keys + direction as before).

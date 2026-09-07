@@ -1,5 +1,5 @@
 //! [INPUT]: Depends on the ShardlaneApp type from the crate root (super) and existing types/imports (use super::*); no independent external dependencies.
-//! [OUTPUT]: Exposes ShardlaneApp's shell chrome render tree: client_shell/sidebar/search bar/overlay assembly (including the native-tab-strip placement of the work surface and the full-content file_preview_page branch), plus the hosted Herdr TUI's GPUI native Pane context menu (Copy/Paste/Select All + Herdr Rename/Move/Swap/Split/Zoom/Close); mouse down/up wiring covers the full lifecycle of drag-selection and protocol mouse; terminal geometry (terminal_size/terminal_canvas_origin) accounts for the native tab strip height.
+//! [OUTPUT]: Exposes ShardlaneApp's shell chrome render tree: client_shell/sidebar/search bar/overlay assembly (including the native-tab-strip placement of the work surface and the full-content file_preview_page branch), plus the hosted Herdr TUI's GPUI native Pane context menu (Copy/Paste/Select All + Herdr Rename/Move/Swap/Split/Zoom/Process Info/Copy IDs + Close); mouse down/up wiring covers the full lifecycle of drag-selection and protocol mouse; terminal geometry (terminal_size/terminal_canvas_origin) accounts for the native tab strip height.
 //! [POS]: The `crates/herdr-gui` shell render responsibility domain, mechanically split out of main.rs; together with sibling shell_* modules it forms ShardlaneApp's method surface.
 use super::*;
 use crate::ui::menus::{menu_action, menu_action_cx};
@@ -1012,6 +1012,21 @@ impl ShardlaneApp {
                     label,
                     move_targets,
                 } = context_pane;
+                // Copy IDs: the pane's Tab and this window's bound instance are
+                // resolved at menu-build time so unavailable items never render.
+                let (pane_tab_id, session_id) = {
+                    let app = menu_herdr.read(cx);
+                    (
+                        app.state
+                            .panes
+                            .iter()
+                            .find(|pane| pane.pane_id == pane_id)
+                            .and_then(|pane| pane.tab_id.clone()),
+                        app.binding
+                            .as_ref()
+                            .map(|binding| binding.session_name().to_string()),
+                    )
+                };
 
                 menu = menu
                     .item(PopupMenuItem::separator())
@@ -1104,6 +1119,48 @@ impl ShardlaneApp {
                     menu_action("Process Info…", &menu_herdr, move |this, window, cx| {
                         this.show_pane_process_info_by_id(pane_id.clone(), window, cx)
                     })
+                })
+                .submenu(crate::i18n::t("shell.copy_ids"), window, cx, {
+                    let herdr = menu_herdr.clone();
+                    let pane_id = pane_id.clone();
+                    move |submenu, _, _| {
+                        let submenu = submenu.item({
+                            let pane_id = pane_id.clone();
+                            menu_action(
+                                crate::i18n::t("shell.copy_pane_id"),
+                                &herdr,
+                                move |this, window, cx| {
+                                    this.copy_runtime_id(pane_id.clone(), window, cx)
+                                },
+                            )
+                        });
+                        let submenu = match pane_tab_id.clone() {
+                            Some(tab_id) => submenu.item({
+                                let tab_id = tab_id.clone();
+                                menu_action(
+                                    crate::i18n::t("shell.copy_tab_id"),
+                                    &herdr,
+                                    move |this, window, cx| {
+                                        this.copy_runtime_id(tab_id.clone(), window, cx)
+                                    },
+                                )
+                            }),
+                            None => submenu,
+                        };
+                        match session_id.clone() {
+                            Some(session) => submenu.item({
+                                let session = session.clone();
+                                menu_action(
+                                    crate::i18n::t("shell.copy_session_id"),
+                                    &herdr,
+                                    move |this, window, cx| {
+                                        this.copy_runtime_id(session.clone(), window, cx)
+                                    },
+                                )
+                            }),
+                            None => submenu,
+                        }
+                    }
                 })
                 .item(PopupMenuItem::separator())
                 .item({
@@ -1385,6 +1442,7 @@ pub(crate) fn project_picker_page_impl(
         &filter_value,
         None,
         cx.theme(),
+        &this.collapsed_switcher_groups,
     );
     let filter_input = this.project_picker_filter.clone();
     div()

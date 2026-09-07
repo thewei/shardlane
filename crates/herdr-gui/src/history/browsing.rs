@@ -499,14 +499,13 @@ impl ShardlaneApp {
         let rows = crate::agent_ui::conversation::folded_conversation_rows(
             &transcript.messages,
             &turns,
-            &HashSet::new(),
-            &HashSet::new(),
             false,
+            false,
+            false,
+            &expanded_tool_groups_of(&self.history.expanded_content),
         );
         let ix = rows.iter().position(|row| match row {
-            ConversationRow::UserPrompt(index)
-            | ConversationRow::Answer(index)
-            | ConversationRow::Reasoning(index) => transcript
+            ConversationRow::UserPrompt(index) | ConversationRow::Answer(index) => transcript
                 .messages
                 .get(*index)
                 .is_some_and(|message| message.seq == seq),

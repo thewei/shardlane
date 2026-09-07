@@ -205,8 +205,14 @@ pub fn connect_instance_for(
     state: &RemoteState,
     instance: Option<&str>,
 ) -> Result<Arc<dyn MultiplexerConnection>, MuxError> {
+    // Backend-qualified ids ("tmux:default") route to that backend; bare ids
+    // stay Herdr sessions (wire-compatible with the pinned fixtures and every
+    // existing client).
     let reference = match (instance, &state.herdr_socket_override) {
-        (Some(session), _) => InstanceRef::named("herdr", session),
+        (Some(session), _) => match session.split_once(':') {
+            Some((backend, target)) if backend != "herdr" => InstanceRef::named(backend, target),
+            _ => InstanceRef::named("herdr", session),
+        },
         (None, Some(path)) => InstanceRef::socket("herdr", path.clone()),
         (None, None) => InstanceRef::default_instance("herdr"),
     };
@@ -412,7 +418,11 @@ pub fn build_bootstrap_for(
             version: state.host_version.clone(),
             api_version: HOST_API_VERSION,
         },
-        capabilities: host_capabilities_for(state),
+        // Per-connection capabilities: a tmux-scoped bootstrap must advertise
+        // the tmux degradations (agents=false, events_push=false), not the
+        // Herdr builtin's all-true. Unscoped bootstraps connect the Herdr
+        // default, so the pinned all-true wire values are unchanged.
+        capabilities: host_capabilities_from(connection.capabilities()),
         workspaces,
         projects,
         tabs,

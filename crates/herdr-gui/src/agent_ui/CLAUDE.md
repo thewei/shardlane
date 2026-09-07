@@ -11,8 +11,18 @@ only; lifecycles belong to each consuming surface.
   control-row left/right slots, Send/Busy/Disabled send button, footer row
   under the card. Extracted bottom-up from `new_agent/page.rs` on 2026-08-27;
   New Agent is the first consumer, Live Chat the second.
-- `conversation.rs` / `activity.rs` / `markdown/` — shared conversation
-  timeline / activity / streaming Markdown primitives (C3/C4).
+- `conversation.rs` / `activity.rs` / `conversation_view.rs` / `markdown/` —
+  shared conversation timeline primitives under the ChatGPT process contract
+  (2026-09-06): text never folds (narration is the visible progress report),
+  thinking consolidates into one collapsible block per turn ("Thought for Xs"
+  from timestamps; Chat streams its tail live and auto-collapses when the
+  turn starts talking), tools render as compact chip rows with only a running
+  spinner or failure mark (runs of 2+ consecutive calls collapse into one
+  expandable ToolGroup, possibly spanning messages); each settled turn closes
+  with a response footer. `conversation.rs` owns
+  the pure row projection; `activity.rs` owns tool rows / footers;
+  `conversation_view.rs` owns User / thinking block / Working styling;
+  `markdown/` is the one answer-body engine (C3/C4).
 
 ## Hard boundaries
 

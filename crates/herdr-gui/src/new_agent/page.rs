@@ -5,20 +5,20 @@ use super::*;
 use crate::agent_ui::{composer_send_state, AgentComposer};
 
 #[derive(Clone)]
-struct WorkflowDrag {
+struct ScriptDrag {
     script_id: String,
     label: String,
     position: Point<Pixels>,
 }
 
-impl WorkflowDrag {
+impl ScriptDrag {
     fn position(mut self, position: Point<Pixels>) -> Self {
         self.position = position;
         self
     }
 }
 
-impl Render for WorkflowDrag {
+impl Render for ScriptDrag {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         div()
             .px(px(12.0))
@@ -582,7 +582,7 @@ impl ShardlaneApp {
         let headline_text = match tab_kind {
             NewTabKind::Agent => "What should we do in ",
             NewTabKind::Terminal => "Run command in ",
-            NewTabKind::Command => "Workflows in ",
+            NewTabKind::Command => "Scripts in ",
         };
 
         let tab_key_herdr = attach_herdr.clone();
@@ -818,7 +818,7 @@ impl ShardlaneApp {
             .when(tab_kind == NewTabKind::Command, |page| {
                 page.child(
                     v_flex()
-                        .id("workflow-list-scroll")
+                        .id("script-list-scroll")
                         .flex_1()
                         .w_full()
                         .min_h_0()
@@ -835,10 +835,10 @@ impl ShardlaneApp {
                                     div()
                                         .text_size(theme::FONT_BODY)
                                         .text_color(cx.theme().muted_foreground)
-                                        .child("No workflows for this project"),
+                                        .child("No scripts for this project"),
                                 )
                                 .child(
-                                    Button::new("new-script-add-workflow")
+                                    Button::new("new-script-add-script")
                                         .ghost()
                                         .small()
                                         .icon(ComponentIconName::Plus)
@@ -892,16 +892,16 @@ impl ShardlaneApp {
                                         let drop_index = index;
                                         let drop_herdr = command_run_herdr.clone();
                                         let drag_over_bg = cx.theme().foreground.opacity(crate::theme::WASH_HOVER);
-                                        let drag = WorkflowDrag {
+                                        let drag = ScriptDrag {
                                             script_id: drag_id,
                                             label: script_name.clone(),
                                             position: Point::default(),
                                         };
                                         h_flex()
                                             .id(SharedString::from(format!(
-                                                "wf-row-{index}"
+                                                "script-row-{index}"
                                             )))
-                                            .group("workflow-row")
+                                            .group("script-row")
                                             .w_full()
                                             .py(px(10.0))
                                             .px(px(16.0))
@@ -923,10 +923,10 @@ impl ShardlaneApp {
                                                 let drag = drag.clone().position(position);
                                                 cx.new(|_| drag)
                                             })
-                                            .drag_over::<WorkflowDrag>(move |style, _, _, _| {
+                                            .drag_over::<ScriptDrag>(move |style, _, _, _| {
                                                 style.bg(drag_over_bg)
                                             })
-                                            .on_drop(move |drag: &WorkflowDrag, _, app| {
+                                            .on_drop(move |drag: &ScriptDrag, _, app| {
                                                 drop_herdr.update(app, |this, cx| {
                                                     this.move_script_to_index(
                                                         drag.script_id.clone(),
@@ -1063,7 +1063,7 @@ impl ShardlaneApp {
                                                             .items_center()
                                                             .justify_center()
                                                             .invisible()
-                                                            .group_hover("workflow-row", |s| {
+                                                            .group_hover("script-row", |s| {
                                                                 s.visible()
                                                             })
                                                             .hover(|s| {
@@ -1099,7 +1099,7 @@ impl ShardlaneApp {
                                                         // "Delete?" danger state, second click deletes.
                                                         div()
                                                             .id(SharedString::from(format!(
-                                                                "wf-del-{index}"
+                                                                "script-del-{index}"
                                                             )))
                                                             .when(row_delete_armed, |btn| {
                                                                 btn.visible()
@@ -1109,7 +1109,7 @@ impl ShardlaneApp {
                                                             })
                                                             .when(!row_delete_armed, |btn| {
                                                                 btn.size(px(24.0)).invisible().group_hover(
-                                                                    "workflow-row",
+                                                                    "script-row",
                                                                     |s| s.visible(),
                                                                 )
                                                             })

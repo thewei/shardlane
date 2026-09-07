@@ -1,5 +1,5 @@
 //! [INPUT]: Depends on the ShardlaneApp type from the crate root (super) and existing types/imports (use super::*); no independent external dependencies.
-//! [OUTPUT]: Exposes ShardlaneApp's pane operation surface: the run_pane_rpc shared scaffold (B27), split/zoom/resize/swap/close/move, process info, and agent claiming; includes the focus/resize direction-key macro family (inherent impl shard).
+//! [OUTPUT]: Exposes ShardlaneApp's pane operation surface: the run_pane_rpc shared scaffold (B27), split/zoom/resize/swap/close/move, process info, agent claiming, and the runtime-ID clipboard helper (copy_runtime_id); includes the focus/resize direction-key macro family (inherent impl shard).
 //! [POS]: The `crates/herdr-gui` shell panes responsibility domain, mechanically split out of main.rs; together with sibling shell_* modules it forms ShardlaneApp's method surface.
 use super::*;
 
@@ -356,6 +356,19 @@ impl ShardlaneApp {
                 view.refresh_agents_snapshot(cx);
             },
         );
+    }
+
+    /// Copies one runtime identifier (Pane/Tab/Session ID) to the clipboard.
+    /// The toast echoes the exact value so the user can verify what was
+    /// captured before pasting it into a CLI/API call.
+    pub(crate) fn copy_runtime_id(
+        &mut self,
+        id: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        cx.write_to_clipboard(crepuscularity_gpui::ClipboardItem::new_string(id.clone()));
+        window.push_notification(crate::i18n::t_with("shell.id_copied", &[("id", id)]), cx);
     }
 
     pub(super) fn show_pane_process_info_by_id(

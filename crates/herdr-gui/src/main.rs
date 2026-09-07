@@ -1,5 +1,5 @@
 //! [INPUT]: Depends on the `herdr` runtime, the `ghostty` terminal engine, the `gpui`/`gpui_component` component libraries, the `rust_i18n` i18n backend (crate-root `i18n!`), and the submodules
-//! [OUTPUT]: Exposes the Shardlane macOS client entry point, the `ShardlaneApp` root view model, and action dispatch
+//! [OUTPUT]: Exposes the Shardlane macOS client entry point (with the headless `shardlane <command>` CLI dispatch handled before GUI init), the `ShardlaneApp` root view model, and action dispatch
 //! [POS]: crates/herdr-gui's core assembly and application entry, coordinating global state, menus, and panel routing
 
 // i18n backend embedding: this must stay at the crate root because
@@ -14,6 +14,7 @@ mod assets;
 mod browser_profile;
 mod browser_profile_view;
 mod chat;
+mod cli;
 mod composer_chip;
 mod file_preview;
 mod font_catalog;
@@ -55,6 +56,7 @@ mod shell_tui;
 mod shortcuts;
 mod shortcuts_view;
 mod sidebar;
+mod skill_settings;
 mod ssh_bridge;
 mod status;
 mod status_bar;
@@ -265,6 +267,8 @@ enum SettingsSection {
     Behavior,
     Window,
     Providers,
+    // Skill: agent-facing skill installer; grouped with Providers (agent ecosystem).
+    Skill,
     Mobile,
     Browser,
 }
@@ -272,7 +276,7 @@ enum SettingsSection {
 impl SettingsSection {
     // Audit E24: Providers sits before Mobile/Browser — it decides whether New Task/History
     // can work at all, so it outranks the secondary mobile/browser surfaces in the sidebar.
-    const ALL: [Self; 9] = [
+    const ALL: [Self; 10] = [
         Self::Appearance,
         Self::Terminal,
         Self::Lazygit,
@@ -280,6 +284,7 @@ impl SettingsSection {
         Self::Behavior,
         Self::Window,
         Self::Providers,
+        Self::Skill,
         Self::Mobile,
         Self::Browser,
     ];
@@ -293,6 +298,7 @@ impl SettingsSection {
             Self::Behavior => i18n::t("settings.section.behavior"),
             Self::Window => i18n::t("settings.section.window"),
             Self::Providers => i18n::t("settings.section.providers"),
+            Self::Skill => i18n::t("settings.section.skill"),
             Self::Mobile => i18n::t("settings.section.mobile"),
             Self::Browser => i18n::t("settings.section.browser"),
         }
@@ -310,6 +316,7 @@ impl SettingsSection {
             Self::Behavior => gpui_component::Icon::new(ComponentIconName::Settings2),
             Self::Window => gpui_component::Icon::new(ComponentIconName::Frame),
             Self::Providers => gpui_component::Icon::new(ComponentIconName::Bot),
+            Self::Skill => gpui_component::Icon::new(ComponentIconName::BookOpen),
             Self::Mobile => gpui_component::Icon::empty().path("icons/smartphone.svg"),
             Self::Browser => gpui_component::Icon::new(ComponentIconName::Globe),
         }
@@ -1140,6 +1147,7 @@ pub(crate) enum PickerPage {
 fn backend_id(raw: &str) -> &'static str {
     match raw {
         "tmux" => "tmux",
+        "uuyc" => "uuyc",
         _ => "herdr",
     }
 }
@@ -1167,6 +1175,7 @@ impl ProjectBinding {
             None => self
                 .project_id
                 .strip_prefix("tmux:")
+                .or_else(|| self.project_id.strip_prefix("uuyc:"))
                 .unwrap_or(&self.project_id),
         }
     }
@@ -1387,10 +1396,12 @@ impl ShellSharedRuntime {
         let entries = listings
             .iter()
             .map(|listing| {
-                // A tmux instance's jump key is prefixed so it cannot collide
+                // A tmux or uuyc instance's jump key is prefixed so it cannot collide
                 // with a same-named Herdr session in the picker.
                 let label_key = if listing.backend == "tmux" {
                     format!("tmux:{}", listing.name)
+                } else if listing.backend == "uuyc" {
+                    format!("uuyc:{}", listing.name)
                 } else {
                     listing.name.clone()
                 };
@@ -1411,6 +1422,8 @@ impl ShellSharedRuntime {
             if let Some(display) = &listing.display_name {
                 let label_key = if listing.backend == "tmux" {
                     format!("tmux:{}", listing.name)
+                } else if listing.backend == "uuyc" {
+                    format!("uuyc:{}", listing.name)
                 } else {
                     listing.name.clone()
                 };
@@ -1510,6 +1523,8 @@ struct ShardlaneApp {
     /// recording, all registered chords are temporarily suppressed by NoAction (later entries win), and
     /// exit restores everything at once via rebind_shortcuts().
     pub(crate) shortcut_recording: Option<shortcuts::ShortcutId>,
+    /// Settings → Skill 面板最近一次安装/卸载失败的提示；成功操作自然清除。
+    skill_notice: Option<String>,
     /// Active project git status snapshot (consumed by the header's +/- pill and Info popover; 12s freshness).
     git_status: Option<git_status::GitStatusSnapshot>,
     /// Per-project git snapshots for the visible Sidebar Projects (bounded by
@@ -1519,6 +1534,10 @@ struct ShardlaneApp {
     /// Project paths whose background git collection is in flight (re-entry
     /// guard). Mutex because the every-frame refresh only has &self.
     git_inflight: std::sync::Mutex<std::collections::HashSet<String>>,
+    /// Authoritative cache of panes per workspace (populated from workspace_state/pane.list).
+    /// Kept independent of state.panes so surface switches (apply_tab_surface_state) never
+    /// drop non-focused project directories or git statuses.
+    pub(crate) panes_by_project: std::collections::HashMap<String, Vec<Pane>>,
     terminal_attach_target: Option<String>,
     terminal_size: Option<TerminalSize>,
     terminal_surface_size: Option<TerminalSize>,
@@ -1617,6 +1636,8 @@ struct ShardlaneApp {
     workspace_delete_armed: bool,
     /// Which device's workspaces the switcher panel lists (`None` = local).
     panel_device: Option<String>,
+    /// Collapsed group keys in the workspace switcher panel.
+    pub(crate) collapsed_switcher_groups: HashSet<String>,
     status: ConnectionStatus,
     show_help: bool,
     show_settings: bool,
@@ -2312,6 +2333,7 @@ impl ShardlaneApp {
             git_status: None,
             sidebar_git_status: std::collections::HashMap::new(),
             git_inflight: std::sync::Mutex::new(std::collections::HashSet::new()),
+            panes_by_project: std::collections::HashMap::new(),
             terminal_attach_target: None,
             terminal_size: None,
             terminal_surface_size: None,
@@ -2365,6 +2387,7 @@ impl ShardlaneApp {
             _workspace_settings_name_sub: None,
             workspace_delete_armed: false,
             panel_device: None,
+            collapsed_switcher_groups: HashSet::new(),
             status,
             show_help: false,
             show_settings: false,
@@ -2378,6 +2401,7 @@ impl ShardlaneApp {
             _tui_config_apply_task: BackgroundJob::ready(()),
             settings_section: SettingsSection::default(),
             settings_provider_detail: None,
+            skill_notice: None,
             mobile_port_input: None,
             mobile_port_subscription: None,
             browser_confirm: None,
@@ -2565,8 +2589,8 @@ impl ShardlaneApp {
             );
             return;
         }
-        // Multiplexer instance key (`tmux:<instance>`): bind through the
-        // tmux backend (docs/multiplexer-api.md Domain 1).
+        // Multiplexer instance key (`tmux:<instance>` or `uuyc:<instance>`): bind through the
+        // respective backend (docs/multiplexer-api.md Domain 1).
         if let Some(session) = project_id.strip_prefix("tmux:") {
             self.bind_instance_on_socket(
                 "tmux",
@@ -2578,9 +2602,23 @@ impl ShardlaneApp {
             );
             return;
         }
+        if let Some(session) = project_id.strip_prefix("uuyc:") {
+            self.bind_instance_on_socket(
+                "uuyc",
+                session.to_string(),
+                None,
+                project_id.to_string(),
+                window,
+                cx,
+            );
+            return;
+        }
         // Unknown sessions can appear between refreshes (e.g. created by the
         // CLI): refresh once before giving up.
-        let lookup_name = project_id.strip_prefix("tmux:").unwrap_or(project_id);
+        let lookup_name = project_id
+            .strip_prefix("tmux:")
+            .or_else(|| project_id.strip_prefix("uuyc:"))
+            .unwrap_or(project_id);
         if !self
             .shared
             .instance_list()
@@ -2650,19 +2688,23 @@ impl ShardlaneApp {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let (backend, bound_session, project_key) = match session.strip_prefix("tmux:") {
-            Some(instance) => ("tmux", instance.to_string(), session.clone()),
-            None => (
-                self.shared
-                    .instance_list()
-                    .into_iter()
-                    .find(|instance| instance.name == session)
-                    .map(|instance| instance.backend)
-                    .unwrap_or("herdr"),
-                session.clone(),
-                session.clone(),
-            ),
-        };
+        let (backend, bound_session, project_key) =
+            if let Some(instance) = session.strip_prefix("tmux:") {
+                ("tmux", instance.to_string(), session.clone())
+            } else if let Some(instance) = session.strip_prefix("uuyc:") {
+                ("uuyc", instance.to_string(), session.clone())
+            } else {
+                (
+                    self.shared
+                        .instance_list()
+                        .into_iter()
+                        .find(|instance| instance.name == session)
+                        .map(|instance| instance.backend)
+                        .unwrap_or("herdr"),
+                    session.clone(),
+                    session.clone(),
+                )
+            };
         self.bind_instance_on_socket(backend, bound_session, None, project_key, window, cx);
     }
 
@@ -2687,6 +2729,7 @@ impl ShardlaneApp {
         let registry_key = match &socket_override {
             Some(socket) => format!("bridge:{}", socket.display()),
             None if backend == "tmux" => format!("tmux:{session}"),
+            None if backend == "uuyc" => format!("uuyc:{session}"),
             None => session.clone(),
         };
         self.tui_manager = self.shared.tui_registry.get_or_create_keyed(&registry_key);
@@ -2705,6 +2748,8 @@ impl ShardlaneApp {
         let fresh_named_instance = socket_override.is_none() && backend == "herdr";
         let label_key = if backend == "tmux" {
             format!("tmux:{bind_session}")
+        } else if backend == "uuyc" {
+            format!("uuyc:{bind_session}")
         } else {
             bind_session.clone()
         };
@@ -2730,6 +2775,9 @@ impl ShardlaneApp {
                     // never start a local server on their behalf.
                     let reference = match (backend, &socket_override) {
                         ("tmux", _) => shardlane_host::mux::InstanceRef::default_instance("tmux"),
+                        ("uuyc", _) => {
+                            shardlane_host::mux::InstanceRef::named("uuyc", &bind_session)
+                        }
                         ("herdr", Some(socket)) => {
                             shardlane_host::mux::InstanceRef::socket("herdr", socket.clone())
                         }
@@ -2750,14 +2798,19 @@ impl ShardlaneApp {
                         })?;
                         state = client.visible_state()?;
                     }
+                    let all_panes = client
+                        .workspace_state()
+                        .map(|ws_state| ws_state.panes)
+                        .unwrap_or_default();
                     let events = client.subscribe_events().ok();
                     shardlane_host::diagnostics::lag_log(format_args!(
-                        "bind.connected ws={} tabs={} panes={}",
+                        "bind.connected ws={} tabs={} panes={} all_panes={}",
                         state.workspaces.len(),
                         state.tabs.len(),
-                        state.panes.len()
+                        state.panes.len(),
+                        all_panes.len()
                     ));
-                    Ok::<_, shardlane_host::mux::MuxError>((client, state, events))
+                    Ok::<_, shardlane_host::mux::MuxError>((client, state, all_panes, events))
                 })
                 .await;
             let _ = cx.update_window(window_handle, move |_, window, cx| {
@@ -2767,7 +2820,7 @@ impl ShardlaneApp {
                     }
                     view.initializing = false;
                     match bootstrapped {
-                        Ok((client, state, events)) => {
+                        Ok((client, state, all_panes, events)) => {
                             shardlane_host::diagnostics::lag_log(format_args!(
                                 "bind.ok ws={} tabs={} panes={} agents={}",
                                 state.workspaces.len(),
@@ -2778,6 +2831,19 @@ impl ShardlaneApp {
                             view.client = Some(client.clone());
                             view.status = ConnectionStatus::Connected;
                             view.state = state;
+                            let mut by_ws: HashMap<String, Vec<Pane>> = HashMap::new();
+                            for pane in all_panes {
+                                if let Some(ws_id) = &pane.workspace_id {
+                                    by_ws.entry(ws_id.clone()).or_default().push(pane);
+                                }
+                            }
+                            view.panes_by_project = by_ws.clone();
+                            let sidebar = view.sidebar_pane.clone();
+                            sidebar.update(cx, |sp, sp_cx| {
+                                for (ws_id, panes) in by_ws {
+                                    sp.finish_project_pane_load(ws_id, Ok(panes), sp_cx);
+                                }
+                            });
                             // Backend-aware landing surface: a backend without
                             // agent capability (tmux MVP) cannot act on the New
                             // Agent page — landing there is a dead first screen
@@ -2793,8 +2859,14 @@ impl ShardlaneApp {
                             }
                             view.sync_pane_event_subscription(cx);
                             view.bootstrap_sidebar_history(cx);
-                            if let Some(workspace_id) = view.state.focused_workspace_id.clone() {
-                                view.load_sidebar_project_panes(workspace_id, cx);
+                            let ws_ids: Vec<String> = view
+                                .state
+                                .workspaces
+                                .iter()
+                                .map(|w| w.workspace_id.clone())
+                                .collect();
+                            for ws_id in ws_ids {
+                                view.load_sidebar_project_panes(ws_id, cx);
                             }
                             view.ensure_tui_surface(window, cx, true);
                             view.notify_sidebar(cx);
@@ -2857,6 +2929,7 @@ impl ShardlaneApp {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .clear();
+        self.panes_by_project.clear();
         self.workspace_tab_selection_memory.clear();
         self.right_panel_projects.clear();
         self.right_panel_runtime_id = None;
@@ -3696,8 +3769,71 @@ fn web_bundle_path() -> Option<std::path::PathBuf> {
 fn main() {
     std::env::set_var("OS_ACTIVITY_MODE", "disable");
 
+    // Headless CLI dispatch: recognized `shardlane <command>` invocations never
+    // open a window; anything unrecognized falls through to the normal GUI
+    // launch path untouched.
+    let cli_args: Vec<String> = std::env::args().skip(1).collect();
+    if let Some(exit_code) = cli::try_dispatch(&cli_args) {
+        std::process::exit(exit_code);
+    }
+
+    let reopen_shared: std::sync::Arc<
+        std::sync::Mutex<Option<std::sync::Arc<ShellSharedRuntime>>>,
+    > = std::sync::Arc::new(std::sync::Mutex::new(None));
+    let reopen_shared_capture = reopen_shared.clone();
+
     let app = Application::new().with_assets(assets::Assets);
-    app.run(|cx: &mut App| {
+    app.on_reopen(move |cx: &mut App| {
+        if cx.windows().is_empty() {
+            let Some(shared) = reopen_shared_capture
+                .lock()
+                .ok()
+                .and_then(|guard| guard.clone())
+            else {
+                return;
+            };
+            let config = settings::ApplicationConfig::load();
+            let startup_window = config.ui.window.clone();
+            let initial_bounds = if startup_window.has_bounds() {
+                bounds(
+                    point(px(startup_window.x as f32), px(startup_window.y as f32)),
+                    size(
+                        px(startup_window.width as f32),
+                        px(startup_window.height as f32),
+                    ),
+                )
+            } else {
+                bounds(point(px(80.0), px(80.0)), size(px(1280.0), px(820.0)))
+            };
+
+            let mut restored = false;
+            for record in &config.open_workspaces {
+                let Some(session) = record.session.clone() else {
+                    continue;
+                };
+                if session.starts_with("ssh:") {
+                    continue;
+                }
+                let restored_bounds = bounds(
+                    point(px(record.x as f32), px(record.y as f32)),
+                    size(px(record.width as f32), px(record.height as f32)),
+                );
+                let _ = open_shell_window(
+                    cx,
+                    shared.clone(),
+                    config.clone(),
+                    restored_bounds,
+                    Some(session),
+                );
+                restored = true;
+            }
+            if !restored {
+                let _ = open_shell_window(cx, shared.clone(), config.clone(), initial_bounds, None);
+            }
+        }
+        cx.activate(true);
+    });
+    app.run(move |cx: &mut App| {
         gpui_component::init(cx);
         startup_self_check();
 
@@ -3824,6 +3960,9 @@ fn main() {
         // Process-wide services: one status-bar item, one notification action
         // channel, one per-instance TUI manager registry, one display-name map.
         let (shared, status_bar_rx, notification_rx) = ShellSharedRuntime::new();
+        if let Ok(mut guard) = reopen_shared.lock() {
+            *guard = Some(shared.clone());
+        }
         spawn_global_action_consumer(
             cx,
             shared.clone(),

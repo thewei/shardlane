@@ -448,7 +448,7 @@ pub(super) fn sidebar_card_row(
     id: impl Into<SharedString>,
     lead: RowLead,
     title: impl Into<SharedString>,
-    subtitle: Option<SharedString>,
+    subtitle: Option<AnyElement>,
     status: Option<crate::status::AttentionLevel>,
     active: bool,
     on_activate: impl Fn(&mut Window, &mut App) + 'static,

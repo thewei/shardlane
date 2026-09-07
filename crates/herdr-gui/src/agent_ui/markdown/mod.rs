@@ -44,7 +44,9 @@ pub fn palette_source_from_active(cx: &App) -> PaletteSource {
         overlay: foreground.opacity(if dark { 0.09 } else { 0.07 }),
         code_text: foreground,
         code_wash: foreground.opacity(if dark { 0.045 } else { 0.035 }),
-        selection: theme.accent.opacity(0.28),
+        // User feedback 2026-09-06: the wash was too subtle against the dark
+        // chat surface — raise it to a clearly visible highlight.
+        selection: theme.accent.opacity(if dark { 0.45 } else { 0.35 }),
         accent: theme.accent,
         success: theme.success,
         danger: theme.danger,

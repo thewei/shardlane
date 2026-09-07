@@ -35,7 +35,7 @@ use gpui_component::{v_flex, Sizable as _};
 
 use shardlane_history::TranscriptMessage;
 
-use crate::agent_ui::conversation::ConversationRow;
+use crate::agent_ui::conversation::{ConversationRow, ConversationTurn};
 use crate::agent_ui::markdown::cache::MarkdownViewCache;
 use crate::agent_ui::markdown::render::TranscriptSelection;
 use crate::agent_ui::scrollbar::{self, Scrollable as _, ScrollbarColors, ScrollbarState};
@@ -232,26 +232,43 @@ impl scrollbar::Scrollable for ScrollListOwned {
 /// Conversation row signature (discriminant + message content-length digest;
 /// strings are not cloned). Streaming text growth → text_len changes → tail
 /// row signature changes → minimal splice remeasure. Shared by Live/History.
-pub fn conversation_row_signature(messages: &[TranscriptMessage], row: &ConversationRow) -> u64 {
+pub fn conversation_row_signature(
+    messages: &[TranscriptMessage],
+    turns: &[ConversationTurn],
+    row: &ConversationRow,
+) -> u64 {
     use std::hash::{Hash, Hasher as _};
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     std::mem::discriminant(row).hash(&mut hasher);
     match *row {
         ConversationRow::UserPrompt(index)
         | ConversationRow::ContextBoundary(index)
-        | ConversationRow::Reasoning(index)
         | ConversationRow::Answer(index) => {
             index.hash(&mut hasher);
             hash_message_content(messages, index, &mut hasher);
+        }
+        ConversationRow::TurnThinking(turn) => {
+            // The block aggregates the whole turn's thinking: its signature
+            // covers every message in the turn's range.
+            turn.hash(&mut hasher);
+            if let Some(turn) = turns.get(turn) {
+                for index in turn.range.clone() {
+                    hash_message_content(messages, index, &mut hasher);
+                }
+            }
         }
         ConversationRow::ToolActivity { message, tool } => {
             message.hash(&mut hasher);
             tool.hash(&mut hasher);
             hash_message_content(messages, message, &mut hasher);
         }
-        ConversationRow::TurnFold(turn) | ConversationRow::ResponseFooter(turn) => {
-            turn.hash(&mut hasher);
+        ConversationRow::ToolGroup { message, count, .. } => {
+            message.hash(&mut hasher);
+            count.hash(&mut hasher);
+            hash_message_content(messages, message, &mut hasher);
         }
+        ConversationRow::TurnStopped(turn) => turn.hash(&mut hasher),
+        ConversationRow::ResponseFooter(turn) => turn.hash(&mut hasher),
         ConversationRow::WorkingIndicator => {}
     }
     hasher.finish()
