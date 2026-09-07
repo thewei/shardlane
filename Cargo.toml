@@ -114,3 +114,10 @@ workspace = true
 # main thread in next_drawable (measured on macOS 15). See vendor/gpui/PACING-PATCH.md
 [patch.crates-io]
 gpui = { path = "vendor/gpui" }
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = true
+panic = "abort"

@@ -9,7 +9,8 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$REPO_ROOT"
 
-PROFILE="debug"
+PROFILE=""
+PROFILE_EXPLICIT=0
 TARGET_TRIPLE=""
 UNIVERSAL=0
 INSTALL_APP=0
@@ -22,13 +23,14 @@ usage() {
 Usage: scripts/package-macos.sh [options]
 
 Options:
-  --release                 Build the release bundle instead of debug.
+  --release                 Build the release bundle (default when --install is specified).
+  --debug                   Build the unoptimized debug bundle.
   --target TRIPLE           Build for a specific Rust target (for example aarch64-apple-darwin).
   --universal               Build arm64 and x86_64, then create one Universal 2 app (implies both targets).
   --with-mobile-web         Build/copy ../herdr-mobile/dist into the app bundle.
   --mobile-root PATH        Use PATH as the herdr-mobile repository (implies --with-mobile-web).
   --sign IDENTITY            Use this codesign identity (default: ad-hoc '-').
-  --install                 Copy the verified app to ${SHARDLANE_INSTALL_ROOT:-~/Applications}.
+  --install                 Copy the verified app to ${SHARDLANE_INSTALL_ROOT:-~/Applications} (defaults to release).
   -h, --help                Show this help.
 
 The package name, app name, bundle identifier, and icon are configured in
@@ -40,6 +42,12 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --release)
       PROFILE="release"
+      PROFILE_EXPLICIT=1
+      shift
+      ;;
+    --debug)
+      PROFILE="debug"
+      PROFILE_EXPLICIT=1
       shift
       ;;
     --target)
@@ -81,6 +89,14 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+if [[ "$PROFILE_EXPLICIT" -eq 0 ]]; then
+  if [[ "$INSTALL_APP" -eq 1 ]]; then
+    PROFILE="release"
+  else
+    PROFILE="debug"
+  fi
+fi
 
 if [[ "$(uname -s)" != "Darwin" ]]; then
   echo "Error: macOS packaging requires Darwin (cargo-bundle --format osx)." >&2
