@@ -295,19 +295,16 @@ pub fn continue_history_conversation<R: AgentLaunchRuntime, P: ProjectPreparatio
                         deps.delivery,
                         &request.operation_id,
                         &text,
-                    );
-                    match submission {
-                        Ok(submission) => Some(submission.disposition),
-                        // C07: `submit_conversation_prompt` returns a Blocked
-                        // agent as `Ok(disposition: NeedsTerminal)` — the
-                        // old substring arm (`Invalid(msg) if
-                        // msg.contains("blocked")`) was dead, since
-                        // `prompt_disposition_for_agent` settles NeedsTerminal
-                        // before any error path and every typed rejection
-                        // carries its own variant. Unknown states surface as
-                        // `Invalid` and propagate unchanged.
-                        Err(error) => return Err(error),
-                    }
+                    )?;
+                    // C07: `submit_conversation_prompt` returns a Blocked
+                    // agent as `Ok(disposition: NeedsTerminal)` — the
+                    // old substring arm (`Invalid(msg) if
+                    // msg.contains("blocked")`) was dead, since
+                    // `prompt_disposition_for_agent` settles NeedsTerminal
+                    // before any error path and every typed rejection
+                    // carries its own variant. Unknown states surface as
+                    // `Invalid` and propagate unchanged.
+                    Some(submission.disposition)
                 }
             };
             Ok(ContinuationResult::ReusedLive {
