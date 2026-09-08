@@ -36,13 +36,13 @@ jobs:
           test -d "$APP/Contents/MacOS"
           test -x "$APP/Contents/MacOS/shardlane"
           ARCHS="$(lipo -archs "$APP/Contents/MacOS/shardlane")"
-          [[ " $ARCHS " == *" arm64 "*" ]]
-          [[ " $ARCHS " == *" x86_64 "*" ]]
+          [[ " $ARCHS " == *" arm64 "* ]] || exit 1
+          [[ " $ARCHS " == *" x86_64 "* ]] || exit 1
           while IFS= read -r -d '' member; do
             if [[ "$(file -b "$member")" == *Mach-O* ]]; then
               MEMBER_ARCHS="$(lipo -archs "$member")"
-              [[ " $MEMBER_ARCHS " == *" arm64 "*" ]]
-              [[ " $MEMBER_ARCHS " == *" x86_64 "*" ]]
+              [[ " $MEMBER_ARCHS " == *" arm64 "* ]] || exit 1
+              [[ " $MEMBER_ARCHS " == *" x86_64 "* ]] || exit 1
             fi
           done < <(find "$APP" -type f -print0)
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Contents/Info.plist")" = "dev.shardlane.app"
