@@ -302,11 +302,10 @@ impl ShardlaneApp {
             }
             let dominant = by_background.into_iter().max_by_key(|(_, cells)| *cells);
             let (dominant_bg, dominant_cells) = dominant.unwrap_or((0, 0));
-            let dominant_permille = if total_cells == 0 {
-                0
-            } else {
-                dominant_cells.saturating_mul(1_000) / total_cells
-            };
+            let dominant_permille = dominant_cells
+                .saturating_mul(1_000)
+                .checked_div(total_cells)
+                .unwrap_or(0);
             crate::terminal_trace::event(format_args!(
                 "stage=frame.bg_stats rows={} default_fg={:06x} default_bg={:06x} surface_bg={:06x} surface_retained={retained_surface_background} total_cells={total_cells} explicit_cells={explicit_cells} dominant_bg={dominant_bg:06x} dominant_cells={dominant_cells} dominant_permille={dominant_permille}",
                 frame.lines.len(),
