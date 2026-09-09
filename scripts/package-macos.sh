@@ -2,8 +2,8 @@
 set -euo pipefail
 
 # [INPUT]: Cargo workspace, cargo-bundle 0.11.0, optional herdr-mobile repository; Universal 2 requires both Rust macOS targets
-# [OUTPUT]: A signed and verified Shardlane.app, optionally copied to ~/Applications; the Universal 2 artifact contains both arm64 and x86_64
-# [POS]: macOS packaging/install orchestration entry point; identity configuration remains solely owned by Cargo.toml, and signing happens only after the Universal merge
+# [OUTPUT]: A signed and verified Shardlane.app, optionally copied to ~/Applications; the bundle icon is force-rebuilt from assets/app-icon via iconutil, and the Universal 2 artifact contains both arm64 and x86_64
+# [POS]: macOS packaging/install orchestration entry point; identity configuration remains solely owned by Cargo.toml, signing happens only after the Universal merge and the icon rebuild
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -222,6 +222,31 @@ fi
 
 # Notes/Bookmarks/Annotation were deleted (2026-08-27 TUI-only convergence):
 # no built-in web editor/bridge assets are packaged anymore; Mobile Web is the only optional web bundle.
+
+# ---- Bundle icon: force-rebuild from the repo ladder (single source of truth) ----
+# cargo-bundle's generated ICNS has drifted from assets/app-icon before; rebuild
+# Contents/Resources/Shardlane.icns from the reviewed ladder via iconutil so the
+# packaged icon always equals the artwork in the repository.
+ICONSET_DIR="$BUNDLE_DIR/Shardlane.iconset"
+mkdir -p "$ICONSET_DIR"
+LADDER_DIR="$REPO_ROOT/assets/app-icon"
+cp "$LADDER_DIR/shardlane-16.png"     "$ICONSET_DIR/icon_16x16.png"
+cp "$LADDER_DIR/shardlane-16@2x.png"  "$ICONSET_DIR/icon_16x16@2x.png"
+cp "$LADDER_DIR/shardlane-32.png"     "$ICONSET_DIR/icon_32x32.png"
+cp "$LADDER_DIR/shardlane-32@2x.png"  "$ICONSET_DIR/icon_32x32@2x.png"
+cp "$LADDER_DIR/shardlane-128.png"    "$ICONSET_DIR/icon_128x128.png"
+cp "$LADDER_DIR/shardlane-128@2x.png" "$ICONSET_DIR/icon_128x128@2x.png"
+cp "$LADDER_DIR/shardlane-256.png"    "$ICONSET_DIR/icon_256x256.png"
+cp "$LADDER_DIR/shardlane-256@2x.png" "$ICONSET_DIR/icon_256x256@2x.png"
+cp "$LADDER_DIR/shardlane-512.png"    "$ICONSET_DIR/icon_512x512.png"
+cp "$LADDER_DIR/shardlane-512@2x.png" "$ICONSET_DIR/icon_512x512@2x.png"
+DEST_ICNS="$APP_PATH/Contents/Resources/Shardlane.icns"
+iconutil -c icns -o "$DEST_ICNS" "$ICONSET_DIR" || {
+  echo "Error: iconutil could not rebuild $DEST_ICNS" >&2
+  exit 1
+}
+rm -rf "$ICONSET_DIR"
+echo "Rebuilt bundle icon from assets/app-icon ladder: $DEST_ICNS"
 
 PLIST="$APP_PATH/Contents/Info.plist"
 ICON="$(find "$APP_PATH/Contents/Resources" -maxdepth 1 -type f -name '*.icns' -print -quit 2>/dev/null || true)"

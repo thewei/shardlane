@@ -5800,7 +5800,7 @@ dependencies = [
 
 [[package]]
 name = "shardlane"
-version = "0.1.12"
+version = "0.1.13"
 dependencies = [
  "anyhow",
  "async-channel 2.5.0",
