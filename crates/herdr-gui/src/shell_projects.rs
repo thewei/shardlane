@@ -583,6 +583,7 @@ impl ShardlaneApp {
             self.select_new_agent_project(workspace_id, window, cx);
         }
         self.sync_right_panel_for_project_context(cx);
+        self.persist_current_workspace_state(cx);
     }
 
     /// Native-tab placement (`terminal.tab_bar_placement`): a Sidebar Project click focuses the

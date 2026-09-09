@@ -402,6 +402,8 @@ impl UuycConnection {
     }
 
     fn default_pane(&self) -> Pane {
+        let (agent, agent_status) =
+            crate::agent_hooks::sniff_agent_from_process_and_title(None, Some(&self.session));
         Pane {
             pane_id: format!("{}-pane-0", self.session),
             terminal_id: None,
@@ -411,19 +413,32 @@ impl UuycConnection {
             title: Some(self.session.clone()),
             terminal_title: None,
             cwd: None,
-            agent_status: None,
-            agent: None,
+            agent_status,
+            agent,
             focused: true,
             scroll: None,
         }
     }
 
     fn default_layout(&self) -> PaneLayout {
+        let (cols, rows) = self
+            .stream
+            .lock()
+            .ok()
+            .and_then(|guard| {
+                guard.as_ref().map(|s| {
+                    (
+                        s.cols.load(Ordering::Relaxed) as u16,
+                        s.rows.load(Ordering::Relaxed) as u16,
+                    )
+                })
+            })
+            .unwrap_or((80, 24));
         let rect = crate::herdr::LayoutRect {
             x: 0,
             y: 0,
-            width: 80,
-            height: 24,
+            width: cols.into(),
+            height: rows.into(),
         };
         PaneLayout {
             tab_id: format!("{}-tab-0", self.session),
@@ -520,7 +535,22 @@ impl MultiplexerConnection for UuycConnection {
     }
 
     fn agents(&self) -> Result<Vec<Agent>, MuxError> {
-        Ok(Vec::new())
+        let pane = self.default_pane();
+        if let Some(agent_name) = pane.agent {
+            Ok(vec![Agent {
+                terminal_id: pane.pane_id.clone(),
+                agent: Some(agent_name),
+                workspace_id: pane.workspace_id,
+                tab_id: pane.tab_id,
+                pane_id: Some(pane.pane_id),
+                focused: pane.focused,
+                agent_status: pane.agent_status,
+                cwd: pane.cwd,
+                ..Default::default()
+            }])
+        } else {
+            Ok(Vec::new())
+        }
     }
 
     fn subscribe_events(&self) -> Result<async_channel::Receiver<super::MuxEvent>, MuxError> {
@@ -735,6 +765,14 @@ impl UuycAttachStream {
         builder.arg("attach");
         builder.arg(session);
         builder.env("TERM", "xterm-256color");
+        let lang = std::env::var("LANG").unwrap_or_else(|_| "en_US.UTF-8".to_string());
+        let lang = if lang.to_lowercase().contains("utf") {
+            lang
+        } else {
+            "en_US.UTF-8".to_string()
+        };
+        builder.env("LANG", &lang);
+        builder.env("LC_ALL", &lang);
 
         let child = pair
             .slave
@@ -1042,6 +1080,52 @@ mod tests {
             conn.subscribe_events(),
             Err(MuxError::Unsupported("events_push"))
         ));
+    }
+
+    #[test]
+    fn uuyc_layout_reflects_actual_geometry() {
+        let conn = UuycConnection::new("geom_test".to_string());
+        // Default when no stream is attached is 80x24
+        let layout = conn.default_layout();
+        assert_eq!(layout.area.width, 80);
+        assert_eq!(layout.area.height, 24);
+
+        // When a stream exists, default_layout reads its dynamic cols/rows
+        let (events, _) = broadcast::channel(16);
+        let mock_stream = Arc::new(UuycAttachStream {
+            id: "mock".to_string(),
+            master: Mutex::new(
+                portable_pty::native_pty_system()
+                    .openpty(portable_pty::PtySize {
+                        rows: 45,
+                        cols: 130,
+                        pixel_width: 0,
+                        pixel_height: 0,
+                    })
+                    .unwrap()
+                    .master,
+            ),
+            writer: Mutex::new(Box::new(std::io::sink())),
+            child: Mutex::new(None),
+            events,
+            revision: AtomicU64::new(0),
+            cols: AtomicU64::new(130),
+            rows: AtomicU64::new(45),
+            stopped: AtomicBool::new(false),
+        });
+        *conn.stream.lock().unwrap() = Some(mock_stream);
+
+        let dynamic_layout = conn.default_layout();
+        assert_eq!(dynamic_layout.area.width, 130);
+        assert_eq!(dynamic_layout.area.height, 45);
+        assert_eq!(dynamic_layout.panes[0].rect.width, 130);
+        assert_eq!(dynamic_layout.panes[0].rect.height, 45);
+
+        let surface_state = conn
+            .tab_surface_state("geom_test", "geom_test-tab-0")
+            .unwrap();
+        assert_eq!(surface_state.layouts[0].area.width, 130);
+        assert_eq!(surface_state.layouts[0].area.height, 45);
     }
 
     #[test]

@@ -8,6 +8,7 @@
 rust_i18n::i18n!("crates/herdr-gui/locales", fallback = "en");
 
 mod agent_cli;
+mod agent_hook_settings;
 mod agent_switcher;
 mod agent_ui;
 mod assets;
@@ -267,6 +268,7 @@ enum SettingsSection {
     Behavior,
     Window,
     Providers,
+    AgentHooks,
     // Skill: agent-facing skill installer; grouped with Providers (agent ecosystem).
     Skill,
     Mobile,
@@ -276,7 +278,7 @@ enum SettingsSection {
 impl SettingsSection {
     // Audit E24: Providers sits before Mobile/Browser — it decides whether New Task/History
     // can work at all, so it outranks the secondary mobile/browser surfaces in the sidebar.
-    const ALL: [Self; 10] = [
+    const ALL: [Self; 11] = [
         Self::Appearance,
         Self::Terminal,
         Self::Lazygit,
@@ -284,6 +286,7 @@ impl SettingsSection {
         Self::Behavior,
         Self::Window,
         Self::Providers,
+        Self::AgentHooks,
         Self::Skill,
         Self::Mobile,
         Self::Browser,
@@ -298,6 +301,7 @@ impl SettingsSection {
             Self::Behavior => i18n::t("settings.section.behavior"),
             Self::Window => i18n::t("settings.section.window"),
             Self::Providers => i18n::t("settings.section.providers"),
+            Self::AgentHooks => i18n::t("settings.section.agent_hooks"),
             Self::Skill => i18n::t("settings.section.skill"),
             Self::Mobile => i18n::t("settings.section.mobile"),
             Self::Browser => i18n::t("settings.section.browser"),
@@ -316,6 +320,7 @@ impl SettingsSection {
             Self::Behavior => gpui_component::Icon::new(ComponentIconName::Settings2),
             Self::Window => gpui_component::Icon::new(ComponentIconName::Frame),
             Self::Providers => gpui_component::Icon::new(ComponentIconName::Bot),
+            Self::AgentHooks => gpui_component::Icon::new(ComponentIconName::SquareTerminal),
             Self::Skill => gpui_component::Icon::new(ComponentIconName::BookOpen),
             Self::Mobile => gpui_component::Icon::empty().path("icons/smartphone.svg"),
             Self::Browser => gpui_component::Icon::new(ComponentIconName::Globe),
@@ -1247,6 +1252,9 @@ pub(crate) struct ShellSharedRuntime {
     /// Live window registry (weak views) for app-level routing: keystrokes, status-bar and
     /// notification clicks must land in the entity that owns the receiving window.
     pub(crate) windows: std::sync::Mutex<Vec<ShellWindowRecord>>,
+    /// Process-wide Agent Hook IPC Server listening for local hook status reports.
+    pub(crate) agent_hook_server:
+        std::sync::Mutex<Option<std::sync::Arc<shardlane_host::AgentHookIpcServer>>>,
 }
 
 /// `StatusBarController` owns a `Retained<NSStatusItem>` (main-thread AppKit),
@@ -1272,11 +1280,16 @@ impl ShellSharedRuntime {
         std::sync::Arc<Self>,
         async_channel::Receiver<status_bar::StatusBarAction>,
         async_channel::Receiver<notifications::NotificationAction>,
+        async_channel::Receiver<shardlane_host::AgentHookReport>,
     ) {
         let (status_bar_tx, status_bar_rx) = async_channel::unbounded();
         let status_bar = status_bar::StatusBarController::new(status_bar_tx);
         let (notification_tx, notification_rx) = async_channel::unbounded();
         notifications::attach_action_sender(notification_tx);
+        let (agent_hook_tx, agent_hook_rx) = async_channel::unbounded();
+        let agent_hook_server = shardlane_host::AgentHookIpcServer::default_socket_path()
+            .and_then(|path| shardlane_host::AgentHookIpcServer::start(path, agent_hook_tx).ok())
+            .map(std::sync::Arc::new);
         // The queue view reads the same queue truth the coordinator delivers from.
         let delivery_queue = shardlane_host::ConversationDeliveryCoordinator::new(
             std::sync::Arc::new(shardlane_host::ConversationFollowUpQueue::new()),
@@ -1307,9 +1320,10 @@ impl ShellSharedRuntime {
             remote_sessions: std::sync::Mutex::new(std::collections::HashMap::new()),
             project_windows: std::sync::Mutex::new(std::collections::HashMap::new()),
             windows: std::sync::Mutex::new(Vec::new()),
+            agent_hook_server: std::sync::Mutex::new(agent_hook_server),
         });
         runtime.refresh_instances();
-        (runtime, status_bar_rx, notification_rx)
+        (runtime, status_bar_rx, notification_rx, agent_hook_rx)
     }
 
     pub(crate) fn register_window(&self, handle: AnyWindowHandle, view: WeakEntity<ShardlaneApp>) {
@@ -1336,6 +1350,14 @@ impl ShellSharedRuntime {
     pub(crate) fn window_view(&self, id: WindowId) -> Option<Entity<ShardlaneApp>> {
         self.window_record(id)
             .and_then(|record| record.view.upgrade())
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn agent_hook_socket_path(&self) -> Option<std::path::PathBuf> {
+        self.agent_hook_server
+            .lock()
+            .ok()
+            .and_then(|guard| guard.as_ref().map(|s| s.socket_path().to_path_buf()))
     }
 
     /// The window currently displaying `project_id`, if that window still lives.
@@ -1526,6 +1548,8 @@ struct ShardlaneApp {
     pub(crate) shortcut_recording: Option<shortcuts::ShortcutId>,
     /// Settings → Skill 面板最近一次安装/卸载失败的提示；成功操作自然清除。
     skill_notice: Option<String>,
+    /// Settings → Agent Hooks 面板最近一次安装/卸载失败的提示；成功操作自然清除。
+    pub(crate) agent_hook_notice: Option<String>,
     /// Active project git status snapshot (consumed by the header's +/- pill and Info popover; 12s freshness).
     git_status: Option<git_status::GitStatusSnapshot>,
     /// Per-project git snapshots for the visible Sidebar Projects (bounded by
@@ -1847,6 +1871,15 @@ impl SidebarPane {
         expanded
     }
 
+    fn expanded_projects(&self) -> Vec<String> {
+        self.expanded_projects.iter().cloned().collect()
+    }
+
+    fn set_expanded_projects(&mut self, expanded: Vec<String>, cx: &mut Context<Self>) {
+        self.expanded_projects = expanded.into_iter().collect();
+        cx.notify();
+    }
+
     fn begin_project_pane_load(&mut self, workspace_id: &str) -> bool {
         !self.panes_by_project.contains_key(workspace_id)
             && self
@@ -2033,6 +2066,30 @@ fn notification_targets_view(
 /// Status-bar actions are process-scoped: every window can serve them.
 fn status_bar_targets_view(_: &ShardlaneApp, _: &status_bar::StatusBarAction) -> bool {
     true
+}
+
+fn agent_hook_targets_view(view: &ShardlaneApp, report: &shardlane_host::AgentHookReport) -> bool {
+    if let Some(target) = report.resolved_pane_id() {
+        if view
+            .state
+            .panes
+            .iter()
+            .any(|p| p.pane_id == target || p.terminal_id.as_deref() == Some(target))
+        {
+            return true;
+        }
+    }
+    if let Some(cwd) = &report.cwd {
+        if view
+            .state
+            .panes
+            .iter()
+            .any(|p| p.cwd.as_deref() == Some(cwd.as_str()))
+        {
+            return true;
+        }
+    }
+    false
 }
 
 fn terminal_background_is_dark(color: u32) -> bool {
@@ -2297,6 +2354,7 @@ impl ShardlaneApp {
         ));
         config_subscriptions.push(cx.on_app_quit(|this, cx| {
             this.sync_open_workspaces(cx);
+            this.shared.tui_registry.stop_all_managers();
             this.save_config();
             async {}
         }));
@@ -2407,6 +2465,7 @@ impl ShardlaneApp {
             settings_section: SettingsSection::default(),
             settings_provider_detail: None,
             skill_notice: None,
+            agent_hook_notice: None,
             mobile_port_input: None,
             mobile_port_subscription: None,
             browser_confirm: None,
@@ -2633,8 +2692,8 @@ impl ShardlaneApp {
     /// Single-window model: persists this window's bound workspace snapshot.
     /// Since the application strictly runs with one window, exactly one (or zero if unbound)
     /// record is persisted, completely eliminating duplicate/ghost window leakage.
-    pub(crate) fn sync_open_workspaces(&self, _cx: &mut App) {
-        self.persist_current_workspace_state();
+    pub(crate) fn sync_open_workspaces(&self, cx: &mut App) {
+        self.persist_current_workspace_state(cx);
         let mut records = Vec::new();
         if let Some(record) = self.open_workspace_record() {
             records.push(record);
@@ -2840,14 +2899,14 @@ impl ShardlaneApp {
                             for ws_id in ws_ids {
                                 view.load_sidebar_project_panes(ws_id, cx);
                             }
-                            view.ensure_tui_surface(window, cx, true);
                             view.notify_sidebar(cx);
                             view.notify_status_bar();
-                            view.sync_open_workspaces(cx);
                             // Restore-on-bind: re-apply the persisted per-instance
-                            // UI state (last tab, chat mode, right panel) once the
-                            // runtime snapshot landed.
+                            // UI state (last tab, last pane, sidebar expansion, chat mode, right panel)
+                            // before sync_open_workspaces and ensure_tui_surface so we immediately land on the right target.
                             view.restore_workspace_state(window, cx);
+                            view.ensure_tui_surface(window, cx, true);
+                            view.sync_open_workspaces(cx);
                             // Refresh the shared instance cache off the UI thread
                             // so the workspace switcher's running/停止 states
                             // reflect the instance this window just (re)started.
@@ -2885,7 +2944,7 @@ impl ShardlaneApp {
     pub(crate) fn teardown_binding(&mut self, cx: &mut Context<Self>) {
         // Capture the OUTGOING instance's UI state before anything is cleared —
         // this single point covers switch-away, rebind, and quit.
-        self.persist_current_workspace_state();
+        self.persist_current_workspace_state(cx);
         if let Some(binding) = self.binding.take() {
             if let Some(id) = self.window_handle.as_ref().map(|handle| handle.window_id()) {
                 self.shared.clear_project_window(&binding.project_id, id);
@@ -3047,6 +3106,7 @@ impl ShardlaneApp {
     }
 
     fn quit(&mut self, _: &Quit, _window: &mut Window, cx: &mut Context<Self>) {
+        self.shared.tui_registry.stop_all_managers();
         cx.quit();
     }
 
@@ -3923,7 +3983,7 @@ fn main() {
 
         // Process-wide services: one status-bar item, one notification action
         // channel, one per-instance TUI manager registry, one display-name map.
-        let (shared, status_bar_rx, notification_rx) = ShellSharedRuntime::new();
+        let (shared, status_bar_rx, notification_rx, agent_hook_rx) = ShellSharedRuntime::new();
         if let Ok(mut guard) = reopen_shared.lock() {
             *guard = Some(shared.clone());
         }
@@ -3940,6 +4000,13 @@ fn main() {
             notification_rx,
             ShardlaneApp::handle_notification_action,
             notification_targets_view,
+        );
+        spawn_global_action_consumer(
+            cx,
+            shared.clone(),
+            agent_hook_rx,
+            ShardlaneApp::handle_agent_hook_action,
+            agent_hook_targets_view,
         );
 
         // A1: reap unwatched per-instance TUI children. `reap_idle` only stops
@@ -4344,6 +4411,10 @@ fn poll_managed_terminal(
                             let drained = managed.drain_frames_budgeted(
                                 terminal_drain_budget_bytes(recent_user_input),
                             );
+                            let hook_reports = managed.take_pending_agent_reports();
+                            for report in hook_reports {
+                                view.handle_agent_hook_report(report, cx);
+                            }
                             if drained.consumed {
                                 active = true;
                                 drains_window = drains_window.wrapping_add(1);

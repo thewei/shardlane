@@ -158,6 +158,9 @@ impl ShardlaneApp {
         self.terminal_pending_frame = false;
         self.tui_adopted_grid = None;
         self.terminal_poll_wake = None;
+        self.tui_chrome_projection = crate::herdr_tui::TuiChromeProjection::default();
+        self.terminal_frame_projection = crate::herdr_tui::TuiChromeProjection::default();
+        self.tui_chrome_last_probe = None;
         if reset_surface {
             self.terminal_surface_size = None;
             self.set_terminal_frame(Arc::new(TerminalFrame::default()), None, cx);

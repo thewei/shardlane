@@ -205,6 +205,18 @@ fn herdr_osc_default_colors_flow_into_terminal_frame() {
 }
 
 #[test]
+fn test_special_prompt_and_agent_glyphs_extraction() {
+    let runtime = GhosttyRuntime::detect().unwrap_or_else(|error| panic!("{error}"));
+    let api = runtime.load_api().unwrap_or_else(|error| panic!("{error}"));
+    let mut terminal = GhosttyTerminal::new(api, 20, 4).unwrap_or_else(|error| panic!("{error}"));
+    terminal.write("❯ ⏵⏵".as_bytes());
+    let frame = terminal.frame().unwrap_or_else(|error| panic!("{error}"));
+    let line = &frame.lines[0];
+    assert!(line.runs.iter().any(|run| run.text.contains('❯')));
+    assert!(line.runs.iter().any(|run| run.text.contains('⏵')));
+}
+
+#[test]
 fn set_dynamic_colors_seeds_model_defaults_without_registering_queries() {
     let runtime = GhosttyRuntime::detect().unwrap_or_else(|error| panic!("{error}"));
     let api = runtime.load_api().unwrap_or_else(|error| panic!("{error}"));

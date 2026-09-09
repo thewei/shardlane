@@ -14,6 +14,7 @@ settings:
     behavior: Behavior
     window: Window
     providers: Providers
+    agent_hooks: Agent Hooks
     skill: Skill
     mobile: Mobile
     browser: Browser
@@ -33,6 +34,19 @@ settings:
     notice_auto_both: 'Both selections are used: the light theme in light appearance, the dark theme in dark appearance.'
     language_title: Language
     language_subtitle: Interface language for Shardlane's native shell. Additional languages will arrive in future releases.
+  agent_hooks:
+    overview_title: Agent Status Sniffing & Hooks
+    overview_body: Autonomous lifecycle hook manager for coding agents across Herdr, tmux, and remote tmux. Automatically intercepts Working, Idle, Blocked, and Released events with 4-tier degradation (Hooks → Herdr Native → Process/Title Sniffing → Silent Fallback).
+    ipc_title: Status IPC Channel
+    ipc_active: "Active: ~/.shardlane/run/agent-status.sock"
+    state_installed: Installed (up to date)
+    state_outdated: Installed (outdated; click to refresh)
+    state_not_installed: Not integrated
+    state_herdr_managed: Herdr official hook detected (click Integrate to upgrade for tmux/remote)
+    state_unsupported: Unsupported
+    action_install: Integrate
+    action_refresh: Update
+    action_uninstall: Remove
   skill:
     overview_title: Shardlane Agent Skill
     overview_body: Installs a skill file named `shardlane` that teaches coding agents the read-only `shardlane` CLI (Workspaces, Projects, live agents) and the exact HERDR_SESSION targeting rules for managing them through the herdr CLI. Herdr stays the single runtime authority.

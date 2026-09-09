@@ -11,11 +11,14 @@ impl ShardlaneApp {
     /// Builds the durable per-instance record from the LIVE bound instance.
     /// Client-owned presentation only: no tab/pane layout, no cwd, no
     /// scrollback — Herdr's session.json is the sole runtime authority.
-    fn current_workspace_state_record(&self) -> Option<settings::WorkspaceStateRecord> {
+    fn current_workspace_state_record(&self, cx: &App) -> Option<settings::WorkspaceStateRecord> {
         self.bound_project()?;
         let surfaces = self.right_panel.surfaces.clone();
+        let expanded_projects = self.sidebar_pane.read(cx).expanded_projects();
         Some(settings::WorkspaceStateRecord {
             focused_tab_id: self.state.focused_tab_id.clone(),
+            focused_pane_id: self.state.focused_pane_id.clone(),
+            expanded_projects,
             chat_mode: self.chat.model.mode == crate::chat::WorkSurfaceMode::Chat,
             right_panel: Some(settings::RightPanelStateRecord {
                 open: self.right_panel.open,
@@ -37,11 +40,11 @@ impl ShardlaneApp {
     /// Write-through: persists the CURRENT bound instance's UI state into
     /// config.json. Cheap (small JSON, load-modify-save) and only called from
     /// low-frequency user actions (navigation, panel toggles, unbind, quit).
-    pub(crate) fn persist_current_workspace_state(&self) {
+    pub(crate) fn persist_current_workspace_state(&self, cx: &App) {
         let Some(binding) = self.bound_project() else {
             return;
         };
-        let Some(record) = self.current_workspace_state_record() else {
+        let Some(record) = self.current_workspace_state_record(cx) else {
             return;
         };
         settings::ApplicationConfig::persist_workspace_state(binding.project_id.clone(), record);
@@ -76,7 +79,23 @@ impl ShardlaneApp {
                 }
             }
         }
-        // (b) Chat presentation mode: only when a supported agent is focused,
+        // (c) Last focused pane, if different from the tab's default focus.
+        if let Some(pane_id) = record.focused_pane_id {
+            if let Some(target_pane) = self.state.panes.iter().find(|p| p.pane_id == pane_id) {
+                if self.state.focused_pane_id.as_deref() != Some(pane_id.as_str()) {
+                    let ws_id = target_pane.workspace_id.clone();
+                    let t_id = target_pane.tab_id.clone();
+                    self.apply_focus_intent(FocusIntent::pane(ws_id, t_id, pane_id), window, cx);
+                }
+            }
+        }
+        // (d) Sidebar project expansion state for this session.
+        if !record.expanded_projects.is_empty() {
+            let expanded = record.expanded_projects.clone();
+            self.sidebar_pane
+                .update(cx, |sp, sp_cx| sp.set_expanded_projects(expanded, sp_cx));
+        }
+        // (e) Chat presentation mode: only when a supported agent is focused,
         // and only while the current presentation is Terminal.
         if record.chat_mode
             && self.chat.model.mode == crate::chat::WorkSurfaceMode::Terminal
@@ -86,7 +105,7 @@ impl ShardlaneApp {
             self.ensure_chat_source(cx);
             self.start_chat_sync_worker(cx);
         }
-        // (c) Right panel chrome/content. Register the snapshot under the
+        // (f) Right panel chrome/content. Register the snapshot under the
         // current runtime id too, so the first project-context sync is a
         // no-op instead of wiping the restored panel with a fresh default.
         if let Some(rp) = record.right_panel {

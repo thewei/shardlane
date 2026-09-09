@@ -6,6 +6,7 @@
 //! `herdr` module's typed RPC wrappers and the `AgentRuntime` SPI implementation.
 //!
 
+pub mod agent_hooks;
 pub mod agent_insight;
 pub mod agent_integrations;
 pub mod agent_launch;
@@ -36,6 +37,11 @@ pub mod services;
 pub mod shared_tui;
 pub mod workspace_config;
 
+pub use agent_hooks::{
+    parse_osc_agent_status, sniff_agent_from_process_and_title, AgentHookIpcServer, AgentHookMeta,
+    AgentHookRegistry, AgentHookReport, HookActionOutcome, HookError, HookInstallStatus,
+    CURRENT_HOOK_VERSION, DEFAULT_SOCKET_NAME,
+};
 pub use agent_insight::*;
 pub use agent_integrations::*;
 pub use agent_launch::*;

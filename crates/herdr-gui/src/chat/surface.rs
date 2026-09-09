@@ -276,7 +276,7 @@ impl ShardlaneApp {
             self.chat.sync_job = None;
             self.chat.prompt_focused = false;
         }
-        self.persist_current_workspace_state();
+        self.persist_current_workspace_state(cx);
         cx.notify();
     }
 

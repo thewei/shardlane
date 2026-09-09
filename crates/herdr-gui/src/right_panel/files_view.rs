@@ -103,7 +103,7 @@ impl ShardlaneApp {
                                 this.right_panel.files_expanded_paths.insert(abs_clone);
                             }
                             this.refresh_right_panel_working_tree(cx);
-                            this.persist_current_workspace_state();
+                            this.persist_current_workspace_state(cx);
                         } else {
                             // 2026-09-03: file preview moved to the full-content
                             // surface (covers the hosted TUI, keeps it alive).

@@ -120,6 +120,10 @@ impl ShardlaneApp {
     /// `reimpose=false` is the shared-geometry adoption path (another viewer resized the
     /// global session): update only the crop — re-imposing our compensated grid here
     /// would fight the viewer that owns the new global geometry (last writer wins).
+    pub(super) fn is_herdr_binding(&self) -> bool {
+        self.binding.as_ref().is_none_or(|b| b.backend == "herdr")
+    }
+
     pub(super) fn apply_tui_chrome_area(
         &mut self,
         area: LayoutRect,
@@ -127,6 +131,14 @@ impl ShardlaneApp {
         cx: &mut Context<Self>,
     ) -> bool {
         if self.terminal_target.as_deref() != Some(herdr_tui::TUI_TARGET) {
+            return false;
+        }
+        if !self.is_herdr_binding() {
+            if !self.tui_chrome_projection.is_empty() {
+                self.tui_chrome_projection = herdr_tui::TuiChromeProjection::default();
+                let raw_frame = self.terminal_raw_frame.clone();
+                self.set_terminal_frame(raw_frame, None, cx);
+            }
             return false;
         }
         let Some(visible) = self.terminal_surface_size.or(self.terminal_size) else {
@@ -212,11 +224,13 @@ impl ShardlaneApp {
         cx: &mut Context<Self>,
     ) {
         self.terminal_size = None;
-        if let Some(pane_id) = probe_pane_id {
-            self.schedule_tui_chrome_probe(Some(pane_id), true, cx);
-        } else {
-            self.resize_main_terminal_to_size(visible, cx);
+        if self.is_herdr_binding() {
+            if let Some(pane_id) = probe_pane_id {
+                self.schedule_tui_chrome_probe(Some(pane_id), true, cx);
+                return;
+            }
         }
+        self.resize_main_terminal_to_size(visible, cx);
     }
 
     /// Short-lived geometry probe used after host attach/focus. Layout updates remain the
@@ -228,6 +242,9 @@ impl ShardlaneApp {
         reimpose: bool,
         cx: &mut Context<Self>,
     ) {
+        if !self.is_herdr_binding() {
+            return;
+        }
         let Some(pane_id) = pane_id.or_else(|| self.state.focused_pane_id.clone()) else {
             return;
         };
@@ -274,6 +291,9 @@ impl ShardlaneApp {
         if self.binding.is_none() {
             return;
         }
+        if !self.is_herdr_binding() && self.client.is_none() {
+            return;
+        }
         if self.terminal.is_some() {
             return;
         }
@@ -300,6 +320,9 @@ impl ShardlaneApp {
     ) {
         // Unbound window: nothing to host (the Project picker is showing).
         if self.binding.is_none() {
+            return;
+        }
+        if !self.is_herdr_binding() && self.client.is_none() {
             return;
         }
         // Single surface: clean up multi-pane controller state (the TUI draws all panes itself).
@@ -459,11 +482,13 @@ impl ShardlaneApp {
                         // Attach bootstrap frame: no row plan (signatures were just seeded).
                         view.set_terminal_frame(Arc::new(frame), None, cx);
                         view.sync_terminal_application_focus(cx);
-                        view.schedule_tui_chrome_probe(
-                            view.state.focused_pane_id.clone(),
-                            true,
-                            cx,
-                        );
+                        if view.is_herdr_binding() {
+                            view.schedule_tui_chrome_probe(
+                                view.state.focused_pane_id.clone(),
+                                true,
+                                cx,
+                            );
+                        }
                         poll_managed_terminal(token, herdr_tui::TUI_TARGET.to_string(), wake, cx);
                     }
                     Err(err) => {
@@ -973,5 +998,20 @@ mod tests {
         assert!((residual + 2.0).abs() < 1e-9);
         // No dead zone: continued slow scrolling keeps emitting rows without ever resetting.
         assert_eq!(consume(&mut residual, -30.0), -1);
+    }
+
+    #[test]
+    fn non_herdr_backends_never_apply_tui_chrome_crop() {
+        // Verifies the invariant that non-herdr backends (uuyc, tmux) must never crop
+        // terminal frames via TuiChromeProjection, preventing empty/blank terminal regressions.
+        let uuyc_binding = crate::ProjectBinding {
+            project_id: "uuyc:session1".to_string(),
+            project_name: "UU Remote Terminal".to_string(),
+            socket_override: None,
+            backend: "uuyc",
+        };
+        assert_ne!(uuyc_binding.backend, "herdr");
+        assert_eq!(crate::herdr_tui::TuiChromeProjection::default().top, 0);
+        assert_eq!(crate::herdr_tui::TuiChromeProjection::default().right, 0);
     }
 }

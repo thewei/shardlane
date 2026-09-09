@@ -233,6 +233,47 @@ fn herdr_focus_facts_never_flip_client_navigation_selection() {
 }
 
 #[test]
+fn tmux_agent_status_patch_creates_agent_projection() {
+    let mut agent = Agent {
+        terminal_id: "%1".to_string(),
+        pane_id: Some("%1".to_string()),
+        agent: None,
+        agent_status: None,
+        ..Agent::default()
+    };
+    let mut pane = Pane {
+        pane_id: "%1".to_string(),
+        terminal_id: None,
+        workspace_id: Some("session-1".to_string()),
+        tab_id: Some("window-1".to_string()),
+        label: None,
+        title: None,
+        terminal_title: None,
+        cwd: None,
+        agent_status: None,
+        agent: None,
+        focused: true,
+        scroll: None,
+    };
+    let patch = AgentStatusPatch {
+        pane_id: "%1".to_string(),
+        workspace_id: "session-1".to_string(),
+        tab_id: Some(Some("window-1".to_string())),
+        agent: Some(Some("claude".to_string())),
+        display_agent: Some(Some("claude".to_string())),
+        agent_status: Some(Some("working".to_string())),
+        ..AgentStatusPatch::default()
+    };
+
+    assert!(apply_agent_projection_patch(&mut agent, &patch));
+    assert!(apply_pane_agent_projection_patch(&mut pane, &patch));
+    assert_eq!(agent.agent.as_deref(), Some("claude"));
+    assert_eq!(agent.agent_status.as_deref(), Some("working"));
+    assert_eq!(pane.agent.as_deref(), Some("claude"));
+    assert_eq!(pane.agent_status.as_deref(), Some("working"));
+}
+
+#[test]
 fn reconnect_backoff_grows_exponentially_then_caps() {
     // F19/F47: 0.5s → 1s → 2s → 4s → 8s → 15s (capped).
     assert_eq!(reconnect_backoff(0), Duration::from_millis(500));

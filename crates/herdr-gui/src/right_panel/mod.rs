@@ -224,7 +224,7 @@ impl ShardlaneApp {
                 self.ensure_lazygit_session(cx);
             }
         }
-        self.persist_current_workspace_state();
+        self.persist_current_workspace_state(cx);
         cx.notify();
     }
 
@@ -330,7 +330,7 @@ impl ShardlaneApp {
             self.stop_lazygit_session(cx);
         }
         self.refresh_right_panel_state(cx);
-        self.persist_current_workspace_state();
+        self.persist_current_workspace_state(cx);
         cx.notify();
     }
 
@@ -351,7 +351,7 @@ impl ShardlaneApp {
         } else {
             self.stop_lazygit_session(cx);
         }
-        self.persist_current_workspace_state();
+        self.persist_current_workspace_state(cx);
         cx.notify();
     }
 
@@ -421,7 +421,7 @@ impl ShardlaneApp {
                 self.stop_lazygit_session(cx);
             }
         }
-        self.persist_current_workspace_state();
+        self.persist_current_workspace_state(cx);
         cx.notify();
     }
 

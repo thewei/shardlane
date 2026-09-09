@@ -367,6 +367,16 @@ impl TerminalStream {
                 None => builder.env_remove(key),
             }
         }
+        if !command.get_envs().any(|(k, v)| k == "LANG" && v.is_some()) {
+            let lang = std::env::var("LANG").unwrap_or_else(|_| "en_US.UTF-8".to_string());
+            let lang = if lang.to_lowercase().contains("utf") {
+                lang
+            } else {
+                "en_US.UTF-8".to_string()
+            };
+            builder.env("LANG", &lang);
+            builder.env("LC_ALL", &lang);
+        }
         if let Some(cwd) = command.get_current_dir() {
             builder.cwd(cwd);
         }
@@ -670,6 +680,7 @@ pub struct ManagedTerminal {
     rows: u16,
     pixel_width: u16,
     pixel_height: u16,
+    pending_agent_reports: Vec<shardlane_host::AgentHookReport>,
 }
 
 impl ManagedTerminal {
@@ -694,6 +705,7 @@ impl ManagedTerminal {
             rows,
             pixel_width: 0,
             pixel_height: 0,
+            pending_agent_reports: Vec::new(),
         })
     }
 
@@ -718,6 +730,7 @@ impl ManagedTerminal {
             rows,
             pixel_width: 0,
             pixel_height: 0,
+            pending_agent_reports: Vec::new(),
         })
     }
 
@@ -730,10 +743,18 @@ impl ManagedTerminal {
         let trace_started = Instant::now();
         let frames = &self.stream.frames;
         let terminal = &mut self.terminal;
+        let pending_reports = &mut self.pending_agent_reports;
         let mut bells = 0_u64;
         let mut result = drain_frame_receiver_budgeted(
             frames,
             |frame_data| {
+                if frame_data.ansi_bytes.contains(&0x1b) {
+                    if let Some(report) =
+                        shardlane_host::parse_osc_agent_status(&frame_data.ansi_bytes)
+                    {
+                        pending_reports.push(report);
+                    }
+                }
                 terminal.write(&frame_data.ansi_bytes);
                 bells += terminal.take_pending_bells();
             },
@@ -771,6 +792,10 @@ impl ManagedTerminal {
     /// `frame_reusing` to skip deep grid comparisons.
     pub fn take_last_frame_plan(&mut self) -> TerminalFramePlan {
         self.terminal.take_last_frame_plan()
+    }
+
+    pub fn take_pending_agent_reports(&mut self) -> Vec<shardlane_host::AgentHookReport> {
+        std::mem::take(&mut self.pending_agent_reports)
     }
 
     pub fn input_handle(&self) -> TerminalControlInput {

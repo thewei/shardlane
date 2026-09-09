@@ -2283,6 +2283,14 @@ pub fn herdr_tui_command() -> Result<Command, String> {
     );
     command.env("TERM", "xterm-256color");
     command.env("COLORTERM", "truecolor");
+    let lang = env::var("LANG").unwrap_or_else(|_| "en_US.UTF-8".to_string());
+    let lang = if lang.to_lowercase().contains("utf") {
+        lang
+    } else {
+        "en_US.UTF-8".to_string()
+    };
+    command.env("LANG", &lang);
+    command.env("LC_ALL", &lang);
     Ok(command)
 }
 

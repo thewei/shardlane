@@ -86,13 +86,35 @@ impl TerminalGeometry {
 fn terminal_font(font_family: &str) -> Font {
     let mut terminal_font = font(font_family.to_string());
     terminal_font.features = FontFeatures::disable_ligatures();
-    // Keep terminal glyphs on system-installed fonts. Menlo/Monaco cover the normal
-    // monospace grid while Apple Symbols provides a reliable macOS fallback for block,
-    // box-drawing and miscellaneous terminal symbols without bundling private font files.
-    let fallbacks = ["Menlo", "Monaco", "Apple Symbols"]
-        .into_iter()
-        .filter(|fallback| *fallback != font_family)
-        .map(str::to_string)
+    // Comprehensive fallback chain for terminal glyphs:
+    // 1. Popular Nerd Font & coding symbol fonts (for Powerline, dev icons, ❯ prompts)
+    // 2. Monospace grid staples (Menlo, Monaco, Courier New)
+    // 3. Mathematical, technical, and special Unicode symbol fonts (STIX Two Math for ⏵ U+23F5, Apple Symbols, Arial Unicode MS)
+    // 4. CJK & Emoji fallbacks (PingFang SC, Hiragino Sans GB, Apple Color Emoji)
+    const CANDIDATE_FALLBACKS: &[&str] = &[
+        "Symbols Nerd Font Mono",
+        "Symbols Nerd Font",
+        "JetBrainsMono Nerd Font Mono",
+        "JetBrainsMono Nerd Font",
+        "Monaco Nerd Font Mono",
+        "Monaco Nerd Font",
+        "DroidSansMono Nerd Font",
+        "MesloLGS NF",
+        "Maple Mono",
+        "Menlo",
+        "Monaco",
+        "Courier New",
+        "STIX Two Math",
+        "Apple Symbols",
+        "Arial Unicode MS",
+        "PingFang SC",
+        "Hiragino Sans GB",
+        "Apple Color Emoji",
+    ];
+    let fallbacks = CANDIDATE_FALLBACKS
+        .iter()
+        .filter(|fallback| **fallback != font_family)
+        .map(|s| (*s).to_string())
         .collect();
     terminal_font.fallbacks = Some(FontFallbacks::from_fonts(fallbacks));
     terminal_font

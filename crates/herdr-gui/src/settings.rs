@@ -108,6 +108,13 @@ pub struct WorkspaceStateRecord {
     /// restart with different tab ids degrades silently to Herdr's own focus.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub focused_tab_id: Option<String>,
+    /// Last pane the client focused in this instance. Stale after a Herdr
+    /// restart degrades silently to Herdr's own focus.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub focused_pane_id: Option<String>,
+    /// Sidebar project collapsed/expanded state for this instance.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub expanded_projects: Vec<String>,
     /// Was the Chat presentation active when this instance was last visible?
     #[serde(default)]
     pub chat_mode: bool,
@@ -962,6 +969,30 @@ mod tests {
         assert_eq!(config.ui.window.width, 0.0);
         assert_eq!(config.ui.window.height, 0.0);
         assert_eq!(config.ui.window.opacity, 1.0);
+    }
+
+    #[test]
+    fn workspace_state_round_trips_expanded_projects_and_focus() {
+        let json = r#"{
+            "workspace_state": {
+                "default": {
+                    "focused_tab_id": "tab-1",
+                    "focused_pane_id": "pane-2",
+                    "expanded_projects": ["ws-1", "ws-2"],
+                    "chat_mode": false
+                }
+            }
+        }"#;
+        let config: ApplicationConfig = serde_json::from_str(json).unwrap();
+        let record = config.workspace_state.get("default").unwrap();
+        assert_eq!(record.focused_tab_id.as_deref(), Some("tab-1"));
+        assert_eq!(record.focused_pane_id.as_deref(), Some("pane-2"));
+        assert_eq!(record.expanded_projects, vec!["ws-1", "ws-2"]);
+        assert!(!record.chat_mode);
+
+        let serialized = serde_json::to_string(&config).unwrap();
+        let parsed: ApplicationConfig = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(parsed.workspace_state, config.workspace_state);
     }
 
     #[test]

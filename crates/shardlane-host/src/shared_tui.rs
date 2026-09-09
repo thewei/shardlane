@@ -428,26 +428,26 @@ impl HerdrTuiSession {
         (self.events.subscribe(), replay.to_vec())
     }
 
-    /// Freeze the capturing replay buffer at first use and hand every caller
+    /// Freeze the capturing replay buffer once non-empty and hand every caller
     /// the same immutable prefix.
     fn freeze_startup_replay(&self) -> Arc<[u8]> {
         let mut guard = self
             .startup_replay
             .lock()
             .unwrap_or_else(|poison| poison.into_inner());
-        if matches!(*guard, StartupReplay::Capturing(_)) {
-            let frozen = match std::mem::replace(
-                &mut *guard,
-                StartupReplay::Frozen(Arc::from(Vec::new())),
-            ) {
-                StartupReplay::Capturing(buffer) => Arc::from(buffer),
-                StartupReplay::Frozen(_) => unreachable!("matched Capturing above"),
-            };
-            *guard = StartupReplay::Frozen(frozen);
+        if let StartupReplay::Capturing(buffer) = &*guard {
+            // Only freeze once the child has actually produced startup output.
+            // When the initial subscriber connects right at spawn time before the OS child
+            // has written its first bytes to the PTY, freezing an empty buffer permanently
+            // drops all subsequent DECSET startup mode sequences (mouse capture, alt screen).
+            if !buffer.is_empty() {
+                let frozen = Arc::from(buffer.as_slice());
+                *guard = StartupReplay::Frozen(frozen);
+            }
         }
         match &*guard {
             StartupReplay::Frozen(bytes) => bytes.clone(),
-            StartupReplay::Capturing(_) => unreachable!("frozen above"),
+            StartupReplay::Capturing(buffer) => Arc::from(buffer.as_slice()),
         }
     }
 
@@ -846,17 +846,27 @@ impl TuiManagerRegistry {
 
     /// Reaps idle managers across every instance (remote reaper cadence).
     pub fn reap_idle_all(&self) {
-        let managers = self
+        let mut managers = self
             .managers
             .lock()
             .unwrap_or_else(|poison| poison.into_inner());
         for manager in managers.values() {
             manager.reap_idle();
         }
+        managers.retain(|_, manager| !manager.is_empty());
     }
 }
 
 impl TuiManager {
+    /// Returns true when this manager currently holds no running or terminating child.
+    pub fn is_empty(&self) -> bool {
+        let guard = self
+            .session
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner());
+        matches!(&*guard, TuiSlot::Empty)
+    }
+
     /// Idempotent open: return the existing running shared session, or spawn
     /// exactly one new child. A slot still `Terminating` (previous child not
     /// proven exited) fails closed instead of overlapping children (P0-09).
@@ -1571,6 +1581,42 @@ mod tests {
         assert_eq!(
             replay_third, replay,
             "post-freeze bytes must never enter the replay prefix"
+        );
+        manager.stop_all();
+    }
+
+    #[test]
+    fn startup_replay_does_not_freeze_on_empty_initial_subscription() {
+        let registry = Arc::new(TuiManagerRegistry::default());
+        let manager = registry.get_or_create(Some("test-startup-race"));
+        let session = manager
+            .open(80, 24, None)
+            .unwrap_or_else(|error| panic!("open shared session: {error}"));
+
+        // (1) First viewer attaches at spawn time before any PTY output arrives:
+        let (_rx, empty_replay) = session.subscribe_with_startup_replay();
+        assert!(
+            empty_replay.is_empty(),
+            "first subscriber at spawn time sees empty prefix"
+        );
+
+        // (2) OS child starts and outputs DECSET startup mode sequences:
+        let startup_marker = b"\x1b[?1049h\x1b[?1000h\x1b[?1006h\x1b[?2004h".to_vec();
+        session.publish_output(startup_marker.clone());
+
+        // (3) Second viewer attaches (e.g. after switching sessions and switching back):
+        let (_rx2, second_replay) = session.subscribe_with_startup_replay();
+        assert!(
+            second_replay.ends_with(&startup_marker),
+            "second subscriber must receive the captured startup sequences"
+        );
+
+        // (4) Now frozen, further post-startup bytes are not appended:
+        session.publish_output(b"regular-work-output".to_vec());
+        let (_rx3, third_replay) = session.subscribe_with_startup_replay();
+        assert_eq!(
+            third_replay, second_replay,
+            "post-freeze bytes must not alter the startup prefix"
         );
         manager.stop_all();
     }

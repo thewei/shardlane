@@ -1253,6 +1253,9 @@ impl ShardlaneApp {
                     .when(selected_section == SettingsSection::Browser, |page| {
                         page.child(self.render_browser_settings(window, cx))
                     })
+                    .when(selected_section == SettingsSection::AgentHooks, |page| {
+                        page.child(self.agent_hooks_settings_content(window, cx))
+                    })
                     .when(selected_section == SettingsSection::Skill, |page| {
                         page.child(self.skill_settings_content(window, cx))
                     }),

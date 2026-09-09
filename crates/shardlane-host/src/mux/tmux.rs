@@ -321,17 +321,21 @@ impl TmuxConnection {
             }
             let pane_active = fields.get(4).map(|flag| *flag == "1").unwrap_or(false);
             let window_active = fields.get(9).map(|flag| *flag == "1").unwrap_or(false);
+            let pane_cmd = fields.get(6).copied();
+            let pane_title = fields.get(7).copied();
+            let (detected_agent, detected_status) =
+                crate::agent_hooks::sniff_agent_from_process_and_title(pane_cmd, pane_title);
             panes.push(Pane {
                 pane_id: (*pane_id).to_string(),
                 terminal_id: None,
                 workspace_id: Some((*session_id).to_string()),
                 tab_id: Some((*window_id).to_string()),
                 label: None,
-                title: fields.get(7).map(|title| (*title).to_string()),
+                title: pane_title.map(|title| (*title).to_string()),
                 terminal_title: None,
                 cwd: fields.get(3).map(|cwd| (*cwd).to_string()),
-                agent_status: None,
-                agent: None,
+                agent_status: detected_status,
+                agent: detected_agent,
                 focused: pane_active && window_active,
                 scroll: None,
             });
@@ -363,8 +367,25 @@ impl TmuxConnection {
                 .map(|pane| pane.pane_id.clone()),
             workspaces: snapshot.workspaces,
             tabs: snapshot.tabs,
-            panes: snapshot.panes,
-            agents: Vec::new(),
+            panes: snapshot.panes.clone(),
+            agents: snapshot
+                .panes
+                .into_iter()
+                .filter_map(|pane| {
+                    let agent_name = pane.agent?;
+                    Some(Agent {
+                        terminal_id: pane.pane_id.clone(),
+                        agent: Some(agent_name),
+                        workspace_id: pane.workspace_id,
+                        tab_id: pane.tab_id,
+                        pane_id: Some(pane.pane_id),
+                        focused: pane.focused,
+                        agent_status: pane.agent_status,
+                        cwd: pane.cwd,
+                        ..Default::default()
+                    })
+                })
+                .collect(),
             layouts: Vec::new(),
             protocol: None,
             version: None,
@@ -572,7 +593,26 @@ impl MultiplexerConnection for TmuxConnection {
     }
 
     fn agents(&self) -> Result<Vec<Agent>, MuxError> {
-        Ok(Vec::new())
+        let snapshot = self.snapshot()?;
+        let agents = snapshot
+            .panes
+            .into_iter()
+            .filter_map(|pane| {
+                let agent_name = pane.agent?;
+                Some(Agent {
+                    terminal_id: pane.pane_id.clone(),
+                    agent: Some(agent_name),
+                    workspace_id: pane.workspace_id,
+                    tab_id: pane.tab_id,
+                    pane_id: Some(pane.pane_id),
+                    focused: pane.focused,
+                    agent_status: pane.agent_status,
+                    cwd: pane.cwd,
+                    ..Default::default()
+                })
+            })
+            .collect();
+        Ok(agents)
     }
 
     /// `events_push = false`: typed degradation, never a fake live stream.
@@ -988,6 +1028,7 @@ impl TmuxAttachStream {
         let tmux =
             which_tmux().ok_or_else(|| TuiError::Spawn("tmux is not installed".to_string()))?;
         let mut builder = CommandBuilder::new(tmux);
+        builder.arg("-u");
         if let Some(socket) = socket {
             builder.arg("-S");
             builder.arg(socket);
@@ -996,6 +1037,14 @@ impl TmuxAttachStream {
         builder.arg("-t");
         builder.arg(session);
         builder.env("TERM", "xterm-256color");
+        let lang = std::env::var("LANG").unwrap_or_else(|_| "en_US.UTF-8".to_string());
+        let lang = if lang.to_lowercase().contains("utf") {
+            lang
+        } else {
+            "en_US.UTF-8".to_string()
+        };
+        builder.env("LANG", &lang);
+        builder.env("LC_ALL", &lang);
         let child = pair
             .slave
             .spawn_command(builder)

@@ -967,7 +967,7 @@ impl ShardlaneApp {
             self.workspace_tab_selection_memory
                 .insert(workspace_id.to_string(), tab_id.clone());
         }
-        self.persist_current_workspace_state();
+        self.persist_current_workspace_state(cx);
         derive_selection_flags(&mut self.state);
         self.sync_terminal_application_focus(cx);
         self.notify_sidebar(cx);
@@ -1113,6 +1113,7 @@ impl ShardlaneApp {
                 .find(|tab| tab.tab_id == tab_id)
                 .and_then(|tab| tab.workspace_id.clone())
         });
+        self.persist_current_workspace_state(cx);
         self.drive_tui_focus_chain(
             tui_workspace_id,
             selected_tab_id.clone(),
@@ -1411,11 +1412,28 @@ impl ShardlaneApp {
         // the app, status transitions are in-band info and shouldn't disturb).
         let notifications_enabled = self.config.behavior.agent_notifications && !self.window_active;
         let (changed, notification) = {
-            let agent = self
+            let agent = match self
                 .state
                 .agents
                 .iter_mut()
-                .find(|agent| agent.pane_id.as_deref() == Some(patch.pane_id.as_str()))?;
+                .find(|agent| agent.pane_id.as_deref() == Some(patch.pane_id.as_str()))
+            {
+                Some(agent) => agent,
+                None => {
+                    let new_agent = Agent {
+                        terminal_id: patch.pane_id.clone(),
+                        agent: patch.agent.clone().flatten(),
+                        workspace_id: Some(patch.workspace_id.clone()),
+                        tab_id: patch.tab_id.clone().flatten(),
+                        pane_id: Some(patch.pane_id.clone()),
+                        focused: patch.focused.unwrap_or(false),
+                        agent_status: None,
+                        ..Default::default()
+                    };
+                    self.state.agents.push(new_agent);
+                    self.state.agents.last_mut()?
+                }
+            };
             let previous_status = agent.agent_status.clone();
             let mut changed = apply_agent_projection_patch(agent, patch);
             let notification = notifications_enabled
@@ -1776,6 +1794,78 @@ impl ShardlaneApp {
             status_bar::StatusBarAction::Quit => {
                 cx.quit();
             }
+        }
+    }
+
+    pub(super) fn handle_agent_hook_action(
+        &mut self,
+        report: shardlane_host::AgentHookReport,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.handle_agent_hook_report(report, cx);
+    }
+
+    pub(crate) fn handle_agent_hook_report(
+        &mut self,
+        report: shardlane_host::AgentHookReport,
+        cx: &mut Context<Self>,
+    ) {
+        let resolved_id = report.resolved_pane_id();
+        let matching_pane = self
+            .state
+            .panes
+            .iter()
+            .find(|p| {
+                if let Some(target) = resolved_id {
+                    if p.pane_id == target || p.terminal_id.as_deref() == Some(target) {
+                        return true;
+                    }
+                }
+                if let Some(cwd) = &report.cwd {
+                    if p.cwd.as_deref() == Some(cwd.as_str()) {
+                        return true;
+                    }
+                }
+                false
+            })
+            .or_else(|| self.state.panes.iter().find(|p| p.focused));
+
+        let (pane_id, workspace_id, tab_id) = if let Some(pane) = matching_pane {
+            (
+                pane.pane_id.clone(),
+                pane.workspace_id.clone().unwrap_or_default(),
+                pane.tab_id.clone(),
+            )
+        } else if let Some(target) = resolved_id {
+            (target.to_string(), String::new(), None)
+        } else {
+            return;
+        };
+
+        let status_str = report.status.to_lowercase();
+        let effective_status =
+            if status_str == "released" || status_str == "exit" || status_str == "none" {
+                None
+            } else {
+                Some(status_str)
+            };
+
+        let patch = shardlane_host::herdr::AgentStatusPatch {
+            pane_id: pane_id.clone(),
+            workspace_id,
+            tab_id: Some(tab_id),
+            agent: Some(Some(report.agent.clone())),
+            display_agent: Some(Some(report.agent.clone())),
+            agent_status: Some(effective_status),
+            cwd: report.cwd.map(Some),
+            ..Default::default()
+        };
+
+        let agent_changed = self.apply_agent_status_patch(&patch).unwrap_or(false);
+        if agent_changed {
+            self.notify_sidebar(cx);
+            cx.notify();
         }
     }
 
