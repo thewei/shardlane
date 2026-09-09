@@ -1,16 +1,25 @@
 <!doctype html>
 <!--
-  [INPUT]: 依赖 styles.css、assets/mark.svg（品牌 D 方案 mark）、assets/icon.png；下载直链依赖 GitHub Releases 固定资产名 Shardlane-macos-aarch64(.zip|.sha256)
-  [OUTPUT]: Shardlane 官网单页：午夜蓝精密编辑风，左标题右活终端 mockup 的 hero + 非对称 bento + 安装四步
-  [POS]: site/ 的唯一页面，被 .github/workflows/pages.yml 原样发布；品牌色板取自 assets/app-icon/shardlane-d-dark.svg
-  [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+  [INPUT]: depends on styles.css, assets/mark.svg, assets/icon.png,
+  assets/herdr-logo.png, assets/tmux-logo.svg, assets/uu-logo.png, and
+  assets/luvus-logo.png; download links depend on the fixed GitHub Releases
+  asset names Shardlane-macos-aarch64(.zip|.sha256)
+  [OUTPUT]: the single Shardlane site page: deep-space aurora glassmorphism
+  (designs/site-deai Option D final) — large hero + floating aurora blobs +
+  glass nav/cards/product window, with the multi-backend matrix
+  (Herdr/tmux/UU Remote/Luvus) as a first-class citizen; no JS, no external
+  requests
+  [POS]: the only page in site/, published as-is by
+  .github/workflows/pages.yml; the design-final record lives in
+  designs/site-deai/README.md
+  [PROTOCOL]: Update this header on change, then check CLAUDE.md.
 -->
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Shardlane: a native macOS workspace for coding agents</title>
-  <meta name="description" content="Shardlane projects the Herdr runtime (workspaces, tabs, panes, terminals, agent sessions) into a fast native macOS interface built on GPUI and libghostty-vt.">
+  <title>Shardlane: a native multi-runtime workspace for coding agents</title>
+  <meta name="description" content="Shardlane is a GPU-accelerated macOS workspace for coding agents. Herdr, tmux, UU Remote and Luvus behind one neutral multiplexer seam — sessions stay authoritative on the backend, Shardlane just makes them beautiful.">
   <link rel="icon" type="image/svg+xml" href="assets/mark.svg">
   <link rel="alternate icon" type="image/png" href="assets/icon.png">
   <link rel="stylesheet" href="styles.css">
@@ -18,33 +27,42 @@
 <body>
   <a class="skip" href="#main">Skip to main content</a>
 
+  <div class="aurora" aria-hidden="true">
+    <div class="blob blob-1"></div>
+    <div class="blob blob-2"></div>
+    <div class="blob blob-3"></div>
+  </div>
+
   <header class="nav">
     <a class="brand" href="./">
       <img src="assets/mark.svg" alt="" width="24" height="24">
       <span>Shardlane</span>
     </a>
     <nav class="navlinks" aria-label="Site">
+      <a href="#backends">Backends</a>
+      <a href="#workspaces">Workspaces</a>
+      <a href="#architecture">Architecture</a>
       <a href="#install">Install</a>
-      <a href="#craft">Design</a>
       <a href="https://github.com/thewei/shardlane/tree/main/docs">Docs</a>
-      <a href="https://github.com/thewei/shardlane">GitHub</a>
     </nav>
-    <a class="chip" href="https://github.com/thewei/shardlane/releases/tag/v0.1.14">v0.1.14 · arm64</a>
+    <a class="nav-dl" href="https://github.com/thewei/shardlane/releases/latest/download/Shardlane-macos-aarch64.zip">Download</a>
   </header>
 
   <main id="main">
+
+    <!-- ============ HERO ============ -->
     <section class="hero">
       <div class="hero-copy">
-        <p class="kicker rise">Native macOS workspace for coding agents</p>
-        <h1 class="rise d1">Terminals, workspaces, agents:<br>one native lane.</h1>
+        <p class="pill rise"><i></i>Native macOS · four multiplexer backends · v0.1.14</p>
+        <h1 class="rise d1">Every backend.<br><span class="grad">One native lane.</span></h1>
         <p class="sub rise d2">
-          Shardlane projects the <a href="https://herdr.dev">Herdr</a> runtime into a fast native
-          interface built on GPUI and libghostty-vt. Herdr stays the authority over sessions and
-          state; Shardlane is the client you actually touch.
+          A GPU-accelerated macOS workspace for coding agents. Herdr, tmux, UU Remote and
+          Luvus behind one neutral seam — sessions stay authoritative on the backend,
+          Shardlane just makes them beautiful.
         </p>
         <div class="cta rise d3">
           <a class="btn-primary" href="https://github.com/thewei/shardlane/releases/latest/download/Shardlane-macos-aarch64.zip">Download for Apple Silicon</a>
-          <a class="btn-ghost" href="https://github.com/thewei/shardlane/releases">All releases</a>
+          <a class="btn-ghost" href="#backends">Explore the backends</a>
         </div>
         <p class="runtime-note rise d4">
           <span class="prompt">$</span> wax install herdr
@@ -52,42 +70,44 @@
         </p>
       </div>
 
-      <div class="mockup rise d2" role="img" aria-label="Shardlane app window showing two terminal panes with live agent output">
+      <div class="mockup rise d2" role="img" aria-label="Shardlane window showing Herdr, tmux and Luvus workspaces with live agent output">
         <div class="win">
           <div class="titlebar">
             <span class="lights"><i class="l-r"></i><i class="l-y"></i><i class="l-g"></i></span>
-            <span class="win-title">Shardlane</span>
-            <span class="win-meta">herdr · shardlane</span>
+            <div class="win-tabs">
+              <span class="wtab on"><i class="dot dot-herdr"></i>herdr · shardlane</span>
+              <span class="wtab"><i class="dot dot-tmux"></i>tmux · ops</span>
+              <span class="wtab"><i class="dot dot-luvus"></i>luvus · fleet</span>
+            </div>
+            <span class="win-meta">4 engines</span>
           </div>
           <div class="win-body">
             <aside class="side">
               <p class="side-label">Workspaces</p>
-              <p class="ws active"><span class="ws-dot"></span>shardlane</p>
-              <p class="ws"><span class="ws-dot"></span>herdr</p>
-              <p class="ws"><span class="ws-dot"></span>dotfiles</p>
+              <p class="ws active"><i class="dot dot-herdr"></i>shardlane</p>
+              <p class="ws"><i class="dot dot-tmux"></i>infra-cluster</p>
+              <p class="ws"><i class="dot dot-uu"></i>cloud-gpu-node</p>
+              <p class="ws"><i class="dot dot-luvus"></i>agent-fleet</p>
+              <p class="side-label side-gap">Agents</p>
+              <p class="ag"><span class="ag-live"></span>claude · mux</p>
+              <p class="ag"><span class="ag-run"></span>codex · tests</p>
             </aside>
-            <div class="desk">
-              <div class="tabs">
-                <span class="tab on">terminal</span>
-                <span class="tab">agents <em>2</em></span>
-                <span class="tab">history</span>
+            <div class="panes">
+              <div class="pane">
+                <p><span class="p">$</span> herdr attach shardlane</p>
+                <p><span class="ok">✓</span> <span class="agent">claude</span> refactor mux adapter <span class="dim">· 42.3s</span></p>
+                <p class="dim">→ context transfer ready (4.8k tokens)</p>
+                <p class="type-line"><span class="run">▸</span> <span class="agent">codex</span> <span class="typed">cargo test --locked --workspace</span><span class="caret" aria-hidden="true"></span></p>
               </div>
-              <div class="panes">
-                <div class="pane">
-                  <p><span class="p">$</span> herdr attach shardlane</p>
-                  <p><span class="ok">✓</span> <span class="agent">claude</span> refactor mux adapter <span class="dim">· 42.3s</span></p>
-                  <p class="type-line"><span class="run">▸</span> <span class="agent">codex</span> <span class="typed">cargo test --workspace</span><span class="caret" aria-hidden="true"></span></p>
-                </div>
-                <div class="pane pane-b">
-                  <p><span class="p">$</span> cargo test --locked --workspace</p>
-                  <p class="dim">test result: <span class="ok">ok</span>. 214 passed; 0 failed</p>
-                  <p class="dim">51.82s · 3 targets</p>
-                </div>
+              <div class="pane pane-b">
+                <p><span class="p">$</span> scripts/verify.sh fast</p>
+                <p class="dim">test result: <span class="ok">ok</span>. 214 passed; 0 failed</p>
+                <p class="dim">mux kit: herdr <span class="ok">✓</span> tmux <span class="ok">✓</span> uuyc <span class="ok">✓</span></p>
               </div>
             </div>
           </div>
           <div class="statusbar">
-            <span>herdr 0.9.0</span>
+            <span>4 backends</span>
             <span>arm64</span>
             <span class="live"><i></i>2 agents live</span>
           </div>
@@ -96,42 +116,150 @@
     </section>
 
     <p class="facts rise d5">
-      <span>v0.1.14</span><span>macOS 14+</span><span>Apple Silicon</span><span>ad-hoc signed</span><span>SHA-256 published</span><span>GPLv3</span>
+      <span>v0.1.14</span><span>macOS 14+</span><span>Apple Silicon</span><span>GPUI 120&nbsp;Hz</span><span>ad-hoc signed</span><span>GPLv3</span>
     </p>
 
-    <section class="creed" id="craft">
-      <h2>One runtime.<br>One client.<br>No second brain.</h2>
-      <div class="creed-body">
-        <p>
-          Herdr owns workspaces, tabs, panes, sessions, scrollback, and persistence.
-          libghostty-vt owns terminal semantics. Shardlane owns the native shell:
-          presentation, navigation, and taste.
+    <!-- ============ BACKENDS ============ -->
+    <section class="backends" id="backends">
+      <header class="sec-head">
+        <p class="sec-kicker">Multiplexer backends</p>
+        <h2>One client. Four engines. No second brain.</h2>
+        <p class="sec-sub">
+          Backends keep sovereignty over sessions, panes, scrollback and agent lifecycle.
+          Shardlane projects whichever engine you point it at — switch without losing state,
+          mix local and remote in one sidebar.
         </p>
-        <p>
-          Missing capabilities are fixed at the Herdr boundary, never as a parallel
-          runtime inside the client. That single rule keeps the app small, honest,
-          and fast. <a href="https://github.com/thewei/shardlane/blob/main/docs/client-product-architecture.md">Read the architecture</a>.
-        </p>
-        <p class="chain" aria-label="Ownership chain">
-          <span>Herdr API</span><span>libghostty-vt</span><span>gpui-component</span><span>Shardlane shell</span>
-        </p>
+      </header>
+
+      <div class="backend-grid">
+        <article class="bcard">
+          <div class="bcard-top">
+            <img class="blogo" src="assets/herdr-logo.png" alt="Herdr logo" width="44" height="44">
+            <span class="brole brole-primary">Default runtime</span>
+          </div>
+          <h3><a href="https://herdr.dev">Herdr</a></h3>
+          <p class="bdesc">The agent-first multiplexer and Shardlane's primary authority. Owns workspaces, tabs, panes, scrollback and full agent lifecycle — with lossless context transfer between providers.</p>
+          <ul class="bfeats">
+            <li>Agent semantics, never PTY guesswork</li>
+            <li>Context Transfer &amp; Live Handoff</li>
+            <li>Persisted across restarts</li>
+          </ul>
+          <a class="blink" href="https://herdr.dev">herdr.dev<span aria-hidden="true"> →</span></a>
+        </article>
+
+        <article class="bcard">
+          <div class="bcard-top">
+            <img class="blogo" src="assets/tmux-logo.svg" alt="tmux logo" width="44" height="44">
+            <span class="brole">Industry standard</span>
+          </div>
+          <h3><a href="https://tmux.app">tmux</a></h3>
+          <p class="bdesc">The classic terminal multiplexer, projected into a native shell. Shardlane drives a real <code>tmux attach</code> child on a PTY — your existing servers and <code>.tmux.conf</code> keep working untouched.</p>
+          <ul class="bfeats">
+            <li>Zero-config adoption of live sessions</li>
+            <li>Split / zoom / swap via native menu</li>
+            <li>Works over SSH out of the box</li>
+          </ul>
+          <a class="blink" href="https://tmux.app">tmux.app<span aria-hidden="true"> →</span></a>
+        </article>
+
+        <article class="bcard">
+          <div class="bcard-top">
+            <img class="blogo blogo-wide" src="assets/uu-logo.png" alt="UU Remote logo" width="128" height="30">
+            <span class="brole brole-remote">Remote bridge</span>
+          </div>
+          <h3><a href="https://uuyc.163.com">UU Remote</a></h3>
+          <p class="bdesc">NetEase UU Remote's <code>uuyc-cli lterm</code> sessions, bridged through the same seam. Reach cloud GPUs and remote dev boxes without leaving the sidebar — graceful degradation when the CLI is absent.</p>
+          <ul class="bfeats">
+            <li>Remote terminals beside local ones</li>
+            <li>Same pane ops as every backend</li>
+            <li>Capability-gated, never brittle</li>
+          </ul>
+          <a class="blink" href="https://uuyc.163.com">uuyc.163.com<span aria-hidden="true"> →</span></a>
+        </article>
+
+        <article class="bcard">
+          <div class="bcard-top">
+            <img class="blogo" src="assets/luvus-logo.png" alt="Luvus logo" width="44" height="44">
+            <span class="brole brole-new">New · Agent mission control</span>
+          </div>
+          <h3><a href="https://github.com/RizRiyz/luvus">Luvus</a></h3>
+          <p class="bdesc">Mission control for AI coding agents. Worktree orchestration, per-agent token and cost awareness, and the Universal Harness Protocol (UHP&nbsp;1.0) — now a first-class Shardlane backend.</p>
+          <ul class="bfeats">
+            <li>UHP 1.0 semantic waits &amp; snapshots</li>
+            <li>Agent fork with context intact</li>
+            <li>Git-aware dashboards &amp; quality gates</li>
+          </ul>
+          <a class="blink" href="https://github.com/RizRiyz/luvus">github.com/RizRiyz/luvus<span aria-hidden="true"> →</span></a>
+        </article>
       </div>
     </section>
 
+    <!-- ============ WORKSPACES ============ -->
+    <section class="workspaces" id="workspaces">
+      <div class="ws-copy">
+        <p class="sec-kicker">Native multi-workspace</p>
+        <h2>A workspace per project. A project per obsession.</h2>
+        <p class="ws-text">A workspace <em>is</em> a live backend instance — not a folder in some registry. Every window binds to one; the sidebar lists them all across every connected engine. Quit the app, kill the machine, come back tomorrow: layout, cwd and scrollback are exactly where the backend kept them.</p>
+        <ul class="ws-points">
+          <li><strong>Live enumeration.</strong> Instances come from the backends themselves — no stale client-side registry to rot.</li>
+          <li><strong>Display names stay yours.</strong> Rename anything; the runtime keeps its real identity.</li>
+          <li><strong>One TUI child per instance.</strong> Desktop and mobile viewers share it; idle children get reaped.</li>
+        </ul>
+      </div>
+      <div class="ws-diagram" role="img" aria-label="An instance picker listing workspaces across Herdr, Luvus, tmux and UU Remote">
+        <div class="wsr">
+          <p class="wsr-title">Instance picker</p>
+          <div class="wsr-row wsr-on"><i class="dot dot-herdr"></i>shardlane <span>herdr · 3 panes · 2 agents</span></div>
+          <div class="wsr-row"><i class="dot dot-luvus"></i>agent-fleet <span>luvus · orchestration</span></div>
+          <div class="wsr-row"><i class="dot dot-tmux"></i>infra-cluster <span>tmux · 6 windows</span></div>
+          <div class="wsr-row"><i class="dot dot-uu"></i>cloud-gpu-node <span>uu remote · training</span></div>
+          <div class="wsr-foot"><span class="wsr-key">⌘K</span> jump to any instance, any backend</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ ARCHITECTURE ============ -->
+    <section class="arch" id="architecture">
+      <div class="arch-head">
+        <p class="sec-kicker">The seam</p>
+        <h2>Backend-neutral by construction</h2>
+      </div>
+      <div class="arch-pipe" role="img" aria-label="Pipeline from the native shell through the neutral multiplexer API to the four backends">
+        <div class="pipe-layer pipe-ui">
+          <strong>Shardlane shell</strong>
+          <span>GPUI · libghostty-vt · navigation, taste, zero runtime logic</span>
+        </div>
+        <div class="pipe-arrow" aria-hidden="true">↓&nbsp;&nbsp;MuxRegistry + capability flags</div>
+        <div class="pipe-layer pipe-mux">
+          <strong>Neutral Multiplexer API</strong>
+          <span>instances · projection snapshots · pane ops · byte streams · capability gating</span>
+        </div>
+        <div class="pipe-arrow" aria-hidden="true">↓&nbsp;&nbsp;one adapter file per backend</div>
+        <div class="pipe-row">
+          <div class="pipe-node pn-herdr"><i class="dot dot-herdr"></i>Herdr<br><span>full agent protocol</span></div>
+          <div class="pipe-node pn-tmux"><i class="dot dot-tmux"></i>tmux<br><span>attach stream</span></div>
+          <div class="pipe-node pn-uu"><i class="dot dot-uu"></i>UU Remote<br><span>uuyc lterm</span></div>
+          <div class="pipe-node pn-luvus"><i class="dot dot-luvus"></i>Luvus<br><span>UHP 1.0</span></div>
+        </div>
+      </div>
+      <p class="arch-fine">Consumers never branch on backend identity — differences flow through capability flags, so a backend without agents simply hides agent surfaces instead of faking them. <a href="https://github.com/thewei/shardlane/blob/main/docs/multiplexer-api.md">Read the API contract</a>.</p>
+    </section>
+
+    <!-- ============ FEATURES ============ -->
     <section class="bento" aria-label="Capabilities">
       <article class="tile t-a">
-        <h3>Panes that survive restarts</h3>
-        <p>Layout, cwd, and scrollback live in Herdr, not in the window. Quit, reopen, continue.</p>
-        <div class="mini-panes" aria-hidden="true"><span></span><span></span></div>
+        <h3>Agents, first-class</h3>
+        <p>Launch, watch, prompt, resume. Semantic operations over Herdr's protocol — never keystrokes into a PTY. Context Transfer moves a task between providers with its memory intact.</p>
+        <code>shardlane agent resume --session 4f2e</code>
       </article>
       <article class="tile t-b">
-        <h3>Agents, first-class</h3>
-        <p>Launch agents, watch them work in live sessions, browse conversation history, resume with full context. Semantic operations, never keystrokes into a PTY.</p>
-        <code>herdr agent resume --session 4f2e</code>
+        <h3>Panes that survive restarts</h3>
+        <p>Layout, cwd and scrollback live on the backend, not in the window. Quit, reopen, continue.</p>
+        <div class="mini-panes" aria-hidden="true"><span></span><span></span></div>
       </article>
       <article class="tile t-c">
         <h3>GPU-native shell</h3>
-        <p>Rendered with GPUI. No Electron, no telemetry, no cloud accounts.</p>
+        <p>GPUI + libghostty-vt. No Electron, no webview, no telemetry, no cloud accounts.</p>
       </article>
       <article class="tile t-d">
         <h3>History, searchable</h3>
@@ -139,15 +267,16 @@
       </article>
       <article class="tile t-e">
         <h3>Mobile companion</h3>
-        <p>An optional hosted Mobile Web bundle, served by the Host Remote API.</p>
+        <p>An optional hosted Mobile Web bundle served by the Host Remote API — same mux seam underneath.</p>
       </article>
       <article class="tile t-f">
         <h3>Free, and yours to inspect</h3>
-        <p>GPLv3. The whole workspace is source you can read, build, and change.</p>
+        <p>GPLv3. The whole workspace is source you can read, build and change.</p>
         <a class="btn-ghost" href="https://github.com/thewei/shardlane">Browse the source</a>
       </article>
     </section>
 
+    <!-- ============ INSTALL ============ -->
     <section class="install" id="install">
       <h2>Install</h2>
       <ol class="steps">
@@ -173,12 +302,13 @@
 
   <footer class="foot">
     <div class="foot-row">
-      <p class="foot-brand"><img src="assets/mark.svg" alt="" width="20" height="20"> Shardlane is the client; Herdr is the runtime.</p>
+      <p class="foot-brand"><img src="assets/mark.svg" alt="" width="20" height="20"> Shardlane is the client; the backends are the runtime.</p>
       <nav class="foot-links" aria-label="Footer">
         <a href="https://github.com/thewei/shardlane">GitHub</a>
         <a href="https://github.com/thewei/shardlane/tree/main/docs">Docs</a>
         <a href="https://github.com/thewei/shardlane/releases">Releases</a>
         <a href="https://herdr.dev">Herdr</a>
+        <a href="https://github.com/RizRiyz/luvus">Luvus</a>
       </nav>
     </div>
     <p class="foot-fine">© 2026 Wilson · GPL-3.0 · built with GPUI and libghostty-vt</p>
