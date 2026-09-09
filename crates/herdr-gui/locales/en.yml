@@ -65,6 +65,7 @@ workspace:
   group_herdr: Herdr Workspaces
   group_tmux: tmux Sessions
   group_uuyc: UU Remote Terminal
+  group_luvus: Luvus Sessions
 tab:
   filter: Filter tabs…
   none: No tabs in this workspace

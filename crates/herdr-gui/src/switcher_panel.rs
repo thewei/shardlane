@@ -198,7 +198,7 @@ pub(crate) fn workspace_switcher_device_sections(
         );
 
         // Group instances by backend:
-        // Canonical backend ordering: herdr, uuyc, tmux, then others
+        // Canonical backend ordering: herdr, uuyc, tmux, luvus, then others
         let mut backends_present: Vec<&'static str> = Vec::new();
         for item in instances {
             if !backends_present.contains(&item.backend) {
@@ -209,7 +209,8 @@ pub(crate) fn workspace_switcher_device_sections(
             "herdr" => 0,
             "uuyc" => 1,
             "tmux" => 2,
-            _ => 3,
+            "luvus" => 3,
+            _ => 4,
         });
 
         let mut rendered_groups = 0usize;
@@ -243,6 +244,7 @@ pub(crate) fn workspace_switcher_device_sections(
                 "herdr" => crate::i18n::t("workspace.group_herdr"),
                 "uuyc" => crate::i18n::t("workspace.group_uuyc"),
                 "tmux" => crate::i18n::t("workspace.group_tmux"),
+                "luvus" => crate::i18n::t("workspace.group_luvus"),
                 other => SharedString::from(other.to_string()),
             };
             let group_herdr = picker_herdr.clone();

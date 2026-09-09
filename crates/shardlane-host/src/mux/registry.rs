@@ -22,6 +22,7 @@ impl MuxRegistry {
         registry.register(Arc::new(HerdrBackend::default()));
         registry.register(Arc::new(super::tmux::TmuxBackend));
         registry.register(Arc::new(super::uuyc::UuycBackend));
+        registry.register(Arc::new(super::luvus::LuvusBackend::default()));
         registry
     }
 

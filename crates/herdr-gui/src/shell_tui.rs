@@ -403,7 +403,10 @@ impl ShardlaneApp {
                     // session exists; Remote viewers attach the same object.
                     let socket_override = socket_override.as_deref();
                     let session: std::sync::Arc<dyn shardlane_host::mux::MultiplexerStream> =
-                        if bound_backend == Some("tmux") || bound_backend == Some("uuyc") {
+                        if bound_backend == Some("tmux")
+                            || bound_backend == Some("uuyc")
+                            || bound_backend == Some("luvus")
+                        {
                             let client = seam_client
                                 .clone()
                                 .ok_or_else(|| "connection gone during attach".to_string())?;

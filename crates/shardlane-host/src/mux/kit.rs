@@ -532,8 +532,8 @@ mod tests {
         let registry = MuxRegistry::with_builtins();
         assert_eq!(
             registry.backends().len(),
-            3,
-            "builtins = herdr + tmux + uuyc"
+            4,
+            "builtins = herdr + tmux + uuyc + luvus"
         );
 
         let connection = registry

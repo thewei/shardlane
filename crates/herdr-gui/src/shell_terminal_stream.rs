@@ -58,6 +58,8 @@ impl ShardlaneApp {
                                     shardlane_host::mux::InstanceRef::default_instance("tmux")
                                 } else if *backend == "uuyc" {
                                     shardlane_host::mux::InstanceRef::named("uuyc", session)
+                                } else if *backend == "luvus" {
+                                    shardlane_host::mux::InstanceRef::named("luvus", session)
                                 } else {
                                     shardlane_host::mux::InstanceRef::named("herdr", session)
                                 };

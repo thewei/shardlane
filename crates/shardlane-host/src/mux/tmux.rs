@@ -1574,6 +1574,6 @@ mod tests {
     fn tmux_instances_surface_in_registry_aggregation() {
         let registry = MuxRegistry::with_builtins();
         let ids: Vec<&'static str> = registry.backends().iter().map(|b| b.id()).collect();
-        assert_eq!(ids, vec!["herdr", "tmux", "uuyc"]);
+        assert_eq!(ids, vec!["herdr", "tmux", "uuyc", "luvus"]);
     }
 }

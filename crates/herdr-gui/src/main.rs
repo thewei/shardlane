@@ -1153,6 +1153,7 @@ fn backend_id(raw: &str) -> &'static str {
     match raw {
         "tmux" => "tmux",
         "uuyc" => "uuyc",
+        "luvus" => "luvus",
         _ => "herdr",
     }
 }
@@ -1181,6 +1182,7 @@ impl ProjectBinding {
                 .project_id
                 .strip_prefix("tmux:")
                 .or_else(|| self.project_id.strip_prefix("uuyc:"))
+                .or_else(|| self.project_id.strip_prefix("luvus:"))
                 .unwrap_or(&self.project_id),
         }
     }
@@ -1419,12 +1421,14 @@ impl ShellSharedRuntime {
         let entries = listings
             .iter()
             .map(|listing| {
-                // A tmux or uuyc instance's jump key is prefixed so it cannot collide
-                // with a same-named Herdr session in the picker.
+                // A non-Herdr instance's jump key is prefixed so it cannot
+                // collide with a same-named Herdr session in the picker.
                 let label_key = if listing.backend == "tmux" {
                     format!("tmux:{}", listing.name)
                 } else if listing.backend == "uuyc" {
                     format!("uuyc:{}", listing.name)
+                } else if listing.backend == "luvus" {
+                    format!("luvus:{}", listing.name)
                 } else {
                     listing.name.clone()
                 };
@@ -1447,6 +1451,8 @@ impl ShellSharedRuntime {
                     format!("tmux:{}", listing.name)
                 } else if listing.backend == "uuyc" {
                     format!("uuyc:{}", listing.name)
+                } else if listing.backend == "luvus" {
+                    format!("luvus:{}", listing.name)
                 } else {
                     listing.name.clone()
                 };
@@ -2658,11 +2664,23 @@ impl ShardlaneApp {
             );
             return;
         }
+        if let Some(session) = project_id.strip_prefix("luvus:") {
+            self.bind_instance_on_socket(
+                "luvus",
+                session.to_string(),
+                None,
+                project_id.to_string(),
+                window,
+                cx,
+            );
+            return;
+        }
         // Unknown sessions can appear between refreshes (e.g. created by the
         // CLI): refresh once before giving up.
         let lookup_name = project_id
             .strip_prefix("tmux:")
             .or_else(|| project_id.strip_prefix("uuyc:"))
+            .or_else(|| project_id.strip_prefix("luvus:"))
             .unwrap_or(project_id);
         if !self
             .shared
@@ -2724,6 +2742,8 @@ impl ShardlaneApp {
                 ("tmux", instance.to_string(), session.clone())
             } else if let Some(instance) = session.strip_prefix("uuyc:") {
                 ("uuyc", instance.to_string(), session.clone())
+            } else if let Some(instance) = session.strip_prefix("luvus:") {
+                ("luvus", instance.to_string(), session.clone())
             } else {
                 (
                     self.shared
@@ -2761,6 +2781,7 @@ impl ShardlaneApp {
             Some(socket) => format!("bridge:{}", socket.display()),
             None if backend == "tmux" => format!("tmux:{session}"),
             None if backend == "uuyc" => format!("uuyc:{session}"),
+            None if backend == "luvus" => format!("luvus:{session}"),
             None => session.clone(),
         };
         self.tui_manager = self.shared.tui_registry.get_or_create_keyed(&registry_key);
@@ -2781,6 +2802,8 @@ impl ShardlaneApp {
             format!("tmux:{bind_session}")
         } else if backend == "uuyc" {
             format!("uuyc:{bind_session}")
+        } else if backend == "luvus" {
+            format!("luvus:{bind_session}")
         } else {
             bind_session.clone()
         };
@@ -2808,6 +2831,9 @@ impl ShardlaneApp {
                         ("tmux", _) => shardlane_host::mux::InstanceRef::default_instance("tmux"),
                         ("uuyc", _) => {
                             shardlane_host::mux::InstanceRef::named("uuyc", &bind_session)
+                        }
+                        ("luvus", _) => {
+                            shardlane_host::mux::InstanceRef::named("luvus", &bind_session)
                         }
                         ("herdr", Some(socket)) => {
                             shardlane_host::mux::InstanceRef::socket("herdr", socket.clone())
@@ -3145,6 +3171,9 @@ impl ShardlaneApp {
                     let mut reconnected = false;
                     let reference = match refresh_backend {
                         Some("tmux") => shardlane_host::mux::InstanceRef::default_instance("tmux"),
+                        Some("luvus") => {
+                            shardlane_host::mux::InstanceRef::named("luvus", &refresh_session)
+                        }
                         _ => shardlane_host::mux::InstanceRef::named("herdr", &refresh_session),
                     };
                     let client = match existing_client {

@@ -15,6 +15,7 @@
 
 pub mod herdr;
 pub mod kit;
+pub mod luvus;
 pub mod registry;
 pub mod tmux;
 pub mod uuyc;
