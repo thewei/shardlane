@@ -38,6 +38,7 @@ case "$cmd" in
     for script in scripts/*.sh; do bash -n "$script"; done
     swiftc -typecheck scripts/keyrepeat-evpost.swift
     swiftc -typecheck scripts/vision-ocr.swift
+    swiftc -typecheck scripts/render-app-icon.swift
     python3 -B - <<'PY'
 import ast
 import json
