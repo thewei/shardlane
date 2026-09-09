@@ -1339,6 +1339,7 @@ impl ShellSharedRuntime {
     }
 
     /// The window currently displaying `project_id`, if that window still lives.
+    #[allow(dead_code)]
     pub(crate) fn window_handle_for_project(&self, project_id: &str) -> Option<AnyWindowHandle> {
         let id = self
             .project_windows
@@ -1606,6 +1607,7 @@ struct ShardlaneApp {
     state: HerdrState,
     /// This view's own entity id: cross-entity aggregation (`sync_open_workspaces`)
     /// must never re-enter the entity whose update lease it already holds.
+    #[allow(dead_code)]
     entity_id: gpui::EntityId,
     /// This window's bound Project (= one Herdr instance). `None` renders the Project
     /// picker: a brand-new window that has not yet claimed a Project.
@@ -1824,7 +1826,7 @@ struct ShardlaneApp {
 
 /// Owns Sidebar-only disclosure state so folder toggles never re-render the terminal tree.
 struct SidebarPane {
-    app: Entity<ShardlaneApp>,
+    app: WeakEntity<ShardlaneApp>,
     expanded_projects: HashSet<String>,
     panes_by_project: HashMap<String, Vec<Pane>>,
     project_pane_loads_in_flight: HashSet<String>,
@@ -1921,11 +1923,14 @@ impl SidebarPane {
 
 impl Render for SidebarPane {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let Some(app) = self.app.upgrade() else {
+            return div().into_any_element();
+        };
         // Entity::update borrows the handle: the closure's immutable captures of other fields don't
         // conflict with self.app, so there's no need to clone the whole projection across the entity
         // boundary (with its dozen-plus heap Strings per session).
         // Safe: ShardlaneApp is not mid-update when only SidebarPane is dirty.
-        self.app.update(cx, |app, app_cx| {
+        app.update(cx, |app, app_cx| {
             app.build_sidebar(
                 sidebar::SidebarProjection {
                     expanded_projects: &self.expanded_projects,
@@ -2448,7 +2453,7 @@ impl ShardlaneApp {
             line_height_slider,
             opacity_slider,
             sidebar_pane: {
-                let app = cx.entity();
+                let app = cx.entity().downgrade();
                 cx.new(|_| SidebarPane {
                     app,
                     expanded_projects: initially_expanded_project.clone().into_iter().collect(),
@@ -2546,26 +2551,7 @@ impl ShardlaneApp {
             cx.notify();
             return;
         }
-        if let Some(handle) = self.shared.window_handle_for_project(project_id) {
-            let this_window = self.window_handle.as_ref().map(|handle| handle.window_id());
-            if this_window == Some(handle.window_id()) {
-                // Stale map pointing at THIS window while bound elsewhere:
-                // fall through to a rebind instead of self-activating forever.
-            } else {
-                // One window per Herdr instance: a picker window (unbound)
-                // picking a workspace that is already open elsewhere IS the
-                // jump — activate that window and close this one, which has
-                // nothing else to show.
-                let unbound = self.binding.is_none();
-                let _ = cx.update_window(handle, |_, target_window, _| {
-                    target_window.activate_window();
-                });
-                if unbound {
-                    window.remove_window();
-                }
-                return;
-            }
-        }
+        // Single-window model: all projects/workspaces switch within this single window.
         // B1: remote-machine instance (`ssh:<device>:<session>`) — bind over
         // the device's live SSH bridge socket.
         if let Some(remote) = project_id.strip_prefix("ssh:") {
@@ -2644,36 +2630,22 @@ impl ShardlaneApp {
         })
     }
 
-    /// B4/C4: rebuilds the open-workspace snapshot (session + frame per live
-    /// window) and persists it. Closed windows drop out naturally because the
-    /// set is recomputed from live registrations. Call from a window context.
-    ///
-    /// Re-entrancy: this runs INSIDE this entity's update lease, so the window
-    /// that owns `self` contributes its row directly (no `view.update` on
-    /// self); only *other* live windows are read across the entity boundary.
-    pub(crate) fn sync_open_workspaces(&self, cx: &mut App) {
+    /// Single-window model: persists this window's bound workspace snapshot.
+    /// Since the application strictly runs with one window, exactly one (or zero if unbound)
+    /// record is persisted, completely eliminating duplicate/ghost window leakage.
+    pub(crate) fn sync_open_workspaces(&self, _cx: &mut App) {
         self.persist_current_workspace_state();
         let mut records = Vec::new();
         if let Some(record) = self.open_workspace_record() {
             records.push(record);
         }
         {
-            let windows = self
+            let mut windows = self
                 .shared
                 .windows
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
-            for record in windows.iter() {
-                let Some(view) = record.view.upgrade() else {
-                    continue;
-                };
-                if view.entity_id() == self.entity_id {
-                    continue;
-                }
-                if let Some(row) = view.update(cx, |view, _| view.open_workspace_record()) {
-                    records.push(row);
-                }
-            }
+            windows.retain(|record| record.view.upgrade().is_some());
         }
         settings::ApplicationConfig::persist_open_workspaces(records);
     }
@@ -3058,27 +3030,20 @@ impl ShardlaneApp {
         cx.notify();
     }
 
-    /// ⌘N: a new window starts unbound and shows the Project picker. Picking a
-    /// Project that already has a window jumps there instead (the unbound
-    /// window then simply closes).
-    fn new_window(&mut self, _: &NewWindow, window: &mut Window, cx: &mut Context<Self>) {
-        let shared = self.shared.clone();
-        let config = self.config.clone();
-        let bounds = cascaded_window_bounds(window.bounds());
-        let _ = open_shell_window(cx, shared, config, bounds, None);
+    /// ⌘N / Switch Project: in the single-window model, shows the Project picker
+    /// in-place within the current window rather than opening a new OS window.
+    fn new_window(&mut self, _: &NewWindow, _window: &mut Window, cx: &mut Context<Self>) {
+        self.show_project_picker = true;
+        cx.notify();
     }
 
-    /// Window → Merge All Windows: native macOS window tabbing via gpui's
-    /// `mergeAllWindows:` support (vendored gpui implements the selector).
+    /// Merge All Windows is a no-op in the single-window model.
     fn merge_all_windows(
         &mut self,
         _: &MergeAllWindows,
         _window: &mut Window,
         _cx: &mut Context<Self>,
     ) {
-        if let Some(handle) = self.window_handle {
-            let _ = handle.update(_cx, |_, window, _| window.merge_all_windows());
-        }
     }
 
     fn quit(&mut self, _: &Quit, _window: &mut Window, cx: &mut Context<Self>) {
@@ -3806,18 +3771,20 @@ fn main() {
                 bounds(point(px(80.0), px(80.0)), size(px(1280.0), px(820.0)))
             };
 
-            let mut restored = false;
-            for record in &config.open_workspaces {
-                let Some(session) = record.session.clone() else {
-                    continue;
-                };
+            // Single-window model: restore at most ONE active workspace session.
+            let restore_target = config.open_workspaces.iter().find_map(|record| {
+                let session = record.session.as_ref()?;
                 if session.starts_with("ssh:") {
-                    continue;
+                    return None;
                 }
-                let restored_bounds = bounds(
+                let bounds = bounds(
                     point(px(record.x as f32), px(record.y as f32)),
                     size(px(record.width as f32), px(record.height as f32)),
                 );
+                Some((bounds, session.clone()))
+            });
+
+            if let Some((restored_bounds, session)) = restore_target {
                 let _ = open_shell_window(
                     cx,
                     shared.clone(),
@@ -3825,9 +3792,7 @@ fn main() {
                     restored_bounds,
                     Some(session),
                 );
-                restored = true;
-            }
-            if !restored {
+            } else {
                 let _ = open_shell_window(cx, shared.clone(), config.clone(), initial_bounds, None);
             }
         }
@@ -3898,8 +3863,7 @@ fn main() {
             Menu {
                 name: "Window".into(),
                 items: vec![
-                    MenuItem::action("New Window", NewWindow),
-                    MenuItem::action("Merge All Windows", MergeAllWindows),
+                    MenuItem::action("Switch Project…", NewWindow),
                     MenuItem::separator(),
                     MenuItem::action("New Project", NewProject),
                     MenuItem::action("New Script…", NewScript),
@@ -4061,18 +4025,20 @@ fn main() {
             cx.activate(true);
             return;
         }
-        let mut restored = false;
-        for record in &startup_config.open_workspaces {
-            let Some(session) = record.session.clone() else {
-                continue;
-            };
+        // Single-window model: restore at most ONE active workspace session.
+        let restore_target = startup_config.open_workspaces.iter().find_map(|record| {
+            let session = record.session.as_ref()?;
             if session.starts_with("ssh:") {
-                continue; // remote windows need their bridge first
+                return None;
             }
-            let restored_bounds = bounds(
+            let bounds = bounds(
                 point(px(record.x as f32), px(record.y as f32)),
                 size(px(record.width as f32), px(record.height as f32)),
             );
+            Some((bounds, session.clone()))
+        });
+
+        if let Some((restored_bounds, session)) = restore_target {
             let _ = open_shell_window(
                 cx,
                 shared.clone(),
@@ -4080,9 +4046,7 @@ fn main() {
                 restored_bounds,
                 Some(session),
             );
-            restored = true;
-        }
-        if !restored {
+        } else {
             let _ = open_shell_window(
                 cx,
                 shared.clone(),
@@ -4106,6 +4070,24 @@ fn open_shell_window(
     window_bounds: Bounds<Pixels>,
     initial_session: Option<String>,
 ) -> gpui::Result<AnyWindowHandle> {
+    // Single-window constraint: Shardlane strictly runs as a single-window application.
+    // If a window already exists, activate it instead of opening a duplicate window.
+    if let Some(existing) = cx.windows().first() {
+        let handle = *existing;
+        let view = shared.window_view(handle.window_id());
+        let _ = handle.update(cx, |_, window, cx| {
+            window.activate_window();
+            if let Some(session) = initial_session {
+                if let Some(view) = view {
+                    view.update(cx, |view, view_cx| {
+                        view.bind_instance(session, window, view_cx);
+                    });
+                }
+            }
+        });
+        return Ok(handle);
+    }
+
     let mut options = gpui_window_options(
         "dev.shardlane.app",
         "",
@@ -4116,10 +4098,7 @@ fn open_shell_window(
     titlebar.traffic_light_position = Some(point(px(20.0), px(11.0)));
     options.titlebar = Some(titlebar);
     options.window_background = WindowBackgroundAppearance::Transparent;
-    // Native window tabbing (vendored gpui implements tabbingIdentifier +
-    // mergeAllWindows:): the user's macOS tabbing preference applies to shell
-    // windows, and Window → Merge All Windows merges them into native tabs.
-    options.tabbing_identifier = Some("dev.shardlane.window".to_string());
+    options.tabbing_identifier = None;
     let window = cx.open_window(options, |window, cx| {
         let view = cx.new(|cx| ShardlaneApp::with_config(config, shared.clone(), cx));
         cx.new(|cx| Root::new(view, window, cx))
@@ -4214,6 +4193,7 @@ fn open_shell_window(
 
 /// New-window placement: cascade from the activating window so overlapping
 /// windows are visibly stacked (macOS-style 28pt steps).
+#[allow(dead_code)]
 fn cascaded_window_bounds(base: Bounds<Pixels>) -> Bounds<Pixels> {
     const CASCADE_STEP: f32 = 28.0;
     bounds(

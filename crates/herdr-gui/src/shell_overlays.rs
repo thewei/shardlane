@@ -193,7 +193,12 @@ impl ShardlaneApp {
         // language); the List only handles the results area.
         let list = cx.new(|cx| {
             ListState::new(
-                ClientSearchDelegate::new(list_herdr, items, history_db_path, result_width),
+                ClientSearchDelegate::new(
+                    list_herdr.downgrade(),
+                    items,
+                    history_db_path,
+                    result_width,
+                ),
                 window,
                 cx,
             )

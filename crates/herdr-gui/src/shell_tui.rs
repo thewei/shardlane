@@ -66,13 +66,19 @@ pub(crate) fn text_is_terminal_control_payload(text: &str) -> bool {
 }
 
 /// Plain right-click belongs to Shardlane's native terminal context menu. It must never be
-/// encoded into the hosted Herdr TUI, otherwise Herdr opens its own TUI menu underneath the
+/// encoded into the hosted Herdr TUI when native menus are enabled, otherwise Herdr opens its own TUI menu underneath the
 /// native GPUI menu and a right-button drag can emit an orphan SGR motion sequence.
-pub(crate) fn tui_native_context_menu_owns_button(button: &MouseButton) -> bool {
-    matches!(button, MouseButton::Right)
+pub(crate) fn tui_native_context_menu_owns_button(
+    button: &MouseButton,
+    native_menu_enabled: bool,
+) -> bool {
+    matches!(button, MouseButton::Right) && native_menu_enabled
 }
 
 impl ShardlaneApp {
+    pub(crate) fn tui_native_context_menu_owns_button(&self, button: &MouseButton) -> bool {
+        tui_native_context_menu_owns_button(button, !self.herdr_tui_context_menu_enabled())
+    }
     /// Translate Shardlane's visible Pane grid into the larger raw Herdr TUI grid that
     /// also contains hidden navigation chrome. `terminal_size` remains the visible SSOT;
     /// only the hosted PTY/Ghostty transport receives this compensated size.
@@ -130,10 +136,15 @@ impl ShardlaneApp {
         // holds; they are invariant under the desktop's own imposition, so both the
         // crop-only (adoption/navigation) and reimpose paths share this computation.
         let (adopted_cols, adopted_rows) = self.tui_adopted_grid.unwrap_or((visible.0, visible.1));
-        let Some(next) =
-            herdr_tui::TuiChromeProjection::from_layout(adopted_cols, adopted_rows, area)
-        else {
-            return false;
+        let next = if self.herdr_tui_tabs_enabled() {
+            herdr_tui::TuiChromeProjection::default()
+        } else {
+            let Some(proj) =
+                herdr_tui::TuiChromeProjection::from_layout(adopted_cols, adopted_rows, area)
+            else {
+                return false;
+            };
+            proj
         };
         // Anti-feedback guard: reimpose probes run right after the transport
         // resize, and a backend whose pane absorbs the new grid (tmux attach,
@@ -803,7 +814,7 @@ impl ShardlaneApp {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if tui_native_context_menu_owns_button(&event.button) {
+        if self.tui_native_context_menu_owns_button(&event.button) {
             return;
         }
         if let Some(button) = Self::terminal_mouse_button(&event.button) {
@@ -819,6 +830,7 @@ impl ShardlaneApp {
                 },
                 cx,
             ) {
+                window.focus(&self.focus_handle);
                 cx.stop_propagation();
                 return;
             }
@@ -903,9 +915,22 @@ mod tests {
 
     #[test]
     fn tui_right_click_is_reserved_for_native_context_menu() {
-        assert!(tui_native_context_menu_owns_button(&MouseButton::Right));
-        assert!(!tui_native_context_menu_owns_button(&MouseButton::Left));
-        assert!(!tui_native_context_menu_owns_button(&MouseButton::Middle));
+        assert!(tui_native_context_menu_owns_button(
+            &MouseButton::Right,
+            true
+        ));
+        assert!(!tui_native_context_menu_owns_button(
+            &MouseButton::Right,
+            false
+        ));
+        assert!(!tui_native_context_menu_owns_button(
+            &MouseButton::Left,
+            true
+        ));
+        assert!(!tui_native_context_menu_owns_button(
+            &MouseButton::Middle,
+            true
+        ));
     }
 
     #[test]

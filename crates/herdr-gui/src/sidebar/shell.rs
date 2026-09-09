@@ -265,6 +265,11 @@ impl ShardlaneApp {
                 // the `terminal.tab_bar_placement` setting).
                 workspace_scrolling =
                     workspace_scrolling.child(sidebar_hint_row("Tabs live in the tab bar", cx));
+            } else if expanded && self.herdr_tui_tabs_enabled() {
+                // Herdr-TUI placement: the per-Tab subtree is managed directly inside the terminal
+                // by Herdr's hosted TUI; the Sidebar keeps the Project row.
+                workspace_scrolling =
+                    workspace_scrolling.child(sidebar_hint_row("Tabs live in terminal", cx));
             } else if expanded {
                 let tabs = self.tabs_for_workspace(&workspace.workspace_id);
                 if let Some(error) = project_pane_errors.get(&workspace.workspace_id) {

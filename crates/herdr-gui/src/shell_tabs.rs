@@ -65,6 +65,18 @@ impl ShardlaneApp {
         self.config.terminal.tab_bar_placement == settings::TabBarPlacement::Native
     }
 
+    pub(super) fn herdr_tui_tabs_enabled(&self) -> bool {
+        self.config.terminal.tab_bar_placement == settings::TabBarPlacement::HerdrTui
+    }
+
+    pub(super) fn sidebar_tabs_enabled(&self) -> bool {
+        self.config.terminal.tab_bar_placement == settings::TabBarPlacement::Sidebar
+    }
+
+    pub(super) fn herdr_tui_context_menu_enabled(&self) -> bool {
+        self.config.terminal.tab_bar_placement == settings::TabBarPlacement::HerdrTui
+    }
+
     pub(super) fn native_tab_bar_height(&self) -> f64 {
         if self.native_tabs_enabled() {
             f64::from(NATIVE_TAB_BAR_HEIGHT)

@@ -233,12 +233,14 @@ impl ShardlaneApp {
             Segmented::new("settings-terminal-tab-bar-placement", surface)
                 .option(crate::settings::TabBarPlacement::Sidebar, "Sidebar")
                 .option(crate::settings::TabBarPlacement::Native, "Native Tabs")
+                .option(crate::settings::TabBarPlacement::HerdrTui, "Herdr TUI")
                 .value(tab_bar_placement)
                 .on_change(move |placement, _, app| {
                     tab_bar_herdr.update(app, |this, cx| {
                         this.config.terminal.tab_bar_placement = *placement;
                         this.save_config();
                         this.notify_sidebar(cx);
+                        this.schedule_tui_chrome_probe(None, true, cx);
                         cx.notify();
                     });
                 })

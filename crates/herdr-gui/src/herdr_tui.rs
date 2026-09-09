@@ -209,21 +209,32 @@ pub struct TuiChromeProjection {
 impl TuiChromeProjection {
     pub fn from_layout(outer_cols: u16, outer_rows: u16, area: LayoutRect) -> Option<Self> {
         let left = u16::try_from(area.x).ok()?;
-        let top = u16::try_from(area.y).ok()?;
+        let raw_top = u16::try_from(area.y).ok()?;
         let width = u16::try_from(area.width).ok()?;
         let height = u16::try_from(area.height).ok()?;
         if width == 0
             || height == 0
             || left.saturating_add(width) > outer_cols
-            || top.saturating_add(height) > outer_rows
+            || raw_top.saturating_add(height) > outer_rows
         {
             return None;
         }
+        // In Herdr 0.8, the top Tab bar was reflected in `area.y = 1`. In Herdr 0.9+, `area.y`
+        // is reported relative to the pane area (`area.y = 0`), while `area.height` remains
+        // `outer_rows - top_chrome` (e.g. 39 rows for a 40-row terminal with a 1-row tab bar).
+        // When `raw_top == 0` and `height < outer_rows`, the missing vertical rows belong to
+        // the top chrome (Herdr desktop tab bar at row 0), never the bottom.
+        let top = if raw_top > 0 {
+            raw_top
+        } else {
+            outer_rows.saturating_sub(height)
+        };
+        let bottom = outer_rows.saturating_sub(top.saturating_add(height));
         Some(Self {
             left,
             top,
             right: outer_cols.saturating_sub(left.saturating_add(width)),
-            bottom: outer_rows.saturating_sub(top.saturating_add(height)),
+            bottom,
         })
     }
 
@@ -1009,6 +1020,36 @@ dark_name = "one-dark"
         assert_eq!(projection.visible_to_raw_cell((0, 0)), (26, 1));
         assert_eq!(projection.raw_to_visible_cell((26, 1)), Some((0, 0)));
         assert_eq!(projection.raw_to_visible_cell((25, 1)), None);
+    }
+
+    #[test]
+    fn chrome_projection_handles_herdr_0_9_relative_layout() {
+        // Herdr 0.9 reports pane-local area (y: 0, height: rows - 1). The 1 missing row
+        // represents the top Tab bar (row 0), never the bottom.
+        let projection = TuiChromeProjection::from_layout(
+            120,
+            40,
+            LayoutRect {
+                x: 0,
+                y: 0,
+                width: 120,
+                height: 39,
+            },
+        )
+        .unwrap_or_default();
+        assert_eq!(
+            projection,
+            TuiChromeProjection {
+                left: 0,
+                top: 1,
+                right: 0,
+                bottom: 0,
+            }
+        );
+        assert_eq!(projection.outer_grid(120, 39), (120, 40));
+        assert_eq!(projection.visible_to_raw_cell((0, 0)), (0, 1));
+        assert_eq!(projection.raw_to_visible_cell((0, 1)), Some((0, 0)));
+        assert_eq!(projection.raw_to_visible_cell((0, 0)), None);
     }
 
     #[test]

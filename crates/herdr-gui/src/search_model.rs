@@ -226,7 +226,7 @@ pub(crate) fn client_search_scope_completion(
 }
 
 pub(crate) struct ClientSearchDelegate {
-    app: Entity<ShardlaneApp>,
+    app: WeakEntity<ShardlaneApp>,
     base_items: Vec<ClientSearchItem>,
     pub(crate) results: Vec<ClientSearchItem>,
     selected_ix: Option<usize>,
@@ -324,7 +324,7 @@ pub(crate) fn parse_client_search_query(
 
 impl ClientSearchDelegate {
     pub(crate) fn new(
-        app: Entity<ShardlaneApp>,
+        app: WeakEntity<ShardlaneApp>,
         items: Vec<ClientSearchItem>,
         history_db_path: Option<std::path::PathBuf>,
         result_width: f32,
@@ -437,12 +437,14 @@ impl ClientSearchDelegate {
     }
 
     fn close_search(&self, _window: &mut Window, cx: &mut Context<ListState<Self>>) {
-        self.app.update(cx, |view, cx| {
-            view.client_picker = None;
-            view.search_open = false;
-            view.sync_terminal_application_focus(cx);
-            cx.notify();
-        });
+        if let Some(app) = self.app.upgrade() {
+            app.update(cx, |view, cx| {
+                view.client_picker = None;
+                view.search_open = false;
+                view.sync_terminal_application_focus(cx);
+                cx.notify();
+            });
+        }
     }
 }
 
@@ -652,51 +654,55 @@ impl ListDelegate for ClientSearchDelegate {
         self.close_search(window, cx);
         // FocusIntent seam: Search results and Sidebar/History share the same navigation landing;
         // Agent projections without a pane degrade to the most specific known target.
-        self.app.update(cx, |view, view_cx| {
-            let intent = match item.target {
-                ClientSearchTarget::Project { workspace_id } => FocusIntent::project(workspace_id),
-                ClientSearchTarget::Tab { tab_id } => FocusIntent::tab(tab_id),
-                ClientSearchTarget::Pane {
-                    workspace_id,
-                    tab_id,
-                    pane_id,
-                }
-                | ClientSearchTarget::Agent {
-                    workspace_id,
-                    tab_id,
-                    pane_id: Some(pane_id),
-                    ..
-                } => FocusIntent::pane(workspace_id, tab_id, pane_id),
-                // audit P2-6: an Agent without a pane but with a stable terminal_id → direct agent.focus.
-                ClientSearchTarget::Agent {
-                    terminal_id: Some(terminal_id),
-                    workspace_id,
-                    tab_id,
-                    ..
-                } => FocusIntent::agent(terminal_id, workspace_id, tab_id, None),
-                ClientSearchTarget::Agent { tab_id, .. } => match tab_id {
-                    Some(tab_id) => FocusIntent::tab(tab_id),
-                    None => return,
-                },
-                ClientSearchTarget::Script { script_id } => {
-                    view.focus_script_id(script_id, window, view_cx);
-                    return;
-                }
-                ClientSearchTarget::DetectedService {
-                    workspace_id,
-                    tab_id,
-                    pane_id,
-                } => FocusIntent::pane(Some(workspace_id), Some(tab_id), pane_id),
-                ClientSearchTarget::Conversation {
-                    session,
-                    target_seq,
-                } => {
-                    view.open_history_session_from_search(*session, target_seq, view_cx);
-                    return;
-                }
-            };
-            view.apply_focus_intent(intent, window, view_cx);
-        });
+        if let Some(app) = self.app.upgrade() {
+            app.update(cx, |view, view_cx| {
+                let intent = match item.target {
+                    ClientSearchTarget::Project { workspace_id } => {
+                        FocusIntent::project(workspace_id)
+                    }
+                    ClientSearchTarget::Tab { tab_id } => FocusIntent::tab(tab_id),
+                    ClientSearchTarget::Pane {
+                        workspace_id,
+                        tab_id,
+                        pane_id,
+                    }
+                    | ClientSearchTarget::Agent {
+                        workspace_id,
+                        tab_id,
+                        pane_id: Some(pane_id),
+                        ..
+                    } => FocusIntent::pane(workspace_id, tab_id, pane_id),
+                    // audit P2-6: an Agent without a pane but with a stable terminal_id → direct agent.focus.
+                    ClientSearchTarget::Agent {
+                        terminal_id: Some(terminal_id),
+                        workspace_id,
+                        tab_id,
+                        ..
+                    } => FocusIntent::agent(terminal_id, workspace_id, tab_id, None),
+                    ClientSearchTarget::Agent { tab_id, .. } => match tab_id {
+                        Some(tab_id) => FocusIntent::tab(tab_id),
+                        None => return,
+                    },
+                    ClientSearchTarget::Script { script_id } => {
+                        view.focus_script_id(script_id, window, view_cx);
+                        return;
+                    }
+                    ClientSearchTarget::DetectedService {
+                        workspace_id,
+                        tab_id,
+                        pane_id,
+                    } => FocusIntent::pane(Some(workspace_id), Some(tab_id), pane_id),
+                    ClientSearchTarget::Conversation {
+                        session,
+                        target_seq,
+                    } => {
+                        view.open_history_session_from_search(*session, target_seq, view_cx);
+                        return;
+                    }
+                };
+                view.apply_focus_intent(intent, window, view_cx);
+            });
+        }
     }
 
     fn cancel(&mut self, window: &mut Window, cx: &mut Context<ListState<Self>>) {

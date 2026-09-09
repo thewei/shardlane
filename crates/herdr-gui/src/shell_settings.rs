@@ -319,6 +319,7 @@ impl ShardlaneApp {
             self.apply_terminal_render_settings(cx);
             if tab_bar_placement_changed {
                 self.notify_sidebar(cx);
+                self.schedule_tui_chrome_probe(None, true, cx);
             }
         }
         if diff.lazygit {

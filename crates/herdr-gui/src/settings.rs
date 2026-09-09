@@ -459,12 +459,15 @@ pub struct TerminalConfig {
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum TabBarPlacement {
-    /// Tabs render as Sidebar rows under their Project (current default).
+    /// Tabs render as Sidebar rows under their Project.
     #[default]
     Sidebar,
     /// Tabs render as a native Tab strip above the hosted terminal content;
     /// the Sidebar keeps Projects without the per-Tab subtree.
     Native,
+    /// Tabs and context menu are rendered and handled directly by Herdr TUI
+    /// inside the terminal; the Sidebar keeps Projects without the per-Tab subtree.
+    HerdrTui,
 }
 
 /// Lazygit startup and Shardlane-owned overlay preferences. User/repository Lazygit
@@ -664,7 +667,9 @@ impl ApplicationConfig {
 
     /// Open-window snapshot persistence (B4/C4): load-modify-save so a restore
     /// snapshot never clobbers other settings another window just wrote.
-    pub(crate) fn persist_open_workspaces(records: Vec<OpenWorkspaceRecord>) {
+    /// In the single-window model, at most one active workspace window snapshot is retained.
+    pub(crate) fn persist_open_workspaces(mut records: Vec<OpenWorkspaceRecord>) {
+        records.truncate(1);
         let Ok(mut config) = Self::load_strict() else {
             return;
         };
@@ -779,6 +784,8 @@ impl ApplicationConfig {
         self.terminal.line_height = self.terminal.line_height.clamp(14.0, 34.0);
         self.lazygit = self.lazygit.normalized();
         self.history_sources = self.history_sources.normalized();
+        // Single-window model: at most one open workspace window snapshot is retained.
+        self.open_workspaces.truncate(1);
         self
     }
 }
@@ -842,6 +849,43 @@ mod tests {
     use super::*;
     use std::thread;
     use std::time::{Duration, Instant};
+
+    #[test]
+    fn normalized_truncates_open_workspaces_to_single_window() {
+        let mut config = ApplicationConfig {
+            open_workspaces: vec![
+                OpenWorkspaceRecord {
+                    session: Some("probe-ag".to_string()),
+                    x: 100.0,
+                    y: 100.0,
+                    width: 1200.0,
+                    height: 800.0,
+                },
+                OpenWorkspaceRecord {
+                    session: Some("probe-ag".to_string()),
+                    x: 100.0,
+                    y: 100.0,
+                    width: 1200.0,
+                    height: 800.0,
+                },
+                OpenWorkspaceRecord {
+                    session: Some("session1".to_string()),
+                    x: 100.0,
+                    y: 100.0,
+                    width: 1200.0,
+                    height: 800.0,
+                },
+            ],
+            ..ApplicationConfig::default()
+        };
+        assert_eq!(config.open_workspaces.len(), 3);
+        config = config.normalized();
+        assert_eq!(config.open_workspaces.len(), 1);
+        assert_eq!(
+            config.open_workspaces[0].session.as_deref(),
+            Some("probe-ag")
+        );
+    }
 
     #[test]
     fn normalized_keeps_remote_port_default_and_explicit() {
@@ -1132,6 +1176,10 @@ mod tests {
         assert_eq!(
             serde_json::to_value(TabBarPlacement::Native).unwrap(),
             serde_json::json!("native")
+        );
+        assert_eq!(
+            serde_json::to_value(TabBarPlacement::HerdrTui).unwrap(),
+            serde_json::json!("herdr-tui")
         );
         let legacy: TerminalConfig = serde_json::from_str(r#"{"font_family":"Menlo"}"#)
             .unwrap_or_else(|error| panic!("{error}"));
