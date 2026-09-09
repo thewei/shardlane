@@ -5,7 +5,7 @@
 //           measurements plus read-only window/input-source inspection.
 // [POS]: native hardware probe used by the pacing/scroll acceptance harnesses;
 //        Computer Use is the preferred app-scoped driver and never calls this.
-// [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+// [PROTOCOL]: Update this header on change, then check CLAUDE.md.
 // -----------------------------------------------------------------------------
 // Key-repeat pacing probe event tool.
 // Posts hardware-faithful CGEvents (autorepeat-flagged key downs, mouse clicks)

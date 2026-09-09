@@ -1,8 +1,12 @@
 #!/usr/bin/env swift
-// [INPUT]: 依赖 AppKit 的原生 SVG 光栅化（macOS 11+）；输入为品牌 SVG 与输出目录
-// [OUTPUT]: 按 Apple macOS 图标网格（图形占 824/1024，居中留边，真透明）生成 10 级 app-icon 阶梯 PNG
-// [POS]: assets/app-icon 阶梯的唯一再生入口；包装侧 package-macos.sh 用 iconutil 从该阶梯重建 icns
-// [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+// [INPUT]: depends on AppKit's native SVG rasterization (macOS 11+); inputs
+// are the brand SVG and an output directory
+// [OUTPUT]: generates the 10-step app-icon PNG ladder on the Apple macOS
+// icon grid (artwork 824/1024, centered margins, true transparency)
+// [POS]: the only regeneration entry point of the assets/app-icon ladder;
+// the packaging side (package-macos.sh) rebuilds the icns from this ladder
+// with iconutil
+// [PROTOCOL]: Update this header on change, then check CLAUDE.md.
 
 import AppKit
 
@@ -46,7 +50,7 @@ func write(_ rep: NSBitmapImageRep, name: String) {
     try! png.write(to: URL(fileURLWithPath: outDir + "/" + name))
 }
 
-// (画布尺寸, 阶梯文件名)；@2x 与同尺寸 1x 共享同一光栅
+// (canvas size, ladder file name); @2x shares one raster with its same-size 1x
 let ladder: [(Int, String)] = [
     (16, "shardlane-16.png"),
     (32, "shardlane-16@2x.png"),

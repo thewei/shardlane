@@ -18,4 +18,4 @@ Rules:
 - Documents must distinguish Current / Approved Next / Protocol Gap. Never write plans as implemented facts.
 - Internal iteration plans, audits, handoffs, and progress evidence live in a private engineering archive outside this repository; do not reference them from public documents.
 
-[PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+[PROTOCOL]: Update this header on change, then check CLAUDE.md.

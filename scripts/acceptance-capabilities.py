@@ -4,7 +4,7 @@
 [OUTPUT]: JSON or text capability inventory, plus a read-only Computer Use MCP
           probe snippet; no UI action is performed by this executable.
 [POS]: Agent-facing entry point for quickly selecting a safe acceptance driver.
-[PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+[PROTOCOL]: Update this header on change, then check CLAUDE.md.
 """
 
 from __future__ import annotations

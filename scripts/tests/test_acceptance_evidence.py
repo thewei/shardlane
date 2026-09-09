@@ -2,7 +2,7 @@
 [INPUT]: temporary evidence paths and public acceptance-evidence CLI arguments.
 [OUTPUT]: unit-test evidence for bounded JSONL recording and summary validation.
 [POS]: no-GUI ledger regression suite; it never starts Herdr or touches user data.
-[PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+[PROTOCOL]: Update this header on change, then check CLAUDE.md.
 """
 
 from __future__ import annotations

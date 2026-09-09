@@ -2,7 +2,7 @@
 [INPUT]: synthetic tmux capture, geometry, zoom values, and assertion functions.
 [OUTPUT]: unit-test evidence for composable backend-truth assertions.
 [POS]: no-GUI regression suite; it verifies observable behavior rather than implementation details.
-[PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+[PROTOCOL]: Update this header on change, then check CLAUDE.md.
 """
 
 from __future__ import annotations

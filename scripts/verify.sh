@@ -5,7 +5,7 @@
 #          tier; no external services, no Git writes
 # [OUTPUT]: Provides six verification tiers: check | unit [FILTER] | history | ui | fast | full
 # [POS]: Fast verification entry point for edits/refactors; the full tier == AGENTS.md static gates (same source as CI)
-# [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+# [PROTOCOL]: Update this header on change, then check CLAUDE.md.
 #
 # Usage:
 #   scripts/verify.sh check               # Fastest: compile check only (run repeatedly while moving code around)

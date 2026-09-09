@@ -1,8 +1,11 @@
 """
-[INPUT]: scripts/acceptance 下的能力探针与后端断言模块。
-[OUTPUT]: 为场景脚本提供稳定、无 UI 副作用的组合入口。
-[POS]: UI 验收工具包的 Python 公共边界；shell 编排器和单元测试共同消费。
-[PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+[INPUT]: the capability probe and backend assertion modules under
+scripts/acceptance.
+[OUTPUT]: a stable, UI-side-effect-free composition entry point for the
+scenario scripts.
+[POS]: the Python public boundary of the UI acceptance toolkit; consumed by
+both the shell orchestrators and the unit tests.
+[PROTOCOL]: Update this header on change, then check CLAUDE.md.
 """
 
 from .assertions import (

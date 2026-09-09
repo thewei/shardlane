@@ -4,7 +4,7 @@
 [OUTPUT]: append-only, schema-versioned acceptance events and a compact summary.
 [POS]: the shared evidence ledger for native and Computer Use acceptance runs;
        it records control-plane facts only and never terminal/user text.
-[PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+[PROTOCOL]: Update this header on change, then check CLAUDE.md.
 """
 
 from __future__ import annotations

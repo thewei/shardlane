@@ -1552,9 +1552,11 @@ struct ShardlaneApp {
     /// recording, all registered chords are temporarily suppressed by NoAction (later entries win), and
     /// exit restores everything at once via rebind_shortcuts().
     pub(crate) shortcut_recording: Option<shortcuts::ShortcutId>,
-    /// Settings → Skill 面板最近一次安装/卸载失败的提示；成功操作自然清除。
+    /// Notice for the most recent Settings -> Skill install/uninstall
+    /// failure; a successful operation clears it naturally.
     skill_notice: Option<String>,
-    /// Settings → Agent Hooks 面板最近一次安装/卸载失败的提示；成功操作自然清除。
+    /// Notice for the most recent Settings -> Agent Hooks install/uninstall
+    /// failure; a successful operation clears it naturally.
     pub(crate) agent_hook_notice: Option<String>,
     /// Active project git status snapshot (consumed by the header's +/- pill and Info popover; 12s freshness).
     git_status: Option<git_status::GitStatusSnapshot>,
@@ -2934,7 +2936,7 @@ impl ShardlaneApp {
                             view.ensure_tui_surface(window, cx, true);
                             view.sync_open_workspaces(cx);
                             // Refresh the shared instance cache off the UI thread
-                            // so the workspace switcher's running/停止 states
+                            // so the workspace switcher's running/stopped states
                             // reflect the instance this window just (re)started.
                             let shared = view.shared.clone();
                             cx.spawn(async move |_, cx| {
@@ -4055,7 +4057,7 @@ fn main() {
         }
 
         // Workspace switcher freshness: poll `herdr session list` on the
-        // background executor so running/停止 dots stay current without any
+        // background executor so running/stopped dots stay current without any
         // UI-thread CLI round trip.
         {
             let refresh_shared = shared.clone();

@@ -2,7 +2,7 @@
 [INPUT]: deterministic command lookup, environment maps, and synthetic MCP exports.
 [OUTPUT]: unit-test evidence for the capability probe public seam.
 [POS]: no-GUI regression suite; it proves safety/status semantics without launching apps.
-[PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+[PROTOCOL]: Update this header on change, then check CLAUDE.md.
 """
 
 from __future__ import annotations

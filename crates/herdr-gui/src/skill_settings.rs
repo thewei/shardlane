@@ -1,9 +1,19 @@
-//! Settings → Skill 面板：把内置 `shardlane` skill 安装/卸载到各 Agent 技能根目录。
+//! Settings -> Skill panel: installs/uninstalls the bundled `shardlane`
+//! skill into each Agent's skill root.
 //!
-//! [INPUT]: 依赖 super（main.rs）的 ShardlaneApp 状态、settings_view 的卡片词汇、ui::controls 的 ControlSurface、gpui-component Button，以及 include_str! 内嵌的 skill/shardlane/SKILL.md 资产
-//! [OUTPUT]: 对外提供 ShardlaneApp::skill_settings_content（Settings → Skill 内容列）、内置 skill 资产常量 BUNDLED_SKILL_MD、可测的安装引擎（skill_roots / read_skill_state / install_skill / uninstall_skill）
-//! [POS]: settings 演示层拆分之一（mobile_view.rs 的兄弟）；安装引擎是纯 fs 逻辑并直接对临时根目录测试；CLI 查询面在 cli.rs，SKILL.md 是两面的语义契约
-//! [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+//! [INPUT]: depends on the ShardlaneApp state in super (main.rs), the
+//! settings_view card vocabulary, ui::controls ControlSurface, the
+//! gpui-component Button, and the include_str! embedded
+//! skill/shardlane/SKILL.md asset
+//! [OUTPUT]: exposes ShardlaneApp::skill_settings_content (the Settings ->
+//! Skill content column), the bundled skill asset constant BUNDLED_SKILL_MD,
+//! and the testable install engine (skill_roots / read_skill_state /
+//! install_skill / uninstall_skill)
+//! [POS]: one split of the settings presentation layer (sibling of
+//! mobile_view.rs); the install engine is pure fs logic and is tested
+//! directly against temp roots; the CLI query surface lives in cli.rs and
+//! SKILL.md is the semantic contract of both surfaces
+//! [PROTOCOL]: Update this header on change, then check CLAUDE.md.
 
 use std::path::{Path, PathBuf};
 
@@ -12,16 +22,20 @@ use crate::settings_view::{settings_card, settings_card_row};
 use crate::ui::controls::ControlSurface;
 
 // ============================================================
-// 安装引擎：纯 fs、无 UI 依赖；symlink 托管的目标永远拒绝直写
+// Install engine: pure fs with no UI dependency; symlinked targets always
+// refuse direct writes.
 // ============================================================
 
-/// skill 目录名 = skill 名（与 herdr skill 的目录惯例一致）。
+/// The skill directory name equals the skill name (matching the herdr skill
+/// directory convention).
 pub(crate) const SKILL_DIR_NAME: &str = "shardlane";
 
-/// 内置 skill 资产：安装面板写入磁盘的唯一内容；cli.rs 的查询契约与它同源。
+/// The bundled skill asset: the only content the install panel writes to
+/// disk; cli.rs's query contract shares this source.
 pub(crate) const BUNDLED_SKILL_MD: &str = include_str!("../skill/shardlane/SKILL.md");
 
-/// 规范安装根：agents/skillshare 生态、Codex、Claude。全部展示，不猜测存在性。
+/// Canonical install roots: the agents/skillshare ecosystem, Codex, Claude.
+/// All are shown; existence is never guessed.
 pub(crate) fn skill_roots() -> Vec<PathBuf> {
     let Some(home) = std::env::var_os("HOME").map(PathBuf::from) else {
         return Vec::new();
@@ -34,12 +48,14 @@ pub(crate) fn skill_roots() -> Vec<PathBuf> {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum SkillInstallState {
-    /// 与内置资产逐字节一致。
+    /// Byte-identical to the bundled asset.
     Installed,
-    /// 存在但内容不同（旧版本或被手改）；Install 会刷新为内置版本。
+    /// Present with different content (older version or hand-edited);
+    /// Install refreshes it to the bundled version.
     Outdated,
     Missing,
-    /// symlink：可能指向 skillshare hub 等外部托管源，永不直写。
+    /// Symlink: may point at an externally managed source such as a
+    /// skillshare hub; never written directly.
     External,
 }
 
@@ -72,7 +88,8 @@ fn guard_externally_managed(root: &Path) -> Result<(), String> {
     Ok(())
 }
 
-/// 写入（或刷新）内置 skill。成功后重读磁盘状态返回，UI 直接投影事实。
+/// Writes (or refreshes) the bundled skill. On success the on-disk state is
+/// re-read and returned so the UI projects facts directly.
 pub(crate) fn install_skill(root: &Path) -> Result<SkillInstallState, String> {
     guard_externally_managed(root)?;
     let dir = skill_dir(root);
@@ -83,8 +100,9 @@ pub(crate) fn install_skill(root: &Path) -> Result<SkillInstallState, String> {
     Ok(read_skill_state(root))
 }
 
-/// 只删本 skill 自己的 SKILL.md；目录仅在其变空时移除，绝不触碰兄弟文件。
-/// 返回是否真的删除了文件。
+/// Removes only this skill's own SKILL.md; the directory is removed only
+/// when it becomes empty, sibling files are never touched. Returns whether
+/// a file was actually removed.
 pub(crate) fn uninstall_skill(root: &Path) -> Result<bool, String> {
     guard_externally_managed(root)?;
     let file = skill_file(root);
@@ -103,7 +121,8 @@ pub(crate) fn uninstall_skill(root: &Path) -> Result<bool, String> {
 }
 
 // ============================================================
-// 面板 UI：概览卡 + 逐根目录状态卡（即时 Install/Remove，无中间态）
+// Panel UI: an overview card plus per-root status cards (immediate
+// Install/Remove, no intermediate states).
 // ============================================================
 
 fn display_root(root: &Path) -> String {
@@ -199,7 +218,8 @@ impl ShardlaneApp {
         }
         let locations_card = settings_card(surface, location_rows);
 
-        // 最近一次安装/卸载失败的可见反馈；下一次成功操作自然清除。
+        // Visible feedback for the most recent install/uninstall failure;
+        // the next successful operation clears it naturally.
         let error_note = self.skill_notice.clone().map(|message| {
             div()
                 .mt(px(10.0))
@@ -249,7 +269,8 @@ mod tests {
         assert_eq!(installed, SkillInstallState::Installed);
         assert_eq!(read_skill_state(&root), SkillInstallState::Installed);
 
-        // 内容漂移 → Outdated；Install 语义 = 刷新为内置版本。
+        // Content drift -> Outdated; Install semantics = refresh to the
+        // bundled version.
         let file = skill_file(&root);
         std::fs::write(&file, "stale").unwrap_or_else(|error| panic!("write: {error}"));
         assert_eq!(read_skill_state(&root), SkillInstallState::Outdated);
@@ -260,7 +281,8 @@ mod tests {
 
         assert_eq!(uninstall_skill(&root), Ok(true));
         assert_eq!(read_skill_state(&root), SkillInstallState::Missing);
-        // 目录已随最后一份文件清空而移除；重复卸载是幂等 no-op。
+        // The directory was removed with its last file; repeated uninstalls
+        // are an idempotent no-op.
         assert!(!skill_dir(&root).exists());
         assert_eq!(uninstall_skill(&root), Ok(false));
     }

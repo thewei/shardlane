@@ -5,7 +5,7 @@
           UI, filesystem, or process side effects.
 [POS]: Backend truth seam beneath UI acceptance; screenshots remain diagnostics,
        while these helpers decide whether a behavior actually passed.
-[PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+[PROTOCOL]: Update this header on change, then check CLAUDE.md.
 """
 
 from __future__ import annotations

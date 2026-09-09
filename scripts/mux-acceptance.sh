@@ -7,7 +7,7 @@
 #           tmux ground truth; --prepare exposes a Computer Use/MCP session.
 # [POS]: real-app acceptance boundary for the hosted TUI and mux adapters;
 #        it owns only disposable test processes and never runtime state.
-# [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+# [PROTOCOL]: Update this header on change, then check CLAUDE.md.
 # -----------------------------------------------------------------------------
 # Usage: scripts/mux-acceptance.sh [--driver computer-use|native] [--prepare]
 #                              [--keep] [bind-key]

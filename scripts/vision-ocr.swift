@@ -5,7 +5,7 @@
 //           `text<TAB>x,y,w,h` (global points), suitable for semantic menu clicks.
 // [POS]: read-only OCR evidence helper for native acceptance fallback; the
 //        Computer Use driver should prefer AX text and does not invoke this tool.
-// [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+// [PROTOCOL]: Update this header on change, then check CLAUDE.md.
 // -----------------------------------------------------------------------------
 
 import CoreGraphics

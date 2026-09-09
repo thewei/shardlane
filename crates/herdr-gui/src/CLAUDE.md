@@ -1,7 +1,7 @@
 # Shardlane native app source
 > L2 | Parent: ../../../CLAUDE.md
 
-[PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+[PROTOCOL]: Update this header on change, then check CLAUDE.md.
 
 Members:
 - `main.rs` — native window/root, actions, navigation orchestration, cached shell entities, and shell composition; `main()` also dispatches the headless `shardlane <command>` read-only CLI (via `cli.rs`) before any GUI init, with unrecognized arguments falling through to the normal launch path.

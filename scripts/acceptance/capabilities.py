@@ -4,7 +4,7 @@
 [OUTPUT]: Bounded capability results/reports and a read-only @oai/sky probe script.
 [POS]: UI acceptance capability seam; it does not launch apps, send input, or
        capture the display, so scenario scripts can compose it safely.
-[PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+[PROTOCOL]: Update this header on change, then check CLAUDE.md.
 """
 
 from __future__ import annotations

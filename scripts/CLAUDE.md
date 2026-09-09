@@ -22,4 +22,4 @@ Member inventory
 - `terminal-native-smoke.sh` — macOS Terminal real-device forensics harness; starts one Herdr server and one Shardlane app with a temporary `HOME` + unique `HERDR_SOCKET_PATH` + dedicated `SHARDLANE_LAG_LOG_PATH`, prints Ghostty A/B commands and trace analysis commands for the same runtime, and cleans up only its own PIDs/directories.
 
 Boundary: scripts only orchestrate build artifacts and verification; they own no Herdr runtime, Remote API, or Mobile Web business logic.
-[PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+[PROTOCOL]: Update this header on change, then check CLAUDE.md.

@@ -1,8 +1,15 @@
-//! Settings → Agent Hooks 面板：管理各 Coding Agent 的生命周期 Hook 状态嗅探与集成。
+//! Settings -> Agent Hooks panel: manages per-Coding-Agent lifecycle hook
+//! status sniffing and integrations.
 //!
-//! [INPUT]: 依赖 super（main.rs）的 ShardlaneApp 状态、settings_view 的卡片词汇、ui::controls 的 ControlSurface、gpui-component Button，以及 shardlane_host::agent_hooks::*
-//! [OUTPUT]: 对外提供 ShardlaneApp::agent_hooks_settings_content（Settings → Agent Hooks 内容列）
-//! [POS]: Settings 面板拆分之一；负责管理 Claude Code, Codex, OpenCode, Pi, Command Code 等 Agent 的状态 Hook 安装/卸载，支持 tmux / Herdr / 远程 tmux 跨后端嗅探与 4 级弹性降级。
+//! [INPUT]: depends on the ShardlaneApp state in super (main.rs), the
+//! settings_view card vocabulary, ui::controls ControlSurface, the
+//! gpui-component Button, and shardlane_host::agent_hooks::*
+//! [OUTPUT]: exposes ShardlaneApp::agent_hooks_settings_content (the
+//! Settings -> Agent Hooks content column)
+//! [POS]: one split of the Settings panel; manages the status hook
+//! install/uninstall for agents such as Claude Code, Codex, OpenCode, Pi,
+//! and Command Code, with tmux / Herdr / remote tmux cross-backend sniffing
+//! and a 4-level graceful degradation.
 
 use std::path::PathBuf;
 

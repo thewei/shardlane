@@ -1,9 +1,16 @@
-//! Shardlane headless CLI：`shardlane <command>` 的只读控制面入口。
+//! Shardlane headless CLI: the read-only control-surface entry point for
+//! `shardlane <command>`.
 //!
-//! [INPUT]: 依赖 shardlane_host::mux（MuxRegistry/InstanceRef/InstanceListing 投影契约）、serde_json
-//! [OUTPUT]: 对外提供 try_dispatch（main() 最早拦截参数：workspace/project/agent 查询、version、help；返回 Some(exit) 表示已处理、GUI 不启动，None 表示继续启动 GUI）
-//! [POS]: crates/herdr-gui 的对外只读控制面；查询统一走 mux 中性 seam，不触碰 socket 形状；管理能力显式留给 herdr CLI（由内置 shardlane skill 教学，见 skill/shardlane/SKILL.md）
-//! [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+//! [INPUT]: depends on shardlane_host::mux (the MuxRegistry /
+//! InstanceRef / InstanceListing projection contracts) and serde_json
+//! [OUTPUT]: exposes try_dispatch (intercepts argv before anything else in
+//! main(): workspace/project/agent queries, version, help; returns Some(exit)
+//! when handled so the GUI never starts, None to continue GUI startup)
+//! [POS]: the outward read-only control surface of crates/herdr-gui; queries
+//! go through the neutral mux seam and never touch socket shapes; management
+//! stays explicitly with the herdr CLI (taught by the bundled shardlane
+//! skill, see skill/shardlane/SKILL.md)
+//! [PROTOCOL]: Update this header on change, then check CLAUDE.md.
 
 use std::io::Write as _;
 use std::sync::Arc;
@@ -14,7 +21,8 @@ use shardlane_host::mux::{
 };
 
 // ============================================================
-// 参数模型：None = 非 CLI 调用（回落 GUI 启动，保持 macOS 启动路径不变）
+// Parse model: None = not a CLI invocation (fall through to GUI startup,
+// keeping the macOS launch path unchanged).
 // ============================================================
 
 #[derive(Debug, PartialEq, Eq)]
@@ -23,7 +31,8 @@ pub(crate) enum CliParse {
     Help,
     Version,
     Command(CliCommand),
-    /// 已识别为 CLI 调用但用法错误（exit 2，对齐 herdr CLI 的语法错误约定）。
+    /// Recognized as a CLI call but with bad usage (exit 2, matching the
+    /// herdr CLI's usage-error convention).
     Usage(String),
 }
 
@@ -53,7 +62,8 @@ NOTES:
     Server errors print JSON on stderr with exit status 1; usage errors exit 2.\n";
 
 // ============================================================
-// 解析：只接管已识别的命令面；其余首参一律回落 GUI
+// Parsing: only the recognized command surface is handled; any other first
+// argument falls through to the GUI.
 // ============================================================
 
 pub(crate) fn parse_args(args: &[String]) -> CliParse {
@@ -100,7 +110,8 @@ pub(crate) fn parse_args(args: &[String]) -> CliParse {
     }
 }
 
-/// main() 最早调用：Some(exit_code) = headless 已处理；None = 继续启动 GUI。
+/// Called at the very top of main(): Some(exit_code) = handled headless;
+/// None = continue GUI startup.
 pub(crate) fn try_dispatch(args: &[String]) -> Option<i32> {
     match parse_args(args) {
         CliParse::None => None,
@@ -130,11 +141,13 @@ fn run_command(command: CliCommand) -> i32 {
 }
 
 // ============================================================
-// 实例寻址：Workspace = 后端实例；herdr_session 即 HERDR_SESSION 取值
+// Instance addressing: Workspace = backend instance; herdr_session is the
+// exact HERDR_SESSION value.
 // ============================================================
 
-/// `HERDR_SESSION` 的精确取值：default 实例必须 unset；其他后端（tmux 等）
-/// 不吃这个环境变量，同样返回 None。
+/// The exact `HERDR_SESSION` value: the default instance must leave it
+/// unset; other backends (tmux etc.) ignore this env var and also return
+/// None.
 fn herdr_session_env(listing: &InstanceListing) -> Option<String> {
     if listing.backend == "herdr" && !listing.is_default {
         Some(listing.name.clone())
@@ -143,8 +156,9 @@ fn herdr_session_env(listing: &InstanceListing) -> Option<String> {
     }
 }
 
-/// 逐后端枚举：后端不可用（CLI 缺失等）不中止整体查询，而是记入 errors ——
-/// 对 agent 而言"空列表"与"不可枚举"必须可区分。
+/// Per-backend enumeration: an unavailable backend (CLI missing etc.) never
+/// aborts the overall query, it is recorded in errors — for agents, an
+/// "empty list" and "not enumerable" must stay distinguishable.
 fn enumerated_instances(
     registry: &MuxRegistry,
     errors: &mut Vec<serde_json::Value>,
@@ -162,8 +176,9 @@ fn enumerated_instances(
     all
 }
 
-/// `--workspace` 按 session 名或 display_name 精确匹配；不带过滤时仅保留
-/// running 实例。显式选中一个停止的实例是错误而非跳过（可操作的契约优先）。
+/// `--workspace` matches by session name or display_name exactly; without
+/// a filter only running instances are kept. Explicitly selecting a stopped
+/// instance is an error rather than a skip (actionable contracts win).
 fn filter_listings(
     listings: Vec<InstanceListing>,
     workspace: Option<&str>,
@@ -171,7 +186,8 @@ fn filter_listings(
     match workspace {
         None => Ok(listings.into_iter().filter(|l| l.running).collect()),
         Some(want) => {
-            // 真实环境存在 display_name 与另一实例 name 撞名：name 永远优先。
+            // Real environments can collide a display_name with another
+            // instance's name: the name always wins.
             let by_name: Vec<InstanceListing> = listings
                 .iter()
                 .filter(|l| l.name == want)
@@ -196,7 +212,8 @@ fn filter_listings(
     }
 }
 
-/// 无副作用连接：绝不启动实例；查询面永远不会替用户拉起服务。
+/// Side-effect-free connect: never starts an instance; the query surface
+/// never starts a service on the user's behalf.
 fn connect_instance(
     registry: &MuxRegistry,
     listing: &InstanceListing,
@@ -210,7 +227,7 @@ fn connect_instance(
 }
 
 // ============================================================
-// 三条查询命令
+// The three query commands
 // ============================================================
 
 fn run_workspace_list(registry: &MuxRegistry) -> i32 {
@@ -308,7 +325,8 @@ fn instance_error(listing: &InstanceListing, message: &str) -> serde_json::Value
 }
 
 // ============================================================
-// 输出契约：数据 stdout JSON；运行时错误 stderr JSON + exit 1
+// Output contract: data on stdout as JSON; runtime errors on stderr as JSON
+// with exit status 1.
 // ============================================================
 
 fn emit(value: &serde_json::Value) {
@@ -392,7 +410,8 @@ mod tests {
 
     #[test]
     fn herdr_session_env_follows_instance_identity() {
-        // default 实例必须 unset；命名 herdr 实例取 session 名；其他后端不吃该变量。
+        // The default instance must leave HERDR_SESSION unset; a named herdr
+        // instance carries the session name; other backends ignore the var.
         assert_eq!(
             herdr_session_env(&listing("herdr", "default", true, true)),
             None
@@ -446,7 +465,8 @@ mod tests {
 
     #[test]
     fn name_match_wins_over_display_name_collision() {
-        // 真实环境案例：default 实例的 display_name 与某个命名实例的 name 相同。
+        // Real-world case: a default instance's display_name equals another
+        // named instance's name.
         let mut default_row = listing("herdr", "default", true, true);
         default_row.display_name = Some("MyWork".to_string());
         let listings = vec![default_row, listing("herdr", "MyWork", true, false)];

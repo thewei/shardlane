@@ -8,7 +8,7 @@
 #           that make UI input/capture boundaries explicit before a smoke starts.
 # [POS]: shared safety seam for scripts that can drive a macOS UI; it does not
 #        inject events, launch apps, or own an acceptance assertion.
-# [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+# [PROTOCOL]: Update this header on change, then check CLAUDE.md.
 # -----------------------------------------------------------------------------
 
 # Computer Use is the safe default. It is driven by the Agent through the
