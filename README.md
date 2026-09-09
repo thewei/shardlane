@@ -4,6 +4,15 @@ Shardlane is a native macOS workspace for coding agents, built with Rust, GPUI, 
 
 Shardlane is the **client/product**. **Herdr remains the backend runtime** and owns workspaces, tabs, panes, terminal sessions, agents, persistence, layout state, and process lifecycle. Shardlane projects that runtime into a native macOS interface; it does not replace or duplicate Herdr.
 
+## Download
+
+Prebuilt macOS Apple Silicon binaries are published on GitHub Releases:
+
+- [Download the latest release](https://github.com/thewei/shardlane/releases/latest/download/Shardlane-macos-aarch64.zip) — ad-hoc signed and not notarized; right-click the app and choose Open on first launch to approve it in Gatekeeper.
+- [Release index](https://github.com/thewei/shardlane/releases) · [Project site](https://thewei.github.io/shardlane/)
+
+Shardlane requires the [Herdr](https://herdr.dev) runtime. If it is missing, the app offers to install it with `wax install herdr`.
+
 ## Requirements
 
 - macOS with Xcode / macOS SDK
