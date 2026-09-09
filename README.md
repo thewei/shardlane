@@ -93,17 +93,17 @@ Bundle identity:
 - Executable: `shardlane`
 - Bundle identifier: `dev.shardlane.app`
 
-Tags matching `v*` build one arm64+x86_64 Universal 2 ad-hoc-signed `Shardlane.app` release archive (`Shardlane-macos-universal2.zip`) and SHA-256 checksum. It is not notarized; first launch on another Mac requires the user to explicitly allow the app in Finder/System Settings. An explicit `--arm64` fallback remains available when the Universal 2 toolchain is unavailable.
+Tags matching `v*` build one arm64 (Apple Silicon) ad-hoc-signed `Shardlane.app` release archive (`Shardlane-macos-aarch64.zip`) and SHA-256 checksum. It is not notarized; first launch on another Mac requires the user to explicitly allow the app in Finder/System Settings.
 
 To create the same archive locally after building a release app:
 
 ```sh
-scripts/package-macos.sh --release --universal
+scripts/package-macos.sh --release --target aarch64-apple-darwin
 scripts/archive-macos.sh \
   --app target/aarch64-apple-darwin/release/bundle/osx/Shardlane.app \
   --output-dir dist \
-  --architecture universal2
-(cd dist && shasum -a 256 -c Shardlane-macos-universal2.zip.sha256)
+  --architecture aarch64
+(cd dist && shasum -a 256 -c Shardlane-macos-aarch64.zip.sha256)
 ```
 
 The GitHub Actions `release` workflow runs this archive step automatically for `v*` tags and uploads both files to the GitHub release.

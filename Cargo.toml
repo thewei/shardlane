@@ -6,7 +6,7 @@
 
 [package]
 name = "shardlane"
-version = "0.1.11"
+version = "0.1.12"
 edition.workspace = true
 publish = false
 license = "PolyForm-Noncommercial-1.0.0"
