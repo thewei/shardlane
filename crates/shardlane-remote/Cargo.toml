@@ -3,7 +3,7 @@ name = "shardlane-remote"
 version = "0.1.0"
 edition.workspace = true
 publish = false
-license = "PolyForm-Noncommercial-1.0.0"
+license = "GPL-3.0-only"
 description = "Loopback Remote API server exposing the Shardlane Host boundary to remote clients"
 
 [dependencies]

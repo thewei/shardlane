@@ -3,7 +3,7 @@ name = "shardlane-history"
 version = "0.1.0"
 edition.workspace = true
 publish = false
-license = "PolyForm-Noncommercial-1.0.0"
+license = "GPL-3.0-only"
 
 [dependencies]
 anyhow = { workspace = true }

@@ -151,4 +151,4 @@ Report vulnerabilities privately through GitHub's vulnerability reporting — se
 
 ## License
 
-Shardlane is source-available under the [PolyForm Noncommercial License 1.0.0](LICENSE): free for personal, learning, research, and other noncommercial use; any commercial use requires a separate commercial license from the author. Forks and derived works must retain the copyright and license notices. Embedded third-party material keeps its own license — see [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
+Shardlane is free software licensed under the [GNU General Public License v3.0](LICENSE): you may use, study, modify, and redistribute it; derivative works must likewise be licensed under GPLv3. Embedded third-party material keeps its own license — see [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).

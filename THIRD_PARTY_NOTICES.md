@@ -1,6 +1,6 @@
 # Third-Party Notices
 
-Shardlane is licensed under the PolyForm Noncommercial License 1.0.0 (see [LICENSE](LICENSE)). This file retains the notices required by third-party material distributed with the application; embedded third-party material remains governed by its own upstream license as noted below.
+Shardlane is licensed under the GNU General Public License v3.0 (see [LICENSE](LICENSE)). This file retains the notices required by third-party material distributed with the application; embedded third-party material remains governed by its own upstream license as noted below.
 
 ## Ghostty / libghostty-vt
 
