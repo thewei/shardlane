@@ -870,6 +870,58 @@ impl ShardlaneApp {
             )],
         );
 
+        // Auto update checks: the toggle is the user-facing switch (persisted
+        // to the on-disk config the checker loop re-reads); the status row
+        // projects the recorded check result and offers the download when a
+        // newer release was seen.
+        let updates_check = self.config.updates.check_enabled;
+        let updates_toggle_herdr = herdr.clone();
+        let updates_toggle = Toggle::new("settings-updates-check", surface)
+            .checked(updates_check)
+            .on_change(move |checked, _, app| {
+                updates_toggle_herdr.update(app, |this, cx| {
+                    this.config.updates.check_enabled = checked;
+                    this.save_config();
+                    cx.notify();
+                });
+            })
+            .into_any_element();
+
+        let updates_status_detail = match crate::update_check::last_newer() {
+            Some(latest) => format!("Version {} is available.", latest.version),
+            None => format!(
+                "Up to date — running v{}; checked every {} h.",
+                env!("CARGO_PKG_VERSION"),
+                self.config.updates.interval_hours
+            ),
+        };
+        let updates_action: AnyElement = match crate::update_check::last_newer() {
+            Some(latest) => {
+                let url = latest.url.clone();
+                Button::new("settings-updates-download")
+                    .custom(content_button)
+                    .xsmall()
+                    .label("Download")
+                    .on_click(move |_, _, cx| {
+                        cx.open_url(&url);
+                    })
+                    .into_any_element()
+            }
+            None => div().into_any_element(),
+        };
+
+        let updates_card = settings_card(
+            surface,
+            vec![
+                settings_card_row(
+                    "Check for updates",
+                    "Periodically compare against the GitHub release manifest (default: every 24 h).",
+                    updates_toggle,
+                ),
+                settings_card_row("Latest version", &updates_status_detail, updates_action),
+            ],
+        );
+
         // Audit E09: always_on_top is a persisted preference that previously only existed
         // in the native Window menu — surface it here through the same toggle path.
         let always_on_top_herdr = herdr.clone();
@@ -1230,6 +1282,11 @@ impl ShardlaneApp {
                     )
                     .child(
                         behavior_card.when(selected_section != SettingsSection::Behavior, |card| {
+                            card.hidden()
+                        }),
+                    )
+                    .child(
+                        updates_card.when(selected_section != SettingsSection::Behavior, |card| {
                             card.hidden()
                         }),
                     )

@@ -70,6 +70,7 @@ mod terminal_view;
 mod theme;
 mod ui;
 mod ui_metrics;
+mod update_check;
 mod workspace_model;
 
 // FocusIntent seam: the type belongs to the navigation domain, shell_navigation.rs,
@@ -4072,6 +4073,50 @@ fn main() {
             })
             .detach();
         }
+
+        // Auto update checks: one long-lived loop at the user-configured
+        // cadence (default daily). The toggle and interval are re-read from
+        // the on-disk config every cycle, so the Settings toggle takes effect
+        // without a restart. Detection is best-effort: fetch/parse failures
+        // are silently skipped, and the native notification fires once per
+        // new version (the Settings card shows the recorded result).
+        cx.spawn(async move |cx| {
+            // Startup grace period: never compete with launch work.
+            cx.background_executor()
+                .timer(std::time::Duration::from_secs(30))
+                .await;
+            loop {
+                let prefs = cx
+                    .background_executor()
+                    .spawn(async { crate::settings::ApplicationConfig::load().updates })
+                    .await;
+                if prefs.check_enabled {
+                    let result = cx
+                        .background_executor()
+                        .spawn(async {
+                            crate::update_check::check(env!("CARGO_PKG_VERSION"))
+                        })
+                        .await;
+                    if let Ok(Some(manifest)) = result {
+                        if crate::update_check::record_newer(manifest.clone()) {
+                            crate::notifications::show(
+                                "Shardlane update available",
+                                &format!(
+                                    "Version {} is ready to download. Settings → Behavior has the link.",
+                                    manifest.version
+                                ),
+                            );
+                        }
+                    } else if let Ok(None) = result {
+                        crate::update_check::clear_newer();
+                    }
+                }
+                cx.background_executor()
+                    .timer(crate::update_check::interval_duration(prefs.interval_hours))
+                    .await;
+            }
+        })
+        .detach();
 
         // App-level keystroke routing: GPUI hands the observer the window that
         // received the key, and the registry maps it to THAT window's entity —

@@ -195,6 +195,10 @@ pub struct ApplicationConfig {
     /// catalog remains disposable and never stores these choices.
     #[serde(default)]
     pub history_sources: shardlane_history::HistorySourcePolicy,
+    /// Client auto update checks (Shardlane-owned; the manifest comes from
+    /// the GitHub release workflow, never from a mux backend).
+    #[serde(default)]
+    pub updates: UpdatesConfig,
 }
 
 impl Default for ApplicationConfig {
@@ -213,6 +217,26 @@ impl Default for ApplicationConfig {
             browser: crate::browser_profile::BrowserConfig::default(),
             providers: ProvidersConfig::default(),
             history_sources: shardlane_history::HistorySourcePolicy::default(),
+            updates: UpdatesConfig::default(),
+        }
+    }
+}
+
+/// Periodic update-check preferences. The default cadence is daily; the
+/// scheduler loop re-reads these from disk every cycle, so toggling takes
+/// effect without a restart.
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(default)]
+pub struct UpdatesConfig {
+    pub check_enabled: bool,
+    pub interval_hours: u32,
+}
+
+impl Default for UpdatesConfig {
+    fn default() -> Self {
+        Self {
+            check_enabled: true,
+            interval_hours: 24,
         }
     }
 }

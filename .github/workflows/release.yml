@@ -75,3 +75,13 @@ jobs:
             "$ARCHIVE" \
             "$CHECKSUM" \
             --clobber
+          # Update manifest for the client's periodic check: it fetches this
+          # file through the releases/latest/download permalink, so the newest
+          # release always carries the freshest copy.
+          VERSION="${GITHUB_REF_NAME#v}"
+          ASSET_NAME="$(basename "$ARCHIVE")"
+          printf '{\n  "version": "%s",\n  "url": "https://github.com/%s/releases/download/%s/%s",\n  "notes_url": "https://github.com/%s/releases/tag/%s"\n}\n' \
+            "$VERSION" "$GITHUB_REPOSITORY" "$GITHUB_REF_NAME" "$ASSET_NAME" "$GITHUB_REPOSITORY" "$GITHUB_REF_NAME" \
+            > latest.json
+          python3 -m json.tool latest.json > /dev/null
+          gh release upload "$GITHUB_REF_NAME" latest.json --clobber
