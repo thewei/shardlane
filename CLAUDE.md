@@ -8,6 +8,7 @@ crates/ - Shardlane application and read-only Agent-history code
 ui/ - thin Crepuscularity shell composition templates
 vendor/ - bundled native runtime artifacts (ghostty-vt) + patched gpui 0.2.2 (see vendor/gpui/PACING-PATCH.md, wired via [patch.crates-io])
 scripts/ - tiered verification and composable UI acceptance entrypoints (verify.sh: check/unit/history/ui/fast/full)
+site/ - public landing page published to GitHub Pages (static HTML/CSS, no build step)
 docs/ - public architecture, interaction, performance, packaging, and remote documentation
 .agents/skills/ - project-local engineering workflow/checklists
 .github/ - CI and release workflows
@@ -28,6 +29,8 @@ docs/client-product-architecture.md - unique architecture source of truth
 docs/ui-acceptance-testing.md - isolated real-app acceptance, Computer Use MCP, native fallback, and ground-truth evidence
 scripts/acceptance-capabilities.py + scripts/acceptance/ - no-GUI capability inventory, MCP probe, and composable backend assertions
 .github/workflows/checks.yml - macOS CI gates plus no-GUI UI acceptance/unit preflight
+.github/workflows/release.yml - arm64 macOS release archives published on v* tags
+.github/workflows/pages.yml - GitHub Pages deployment for site/
 .agents/skills/herdr-client-development/SKILL.md - Shardlane engineering workflow
 .agents/skills/ui-acceptance-testing/SKILL.md - reusable UI acceptance driver/isolation/evidence workflow
 </config>

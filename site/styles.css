@@ -1,0 +1,133 @@
+/*
+ * [INPUT]: 被 index.html 引用；视觉基线为终端暗色 + 单一强调色
+ * [OUTPUT]: 官网全部样式；无构建步骤、无外部字体/框架请求
+ * [POS]: site/ 的唯一样式表，与 index.html 同构维护
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
+:root {
+  --bg: #0b0e14;
+  --bg-soft: #11151f;
+  --line: #232a3a;
+  --text: #dbe2f0;
+  --muted: #8b94a8;
+  --accent: #4fd6be;
+  --accent-ink: #06251f;
+  font-size: 16px;
+}
+
+* { box-sizing: border-box; margin: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  line-height: 1.6;
+}
+
+code, .kicker, .brand {
+  font-family: "SF Mono", ui-monospace, Menlo, monospace;
+}
+
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+.nav {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 2rem;
+  border-bottom: 1px solid var(--line);
+  position: sticky;
+  top: 0;
+  background: color-mix(in srgb, var(--bg) 85%, transparent);
+  backdrop-filter: blur(8px);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: 0.02em;
+}
+
+.nav nav { display: flex; gap: 1.5rem; }
+.nav nav a { color: var(--muted); }
+.nav nav a:hover { color: var(--text); text-decoration: none; }
+
+main { max-width: 60rem; margin: 0 auto; padding: 0 2rem; }
+
+.hero { padding: 6rem 0 4rem; }
+.kicker { color: var(--accent); font-size: 0.85rem; letter-spacing: 0.12em; text-transform: uppercase; }
+
+.hero h1 {
+  font-size: clamp(2rem, 5vw, 3.2rem);
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  margin: 1rem 0;
+}
+
+.sub { color: var(--muted); max-width: 44rem; font-size: 1.1rem; }
+
+.cta { display: flex; gap: 1rem; margin: 2rem 0 0.75rem; flex-wrap: wrap; }
+
+.btn {
+  display: inline-block;
+  padding: 0.7rem 1.4rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--bg-soft);
+}
+
+.btn:hover { text-decoration: none; border-color: var(--accent); }
+
+.btn.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+
+.fine { color: var(--muted); font-size: 0.85rem; }
+
+section { padding: 3rem 0; border-top: 1px solid var(--line); }
+
+h2 { font-size: 1.4rem; letter-spacing: -0.01em; margin-bottom: 1.25rem; }
+
+#install ol { padding-left: 1.25rem; display: grid; gap: 0.5rem; max-width: 44rem; }
+#install p { color: var(--muted); margin-top: 1rem; max-width: 44rem; }
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: 1rem;
+}
+
+.card {
+  background: var(--bg-soft);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 1.25rem;
+}
+
+.card h3 { font-size: 1rem; margin-bottom: 0.5rem; }
+.card p { color: var(--muted); font-size: 0.92rem; }
+
+#architecture p, #source p { max-width: 46rem; color: var(--muted); }
+
+footer {
+  border-top: 1px solid var(--line);
+  padding: 2rem;
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+@media (max-width: 40rem) {
+  .nav { padding: 1rem; }
+  .nav nav { gap: 1rem; }
+  main { padding: 0 1rem; }
+  .hero { padding: 4rem 0 2.5rem; }
+}

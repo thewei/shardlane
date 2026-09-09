@@ -1,0 +1,111 @@
+<!doctype html>
+<!--
+  [INPUT]: 依赖 styles.css、assets/icon.png；下载直链依赖 GitHub Releases 固定资产名 Shardlane-macos-aarch64(.zip|.sha256)
+  [OUTPUT]: 对外提供 Shardlane 官网单页（下载/安装/特性/架构/许可），GitHub Pages 发布入口
+  [POS]: site/ 的唯一页面，被 .github/workflows/pages.yml 原样发布；下载按钮始终指向 releases/latest 固定资产
+  [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Shardlane — a native macOS workspace for coding agents</title>
+  <meta name="description" content="Shardlane is a native macOS workspace for coding agents. It projects the Herdr runtime — workspaces, tabs, panes, terminals, and agent sessions — into a fast native interface built on GPUI and libghostty.">
+  <link rel="icon" type="image/png" href="assets/icon.png">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="nav">
+    <a class="brand" href="./"><img src="assets/icon.png" alt="" width="22" height="22"> Shardlane</a>
+    <nav>
+      <a href="#install">Install</a>
+      <a href="#features">Features</a>
+      <a href="https://github.com/thewei/shardlane/tree/main/docs">Docs</a>
+      <a href="https://github.com/thewei/shardlane">GitHub</a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="hero">
+      <p class="kicker">macOS · Apple Silicon</p>
+      <h1>A native macOS workspace for coding&nbsp;agents.</h1>
+      <p class="sub">
+        Shardlane projects the <a href="https://herdr.dev">Herdr</a> runtime — workspaces, tabs, panes,
+        terminals, and agent sessions — into a fast native interface built on GPUI and libghostty.
+        Herdr stays the backend authority; Shardlane is the client.
+      </p>
+      <div class="cta">
+        <a class="btn primary" href="https://github.com/thewei/shardlane/releases/latest/download/Shardlane-macos-aarch64.zip">Download for Apple Silicon</a>
+        <a class="btn" href="https://github.com/thewei/shardlane/releases">All releases</a>
+      </div>
+      <p class="fine">
+        v0.1.12 · ad-hoc signed, not notarized ·
+        <a href="https://github.com/thewei/shardlane/releases/latest/download/Shardlane-macos-aarch64.zip.sha256">SHA-256 checksum</a>
+      </p>
+    </section>
+
+    <section id="install">
+      <h2>Install</h2>
+      <ol>
+        <li>Download the ZIP and verify the checksum:
+          <code>shasum -a 256 -c Shardlane-macos-aarch64.zip.sha256</code></li>
+        <li>Unzip and drag <strong>Shardlane.app</strong> into <strong>Applications</strong>.</li>
+        <li>First launch: right-click the app and choose <strong>Open</strong> once to approve it in Gatekeeper.</li>
+      </ol>
+      <p>
+        Shardlane needs the <a href="https://herdr.dev">Herdr</a> runtime. If it is missing,
+        the app offers to install it with <code>wax install herdr</code> on first run.
+      </p>
+    </section>
+
+    <section id="features">
+      <h2>What it does</h2>
+      <div class="grid">
+        <div class="card">
+          <h3>Multiplexed terminals</h3>
+          <p>Workspaces, tabs, and panes owned by Herdr, rendered through vendored libghostty-vt — sessions survive restarts.</p>
+        </div>
+        <div class="card">
+          <h3>Coding agents</h3>
+          <p>Launch agents, follow live sessions, browse external conversation history, and resume work through Herdr — not by typing into a PTY.</p>
+        </div>
+        <div class="card">
+          <h3>Native speed</h3>
+          <p>GPU-rendered with GPUI, native menus and shortcuts, no Electron, no telemetry, no cloud accounts.</p>
+        </div>
+        <div class="card">
+          <h3>Mobile companion</h3>
+          <p>Optionally embeds a Mobile Web bundle served by the Host Remote API — one runtime, every screen.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="architecture">
+      <h2>Architecture</h2>
+      <p>
+        Ownership is intentionally narrow: <strong>Herdr</strong> is the runtime authority,
+        <strong>libghostty-vt</strong> owns terminal semantics, <strong>gpui-component / GPUI</strong>
+        provide the native UI layer, and the <strong>Shardlane shell</strong> handles presentation,
+        navigation, and local settings. Runtime capabilities are added at the Herdr boundary,
+        never as a second local runtime. Read the
+        <a href="https://github.com/thewei/shardlane/blob/main/docs/client-product-architecture.md">product architecture</a>.
+      </p>
+    </section>
+
+    <section id="source">
+      <h2>Source &amp; license</h2>
+      <p>
+        Browse or build from source on
+        <a href="https://github.com/thewei/shardlane">GitHub</a>.
+        Shardlane is source-available under the
+        <a href="https://github.com/thewei/shardlane/blob/main/LICENSE">PolyForm Noncommercial License 1.0.0</a>
+        — free for personal, learning, and research use; commercial use requires a separate license.
+      </p>
+    </section>
+  </main>
+
+  <footer>
+    © 2026 Wilson · Shardlane is the client; Herdr is the runtime.
+  </footer>
+</body>
+</html>
