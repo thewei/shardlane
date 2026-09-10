@@ -3,8 +3,10 @@
  * #4d78ff / lane #5af1df / beacon #ffc13c palette comes from the brand
  * Option-D mark; backend accents inherit each official brand
  * [OUTPUT]: all site styles: deep-space aurora glassmorphism
- * (designs/site-deai Option D final) — floating blobs, backdrop-filter
- * glass nav/cards/product window, gradient accents, no JS
+ * (designs/site-deai Option D final) — floating blobs, sticky glass nav,
+ * backdrop-filter glass nav/cards/product window, gradient accents,
+ * scroll-reveal stagger via AOS (CDN) with a no-JS / reduced-motion
+ * fallback that keeps every element visible
  * [POS]: the only stylesheet in site/, maintained in lockstep with
  * index.html; the design-final record lives in designs/site-deai/README.md
  * [PROTOCOL]: Update this header on change, then check CLAUDE.md.
@@ -67,7 +69,7 @@ a:hover { color: var(--accent2); }
 @keyframes drift1 { to { transform: translate(70px, 50px) scale(1.1); } }
 @keyframes drift2 { to { transform: translate(-60px, 70px) scale(0.92); } }
 
-main, header.nav, footer.foot { position: relative; z-index: 1; }
+main, footer.foot { position: relative; z-index: 1; }
 main { max-width: 72rem; margin: 0 auto; padding: 0 2rem; }
 
 .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; flex: none; }
@@ -75,6 +77,19 @@ main { max-width: 72rem; margin: 0 auto; padding: 0 2rem; }
 .dot-tmux { background: var(--tmux); }
 .dot-uu { background: var(--uu); }
 .dot-luvus { background: var(--luvus); }
+
+/* ---------- scroll-reveal (AOS) fallbacks ---------- */
+/* Without JS, without the CDN, or under reduced motion, everything that
+   AOS would reveal must simply be visible. */
+.no-js [data-aos] { opacity: 1 !important; transform: none !important; }
+@media (prefers-reduced-motion: reduce) {
+  [data-aos] { opacity: 1 !important; transform: none !important; }
+}
+
+/* Sticky-nav offset for anchor jumps. */
+.backends, .workspaces, .arch, .install { scroll-margin-top: 96px; }
+html { scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
 
 /* ---------- glass nav ---------- */
 .nav {
@@ -93,6 +108,14 @@ main { max-width: 72rem; margin: 0 auto; padding: 0 2rem; }
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
+  transition: padding 0.25s var(--ease), background 0.25s, box-shadow 0.25s, border-color 0.25s;
+}
+.nav.scrolled {
+  top: 10px;
+  padding: 8px 20px;
+  background: var(--glass-strong);
+  border-color: rgba(255, 255, 255, 0.18);
+  box-shadow: 0 14px 44px rgba(0, 0, 0, 0.45);
 }
 .brand { display: flex; align-items: center; gap: 0.55rem; font-weight: 700; font-size: 0.95rem; color: var(--fg); }
 .navlinks { display: flex; gap: 1.5rem; font-size: 0.88rem; }

@@ -3,14 +3,17 @@
 
 index.html: the single site page, deep-space aurora glassmorphism (design
 final: designs/site-deai/ Option D, chosen by the user on 2026-09-09):
-glass floating nav, large hero (pill badge + gradient accent headline),
-glass product-window mockup (three backend tabs + Agent status + two
-panes), the multi-backend matrix (Herdr / tmux / UU Remote / Luvus, each
-with its official logo, positioning badge, capability list, and outbound
-link), the native multi-workspace instance picker, the decoupled
-architecture pipeline diagram, bento features, and a four-step install;
-download links point at the Shardlane-macos-aarch64.zip GitHub Releases
-asset.
+sticky glass floating nav (compact "scrolled" state past 24px), large hero
+(pill badge + gradient accent headline), glass product-window mockup
+(three backend tabs + Agent status + two panes), the multi-backend matrix
+(Herdr / tmux / UU Remote / Luvus, each with its official logo,
+positioning badge, capability list, and outbound link), the native
+multi-workspace instance picker, the decoupled architecture pipeline
+diagram, bento features, and a four-step install; download links point at
+the Shardlane-macos-aarch64.zip GitHub Releases asset. Scroll-reveal
+stagger comes from AOS 2.3.4 (cdnjs — the only external request) plus a
+few inline lines for the nav state; a no-JS / no-CDN / reduced-motion
+fallback keeps every element visible (html.no-js guard + CSS overrides).
 styles.css: all styles; background #05060f deep space; brand accents
 --accent #6d8bff / --accent2 #5af1df, backend colors
 --herdr/--tmux/--uu/--luvus inherit each official brand. Design language:
