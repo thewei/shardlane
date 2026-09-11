@@ -870,10 +870,12 @@ impl ShardlaneApp {
             )],
         );
 
-        // Auto update checks: the toggle is the user-facing switch (persisted
+        // Auto updates: the toggles are the user-facing switches (persisted
         // to the on-disk config the checker loop re-reads); the status row
-        // projects the recorded check result and offers the download when a
-        // newer release was seen.
+        // projects the install state machine — the check finds a release,
+        // the installer downloads, verifies and stages it, and the action
+        // button swaps the bundle and relaunches. Dev builds (no .app
+        // ancestor) degrade to the old open-the-releases-page behavior.
         let updates_check = self.config.updates.check_enabled;
         let updates_toggle_herdr = herdr.clone();
         let updates_toggle = Toggle::new("settings-updates-check", surface)
@@ -887,28 +889,118 @@ impl ShardlaneApp {
             })
             .into_any_element();
 
-        let updates_status_detail = match crate::update_check::last_newer() {
-            Some(latest) => format!("Version {} is available.", latest.version),
-            None => format!(
-                "Up to date — running v{}; checked every {} h.",
-                env!("CARGO_PKG_VERSION"),
-                self.config.updates.interval_hours
-            ),
-        };
-        let updates_action: AnyElement = match crate::update_check::last_newer() {
-            Some(latest) => {
-                let url = latest.url.clone();
-                Button::new("settings-updates-download")
+        let updates_auto_herdr = herdr.clone();
+        let updates_auto_toggle = Toggle::new("settings-updates-auto-download", surface)
+            .checked(self.config.updates.auto_download)
+            .on_change(move |checked, _, app| {
+                updates_auto_herdr.update(app, |this, cx| {
+                    this.config.updates.auto_download = checked;
+                    this.save_config();
+                    cx.notify();
+                });
+            })
+            .into_any_element();
+
+        let up_to_date = format!(
+            "Up to date — running v{}; checked every {} h.",
+            env!("CARGO_PKG_VERSION"),
+            self.config.updates.interval_hours
+        );
+        // One factory for both the first download and a retry after failure;
+        // both read the same recorded manifest.
+        let download_action = |id: &'static str, label: &'static str| {
+            let manifest = crate::update_check::last_newer()?;
+            let herdr = herdr.downgrade();
+            Some(
+                Button::new(id)
                     .custom(content_button)
                     .xsmall()
-                    .label("Download")
-                    .on_click(move |_, _, cx| {
-                        cx.open_url(&url);
+                    .label(label)
+                    .on_click(move |_, _, app| {
+                        if let Err(error) = crate::update_install::begin_staged_download(
+                            manifest.clone(),
+                            Some(herdr.clone()),
+                            app,
+                        ) {
+                            crate::notifications::show("Update failed", &error);
+                        }
                     })
-                    .into_any_element()
-            }
-            None => div().into_any_element(),
+                    .into_any_element(),
+            )
         };
+
+        let (updates_status_detail, updates_action): (String, AnyElement) =
+            if !crate::update_install::can_install() {
+                match crate::update_check::last_newer() {
+                    Some(latest) => (
+                        format!(
+                            "Version {} is available — a dev build cannot update in place.",
+                            latest.version
+                        ),
+                        {
+                            let url = latest.url.clone();
+                            Button::new("settings-updates-releases")
+                                .custom(content_button)
+                                .xsmall()
+                                .label("Releases")
+                                .on_click(move |_, _, cx| {
+                                    cx.open_url(&url);
+                                })
+                                .into_any_element()
+                        },
+                    ),
+                    None => (up_to_date, div().into_any_element()),
+                }
+            } else {
+                match crate::update_install::install_state() {
+                    crate::update_install::InstallState::Downloading {
+                        version,
+                        downloaded_bytes,
+                        total_bytes,
+                    } => (
+                        format!(
+                            "Downloading v{} — {}.",
+                            version,
+                            crate::update_install::format_progress(downloaded_bytes, total_bytes)
+                        ),
+                        div().into_any_element(),
+                    ),
+                    crate::update_install::InstallState::Ready { version } => {
+                        (format!("Version {version} is staged and verified."), {
+                            let herdr = herdr.downgrade();
+                            Button::new("settings-updates-restart")
+                                .custom(content_button)
+                                .xsmall()
+                                .label("Update and Restart")
+                                .on_click(move |_, _, app| {
+                                    if let Err(error) = crate::update_install::install_and_restart()
+                                    {
+                                        crate::notifications::show("Update failed", &error);
+                                        if let Some(herdr) = herdr.upgrade() {
+                                            herdr.update(app, |_, cx| cx.notify());
+                                        }
+                                    }
+                                })
+                                .into_any_element()
+                        })
+                    }
+                    crate::update_install::InstallState::Failed { version, error } => (
+                        format!("Update to v{version} failed: {error}."),
+                        download_action("settings-updates-retry", "Retry download")
+                            .unwrap_or_else(|| div().into_any_element()),
+                    ),
+                    crate::update_install::InstallState::Idle => {
+                        match crate::update_check::last_newer() {
+                            Some(latest) => (
+                                format!("Version {} is available.", latest.version),
+                                download_action("settings-updates-download", "Download update")
+                                    .unwrap_or_else(|| div().into_any_element()),
+                            ),
+                            None => (up_to_date, div().into_any_element()),
+                        }
+                    }
+                }
+            };
 
         let updates_card = settings_card(
             surface,
@@ -917,6 +1009,11 @@ impl ShardlaneApp {
                     "Check for updates",
                     "Periodically compare against the GitHub release manifest (default: every 24 h).",
                     updates_toggle,
+                ),
+                settings_card_row(
+                    "Download updates in the background",
+                    "When a check finds a newer release, download and verify it automatically so Update and Restart stays one click.",
+                    updates_auto_toggle,
                 ),
                 settings_card_row("Latest version", &updates_status_detail, updates_action),
             ],

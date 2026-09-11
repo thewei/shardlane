@@ -71,6 +71,7 @@ mod theme;
 mod ui;
 mod ui_metrics;
 mod update_check;
+mod update_install;
 mod workspace_model;
 
 // FocusIntent seam: the type belongs to the navigation domain, shell_navigation.rs,
@@ -4077,6 +4078,14 @@ fn main() {
             .detach();
         }
 
+        // After an in-place update restart, clear the previous bundle backup
+        // and leftover staging (backgrounded: it can be ~100 MB of files).
+        cx.background_executor()
+            .spawn(async {
+                crate::update_install::cleanup_after_restart();
+            })
+            .detach();
+
         // Auto update checks: one long-lived loop at the user-configured
         // cadence (default daily). The toggle and interval are re-read from
         // the on-disk config every cycle, so the Settings toggle takes effect
@@ -4109,6 +4118,24 @@ fn main() {
                                     manifest.version
                                 ),
                             );
+                        }
+                        // Auto-download: when enabled, stage the update right
+                        // away so "Update and Restart" is one click later.
+                        if prefs.auto_download
+                            && crate::update_install::can_install()
+                            && matches!(
+                                crate::update_install::install_state(),
+                                crate::update_install::InstallState::Idle
+                                    | crate::update_install::InstallState::Failed { .. }
+                            )
+                        {
+                            let _ = cx.update(|app| {
+                                let _ = crate::update_install::begin_staged_download(
+                                    manifest.clone(),
+                                    None,
+                                    app,
+                                );
+                            });
                         }
                     } else if let Ok(None) = result {
                         crate::update_check::clear_newer();

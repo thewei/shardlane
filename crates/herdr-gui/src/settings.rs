@@ -229,6 +229,7 @@ impl Default for ApplicationConfig {
 #[serde(default)]
 pub struct UpdatesConfig {
     pub check_enabled: bool,
+    pub auto_download: bool,
     pub interval_hours: u32,
 }
 
@@ -236,6 +237,7 @@ impl Default for UpdatesConfig {
     fn default() -> Self {
         Self {
             check_enabled: true,
+            auto_download: false,
             interval_hours: 24,
         }
     }
