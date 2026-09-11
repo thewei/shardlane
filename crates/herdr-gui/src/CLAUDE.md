@@ -58,6 +58,7 @@ Members:
 - `shell_terminal_stream.rs` — the hosted terminal lifecycle: frame ingestion (deep-compare fast paths replaced by the exact `TerminalFramePlan` row-level extraction plan where proven)/geometry sync (including chrome-compensated PTY winsize)/`attach_focused_terminal` = ensure the host is alive.
 - `shell_theme.rs` — theme and terminal render settings: palette sync and the sync_terminal_theme large state machine.
 - `search_view.rs` — the Global Search/picker overlay presentation layer; the domain model lives in `search_model.rs`, and projection building/navigation actions belong to `main.rs`.
+- `switcher_panel.rs` — switcher Popover panel presentation for workspace, project, and tab navigation; tab rows support lead agent brand icons with active/inactive visual states.
 - `main_tests.rs` — herdr-gui's unit test pin set: guard predicates/deep-history budget relations/steering detection/notification transition semantics and other pure-logic regressions.
 
 Rules:

@@ -825,29 +825,16 @@ impl ShardlaneApp {
         let Some(client) = self.client.clone() else {
             return;
         };
-        // TUI host mode: Project switching drives the shared focus chain (never respawns the host).
-        self.drive_tui_focus_chain(Some(workspace_id.clone()), None, None, None, window, cx);
-        self.show_settings = false;
-        self.terminal_fade_start = Some(Instant::now());
-        let previous_workspace = self.state.focused_workspace_id.clone();
-        self.clear_ime_state();
-        self.state.focused_workspace_id = Some(workspace_id.clone());
-        self.new_agent_context_workspace_id = Some(workspace_id.clone());
-        self.state.focused_tab_id = None;
-        self.state.focused_pane_id = None;
-        derive_selection_flags(&mut self.state);
-        self.sync_terminal_application_focus(cx);
-        self.notify_sidebar(cx);
-        if previous_workspace.as_deref() != self.state.focused_workspace_id.as_deref() {
-            self.sync_right_panel_for_project_context(cx);
+        // F20: record the previous workspace's active tab before switching away.
+        if let (Some(prev_ws), Some(prev_tab)) = (
+            self.state.focused_workspace_id.as_ref(),
+            self.state.focused_tab_id.as_ref(),
+        ) {
+            self.workspace_tab_selection_memory
+                .insert(prev_ws.clone(), prev_tab.clone());
         }
-        cx.notify();
-        let window_handle = window.window_handle();
-        // F36: resolve the target Tab locally first — the event subscription continuously maintains
-        // tabs/active_tab_id metadata, so the normal path doesn't pull a full navigation_state (saving
-        // workspace.list+tab.list round trips); only when local has no Tabs for this Project at all
-        // (early startup/after reconnect) does it fall back to the old Navigation pull.
-        // F20: resolve the target Tab locally — client memory → Herdr active_tab_id → first local Tab.
+
+        // F36: resolve the target Tab locally first — client memory → Herdr active_tab_id → first local Tab.
         let local_tab_id = resolve_workspace_tab_locally(
             &self.state.workspaces,
             &self.state.tabs,
@@ -856,6 +843,37 @@ impl ShardlaneApp {
                 .get(&workspace_id)
                 .map(String::as_str),
         );
+
+        if let Some(tab_id) = &local_tab_id {
+            self.workspace_tab_selection_memory
+                .insert(workspace_id.clone(), tab_id.clone());
+        }
+
+        // TUI host mode: Project switching drives the shared focus chain with target Tab.
+        self.drive_tui_focus_chain(
+            Some(workspace_id.clone()),
+            local_tab_id.clone(),
+            None,
+            None,
+            window,
+            cx,
+        );
+        self.show_settings = false;
+        let previous_workspace = self.state.focused_workspace_id.clone();
+        self.clear_ime_state();
+        self.state.focused_workspace_id = Some(workspace_id.clone());
+        self.new_agent_context_workspace_id = Some(workspace_id.clone());
+        self.state.focused_tab_id = local_tab_id.clone();
+        self.state.focused_pane_id = None;
+        derive_selection_flags(&mut self.state);
+        self.sync_terminal_application_focus(cx);
+        self.notify_sidebar(cx);
+        if previous_workspace.as_deref() != self.state.focused_workspace_id.as_deref() {
+            self.sync_right_panel_for_project_context(cx);
+        }
+        self.persist_current_workspace_state(cx);
+        cx.notify();
+        let window_handle = window.window_handle();
         self.run_navigation_rpc(
             client,
             cx,
@@ -1411,55 +1429,66 @@ impl ShardlaneApp {
         // with the BEL path's handle_terminal_bells window_active semantics — when the user is watching
         // the app, status transitions are in-band info and shouldn't disturb).
         let notifications_enabled = self.config.behavior.agent_notifications && !self.window_active;
-        let (changed, notification) = {
-            let agent = match self
-                .state
-                .agents
-                .iter_mut()
-                .find(|agent| agent.pane_id.as_deref() == Some(patch.pane_id.as_str()))
-            {
-                Some(agent) => agent,
-                None => {
-                    let new_agent = Agent {
-                        terminal_id: patch.pane_id.clone(),
-                        agent: patch.agent.clone().flatten(),
-                        workspace_id: Some(patch.workspace_id.clone()),
-                        tab_id: patch.tab_id.clone().flatten(),
-                        pane_id: Some(patch.pane_id.clone()),
-                        focused: patch.focused.unwrap_or(false),
-                        agent_status: None,
-                        ..Default::default()
-                    };
-                    self.state.agents.push(new_agent);
-                    self.state.agents.last_mut()?
-                }
-            };
+        let mut changed = false;
+        let mut notification = None;
+
+        let has_identity = patch.agent.as_ref().and_then(|a| a.as_ref()).is_some()
+            || patch
+                .display_agent
+                .as_ref()
+                .and_then(|a| a.as_ref())
+                .is_some()
+            || patch.name.as_ref().and_then(|a| a.as_ref()).is_some();
+
+        let existing_index = self
+            .state
+            .agents
+            .iter()
+            .position(|agent| agent.pane_id.as_deref() == Some(patch.pane_id.as_str()));
+
+        if let Some(idx) = existing_index {
+            let agent = &mut self.state.agents[idx];
             let previous_status = agent.agent_status.clone();
-            let mut changed = apply_agent_projection_patch(agent, patch);
-            let notification = notifications_enabled
-                .then(|| {
-                    agent_notification_kind(
-                        previous_status.as_deref(),
-                        agent.agent_status.as_deref(),
-                    )
-                    .map(|kind| {
-                        // Any notifiable transition while unfocused requests dock attention
-                        //(AppKit coalesces on its own), consistent with the BEL path.
-                        notifications::request_dock_attention();
-                        (agent_notification_copy(agent, kind), agent.pane_id.clone())
-                    })
-                })
-                .flatten();
-            if let Some(pane) = self
-                .state
-                .panes
-                .iter_mut()
-                .find(|pane| pane.pane_id == patch.pane_id)
-            {
-                changed |= apply_pane_agent_projection_patch(pane, patch);
+            changed |= apply_agent_projection_patch(agent, patch);
+            if notifications_enabled {
+                if let Some(kind) = agent_notification_kind(
+                    previous_status.as_deref(),
+                    agent.agent_status.as_deref(),
+                ) {
+                    notifications::request_dock_attention();
+                    notification =
+                        Some((agent_notification_copy(agent, kind), agent.pane_id.clone()));
+                }
             }
-            (changed, notification)
-        };
+            if agent.agent.is_none() && agent.display_agent.is_none() && agent.name.is_none() {
+                self.state.agents.remove(idx);
+                changed = true;
+            }
+        } else if has_identity {
+            let mut new_agent = Agent {
+                terminal_id: patch.pane_id.clone(),
+                agent: patch.agent.clone().flatten(),
+                workspace_id: Some(patch.workspace_id.clone()),
+                tab_id: patch.tab_id.clone().flatten(),
+                pane_id: Some(patch.pane_id.clone()),
+                focused: patch.focused.unwrap_or(false),
+                agent_status: None,
+                ..Default::default()
+            };
+            apply_agent_projection_patch(&mut new_agent, patch);
+            self.state.agents.push(new_agent);
+            changed = true;
+        }
+
+        if let Some(pane) = self
+            .state
+            .panes
+            .iter_mut()
+            .find(|pane| pane.pane_id == patch.pane_id)
+        {
+            changed |= apply_pane_agent_projection_patch(pane, patch);
+        }
+
         if let Some(((title, body), pane_id)) = notification {
             // With pane_id: clicking the notification jumps to the pane (the full P2-2 loop).
             if let Some(pane_id) = pane_id {
@@ -1486,6 +1515,8 @@ impl ShardlaneApp {
                     workspace.active_tab_id = Some(tab_id.to_string());
                 }
             }
+            self.workspace_tab_selection_memory
+                .insert(workspace_id.to_string(), tab_id.to_string());
         }
         // F34: derive the selection flags uniformly on the incoming projection before comparing, so server-side focus facts don't create false diffs.
         derive_navigation_selection_flags(&mut navigation);
@@ -1529,6 +1560,8 @@ impl ShardlaneApp {
         self.state.focused_workspace_id = Some(surface.workspace_id.clone());
         self.state.focused_tab_id = Some(surface.tab_id.clone());
         self.state.focused_pane_id = focused_pane_id;
+        self.workspace_tab_selection_memory
+            .insert(surface.workspace_id.clone(), surface.tab_id.clone());
         for workspace in &mut self.state.workspaces {
             if workspace.workspace_id == surface.workspace_id {
                 workspace.active_tab_id = Some(surface.tab_id.clone());
@@ -1812,36 +1845,28 @@ impl ShardlaneApp {
         cx: &mut Context<Self>,
     ) {
         let resolved_id = report.resolved_pane_id();
-        let matching_pane = self
-            .state
-            .panes
-            .iter()
-            .find(|p| {
-                if let Some(target) = resolved_id {
-                    if p.pane_id == target || p.terminal_id.as_deref() == Some(target) {
-                        return true;
-                    }
+        let matching_pane = self.state.panes.iter().find(|p| {
+            if let Some(target) = resolved_id {
+                if p.pane_id == target || p.terminal_id.as_deref() == Some(target) {
+                    return true;
                 }
-                if let Some(cwd) = &report.cwd {
-                    if p.cwd.as_deref() == Some(cwd.as_str()) {
-                        return true;
-                    }
+            }
+            if let Some(cwd) = &report.cwd {
+                if p.cwd.as_deref() == Some(cwd.as_str()) {
+                    return true;
                 }
-                false
-            })
-            .or_else(|| self.state.panes.iter().find(|p| p.focused));
+            }
+            false
+        });
 
-        let (pane_id, workspace_id, tab_id) = if let Some(pane) = matching_pane {
-            (
-                pane.pane_id.clone(),
-                pane.workspace_id.clone().unwrap_or_default(),
-                pane.tab_id.clone(),
-            )
-        } else if let Some(target) = resolved_id {
-            (target.to_string(), String::new(), None)
-        } else {
+        let Some(pane) = matching_pane else {
             return;
         };
+        let (pane_id, workspace_id, tab_id) = (
+            pane.pane_id.clone(),
+            pane.workspace_id.clone().unwrap_or_default(),
+            pane.tab_id.clone(),
+        );
 
         let status_str = report.status.to_lowercase();
         let effective_status =

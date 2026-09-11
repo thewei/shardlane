@@ -591,7 +591,7 @@ impl ShardlaneApp {
     /// probe time are invariant under the imposition, while a synchronous impose with a
     /// possibly-stale area can land on the un-compensated grid and get stuck there.
     pub(super) fn restore_tui_grid_on_activation(&mut self, cx: &mut Context<Self>) {
-        if self.terminal_target.as_deref() != Some(herdr_tui::TUI_TARGET) {
+        if !self.tui_width_restore_needed() {
             return;
         }
         let Some(visible) = self.terminal_surface_size.or(self.terminal_size) else {

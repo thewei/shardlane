@@ -143,9 +143,10 @@ impl ShardlaneApp {
                 .overflow_hidden()
                 .opacity(term_opacity)
                 .child(content)
-                .when(self.navigation_loading, |el| {
-                    el.child(self.navigation_overlay(cx))
-                })
+                .when(
+                    self.navigation_loading && self.state.tabs.is_empty(),
+                    |el| el.child(self.navigation_overlay(cx)),
+                )
                 // Help is a retained native overlay; it used to hang off the deleted Embedded
                 // template and is now mounted at the content area root (same layer as the navigation overlay).
                 .when(self.show_help, |el| {
@@ -593,14 +594,7 @@ impl ShardlaneApp {
     }
 
     pub(super) fn terminal_fade_opacity(&self) -> f32 {
-        const FADE_DURATION_MS: f32 = 120.0;
-        match &self.terminal_fade_start {
-            Some(started) => {
-                let elapsed = started.elapsed().as_secs_f32() * 1000.0;
-                (elapsed / FADE_DURATION_MS).min(1.0)
-            }
-            None => 1.0,
-        }
+        1.0
     }
 
     /// Whether the sidebar currently occupies space in the shell: ⌘+B manual collapse applies on all surfaces.

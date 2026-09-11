@@ -407,6 +407,21 @@ impl MacTextSystemState {
             cx.set_should_subpixel_position_fonts(true);
             cx.set_allows_font_subpixel_quantization(false);
             cx.set_should_subpixel_quantize_fonts(false);
+            unsafe {
+                use foreign_types::ForeignType;
+                unsafe extern "C" {
+                    fn CGContextSetAllowsFontSmoothing(
+                        context: *mut core_graphics::sys::CGContext,
+                        allows_font_smoothing: bool,
+                    );
+                    fn CGContextSetShouldSmoothFonts(
+                        context: *mut core_graphics::sys::CGContext,
+                        should_smooth_fonts: bool,
+                    );
+                }
+                CGContextSetAllowsFontSmoothing(cx.as_ptr(), true);
+                CGContextSetShouldSmoothFonts(cx.as_ptr(), true);
+            }
             self.fonts[params.font_id.0]
                 .native_font()
                 .clone_with_font_size(f32::from(params.font_size) as CGFloat)

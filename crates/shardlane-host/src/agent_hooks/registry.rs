@@ -74,7 +74,7 @@ set -eu
 AGENT="${1:-unknown}"
 PANE_ID="${HERDR_PANE_ID:-${TMUX_PANE:-}}"
 if [ -z "$PANE_ID" ]; then
-    PANE_ID="$(tty 2>/dev/null || echo '')"
+    exit 0
 fi
 
 HOOK_INPUT=""
@@ -119,7 +119,10 @@ elif event_name in ("Stop", "stop", "session_idle"):
 elif event_name in ("SessionEnd", "session_end", "session_shutdown"):
     status = "released"
 
-# 1. Report to Shardlane local Unix socket if available
+# 1. Report to Shardlane local Unix socket if available (managed panes only)
+if not (os.environ.get("HERDR_PANE_ID") or os.environ.get("TMUX_PANE")):
+    sys.exit(0)
+
 sock_path = os.environ.get("SHARDLANE_SOCKET_PATH") or os.path.expanduser("~/.shardlane/run/agent-status.sock")
 if os.path.exists(sock_path):
     try:
@@ -162,6 +165,7 @@ const AGENT = "opencode";
 
 function report(state, sessionID) {
   const paneId = process.env.HERDR_PANE_ID || process.env.TMUX_PANE || "";
+  if (!paneId) return;
   const sockPath = process.env.SHARDLANE_SOCKET_PATH || path.join(os.homedir(), ".shardlane", "run", "agent-status.sock");
 
   const payload = {
@@ -237,6 +241,7 @@ const AGENT = "pi";
 
 function report(state: string, sessionID?: string) {
   const paneId = process.env.HERDR_PANE_ID || process.env.TMUX_PANE || "";
+  if (!paneId) return;
   const sockPath = process.env.SHARDLANE_SOCKET_PATH || path.join(os.homedir(), ".shardlane", "run", "agent-status.sock");
 
   const payload = {
@@ -288,6 +293,7 @@ const AGENT = "commandcode";
 
 function report(state: string, sessionID?: string) {
   const paneId = process.env.HERDR_PANE_ID || process.env.TMUX_PANE || "";
+  if (!paneId) return;
   const sockPath = process.env.SHARDLANE_SOCKET_PATH || path.join(os.homedir(), ".shardlane", "run", "agent-status.sock");
 
   const payload = {

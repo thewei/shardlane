@@ -40,14 +40,17 @@ impl ShardlaneApp {
     /// Write-through: persists the CURRENT bound instance's UI state into
     /// config.json. Cheap (small JSON, load-modify-save) and only called from
     /// low-frequency user actions (navigation, panel toggles, unbind, quit).
-    pub(crate) fn persist_current_workspace_state(&self, cx: &App) {
-        let Some(binding) = self.bound_project() else {
+    pub(crate) fn persist_current_workspace_state(&mut self, cx: &App) {
+        let Some(project_id) = self.bound_project().map(|b| b.project_id.clone()) else {
             return;
         };
         let Some(record) = self.current_workspace_state_record(cx) else {
             return;
         };
-        settings::ApplicationConfig::persist_workspace_state(binding.project_id.clone(), record);
+        self.config
+            .workspace_state
+            .insert(project_id.clone(), record.clone());
+        settings::ApplicationConfig::persist_workspace_state(project_id, record);
     }
 
     /// Restore-on-bind: re-applies the persisted instance state after the
@@ -58,12 +61,17 @@ impl ShardlaneApp {
         let Some(binding) = self.bound_project() else {
             return;
         };
-        let Some(record) = self
+        let record = self
             .config
             .workspace_state
             .get(&binding.project_id)
             .cloned()
-        else {
+            .or_else(|| {
+                settings::ApplicationConfig::load_strict()
+                    .ok()
+                    .and_then(|c| c.workspace_state.get(&binding.project_id).cloned())
+            });
+        let Some(record) = record else {
             return;
         };
         // (a) Last client-selected tab, re-applied through the FocusIntent seam.
@@ -76,6 +84,15 @@ impl ShardlaneApp {
                 // Already Herdr's focused tab: keep the memory, skip the RPC.
                 if self.state.focused_tab_id.as_deref() != Some(tab_id.as_str()) {
                     self.apply_focus_intent(FocusIntent::tab(tab_id), window, cx);
+                } else {
+                    self.drive_tui_focus_chain(
+                        self.state.focused_workspace_id.clone(),
+                        Some(tab_id),
+                        self.state.focused_pane_id.clone(),
+                        None,
+                        window,
+                        cx,
+                    );
                 }
             }
         }

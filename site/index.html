@@ -47,10 +47,9 @@
       <a href="#backends">Backends</a>
       <a href="#workspaces">Workspaces</a>
       <a href="#architecture">Architecture</a>
-      <a href="#install">Install</a>
       <a href="https://github.com/thewei/shardlane/tree/main/docs">Docs</a>
     </nav>
-    <a class="nav-dl" href="https://github.com/thewei/shardlane/releases/latest/download/Shardlane-macos-aarch64.zip">Download</a>
+    <a class="nav-dl" data-platform-download href="https://github.com/thewei/shardlane/releases/latest/download/Shardlane-macos-aarch64.zip">Download</a>
   </header>
 
   <main id="main">
@@ -58,7 +57,7 @@
     <!-- ============ HERO ============ -->
     <section class="hero">
       <div class="hero-copy">
-        <p class="pill rise"><i></i>Native macOS · four multiplexer backends · v0.1.15</p>
+        <p class="pill rise"><i></i>Native macOS · four multiplexer backends · v0.1.16</p>
         <h1 class="rise d1">Every backend.<br><span class="grad">One native lane.</span></h1>
         <p class="sub rise d2">
           A GPU-accelerated macOS workspace for coding agents. Herdr, tmux, UU Remote and
@@ -66,63 +65,22 @@
           Shardlane just makes them beautiful.
         </p>
         <div class="cta rise d3">
-          <a class="btn-primary" href="https://github.com/thewei/shardlane/releases/latest/download/Shardlane-macos-aarch64.zip">Download for Apple Silicon</a>
-          <a class="btn-ghost" href="#backends">Explore the backends</a>
+          <a class="btn-primary" data-platform-download href="https://github.com/thewei/shardlane/releases/latest/download/Shardlane-macos-aarch64.zip">Download</a>
+          <a class="btn-ghost" href="https://github.com/thewei/shardlane">★ Star on GitHub</a>
         </div>
         <p class="runtime-note rise d4">
           <span class="prompt">$</span> wax install herdr
           <span class="note-sep">·</span> the app offers this on first run if the runtime is missing
+          <span class="note-sep">·</span> free &amp; open source under GPLv3
         </p>
       </div>
 
-      <div class="mockup rise d2" role="img" aria-label="Shardlane window showing Herdr, tmux and Luvus workspaces with live agent output">
-        <div class="win">
-          <div class="titlebar">
-            <span class="lights"><i class="l-r"></i><i class="l-y"></i><i class="l-g"></i></span>
-            <div class="win-tabs">
-              <span class="wtab on"><i class="dot dot-herdr"></i>herdr · shardlane</span>
-              <span class="wtab"><i class="dot dot-tmux"></i>tmux · ops</span>
-              <span class="wtab"><i class="dot dot-luvus"></i>luvus · fleet</span>
-            </div>
-            <span class="win-meta">4 engines</span>
-          </div>
-          <div class="win-body">
-            <aside class="side">
-              <p class="side-label">Workspaces</p>
-              <p class="ws active"><i class="dot dot-herdr"></i>shardlane</p>
-              <p class="ws"><i class="dot dot-tmux"></i>infra-cluster</p>
-              <p class="ws"><i class="dot dot-uu"></i>cloud-gpu-node</p>
-              <p class="ws"><i class="dot dot-luvus"></i>agent-fleet</p>
-              <p class="side-label side-gap">Agents</p>
-              <p class="ag"><span class="ag-live"></span>claude · mux</p>
-              <p class="ag"><span class="ag-run"></span>codex · tests</p>
-            </aside>
-            <div class="panes">
-              <div class="pane">
-                <p><span class="p">$</span> herdr attach shardlane</p>
-                <p><span class="ok">✓</span> <span class="agent">claude</span> refactor mux adapter <span class="dim">· 42.3s</span></p>
-                <p class="dim">→ context transfer ready (4.8k tokens)</p>
-                <p class="type-line"><span class="run">▸</span> <span class="agent">codex</span> <span class="typed">cargo test --locked --workspace</span><span class="caret" aria-hidden="true"></span></p>
-              </div>
-              <div class="pane pane-b">
-                <p><span class="p">$</span> scripts/verify.sh fast</p>
-                <p class="dim">test result: <span class="ok">ok</span>. 214 passed; 0 failed</p>
-                <p class="dim">mux kit: herdr <span class="ok">✓</span> tmux <span class="ok">✓</span> uuyc <span class="ok">✓</span></p>
-              </div>
-            </div>
-          </div>
-          <div class="statusbar">
-            <span>4 backends</span>
-            <span>arm64</span>
-            <span class="live"><i></i>2 agents live</span>
-          </div>
+      <div class="mockup rise d2">
+        <div class="shot-frame">
+          <img src="assets/app-light.png" alt="Shardlane with real Herdr, tmux and Luvus workspaces and live agents" width="2392" height="1986">
         </div>
       </div>
     </section>
-
-    <p class="facts rise d5">
-      <span>v0.1.15</span><span>macOS 14+</span><span>Apple Silicon</span><span>GPUI 120&nbsp;Hz</span><span>ad-hoc signed</span><span>GPLv3</span>
-    </p>
 
     <!-- ============ BACKENDS ============ -->
     <section class="backends" id="backends">
@@ -281,28 +239,6 @@
       </article>
     </section>
 
-    <!-- ============ INSTALL ============ -->
-    <section class="install" id="install">
-      <h2 data-aos="fade-up">Install</h2>
-      <ol class="steps">
-        <li data-aos="fade-up">
-          <span class="n">01</span>
-          <div><strong>Download</strong><p><a href="https://github.com/thewei/shardlane/releases/latest/download/Shardlane-macos-aarch64.zip">Shardlane-macos-aarch64.zip</a> from the latest release.</p></div>
-        </li>
-        <li data-aos="fade-up" data-aos-delay="100">
-          <span class="n">02</span>
-          <div><strong>Verify</strong><p><code>shasum -a 256 -c Shardlane-macos-aarch64.zip.sha256</code></p></div>
-        </li>
-        <li data-aos="fade-up" data-aos-delay="200">
-          <span class="n">03</span>
-          <div><strong>Install</strong><p>Unzip, drag <code>Shardlane.app</code> to Applications.</p></div>
-        </li>
-        <li data-aos="fade-up" data-aos-delay="300">
-          <span class="n">04</span>
-          <div><strong>First launch</strong><p>Right-click the app, choose Open once. Ad-hoc signed, not notarized.</p></div>
-        </li>
-      </ol>
-    </section>
   </main>
 
   <footer class="foot">
@@ -335,6 +271,26 @@
         document.querySelectorAll('[data-aos]').forEach(function (el) {
           el.classList.add('aos-animate');
         });
+      }
+    })();
+    (function () {
+      // Platform-aware download: the only built artifact today is the
+      // Apple Silicon zip; every other platform lands on the releases page
+      // instead of a zip it cannot run. Extend the map as new builds land.
+      var arm64 = 'https://github.com/thewei/shardlane/releases/latest/download/Shardlane-macos-aarch64.zip';
+      var releases = 'https://github.com/thewei/shardlane/releases';
+      function apply(href) {
+        document.querySelectorAll('[data-platform-download]').forEach(function (a) {
+          a.href = href;
+        });
+      }
+      if (!/Macintosh/.test(navigator.userAgent)) { apply(releases); return; }
+      if (navigator.userAgentData && navigator.userAgentData.getHighEntropyValue) {
+        navigator.userAgentData.getHighEntropyValue(['architecture'])
+          .then(function (hint) {
+            apply(hint && hint.architecture === 'x86' ? releases : arm64);
+          })
+          .catch(function () { apply(arm64); });
       }
     })();
   </script>

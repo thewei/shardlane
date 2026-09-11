@@ -935,6 +935,7 @@ impl ShardlaneApp {
                                                 .child("/"),
                                         )
                                         .child({
+                                            let dark = content_theme.is_dark;
                                             let tabs: Vec<crate::switcher_panel::TabRow> = self
                                                 .active_workspace_id()
                                                 .map(|workspace_id| {
@@ -946,11 +947,47 @@ impl ShardlaneApp {
                                                                 .focused_tab_id
                                                                 .as_deref()
                                                                 == Some(tab.tab_id.as_str());
-                                                            (
-                                                                tab.tab_id.clone(),
-                                                                self.tab_title(&tab),
+                                                            let brand_icon = self
+                                                                .state
+                                                                .agents
+                                                                .iter()
+                                                                .find(|agent| {
+                                                                    agent.tab_id.as_deref()
+                                                                        == Some(tab.tab_id.as_str())
+                                                                })
+                                                                .and_then(crate::sidebar::agent_identity)
+                                                                .and_then(|identity| {
+                                                                    crate::assets::agent_brand_icon(
+                                                                        identity, dark,
+                                                                    )
+                                                                })
+                                                                .or_else(|| {
+                                                                    self.state
+                                                                        .panes
+                                                                        .iter()
+                                                                        .find(|pane| {
+                                                                            pane.tab_id.as_deref()
+                                                                                == Some(
+                                                                                    tab.tab_id.as_str(),
+                                                                                )
+                                                                                && pane.agent.is_some()
+                                                                        })
+                                                                        .and_then(|pane| {
+                                                                            pane.agent.as_deref()
+                                                                        })
+                                                                        .and_then(|agent| {
+                                                                            crate::assets::agent_brand_icon(
+                                                                                agent, dark,
+                                                                            )
+                                                                        })
+                                                                })
+                                                                .map(str::to_string);
+                                                            crate::switcher_panel::TabRow {
+                                                                tab_id: tab.tab_id.clone(),
+                                                                label: self.tab_title(&tab),
                                                                 focused,
-                                                            )
+                                                                brand_icon,
+                                                            }
                                                         })
                                                         .collect()
                                                 })

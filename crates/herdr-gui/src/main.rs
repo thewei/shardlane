@@ -2045,7 +2045,6 @@ fn spawn_global_action_consumer<A>(
                     break;
                 }
             }
-            let target = target.or_else(|| candidates.first().cloned());
             let Some((window_handle, view)) = target else {
                 continue;
             };
@@ -2713,7 +2712,7 @@ impl ShardlaneApp {
     /// Single-window model: persists this window's bound workspace snapshot.
     /// Since the application strictly runs with one window, exactly one (or zero if unbound)
     /// record is persisted, completely eliminating duplicate/ghost window leakage.
-    pub(crate) fn sync_open_workspaces(&self, cx: &mut App) {
+    pub(crate) fn sync_open_workspaces(&mut self, cx: &mut App) {
         self.persist_current_workspace_state(cx);
         let mut records = Vec::new();
         if let Some(record) = self.open_workspace_record() {
@@ -2890,6 +2889,10 @@ impl ShardlaneApp {
                             ));
                             view.client = Some(client.clone());
                             view.status = ConnectionStatus::Connected;
+                            let mut state = state;
+                            state.agents.retain(|a| {
+                                a.agent.is_some() || a.display_agent.is_some() || a.name.is_some()
+                            });
                             view.state = state;
                             let mut by_ws: HashMap<String, Vec<Pane>> = HashMap::new();
                             for pane in all_panes {

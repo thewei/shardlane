@@ -8,7 +8,7 @@
 //! [POS]: `crates/herdr-gui`'s switcher presentation; consumed by sidebar/shell.rs (footer) and
 //! header_view.rs (breadcrumbs).
 use super::*;
-use ::gpui::Corner;
+use ::gpui::{img, Corner};
 use gpui_component::popover::{Popover, PopoverState};
 use gpui_component::Selectable;
 
@@ -504,8 +504,14 @@ pub(crate) fn workspace_switcher_panel(
         })
 }
 
-/// One row of the Tab switcher panel: (tab id, title, focused).
-pub(crate) type TabRow = (String, String, bool);
+/// One row of the Tab switcher panel: (tab id, title, focused, optional brand icon).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct TabRow {
+    pub(crate) tab_id: String,
+    pub(crate) label: String,
+    pub(crate) focused: bool,
+    pub(crate) brand_icon: Option<String>,
+}
 
 /// One row of the Project switcher panel: (runtime workspace id, label, focused).
 pub(crate) type ProjectRow = (String, String, bool);
@@ -695,66 +701,77 @@ pub(crate) fn tab_switcher_panel(
             let filter = filter_input.read(cx).value().trim().to_lowercase();
             let mut rows = v_flex().w_full().gap(px(2.0));
             let mut shown = 0usize;
-            for (tab_id, label, focused) in &tabs {
+            for tab in &tabs {
                 shown += 1;
-                if !filter.is_empty() && !label.to_lowercase().contains(&filter) {
+                if !filter.is_empty() && !tab.label.to_lowercase().contains(&filter) {
                     continue;
                 }
                 let row_herdr = picker_herdr.clone();
                 let row_popover = popover.clone();
-                let tab_id = tab_id.clone();
-                rows =
-                    rows.child(
-                        h_flex()
-                            .group("tab-row")
-                            .id(SharedString::from(format!("tab-picker-{tab_id}")))
-                            .w_full()
-                            .h(px(30.0))
-                            .px(px(10.0))
-                            .rounded(px(6.0))
-                            .gap(px(8.0))
-                            .items_center()
-                            .cursor_pointer()
-                            .hover(|s| {
-                                s.bg(picker_theme.foreground.opacity(crate::theme::WASH_HOVER))
-                            })
-                            .on_click(move |_, window, app| {
-                                row_popover.update(app, |state, cx| state.dismiss(window, cx));
-                                row_herdr.update(app, |this, cx| {
-                                    this.focus_tab_id(tab_id.clone(), window, cx)
-                                });
-                            })
-                            .child(div().size(px(7.0)).rounded_full().flex_shrink_0().bg(
-                                if *focused {
-                                    picker_theme.success
+                let tab_id = tab.tab_id.clone();
+                let focused = tab.focused;
+                let brand_icon = tab.brand_icon.clone();
+                let lead_icon: AnyElement = match &brand_icon {
+                    Some(path) => img(SharedString::from(path.clone()))
+                        .size(px(14.0))
+                        .grayscale(!focused)
+                        .opacity(if focused { 1.0 } else { 0.55 })
+                        .flex_shrink_0()
+                        .into_any_element(),
+                    None => Icon::empty()
+                        .path("icons/square-terminal.svg")
+                        .with_size(px(13.0))
+                        .text_color(if focused {
+                            picker_theme.foreground.opacity(0.85)
+                        } else {
+                            picker_theme.muted_foreground.opacity(0.5)
+                        })
+                        .flex_shrink_0()
+                        .into_any_element(),
+                };
+                rows = rows.child(
+                    h_flex()
+                        .group("tab-row")
+                        .id(SharedString::from(format!("tab-picker-{tab_id}")))
+                        .w_full()
+                        .h(px(30.0))
+                        .px(px(10.0))
+                        .rounded(px(6.0))
+                        .gap(px(8.0))
+                        .items_center()
+                        .cursor_pointer()
+                        .hover(|s| s.bg(picker_theme.foreground.opacity(crate::theme::WASH_HOVER)))
+                        .on_click(move |_, window, app| {
+                            row_popover.update(app, |state, cx| state.dismiss(window, cx));
+                            row_herdr.update(app, |this, cx| {
+                                this.focus_tab_id(tab_id.clone(), window, cx)
+                            });
+                        })
+                        .child(lead_icon)
+                        .child(
+                            div()
+                                .flex_1()
+                                .min_w_0()
+                                .truncate()
+                                .text_size(px(13.0))
+                                .text_color(if focused {
+                                    picker_theme.foreground
                                 } else {
-                                    picker_theme.muted_foreground.opacity(0.45)
-                                },
-                            ))
-                            .child(
-                                div()
-                                    .flex_1()
-                                    .min_w_0()
-                                    .truncate()
-                                    .text_size(px(13.0))
-                                    .text_color(if *focused {
-                                        picker_theme.foreground
-                                    } else {
-                                        picker_theme.muted_foreground
-                                    })
-                                    .child(label.clone()),
-                            )
-                            .child(if *focused {
-                                Icon::empty()
-                                    .path("icons/check.svg")
-                                    .with_size(px(12.0))
-                                    .text_color(picker_theme.success)
-                                    .flex_shrink_0()
-                                    .into_any_element()
-                            } else {
-                                div().into_any_element()
-                            }),
-                    );
+                                    picker_theme.muted_foreground
+                                })
+                                .child(tab.label.clone()),
+                        )
+                        .child(if focused {
+                            Icon::empty()
+                                .path("icons/check.svg")
+                                .with_size(px(12.0))
+                                .text_color(picker_theme.success)
+                                .flex_shrink_0()
+                                .into_any_element()
+                        } else {
+                            div().into_any_element()
+                        }),
+                );
             }
             if shown == 0 {
                 rows = rows.child(
