@@ -45,6 +45,13 @@ pub(crate) struct ShortcutEntry {
     pub category: ShortcutCategory,
 }
 
+/// Catalog key for a shortcut's display label (shortcuts.action.* in
+/// crates/herdr-gui/locales/*.yml), derived by convention from the registry
+/// id so every language serves the same Shortcuts page list.
+pub(crate) fn label_key(id: &str) -> String {
+    format!("shortcuts.action.{}", id.replace(['.', '-'], "_"))
+}
+
 /// Grouping for Settings UI display.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(crate) enum ShortcutCategory {

@@ -1,0 +1,384 @@
+# Shardlane ネイティブシェル日本語カタログ（rust-i18n 形式 1：ファイル名が
+# locale、ネストしたキーはドットキーに展開）。各キーは en.yml など 5 つの
+# 兄弟ファイルとキーセットを一致させること（i18n カタログ整合性テストが強制）。
+# プレースホルダー %{name} は必ずそのまま残すこと。
+settings:
+  section:
+    appearance: テーマ
+    terminal: ターミナル
+    lazygit: Lazygit
+    shortcuts: ショートカット
+    behavior: 動作
+    window: ウィンドウ
+    providers: プロバイダー
+    agent_hooks: Agent フック
+    skill: スキル
+    mobile: モバイル
+    browser: ブラウザ
+  theme_category:
+    light: ライト
+    dark: ダーク
+  option:
+    auto: 自動
+    sidebar: サイドバー
+    native_tabs: ネイティブタブ
+    herdr_tui: Herdr TUI
+    compact: コンパクト
+    hidden: 非表示
+    top: 上
+    bottom: 下
+    dots: ドット
+    symbols: 記号
+  appearance:
+    title: 外観
+    subtitle: まず外観モードを選び、次に Herdr 内蔵テーマを選択します。App 本体とターミナル表面が両方とも追従します。
+    mode_light: ライト
+    mode_light_detail: ライトテーマ 1 つ
+    mode_dark: ダーク
+    mode_dark_detail: ダークテーマ 1 つ
+    mode_auto: 自動
+    mode_auto_detail: macOS に追従。両方の選択が必要
+    notice_unofficial_theme: 現在の Herdr テーマは Shardlane のビジュアルプリセットではありません。以下のカードから公式内蔵テーマを Herdr 設定に書き込めます。
+    notice_auto_both: '両方の選択が使用されます。ライト外観ではライトテーマ、ダーク外観ではダークテーマ。'
+    language_title: 言語
+    language_subtitle: Shardlane ネイティブシェルのインターフェース言語。翻訳が欠けている場合は英語にフォールバックします。
+  herdr_tui:
+    title: Herdr TUI
+    subtitle: ホストされた Herdr ターミナル UI の設定。実際の Herdr 設定に保存され、すべての Herdr クライアントに適用されます。変更するとホストされたターミナルセッションを再起動します。
+    config_file: 設定ファイル
+    reload: 再読み込み
+    copy_on_select: 選択でコピー
+    copy_on_select_detail: Herdr ui.copy_on_select。すべての Herdr クライアントのネイティブなマウス選択動作に影響します。
+    mouse_capture: マウスキャプチャ
+    mouse_capture_detail: 'Herdr ui.mouse_capture：すべてのクライアントで Herdr のマウス対応 UI を有効化。'
+    scroll_lines: マウススクロール行数
+    scroll_lines_detail: 'Herdr ui.mouse_scroll_lines：ホイール 1 段階あたりの移動行数。'
+    sidebar_start_collapsed: 起動時にサイドバーを折りたたむ
+    sidebar_start_collapsed_detail: Herdr ui.sidebar_start_collapsed。これは Herdr の起動設定であり、Shardlane 専用の上書きではありません。
+    sidebar_collapsed_mode: 折りたたみサイドバーモード
+    sidebar_collapsed_mode_detail: Herdr ui.sidebar_collapsed_mode。「非表示」が Shardlane に最適。「コンパクト」は通常の Herdr クライアントでも利用可能。
+    pane_borders: ペイン境界線
+    pane_borders_detail: 'Herdr ui.pane_borders。'
+    pane_outer_borders: 外側ペイン境界線
+    pane_outer_borders_detail: 'Herdr ui.pane_outer_borders。'
+    pane_scrollbars: ペインスクロールバー
+    pane_scrollbars_detail: 'Herdr ui.pane_scrollbars。'
+    pane_gaps: ペイン間隔
+    pane_gaps_detail: 'Herdr ui.pane_gaps。'
+    hide_single_tab: タブ 1 枚時にタブバーを隠す
+    hide_single_tab_detail: 'Herdr ui.hide_tab_bar_when_single_tab。'
+    tab_position: タブバーの位置
+    tab_position_detail: 'Herdr ui.tab_bar_position。'
+    status_indicators: ステータスインジケーター
+    status_indicators_detail: 'Herdr ui.status_indicators。'
+  terminal:
+    title: ターミナル
+    subtitle: 作業面は 1 つの Herdr TUI をホストします。Herdr の通常のユーザー設定が正であり、Shardlane は 2 つ目のホスト TUI 設定を持ちません。
+    host_status: Herdr ホスト状態
+    host_actions: ホスト操作
+    host_actions_detail: ホストされた Herdr ターミナルプロセスを再起動します。
+    restart: 再起動
+    status_stopped_detail: TUI ホストが実行されていません。「再起動」をクリックして起動してください。
+    status_starting_detail: TUI ホストを起動中…
+    status_running_detail: Herdr TUI プロセスが稼働中で、ナビゲーションコマンドを受信しています。
+    status_failed_detail: TUI ホストでエラーが発生しました。
+    font_family: フォントファミリー
+    font_family_detail: 表示中のすべてのターミナルペインに適用されます。
+    font_size: フォントサイズ
+    font_size_detail: '%{size} pt · 既定 %{default} pt · ⌘0 でリセット'
+    font_changed: 'ターミナルフォントサイズ %{size} pt'
+    line_height: 行間
+    line_height_detail: '%{height} px · 既定 %{default} px'
+    padding: パディング
+    padding_detail: '文字グリッドの周囲 %{padding} px · 既定 %{default}'
+    tab_bar: タブバー
+    tab_bar_detail: Project タブをサイドバーツリーに表示するか、ターミナル内容の上にネイティブタブとして表示します。
+    cursor_style: カーソル形状
+    cursor_style_detail: '自動は実行中のプログラムに追従します（ウィンドウ非フォーカス時の中空カーソルを含む）。既定：自動。'
+    cursor_block: ブロック
+    cursor_bar: バー
+    cursor_underline: 下線
+    cursor_blink: カーソル点滅
+    cursor_blink_detail: '自動はプログラムの点滅モードに追従します。「点滅」は強制オン、「スチディ」は常時表示。既定：自動。'
+    cursor_blink_on: 点滅
+    cursor_blink_steady: スチディ
+    agent_notifications: Agent 通知
+    agent_notifications_detail: 意味のある Agent 状態変化にのみ macOS 通知を使用します。
+  behavior:
+    updates:
+      check: 更新を確認
+      check_detail: 'GitHub リリースマニフェストと定期的に比較します（既定：24 時間ごと）。'
+      auto_download: バックグラウンドで更新をダウンロード
+      auto_download_detail: 確認で新しいリリースを見つけたら自動でダウンロードして検証し、「更新して再起動」をワンクリックに保ちます。
+      latest: 最新バージョン
+      up_to_date: '最新です — v%{version} を実行中。%{hours} 時間ごとに確認。'
+      available: 'バージョン %{version} が利用可能です。'
+      available_dev: 'バージョン %{version} が利用可能です — 開発ビルドはその場で更新できません。'
+      downloading: 'v%{version} をダウンロード中 — %{progress}。'
+      ready: 'バージョン %{version} のステージングと検証が完了しました。'
+      failed: 'v%{version} への更新に失敗しました：%{error}。'
+      releases: リリースページ
+      update_restart: 更新して再起動
+      retry_download: ダウンロードを再試行
+      download_update: 更新をダウンロード
+      update_failed: 更新に失敗しました
+      staged_title: Shardlane の更新が準備完了
+      staged_body: 'バージョン %{version} の検証が完了。設定 -> 動作 -> 更新して再起動。'
+      available_title: Shardlane の更新あり
+      available_body: 'バージョン %{version} のダウンロードが可能です。設定 → 動作 にリンクがあります。'
+  window:
+    opacity: 不透明度
+    opacity_detail: '%{value}% · 既定 %{default}%'
+    always_on_top: 常に最前面
+    always_on_top_detail: Shardlane ウィンドウを常に他より手前に表示します。「ウィンドウ」メニューのスイッチと同じです。
+  lazygit:
+    cli: Lazygit CLI
+    cli_detail: Shardlane は実行ファイルを 1 つ解決し、Lazygit 画面が表示されている間だけホストします。
+    executable: 実行ファイル
+    executable_detail: 空欄で PATH を使用、または実行ファイルの絶対パスを入力。Enter で確定、フォーカスを外しても適用されます。
+    refresh: 再読み込み
+    detecting: Lazygit を検出中…
+    supported: '対応 — %{detail}'
+    outdated: 'オーバーレイなしで利用可能 — 更新を推奨 — %{detail}'
+    startup_panel: 起動パネル
+    startup_panel_detail: 新しい Project セッションで最初に表示される Lazygit パネル。
+    screen_mode: 画面モード
+    screen_mode_detail: Lazygit に渡す初期フォーカスパネルのサイズ。
+    panel_status: Status
+    panel_branch: Branch
+    panel_log: Log
+    panel_stash: Stash
+    screen_normal: ノーマル
+    screen_half: ハーフ
+    screen_full: フル
+    mouse_events: マウスイベント
+    mouse_events_detail: Lazygit が有効にしている場合、ホスト PTY 経由でマウス入力を転送します。
+    side_width: サイドパネル幅
+    side_width_detail: 狭い右パネルレイアウト向けの小さなオーバーレイ設定。
+    auto_refresh: 自動更新
+    auto_refresh_detail: 画面が表示されている間、Lazygit のステータス更新を有効のままにします。
+    overlay: Shardlane オーバーレイ
+    overlay_detail: ホスト表示専用の使い捨てランタイムオーバーレイのみ書き込みます。ユーザーとリポジトリの設定ファイルには触れません。
+    config_ownership: 設定の所有権
+    config_ownership_detail: ユーザーとリポジトリの設定は Lazygit が所有し続けます。Shardlane は統合が有効な場合に小さなランタイムオーバーレイを供給するだけです。
+    precedence_note: ユーザーとリポジトリ設定の優先順位は保持されます
+  providers:
+    intro: New Agent と履歴の続きに表示するプロバイダーを選択します。
+    history_index: ローカル履歴インデックス
+    history_index_loading: インデックスのメタデータをバックグラウンドで読み込み中です。
+    reveal_in_finder: Finder で表示
+    detecting: 検出中…
+    not_found: 見つかりません
+    installed_path: 'インストール済み · %{path}'
+    cap_history: 履歴
+    cap_live: ライブチャット
+    cap_preview: プレビュー
+    status_available: 利用可能
+    status_unavailable: 利用不可
+    status_checking: 確認中…
+    history_status: '利用可能 — %{sources} ソース · %{sessions} 件のインデックス済みセッション'
+    back_to_providers: プロバイダー一覧に戻る
+    row_cli: CLI
+    row_history: 履歴
+    row_live: ライブチャット
+    row_integration: Herdr 統合
+    live_available: 利用可能
+    live_unavailable: 利用不可
+    integration_deferred: '保留中 · Herdr フック/セッションバインディング待ち'
+    integration_no_cli: Herdr CLI が見つかりません
+    integration_installed: 'インストール済み · %{state}'
+    integration_not_installed: '未インストール · %{state}'
+    integration_unavailable: Herdr 状態を取得できません
+    kind_default: デフォルト
+    kind_custom: カスタム
+    source_summary: '%{kind} · %{status} · %{count} セッション'
+    sources_title: 履歴ソース
+    sources_detail: 内蔵ソースは無効化でき、カスタムソースは編集・削除できます。
+    add_location: 場所を追加
+    restore_defaults: デフォルトに戻す
+    add_source_prompt: 履歴ソースを追加
+    edit_source_prompt: 履歴ソースを編集
+    edit_item: 編集…
+    remove_item: 削除
+    remove_armed: もう一度クリックで削除
+    remove_confirm_notice: この履歴ソースの削除を確定するには、もう一度「削除」をクリックしてください
+    restore_dialog_title: '%{provider} の履歴ソースを復元'
+    restore_dialog_body: カスタム場所を削除して内蔵ソースを再有効化しますか？ローカルの履歴インデックスは削除されません。
+    dialog_ok: 復元
+    dialog_cancel: キャンセル
+    picker_failed: '履歴ソースピッカーが失敗しました：%{error}'
+  browser:
+    builtin: 内蔵ブラウザ
+    enabled_detail: 有効 — 右パネルと画面セレクターから利用できます。
+    disabled_detail: 無効 — 再び有効にするまでブラウザ画面は表示されません。
+    new_profile: 新規プロファイル
+    new_profile_detail: 独自の Web サイトデータストアを持つ隔離されたブラウザプロファイルを作成します。
+    new_profile_action: + 新規プロファイル
+    profile_default: '%{name}（デフォルト）'
+    ephemeral_detail: 一時的（プライベートブラウジング）
+    persistent_detail: 永続的な分離データストア
+    set_default: デフォルトに設定
+    clear_data: データを消去
+    clear_armed: もう一度クリックで消去
+    delete: 削除
+    delete_armed: もう一度クリックで削除
+  mobile:
+    remote_access: リモートアクセス
+    remote_access_detail: この Mac で Remote API を提供します。モバイルクライアントはアクセストークンで接続します。
+    listener_scope: リスナーの範囲
+    listener_scope_detail: オフではリスナーを起動しません。ループバックは 127.0.0.1 のみにバインド。すべてのインターフェースは 0.0.0.0 にバインドし、同じネットワークのスマートフォンが接続できます。
+    scope_off: オフ
+    scope_loopback: ループバック
+    scope_all_interfaces: すべてのインターフェース
+    listener: リスナー
+    listening_lan: 'すべてのインターフェース (0.0.0.0:%{port}) でリッスン中。同じネットワークのモバイルデバイスが接続できます。'
+    listening_loopback: '127.0.0.1:%{port} でリッスン中。モバイルクライアントが接続できます。'
+    listener_failed: '有効ですが、リスナーの起動に失敗しました（ポート %{port} が使用中？）。'
+    listener_off: オフ — リスナースレッドなし、アイドルコストなし。有効化するとモバイル接続を受け付けます。
+    running: 実行中
+    stopped: 停止中
+    port: ポート
+    port_detail: Remote API とモバイル Web のリッスンポート。デフォルトが他のアプリに占有されている場合は変更してください。Enter で適用（リスナーは即座に再起動）。
+    port_invalid: ポートは 1024 から 65535 までの数値で指定してください
+    mobile_web: モバイル Web
+    mobile_web_detail: このネットワークから到達できるアドレス。「開く」をクリックするか、スマートフォンのブラウザでアドレスを入力し、下の QR コードでペアリングしてください。
+    mobile_web_off_detail: リモートアクセスを起動するとアドレスが表示されます。
+    open: 開く
+    qr_pair: QR コードでペアリング
+    qr_pair_detail: スマートフォンのカメラでスキャンしてください。QR コードには接続アドレスと認証情報が含まれ、モバイルアプリが読み取って自動接続します。
+    qr_disabled: ペアリング QR コードの生成にはリモートアクセスを有効にしてください。
+    qr_failed: QR コードの生成に失敗しました
+    connect_label: '%{addr} · トークン：%{token}'
+    connect_off: リモートアクセスがオフです — 上で有効にするとペアリングコードを取得できます。
+    no_clients: 接続中のクライアントはありません
+    no_clients_detail: この一覧はライブです。モバイル Web アプリから接続すると、ここにクライアントが表示されます。
+    web_client: 'Web クライアント · %{addr}'
+    client_seen: '接続から %{connected} 秒 · 最終活動 %{last_seen} 秒前'
+    disconnect: 切断
+    access_token: アクセストークン
+    access_token_detail: 'クライアント用の Bearer トークン。%{token}'
+    copy: コピー
+    reset_token: トークンをリセット
+    reset_token_detail: ペアリング済みの全クライアントを即時に失効させます（新しい QR コードで再ペアリング）。ホストの識別情報は変わりません。
+  shortcuts:
+    header_command: コマンド
+    header_scope: スコープ
+    header_shortcut: ショートカット
+    scope_global: グローバル
+    scope_app: アプリ
+    scope_agent_switcher: Agent スイッチャー
+    rebind_tooltip: クリックで再バインド · Esc でキャンセル
+    rebind_tooltip_conflicts: 'クリックで再バインド · Esc でキャンセル · %{conflicts} と競合'
+    conflict_entry: '%{label}（%{chord}）'
+    recording: キーを押してください…（Esc でキャンセル）
+    disabled_suffix: '%{chord} · 無効'
+    reset: リセット
+    disable: 無効化
+  agent_hooks:
+    overview_title: Agent ステータス検知とフック
+    overview_body: Herdr、tmux、リモート tmux にまたがるコーディング Agent の自律ライフサイクルフックマネージャー。Working・Idle・Blocked・Released イベントを自動検知し、4 段階の縮退動作を提供します（フック → Herdr ネイティブ → プロセス/タイトル検知 → サイレントフォールバック）。
+    ipc_title: ステータス IPC チャネル
+    ipc_active: 'アクティブ：%{path}'
+    state_installed: インストール済み（最新）
+    state_outdated: インストール済み（古いバージョン。クリックで更新）
+    state_not_installed: 未統合
+    state_herdr_managed: Herdr 公式フックを検出（「統合」をクリックで tmux/リモート対応にアップグレード）
+    state_unsupported: 非対応
+    action_install: 統合
+    action_refresh: 更新
+    action_uninstall: 削除
+  skill:
+    overview_title: Shardlane Agent スキル
+    overview_body: shardlane というスキルファイルをインストールし、コーディング Agent に読み取り専用の shardlane CLI（ワークスペース、Project、稼働中の Agent）と、herdr CLI でそれらを管理するための正確な HERDR_SESSION 指定ルールを教えます。Herdr が唯一のランタイム権限であり続けます。
+    state_installed: インストール済み（最新）
+    state_outdated: インストール済み（内容が異なります。インストールで同梱版に更新）
+    state_missing: 未インストール
+    state_external: シンボリックリンク — 外部管理のため変更しません
+    install_action: インストール
+    refresh_action: 再読み込み
+    remove_action: 削除
+host:
+  status_stopped: 停止中
+  status_starting: 起動中…
+  status_running: 実行中
+  status_failed: 失敗
+workspace:
+  local: （ローカル）
+  new: 新規ワークスペース…
+  filter: ワークスペースを絞り込み…
+  none: ワークスペースはまだありません
+  group_herdr: Herdr ワークスペース
+  group_tmux: tmux セッション
+  group_uuyc: UU リモートターミナル
+  group_luvus: Luvus セッション
+tab:
+  filter: タブを絞り込み…
+  none: このワークスペースにタブはありません
+project:
+  filter: Project を絞り込み…
+  none: このインスタンスに Project はありません
+conversation:
+  tool_group_summary: '%{count} 回のツール呼び出し'
+  thought_for: '%{duration} 考えた'
+  stopped: 停止しました
+  thinking_live: 考えています…
+  thought_process: 思考プロセス
+  thinking: 思考中
+  hide_thinking: 思考を隠す
+  show_thinking: 思考を表示
+  copy_message: メッセージをコピー
+  message_copied: メッセージをコピーしました
+  copy_answer: 回答をコピー
+  answer_copied: 回答をコピーしました
+  you: あなた
+  sending: 送信中…
+  working: 作業中…
+  context_compacted: コンテキストを圧縮しました
+shell:
+  copy_ids: ID をコピー
+  copy_pane_id: ペイン ID をコピー
+  copy_tab_id: タブ ID をコピー
+  copy_session_id: セッション ID をコピー
+  id_copied: 'コピーしました：%{id}'
+shortcuts:
+  action:
+    app_quit: Shardlane を終了
+    app_settings: 設定
+    app_search: 検索
+    app_find: 会話内を検索
+    app_new_window: 新規ウィンドウ
+    app_new_task: 新規タスク
+    app_refresh: 再接続
+    app_help: ヘルプ
+    app_reload_config: 設定を再読み込み
+    lazygit_open: Lazygit を開く
+    agent_switcher_next: 次の Agent（スイッチャー）
+    agent_switcher_prev: 前の Agent（スイッチャー）
+    agent_switcher_confirm: Agent 切り替えを確定
+    agent_switcher_cancel: Agent 切り替えをキャンセル
+    sidebar_toggle: サイドバーの切り替え
+    sidebar_agents: Agent 一覧の切り替え
+    terminal_paste: 貼り付け
+    terminal_copy: コピー
+    terminal_select_all: すべて選択
+    terminal_font_increase: フォントを拡大
+    terminal_font_decrease: フォントを縮小
+    terminal_font_reset: フォントサイズをリセット
+    pane_split_right: 右に分割
+    pane_split_down: 下に分割
+    pane_zoom: ズーム切り替え
+    pane_focus_left: 左へフォーカス
+    pane_focus_right: 右へフォーカス
+    pane_focus_up: 上へフォーカス
+    pane_focus_down: 下へフォーカス
+    pane_resize_left: 左へリサイズ
+    pane_resize_right: 右へリサイズ
+    pane_resize_up: 上へリサイズ
+    pane_resize_down: 下へリサイズ
+    pane_close: ペインを閉じる
+    tab_new: 新規タブ
+    tab_close: タブを閉じる
+    tab_previous: 前のタブ
+    tab_next: 次のタブ
+    project_previous: 前の Project
+    project_next: 次の Project

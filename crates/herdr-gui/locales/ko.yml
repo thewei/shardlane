@@ -1,0 +1,385 @@
+# Shardlane 네이티브 셸 한국어 카탈로그 (rust-i18n 포맷 1: 파일명이 locale,
+# 중첩 키는 점 키로 평탄화). 모든 키는 en.yml 등 5개 형제 파일과 키 집합이
+# 동일해야 합니다 (i18n 카탈로그 일관성 테스트가 강제). 플레이스홀더 %{name}은
+# 반드시 그대로 유지해야 합니다.
+settings:
+  section:
+    appearance: 테마
+    terminal: 터미널
+    lazygit: Lazygit
+    shortcuts: 단축키
+    behavior: 동작
+    window: 창
+    providers: 공급자
+    agent_hooks: Agent 훅
+    skill: 스킬
+    mobile: 모바일
+    browser: 브라우저
+  theme_category:
+    light: 라이트
+    dark: 다크
+  option:
+    auto: 자동
+    sidebar: 사이드바
+    native_tabs: 네이티브 탭
+    herdr_tui: Herdr TUI
+    compact: 컴팩트
+    hidden: 숨김
+    top: 위
+    bottom: 아래
+    dots: 점
+    symbols: 기호
+  appearance:
+    title: 모양
+    subtitle: 먼저 모양 모드를 고르고, 다음으로 Herdr 내장 테마를 선택하세요. 앱 표면과 터미널 표면이 모두 따라갑니다.
+    mode_light: 라이트
+    mode_light_detail: 라이트 테마 하나
+    mode_dark: 다크
+    mode_dark_detail: 다크 테마 하나
+    mode_auto: 자동
+    mode_auto_detail: macOS 따라감. 둘 다 필요
+    notice_unofficial_theme: 현재 Herdr 테마는 Shardlane의 비주얼 프리셋이 아닙니다. 아래 카드에서 공식 내장 테마를 Herdr 설정에 기록할 수 있습니다.
+    notice_auto_both: '두 선택이 모두 사용됩니다. 라이트 모양에서는 라이트 테마, 다크 모양에서는 다크 테마.'
+    language_title: 언어
+    language_subtitle: Shardlane 네이티브 셸의 인터페이스 언어. 번역이 없는 부분은 영어로 표시됩니다.
+  herdr_tui:
+    title: Herdr TUI
+    subtitle: 호스팅된 Herdr 터미널 UI 환경설정. 실제 Herdr 설정에 저장되며 모든 Herdr 클라이언트에 적용됩니다. 변경 시 호스팅된 터미널 세션을 재시작합니다.
+    config_file: 설정 파일
+    reload: 다시 불러오기
+    copy_on_select: 선택 시 복사
+    copy_on_select_detail: Herdr ui.copy_on_select. 모든 Herdr 클라이언트의 네이티브 마우스 선택 동작에 영향을 줍니다.
+    mouse_capture: 마우스 캡처
+    mouse_capture_detail: 'Herdr ui.mouse_capture: 모든 클라이언트에서 Herdr의 마우스 인식 UI를 활성화.'
+    scroll_lines: 마우스 스크롤 줄 수
+    scroll_lines_detail: 'Herdr ui.mouse_scroll_lines: 휠 한 칸당 이동하는 줄 수.'
+    sidebar_start_collapsed: 시작 시 사이드바 접기
+    sidebar_start_collapsed_detail: Herdr ui.sidebar_start_collapsed. Herdr의 실행 환경설정이며 Shardlane 전용 재정의가 아닙니다.
+    sidebar_collapsed_mode: 접힌 사이드바 모드
+    sidebar_collapsed_mode_detail: Herdr ui.sidebar_collapsed_mode. 숨김이 Shardlane에는 가장 적합합니다. 컴팩트는 일반 Herdr 클라이언트에서도 사용할 수 있습니다.
+    pane_borders: 페인 테두리
+    pane_borders_detail: 'Herdr ui.pane_borders.'
+    pane_outer_borders: 바깥 페인 테두리
+    pane_outer_borders_detail: 'Herdr ui.pane_outer_borders.'
+    pane_scrollbars: 페인 스크롤바
+    pane_scrollbars_detail: 'Herdr ui.pane_scrollbars.'
+    pane_gaps: 페인 간격
+    pane_gaps_detail: 'Herdr ui.pane_gaps.'
+    hide_single_tab: 탭 하나일 때 탭 바 숨기기
+    hide_single_tab_detail: 'Herdr ui.hide_tab_bar_when_single_tab.'
+    tab_position: 탭 바 위치
+    tab_position_detail: 'Herdr ui.tab_bar_position.'
+    status_indicators: 상태 표시기
+    status_indicators_detail: 'Herdr ui.status_indicators.'
+  terminal:
+    title: 터미널
+    subtitle: 작업 표면은 하나의 Herdr TUI를 호스팅합니다. Herdr의 일반 사용자 설정이 권위 있으며, Shardlane은 두 번째 호스팅 TUI 설정을 유지하지 않습니다.
+    host_status: Herdr 호스트 상태
+    host_actions: 호스트 작업
+    host_actions_detail: 호스팅된 Herdr 터미널 프로세스를 재시작합니다.
+    restart: 재시작
+    status_stopped_detail: TUI 호스트가 실행 중이 아닙니다. 재시작을 클릭하여 시작하세요.
+    status_starting_detail: TUI 호스트 시작 중…
+    status_running_detail: Herdr TUI 프로세스가 활성 상태이며 내비게이션 명령을 수신 중입니다.
+    status_failed_detail: TUI 호스트에 오류가 발생했습니다.
+    font_family: 폰트 패밀리
+    font_family_detail: 보이는 모든 터미널 페인에 적용됩니다.
+    font_size: 폰트 크기
+    font_size_detail: '%{size} pt · 기본값 %{default} pt · ⌘0 재설정'
+    font_changed: '터미널 폰트 %{size} pt'
+    line_height: 줄 높이
+    line_height_detail: '%{height} px · 기본값 %{default} px'
+    padding: 패딩
+    padding_detail: '문자 그리드 주변 %{padding} px · 기본값 %{default}'
+    tab_bar: 탭 바
+    tab_bar_detail: Project 탭을 사이드바 트리에 표시하거나 터미널 콘텐츠 위에 네이티브 탭으로 표시합니다.
+    cursor_style: 커서 모양
+    cursor_style_detail: '자동은 실행 중인 프로그램을 따릅니다(창 포커스를 잃을 때의 속 빈 커서 포함). 기본값: 자동.'
+    cursor_block: 블록
+    cursor_bar: 막대
+    cursor_underline: 밑줄
+    cursor_blink: 커서 깜박임
+    cursor_blink_detail: '자동은 프로그램의 깜박임 모드를 따릅니다. 깜박임은 강제 켜고, 고정은 커서를 계속 켭니다. 기본값: 자동.'
+    cursor_blink_on: 깜박임
+    cursor_blink_steady: 고정
+    agent_notifications: Agent 알림
+    agent_notifications_detail: 의미 있는 Agent 상태 변화에만 macOS 알림을 사용합니다.
+  behavior:
+    updates:
+      check: 업데이트 확인
+      check_detail: 'GitHub 릴리스 매니페스트와 주기적으로 비교합니다 (기본값: 24시간마다).'
+      auto_download: 백그라운드에서 업데이트 다운로드
+      auto_download_detail: 확인에서 새 릴리스를 찾으면 자동으로 다운로드하고 검증하여 업데이트 후 재시작을 한 번의 클릭으로 유지합니다.
+      latest: 최신 버전
+      up_to_date: '최신 상태입니다 — v%{version} 실행 중. %{hours}시간마다 확인.'
+      available: '버전 %{version}을(를) 사용할 수 있습니다.'
+      available_dev: '버전 %{version}을(를) 사용할 수 있습니다 — 개발 빌드는 그 자리에서 업데이트할 수 없습니다.'
+      downloading: 'v%{version} 다운로드 중 — %{progress}.'
+      ready: '버전 %{version}이(가) 스테이징되고 검증되었습니다.'
+      failed: 'v%{version}(으)로의 업데이트 실패: %{error}.'
+      releases: 릴리스 페이지
+      update_restart: 업데이트 후 재시작
+      retry_download: 다운로드 재시도
+      download_update: 업데이트 다운로드
+      update_failed: 업데이트 실패
+      staged_title: Shardlane 업데이트 준비 완료
+      staged_body: '버전 %{version}이(가) 검증되었습니다. 설정 -> 동작 -> 업데이트 후 재시작.'
+      available_title: Shardlane 업데이트 가능
+      available_body: '버전 %{version} 다운로드가 가능합니다. 설정 → 동작에 링크가 있습니다.'
+  window:
+    opacity: 불투명도
+    opacity_detail: '%{value}% · 기본값 %{default}%'
+    always_on_top: 항상 맨 앞
+    always_on_top_detail: Shardlane 창을 다른 창보다 항상 앞에 유지합니다. 창 메뉴의 스위치와 동일합니다.
+  lazygit:
+    cli: Lazygit CLI
+    cli_detail: Shardlane은 실행 파일 하나를 확인하고 Lazygit 화면이 보이는 동안만 호스팅합니다.
+    executable: 실행 파일
+    executable_detail: 비워 두면 PATH를 사용하고, 실행 파일의 절대 경로를 입력할 수도 있습니다. Enter를 누르거나 포커스를 옮기면 적용됩니다.
+    refresh: 새로 고침
+    detecting: Lazygit 감지 중…
+    supported: '지원됨 — %{detail}'
+    outdated: '오버레이 없이 사용 가능 — 업데이트 권장 — %{detail}'
+    startup_panel: 시작 패널
+    startup_panel_detail: 새 Project 세션에서 처음 표시되는 Lazygit 패널.
+    screen_mode: 화면 모드
+    screen_mode_detail: Lazygit에 전달되는 초기 포커스 패널 크기.
+    panel_status: Status
+    panel_branch: Branch
+    panel_log: Log
+    panel_stash: Stash
+    screen_normal: 보통
+    screen_half: 반 화면
+    screen_full: 전체 화면
+    mouse_events: 마우스 이벤트
+    mouse_events_detail: Lazygit이 활성화한 경우 호스팅된 PTY를 통해 마우스 입력을 전달합니다.
+    side_width: 측면 패널 너비
+    side_width_detail: 좁은 오른쪽 패널 레이아웃을 위한 작은 오버레이 환경설정.
+    auto_refresh: 자동 새로 고침
+    auto_refresh_detail: 화면이 보이는 동안 Lazygit 상태 업데이트를 켜 둡니다.
+    overlay: Shardlane 오버레이
+    overlay_detail: 호스팅 표시 전용의 일회성 런타임 오버레이만 기록합니다. 사용자 및 저장소 설정 파일은 그대로 유지됩니다.
+    config_ownership: 설정 소유권
+    config_ownership_detail: 사용자 및 저장소 설정은 계속 Lazygit이 소유합니다. Shardlane은 통합이 켜져 있을 때 작은 런타임 오버레이만 제공합니다.
+    precedence_note: 사용자 및 저장소 설정 우선순위 유지됨
+  providers:
+    intro: New Agent와 기록 이어보기에 표시할 공급자를 선택하세요.
+    history_index: 로컬 기록 인덱스
+    history_index_loading: 인덱스 메타데이터를 백그라운드에서 불러오는 중입니다.
+    reveal_in_finder: Finder에서 보기
+    detecting: 감지 중…
+    not_found: 찾을 수 없음
+    installed_path: '설치됨 · %{path}'
+    cap_history: 기록
+    cap_live: 실시간 대화
+    cap_preview: 미리보기
+    status_available: 사용 가능
+    status_unavailable: 사용 불가
+    status_checking: 확인 중…
+    history_status: '사용 가능 — 소스 %{sources}개 · 인덱싱된 세션 %{sessions}개'
+    back_to_providers: 공급자 목록으로 돌아가기
+    row_cli: CLI
+    row_history: 기록
+    row_live: 실시간 대화
+    row_integration: Herdr 통합
+    live_available: 사용 가능
+    live_unavailable: 사용 불가
+    integration_deferred: '보류 중 · Herdr 훅/세션 바인딩 대기 중'
+    integration_no_cli: Herdr CLI를 찾을 수 없음
+    integration_installed: '설치됨 · %{state}'
+    integration_not_installed: '설치 안 됨 · %{state}'
+    integration_unavailable: Herdr 상태를 가져올 수 없음
+    kind_default: 기본
+    kind_custom: 커스텀
+    source_summary: '%{kind} · %{status} · 세션 %{count}개'
+    sources_title: 기록 소스
+    sources_detail: 내장 소스는 비활성화할 수 있고, 커스텀 소스는 편집하거나 제거할 수 있습니다.
+    add_location: 위치 추가
+    restore_defaults: 기본값 복원
+    add_source_prompt: 기록 소스 추가
+    edit_source_prompt: 기록 소스 편집
+    edit_item: 편집…
+    remove_item: 제거
+    remove_armed: 다시 클릭하면 제거
+    remove_confirm_notice: 이 기록 소스 제거를 확정하려면 제거를 다시 클릭하세요
+    restore_dialog_title: '%{provider} 기록 소스 복원'
+    restore_dialog_body: 커스텀 위치를 제거하고 내장 소스를 다시 활성화할까요? 로컬 기록 인덱스는 삭제되지 않습니다.
+    dialog_ok: 복원
+    dialog_cancel: 취소
+    picker_failed: '기록 소스 선택기 실패: %{error}'
+  browser:
+    builtin: 내장 브라우저
+    enabled_detail: 활성화됨 — 오른쪽 패널과 화면 선택기에서 사용할 수 있습니다.
+    disabled_detail: 비활성화됨 — 다시 켤 때까지 브라우저 화면은 숨겨집니다.
+    new_profile: 새 프로필
+    new_profile_detail: 자체 웹사이트 데이터 저장소를 가진 격리된 브라우저 프로필을 만듭니다.
+    new_profile_action: + 새 프로필
+    profile_default: '%{name} (기본값)'
+    ephemeral_detail: 임시 (사생활 보호 브라우징)
+    persistent_detail: 영구 격리 데이터 저장소
+    set_default: 기본값으로 설정
+    clear_data: 데이터 지우기
+    clear_armed: 다시 클릭하면 지웁니다
+    delete: 삭제
+    delete_armed: 다시 클릭하면 삭제
+  mobile:
+    remote_access: 원격 접근
+    remote_access_detail: 이 Mac에서 Remote API를 제공합니다. 모바일 클라이언트는 액세스 토큰으로 연결합니다.
+    listener_scope: 리스너 범위
+    listener_scope_detail: 끄면 리스너를 시작하지 않습니다. 루프백은 127.0.0.1에만 바인딩합니다. 모든 인터페이스는 0.0.0.0에 바인딩하여 같은 네트워크의 휴대폰이 연결할 수 있습니다.
+    scope_off: 끔
+    scope_loopback: 루프백
+    scope_all_interfaces: 모든 인터페이스
+    listener: 리스너
+    listening_lan: '모든 인터페이스 (0.0.0.0:%{port})에서 수신 중. 같은 네트워크의 모바일 기기가 연결할 수 있습니다.'
+    listening_loopback: '127.0.0.1:%{port}에서 수신 중. 모바일 클라이언트가 연결할 수 있습니다.'
+    listener_failed: '활성화되었지만 리스너 시작에 실패했습니다 (포트 %{port} 사용 중?).'
+    listener_off: 꺼짐 — 리스너 스레드 없음, 유휴 비용 없음. 켜면 모바일 연결을 받습니다.
+    running: 실행 중
+    stopped: 중지됨
+    port: 포트
+    port_detail: Remote API와 모바일 웹의 수신 포트. 기본 포트가 다른 앱에 점유된 경우 변경하세요. Enter로 적용합니다 (리스너 즉시 재시작).
+    port_invalid: 포트는 1024에서 65535 사이의 숫자여야 합니다
+    mobile_web: 모바일 웹
+    mobile_web_detail: 이 네트워크에서 접근 가능한 주소. 열기를 클릭하거나 휴대폰 브라우저에 주소를 입력하고 아래 QR 코드로 페어링하세요.
+    mobile_web_off_detail: 원격 접근을 시작하면 주소가 표시됩니다.
+    open: 열기
+    qr_pair: QR 코드로 페어링
+    qr_pair_detail: 휴대폰 카메라로 스캔하세요. QR 코드에는 연결 주소와 자격 증명이 담기며, 모바일 앱이 읽어 자동으로 연결합니다.
+    qr_disabled: 페어링 QR 코드를 생성하려면 원격 접근을 켜세요.
+    qr_failed: QR 코드 생성 실패
+    connect_label: '%{addr} · 토큰: %{token}'
+    connect_off: 원격 접근이 꺼져 있습니다 — 위에서 켜면 페어링 코드를 받을 수 있습니다.
+    no_clients: 연결된 클라이언트 없음
+    no_clients_detail: 이 목록은 실시간입니다. 모바일 웹 앱에서 연결하면 클라이언트가 여기에 나타납니다.
+    web_client: '웹 클라이언트 · %{addr}'
+    client_seen: '연결된 지 %{connected}초 · 마지막 활동 %{last_seen}초 전'
+    disconnect: 연결 해제
+    access_token: 액세스 토큰
+    access_token_detail: '클라이언트용 Bearer 토큰. %{token}'
+    copy: 복사
+    reset_token: 토큰 재설정
+    reset_token_detail: 페어링된 모든 클라이언트를 즉시 무효화합니다 (새 QR 코드로 다시 페어링). 호스트 신원은 유지됩니다.
+  shortcuts:
+    header_command: 명령
+    header_scope: 범위
+    header_shortcut: 단축키
+    scope_global: 전역
+    scope_app: 앱
+    scope_agent_switcher: Agent 전환기
+    rebind_tooltip: 클릭하여 다시 바인딩 · Esc 취소
+    rebind_tooltip_conflicts: '클릭하여 다시 바인딩 · Esc 취소 · %{conflicts}와(과) 충돌'
+    conflict_entry: '%{label} (%{chord})'
+    recording: 키를 누르세요… (Esc 취소)
+    disabled_suffix: '%{chord} · 비활성화됨'
+    reset: 재설정
+    disable: 비활성화
+  agent_hooks:
+    overview_title: Agent 상태 감지 및 훅
+    overview_body: Herdr, tmux, 원격 tmux를 아우르는 코딩 Agent 자율 수명 주기 훅 관리자. Working, Idle, Blocked, Released 이벤트를 자동으로 가로채고 4단계 저하(훅 → Herdr 네이티브 → 프로세스/제목 감지 → 조용한 폴백)를 제공합니다.
+    ipc_title: 상태 IPC 채널
+    ipc_active: '활성: %{path}'
+    state_installed: 설치됨 (최신)
+    state_outdated: 설치됨 (구버전. 클릭하여 새로 고침)
+    state_not_installed: 미통합
+    state_herdr_managed: Herdr 공식 훅 감지됨 (통합을 클릭하여 tmux/원격 지원으로 업그레이드)
+    state_unsupported: 미지원
+    action_install: 통합
+    action_refresh: 업데이트
+    action_uninstall: 제거
+  skill:
+    overview_title: Shardlane Agent 스킬
+    overview_body: shardlane이라는 스킬 파일을 설치하여 코딩 Agent에게 읽기 전용 shardlane CLI(워크스페이스, Project, 실행 중인 Agent)와 herdr CLI로 이들을 관리하는 정확한 HERDR_SESSION 지정 규칙을 가르칩니다. Herdr는 언제나 유일한 런타임 권위입니다.
+    state_installed: 설치됨 (최신)
+    state_outdated: 설치됨 (내용이 다름. 설치하면 번들 버전으로 새로 고침)
+    state_missing: 설치되지 않음
+    state_external: 심볼릭 링크됨 — 외부에서 관리되므로 변경하지 않음
+    install_action: 설치
+    refresh_action: 새로 고침
+    remove_action: 제거
+host:
+  status_stopped: 중지됨
+  status_starting: 시작 중…
+  status_running: 실행 중
+  status_failed: 실패
+workspace:
+  local: (로컬)
+  new: 새 워크스페이스…
+  filter: 워크스페이스 필터…
+  none: 아직 워크스페이스가 없습니다
+  group_herdr: Herdr 워크스페이스
+  group_tmux: tmux 세션
+  group_uuyc: UU 원격 터미널
+  group_luvus: Luvus 세션
+tab:
+  filter: 탭 필터…
+  none: 이 워크스페이스에 탭이 없습니다
+project:
+  filter: Project 필터…
+  none: 이 인스턴스에 Project가 없습니다
+conversation:
+  tool_group_summary: '도구 호출 %{count}회'
+  thought_for: '%{duration} 생각함'
+  stopped: 중지됨
+  thinking_live: 생각 중…
+  thought_process: 사고 과정
+  thinking: 생각 중
+  hide_thinking: 생각 숨기기
+  show_thinking: 생각 보기
+  copy_message: 메시지 복사
+  message_copied: 메시지 복사됨
+  copy_answer: 답변 복사
+  answer_copied: 답변 복사됨
+  you: 나
+  sending: 전송 중…
+  working: 작업 중…
+  context_compacted: 컨텍스트 압축됨
+shell:
+  copy_ids: ID 복사
+  copy_pane_id: 페인 ID 복사
+  copy_tab_id: 탭 ID 복사
+  copy_session_id: 세션 ID 복사
+  id_copied: '복사됨: %{id}'
+shortcuts:
+  action:
+    app_quit: Shardlane 종료
+    app_settings: 설정
+    app_search: 검색
+    app_find: 대화 내 찾기
+    app_new_window: 새 창
+    app_new_task: 새 작업
+    app_refresh: 다시 연결
+    app_help: 도움말
+    app_reload_config: 설정 다시 불러오기
+    lazygit_open: Lazygit 열기
+    agent_switcher_next: 다음 Agent (전환기)
+    agent_switcher_prev: 이전 Agent (전환기)
+    agent_switcher_confirm: Agent 전환 확정
+    agent_switcher_cancel: Agent 전환 취소
+    sidebar_toggle: 사이드바 전환
+    sidebar_agents: Agent 목록 전환
+    terminal_paste: 붙여넣기
+    terminal_copy: 복사
+    terminal_select_all: 전체 선택
+    terminal_font_increase: 폰트 크기 늘리기
+    terminal_font_decrease: 폰트 크기 줄이기
+    terminal_font_reset: 폰트 크기 재설정
+    pane_split_right: 오른쪽 분할
+    pane_split_down: 아래 분할
+    pane_zoom: 확대/축소 전환
+    pane_focus_left: 왼쪽 포커스
+    pane_focus_right: 오른쪽 포커스
+    pane_focus_up: 위 포커스
+    pane_focus_down: 아래 포커스
+    pane_resize_left: 왼쪽으로 크기 조정
+    pane_resize_right: 오른쪽으로 크기 조정
+    pane_resize_up: 위로 크기 조정
+    pane_resize_down: 아래로 크기 조정
+    pane_close: 페인 닫기
+    tab_new: 새 탭
+    tab_close: 탭 닫기
+    tab_previous: 이전 탭
+    tab_next: 다음 탭
+    project_previous: 이전 Project
+    project_next: 다음 Project
+

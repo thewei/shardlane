@@ -1,0 +1,384 @@
+# Shardlane 原生外壳简体中文目录（rust-i18n 格式 1：文件名即 locale，
+# 嵌套键展开为点号键）。每个键必须与 en.yml 等五个兄弟文件保持键集一致
+# （由 i18n 目录一致性测试强制）。占位符 %{name} 必须原样保留。
+settings:
+  section:
+    appearance: 主题
+    terminal: 终端
+    lazygit: Lazygit
+    shortcuts: 快捷键
+    behavior: 行为
+    window: 窗口
+    providers: 提供商
+    agent_hooks: Agent 钩子
+    skill: 技能
+    mobile: 移动端
+    browser: 浏览器
+  theme_category:
+    light: 浅色
+    dark: 深色
+  option:
+    auto: 自动
+    sidebar: 侧栏
+    native_tabs: 原生标签页
+    herdr_tui: Herdr TUI
+    compact: 紧凑
+    hidden: 隐藏
+    top: 顶部
+    bottom: 底部
+    dots: 圆点
+    symbols: 图标
+  appearance:
+    title: 外观
+    subtitle: 先选外观模式，再选 Herdr 内置主题——应用界面与终端表面同时跟随。
+    mode_light: 浅色
+    mode_light_detail: 单个浅色主题
+    mode_dark: 深色
+    mode_dark_detail: 单个深色主题
+    mode_auto: 自动
+    mode_auto_detail: 跟随 macOS；需要两者都选
+    notice_unofficial_theme: 当前 Herdr 主题不是 Shardlane 的视觉预设之一。可通过下方卡片将官方内置主题写入 Herdr 配置。
+    notice_auto_both: '两种选择都会生效：浅色外观用浅色主题，深色外观用深色主题。'
+    language_title: 语言
+    language_subtitle: Shardlane 原生外壳的界面语言。缺失翻译时回退为英语。
+  herdr_tui:
+    title: Herdr TUI
+    subtitle: 托管 Herdr 终端 UI 的偏好设置。它们保存在真实的 Herdr 配置中，对所有 Herdr 客户端生效。修改后会重启托管终端会话。
+    config_file: 配置文件
+    reload: 重新加载
+    copy_on_select: 选中即复制
+    copy_on_select_detail: Herdr ui.copy_on_select。影响所有 Herdr 客户端的原生鼠标选中行为。
+    mouse_capture: 鼠标捕获
+    mouse_capture_detail: 'Herdr ui.mouse_capture：在所有客户端启用 Herdr 的鼠标感知 UI。'
+    scroll_lines: 鼠标滚动行数
+    scroll_lines_detail: 'Herdr ui.mouse_scroll_lines：滚轮每格移动的行数。'
+    sidebar_start_collapsed: 启动时折叠侧栏
+    sidebar_start_collapsed_detail: Herdr ui.sidebar_start_collapsed。这是 Herdr 的启动偏好，不是 Shardlane 独有的覆盖。
+    sidebar_collapsed_mode: 折叠侧栏模式
+    sidebar_collapsed_mode_detail: Herdr ui.sidebar_collapsed_mode。隐藏模式在 Shardlane 中最合适；紧凑模式仍可供普通 Herdr 客户端使用。
+    pane_borders: 窗格边框
+    pane_borders_detail: 'Herdr ui.pane_borders。'
+    pane_outer_borders: 外层窗格边框
+    pane_outer_borders_detail: 'Herdr ui.pane_outer_borders。'
+    pane_scrollbars: 窗格滚动条
+    pane_scrollbars_detail: 'Herdr ui.pane_scrollbars。'
+    pane_gaps: 窗格间距
+    pane_gaps_detail: 'Herdr ui.pane_gaps。'
+    hide_single_tab: 单标签页时隐藏标签栏
+    hide_single_tab_detail: 'Herdr ui.hide_tab_bar_when_single_tab。'
+    tab_position: 标签栏位置
+    tab_position_detail: 'Herdr ui.tab_bar_position。'
+    status_indicators: 状态指示器
+    status_indicators_detail: 'Herdr ui.status_indicators。'
+  terminal:
+    title: 终端
+    subtitle: 工作面托管一个 Herdr TUI。Herdr 的常规用户配置是权威来源；Shardlane 不维护第二份托管 TUI 配置。
+    host_status: Herdr 宿主状态
+    host_actions: 宿主操作
+    host_actions_detail: 重启托管的 Herdr 终端进程。
+    restart: 重启
+    status_stopped_detail: TUI 宿主未运行。点击"重启"以启动。
+    status_starting_detail: TUI 宿主正在启动…
+    status_running_detail: Herdr TUI 进程活跃，正在接收导航指令。
+    status_failed_detail: TUI 宿主遇到错误。
+    font_family: 字体族
+    font_family_detail: 用于所有可见的终端窗格。
+    font_size: 字号
+    font_size_detail: '%{size} pt · 默认 %{default} pt · ⌘0 重置'
+    font_changed: '终端字号 %{size} pt'
+    line_height: 行高
+    line_height_detail: '%{height} px · 默认 %{default} px'
+    padding: 内边距
+    padding_detail: '字符网格四周 %{padding} px · 默认 %{default}'
+    tab_bar: 标签栏
+    tab_bar_detail: 在侧栏树中显示 Project 标签页，或在终端内容上方显示为原生标签页。
+    cursor_style: 光标样式
+    cursor_style_detail: '自动模式跟随运行中的程序（包括窗口失焦时的空心光标）。默认：自动。'
+    cursor_block: 方块
+    cursor_bar: 竖线
+    cursor_underline: 下划线
+    cursor_blink: 光标闪烁
+    cursor_blink_detail: '自动模式跟随程序的闪烁设置。强制闪烁将其打开；稳定保持光标实心。默认：自动。'
+    cursor_blink_on: 闪烁
+    cursor_blink_steady: 稳定
+    agent_notifications: Agent 通知
+    agent_notifications_detail: 仅为有意义的 Agent 状态变化使用 macOS 通知。
+  behavior:
+    updates:
+      check: 检查更新
+      check_detail: '定期与 GitHub 发布清单比对（默认：每 24 小时一次）。'
+      auto_download: 后台下载更新
+      auto_download_detail: 当检查发现新版本时自动下载并校验，让"更新并重启"保持一键操作。
+      latest: 最新版本
+      up_to_date: '已是最新——正在运行 v%{version}；每 %{hours} 小时检查一次。'
+      available: '新版本 %{version} 可用。'
+      available_dev: '新版本 %{version} 可用——开发版无法就地更新。'
+      downloading: '正在下载 v%{version}——%{progress}。'
+      ready: '版本 %{version} 已暂存并校验。'
+      failed: '更新到 v%{version} 失败：%{error}。'
+      releases: 发布页
+      update_restart: 更新并重启
+      retry_download: 重试下载
+      download_update: 下载更新
+      update_failed: 更新失败
+      staged_title: Shardlane 更新已就绪
+      staged_body: '版本 %{version} 已校验完毕。设置 -> 行为 -> 更新并重启。'
+      available_title: Shardlane 有可用更新
+      available_body: '版本 %{version} 已可下载。设置 → 行为 中有链接。'
+  window:
+    opacity: 不透明度
+    opacity_detail: '%{value}% · 默认 %{default}%'
+    always_on_top: 总在最前
+    always_on_top_detail: 让 Shardlane 窗口保持在其他窗口之上。与"窗口"菜单中的开关相同。
+  lazygit:
+    cli: Lazygit CLI
+    cli_detail: Shardlane 解析一个可执行文件，并仅在 Lazygit 界面可见时托管它。
+    executable: 可执行文件
+    executable_detail: 留空使用 PATH，或输入可执行文件的绝对路径。按回车或移开焦点即生效。
+    refresh: 刷新
+    detecting: 正在检测 Lazygit…
+    supported: '受支持——%{detail}'
+    outdated: '无叠加层也可用——建议更新——%{detail}'
+    startup_panel: 启动面板
+    startup_panel_detail: 新 Project 会话显示的第一个 Lazygit 面板。
+    screen_mode: 屏幕模式
+    screen_mode_detail: 传给 Lazygit 的初始聚焦面板尺寸。
+    panel_status: Status
+    panel_branch: Branch
+    panel_log: Log
+    panel_stash: Stash
+    screen_normal: 常规
+    screen_half: 半屏
+    screen_full: 全屏
+    mouse_events: 鼠标事件
+    mouse_events_detail: 当 Lazygit 启用鼠标时，通过托管 PTY 转发鼠标输入。
+    side_width: 侧面板宽度
+    side_width_detail: 针对窄右侧面板布局的小型叠加层偏好。
+    auto_refresh: 自动刷新
+    auto_refresh_detail: 界面可见期间保持 Lazygit 状态更新开启。
+    overlay: Shardlane 叠加层
+    overlay_detail: 仅写入一次性运行时叠加层用于托管展示；用户与仓库配置文件不受影响。
+    config_ownership: 配置归属
+    config_ownership_detail: Lazygit 始终拥有用户与仓库配置。Shardlane 仅在启用集成时提供小型运行时叠加层。
+    precedence_note: 用户与仓库配置优先级保持不变
+  providers:
+    intro: 选择哪些提供商出现在 New Agent 与历史续聊中。
+    history_index: 本地历史索引
+    history_index_loading: 索引元数据正在后台加载。
+    reveal_in_finder: 在 Finder 中显示
+    detecting: 检测中…
+    not_found: 未找到
+    installed_path: '已安装 · %{path}'
+    cap_history: 历史
+    cap_live: 实时对话
+    cap_preview: 预览
+    status_available: 可用
+    status_unavailable: 不可用
+    status_checking: 检查中…
+    history_status: '可用——%{sources} 个来源 · %{sessions} 个已索引会话'
+    back_to_providers: 返回提供商列表
+    row_cli: CLI
+    row_history: 历史
+    row_live: 实时对话
+    row_integration: Herdr 集成
+    live_available: 可用
+    live_unavailable: 不可用
+    integration_deferred: '已推迟·Herdr 钩子/会话绑定待完成'
+    integration_no_cli: 未找到 Herdr CLI
+    integration_installed: '已安装 · %{state}'
+    integration_not_installed: '未安装 · %{state}'
+    integration_unavailable: Herdr 状态不可用
+    kind_default: 默认
+    kind_custom: 自定义
+    source_summary: '%{kind} · %{status} · %{count} 个会话'
+    sources_title: 历史来源
+    sources_detail: 内置来源可禁用；自定义来源可编辑或移除。
+    add_location: 添加位置
+    restore_defaults: 恢复默认
+    add_source_prompt: 添加历史来源
+    edit_source_prompt: 编辑历史来源
+    edit_item: 编辑…
+    remove_item: 移除
+    remove_armed: 再次点击以移除
+    remove_confirm_notice: 再次点击"移除"以确认移除此历史来源
+    restore_dialog_title: '恢复 %{provider} 的历史来源'
+    restore_dialog_body: 移除自定义位置并重新启用内置来源？本地历史索引不会被删除。
+    dialog_ok: 恢复
+    dialog_cancel: 取消
+    picker_failed: '历史来源选择器失败：%{error}'
+  browser:
+    builtin: 内置浏览器
+    enabled_detail: 已启用——可从右侧面板与界面选择器使用。
+    disabled_detail: 已禁用——浏览器界面将保持隐藏，直到重新启用。
+    new_profile: 新建配置档案
+    new_profile_detail: 创建一个拥有独立网站数据存储的隔离开浏览器配置档案。
+    new_profile_action: + 新建配置档案
+    profile_default: '%{name}（默认）'
+    ephemeral_detail: 临时（隐私浏览）
+    persistent_detail: 持久化隔离数据存储
+    set_default: 设为默认
+    clear_data: 清除数据
+    clear_armed: 再次点击以清除
+    delete: 删除
+    delete_armed: 再次点击以删除
+  mobile:
+    remote_access: 远程访问
+    remote_access_detail: 在这台 Mac 上提供 Remote API。移动客户端使用访问令牌连接。
+    listener_scope: 监听范围
+    listener_scope_detail: 关闭时不启动监听。仅本机绑定 127.0.0.1。所有接口绑定 0.0.0.0，网络内手机即可连接。
+    scope_off: 关闭
+    scope_loopback: 仅本机
+    scope_all_interfaces: 所有接口
+    listener: 监听器
+    listening_lan: '正在所有接口 (0.0.0.0:%{port}) 上监听。同一网络的移动设备可以连接。'
+    listening_loopback: '正在 127.0.0.1:%{port} 上监听。移动客户端可以连接。'
+    listener_failed: '已启用，但监听器启动失败（端口 %{port} 被占用？）。'
+    listener_off: 已关闭——无监听线程，无空闲开销。启用后可接受移动连接。
+    running: 运行中
+    stopped: 已停止
+    port: 端口
+    port_detail: Remote API 与移动端 Web 的监听端口。默认端口被其他应用占用时可修改；按回车生效（监听器立即重启）。
+    port_invalid: 端口必须是 1024 到 65535 之间的数字
+    mobile_web: 移动端 Web
+    mobile_web_detail: 本网络内可访问的地址。点击"打开"，或在手机浏览器中输入地址并使用下方二维码配对。
+    mobile_web_off_detail: 启动远程访问以获取地址。
+    open: 打开
+    qr_pair: 扫码配对
+    qr_pair_detail: 用手机相机扫描。二维码携带连接地址与凭据；移动应用读取后自动连接。
+    qr_disabled: 启用远程访问以生成配对二维码。
+    qr_failed: 二维码生成失败
+    connect_label: '%{addr} · 令牌：%{token}'
+    connect_off: 远程访问已关闭——在上方启用后获取配对码。
+    no_clients: 没有已连接的客户端
+    no_clients_detail: 此列表是实时的：从移动 Web 应用连接后，客户端会出现在这里。
+    web_client: 'Web 客户端 · %{addr}'
+    client_seen: '已连接 %{connected} 秒 · 最近活跃 %{last_seen} 秒前'
+    disconnect: 断开
+    access_token: 访问令牌
+    access_token_detail: '客户端使用的 Bearer 令牌。%{token}'
+    copy: 复制
+    reset_token: 重置令牌
+    reset_token_detail: 立即吊销所有已配对的客户端（它们通过新二维码重新配对）。主机身份保持不变。
+  shortcuts:
+    header_command: 命令
+    header_scope: 作用域
+    header_shortcut: 快捷键
+    scope_global: 全局
+    scope_app: 应用
+    scope_agent_switcher: Agent 切换器
+    rebind_tooltip: 点击重新绑定 · Esc 取消
+    rebind_tooltip_conflicts: '点击重新绑定 · Esc 取消 · 与 %{conflicts} 冲突'
+    conflict_entry: '%{label}（%{chord}）'
+    recording: 请按键…（Esc 取消）
+    disabled_suffix: '%{chord} · 已禁用'
+    reset: 重置
+    disable: 禁用
+  agent_hooks:
+    overview_title: Agent 状态嗅探与钩子
+    overview_body: 跨 Herdr、tmux 与远程 tmux 的编码 Agent 自主生命周期钩子管理器。自动拦截 Working、Idle、Blocked、Released 事件，并提供 4 层降级（钩子 → Herdr 原生 → 进程/标题嗅探 → 静默回退）。
+    ipc_title: 状态 IPC 通道
+    ipc_active: '活跃：%{path}'
+    state_installed: 已安装（为最新）
+    state_outdated: 已安装（过时；点击刷新）
+    state_not_installed: 未集成
+    state_herdr_managed: 检测到 Herdr 官方钩子（点击"集成"升级以支持 tmux/远程）
+    state_unsupported: 不支持
+    action_install: 集成
+    action_refresh: 更新
+    action_uninstall: 移除
+  skill:
+    overview_title: Shardlane Agent 技能
+    overview_body: 安装名为 `shardlane` 的技能文件，教会编码 Agent 只读的 `shardlane` CLI（工作区、Project、活动 Agent），以及通过 herdr CLI 管理它们的准确 HERDR_SESSION 定位规则。Herdr 始终是唯一的运行时权威。
+    state_installed: 已安装（为最新）
+    state_outdated: 已安装（内容不同；安装会刷新为内置版本）
+    state_missing: 未安装
+    state_external: 已符号链接——由外部管理，不做改动
+    install_action: 安装
+    refresh_action: 刷新
+    remove_action: 移除
+host:
+  status_stopped: 已停止
+  status_starting: 启动中…
+  status_running: 运行中
+  status_failed: 已失败
+workspace:
+  local: （本地）
+  new: 新建工作区…
+  filter: 筛选工作区…
+  none: 暂无工作区
+  group_herdr: Herdr 工作区
+  group_tmux: tmux 会话
+  group_uuyc: UU 远程终端
+  group_luvus: Luvus 会话
+tab:
+  filter: 筛选标签页…
+  none: 此工作区暂无标签页
+project:
+  filter: 筛选 Project…
+  none: 此实例暂无 Project
+conversation:
+  tool_group_summary: '%{count} 次工具调用'
+  thought_for: '已思考 %{duration}'
+  stopped: 已停止
+  thinking_live: 思考中…
+  thought_process: 思考过程
+  thinking: 思考中
+  hide_thinking: 隐藏思考
+  show_thinking: 显示思考
+  copy_message: 复制消息
+  message_copied: 消息已复制
+  copy_answer: 复制回答
+  answer_copied: 回答已复制
+  you: 你
+  sending: 发送中…
+  working: 工作中…
+  context_compacted: 上下文已压缩
+shell:
+  copy_ids: 复制 ID
+  copy_pane_id: 复制窗格 ID
+  copy_tab_id: 复制标签页 ID
+  copy_session_id: 复制会话 ID
+  id_copied: '已复制：%{id}'
+shortcuts:
+  action:
+    app_quit: 退出 Shardlane
+    app_settings: 设置
+    app_search: 搜索
+    app_find: 在会话中查找
+    app_new_window: 新建窗口
+    app_new_task: 新建任务
+    app_refresh: 重新连接
+    app_help: 帮助
+    app_reload_config: 重新加载配置
+    lazygit_open: 打开 Lazygit
+    agent_switcher_next: 下一个 Agent（切换器）
+    agent_switcher_prev: 上一个 Agent（切换器）
+    agent_switcher_confirm: 确认切换 Agent
+    agent_switcher_cancel: 取消切换 Agent
+    sidebar_toggle: 切换侧栏
+    sidebar_agents: 切换 Agent 列表
+    terminal_paste: 粘贴
+    terminal_copy: 复制
+    terminal_select_all: 全选
+    terminal_font_increase: 增大字号
+    terminal_font_decrease: 减小字号
+    terminal_font_reset: 重置字号
+    pane_split_right: 向右拆分
+    pane_split_down: 向下拆分
+    pane_zoom: 切换缩放
+    pane_focus_left: 聚焦左侧
+    pane_focus_right: 聚焦右侧
+    pane_focus_up: 聚焦上方
+    pane_focus_down: 聚焦下方
+    pane_resize_left: 向左调整大小
+    pane_resize_right: 向右调整大小
+    pane_resize_up: 向上调整大小
+    pane_resize_down: 向下调整大小
+    pane_close: 关闭窗格
+    tab_new: 新建标签页
+    tab_close: 关闭标签页
+    tab_previous: 上一个标签页
+    tab_next: 下一个标签页
+    project_previous: 上一个 Project
+    project_next: 下一个 Project
+

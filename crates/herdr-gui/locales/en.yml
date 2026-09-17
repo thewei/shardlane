@@ -2,9 +2,10 @@
 # the file stem and nested keys flatten to dot keys). `en` is the fallback
 # locale: keys missing from any other locale resolve here.
 #
-# Migration policy: strings move into this catalog surface by surface; the
-# Settings → Appearance page is the first slice. New UI strings must use
-# `crate::i18n::t()` so a future locale only needs a sibling YAML file.
+# Migration policy: every key lands in ALL sibling locale files (en, zh-CN,
+# zh-TW, ja, ko) in the same change — the i18n catalog parity test enforces
+# identical key sets. New UI strings must use `crate::i18n::t()` /
+# `t_with()` so a locale only ever needs its existing sibling file.
 settings:
   section:
     appearance: Theme
@@ -21,6 +22,17 @@ settings:
   theme_category:
     light: Light
     dark: Dark
+  option:
+    auto: Auto
+    sidebar: Sidebar
+    native_tabs: Native Tabs
+    herdr_tui: Herdr TUI
+    compact: Compact
+    hidden: Hidden
+    top: Top
+    bottom: Bottom
+    dots: Dots
+    symbols: Symbols
   appearance:
     title: Appearance
     subtitle: Pick an appearance first, then a Herdr built-in theme that the App chrome and the terminal surface both follow.
@@ -33,12 +45,244 @@ settings:
     notice_unofficial_theme: The current Herdr theme is not one of Shardlane's visual presets. Choose cards below to write official built-in themes to Herdr config.
     notice_auto_both: 'Both selections are used: the light theme in light appearance, the dark theme in dark appearance.'
     language_title: Language
-    language_subtitle: Interface language for Shardlane's native shell. Additional languages will arrive in future releases.
+    language_subtitle: Interface language for Shardlane's native shell. English is the fallback when a translation is missing.
+  herdr_tui:
+    title: Herdr TUI
+    subtitle: Preferences of the hosted Herdr terminal UI. They live in the real Herdr config and apply to every Herdr client. Changing them restarts the hosted terminal session.
+    config_file: Config file
+    reload: Reload
+    copy_on_select: Copy on select
+    copy_on_select_detail: Herdr ui.copy_on_select. This affects native Herdr mouse selection behavior in every Herdr client.
+    mouse_capture: Mouse capture
+    mouse_capture_detail: 'Herdr ui.mouse_capture: enable Herdr''s mouse-aware UI in every client.'
+    scroll_lines: Mouse scroll lines
+    scroll_lines_detail: 'Herdr ui.mouse_scroll_lines: rows moved per wheel notch.'
+    sidebar_start_collapsed: Start sidebar collapsed
+    sidebar_start_collapsed_detail: Herdr ui.sidebar_start_collapsed. This is a Herdr launch preference, not a Shardlane-only override.
+    sidebar_collapsed_mode: Collapsed sidebar mode
+    sidebar_collapsed_mode_detail: Herdr ui.sidebar_collapsed_mode. Hidden is the cleanest fit inside Shardlane; Compact remains available for normal Herdr clients too.
+    pane_borders: Pane borders
+    pane_borders_detail: 'Herdr ui.pane_borders.'
+    pane_outer_borders: Outer pane borders
+    pane_outer_borders_detail: 'Herdr ui.pane_outer_borders.'
+    pane_scrollbars: Pane scrollbars
+    pane_scrollbars_detail: 'Herdr ui.pane_scrollbars.'
+    pane_gaps: Pane gaps
+    pane_gaps_detail: 'Herdr ui.pane_gaps.'
+    hide_single_tab: Hide single-tab bar
+    hide_single_tab_detail: 'Herdr ui.hide_tab_bar_when_single_tab.'
+    tab_position: Tab bar position
+    tab_position_detail: 'Herdr ui.tab_bar_position.'
+    status_indicators: Status indicators
+    status_indicators_detail: 'Herdr ui.status_indicators.'
+  terminal:
+    title: Terminal
+    subtitle: The work surface hosts one Herdr TUI. Herdr's normal user config is authoritative; Shardlane does not maintain a second hosted-TUI config.
+    host_status: Herdr host status
+    host_actions: Host actions
+    host_actions_detail: Restart the hosted Herdr terminal process.
+    restart: Restart
+    status_stopped_detail: TUI host is not running. Click Restart to launch.
+    status_starting_detail: TUI host is starting up…
+    status_running_detail: Herdr TUI process is active and receiving navigation commands.
+    status_failed_detail: TUI host encountered an error.
+    font_family: Font family
+    font_family_detail: Used by every visible terminal pane.
+    font_size: Font size
+    font_size_detail: '%{size} pt · default %{default} pt · ⌘0 resets'
+    font_changed: 'Terminal font %{size} pt'
+    line_height: Line height
+    line_height_detail: '%{height} px · default %{default} px'
+    padding: Padding
+    padding_detail: '%{padding} px around the character grid · default %{default}'
+    tab_bar: Tab bar
+    tab_bar_detail: Show Project tabs in the Sidebar tree or as native tabs above the terminal content.
+    cursor_style: Cursor style
+    cursor_style_detail: 'Auto follows the running program (including the hollow caret when the window loses focus). Default: Auto.'
+    cursor_block: Block
+    cursor_bar: Bar
+    cursor_underline: Underline
+    cursor_blink: Cursor blinking
+    cursor_blink_detail: 'Auto follows the program''s blink mode. Blink forces it on; Steady keeps the caret solid. Default: Auto.'
+    cursor_blink_on: Blink
+    cursor_blink_steady: Steady
+    agent_notifications: Agent notifications
+    agent_notifications_detail: Use macOS notifications only for meaningful Agent state transitions.
+  behavior:
+    updates:
+      check: Check for updates
+      check_detail: 'Periodically compare against the GitHub release manifest (default: every 24 h).'
+      auto_download: Download updates in the background
+      auto_download_detail: When a check finds a newer release, download and verify it automatically so Update and Restart stays one click.
+      latest: Latest version
+      up_to_date: 'Up to date — running v%{version}; checked every %{hours} h.'
+      available: 'Version %{version} is available.'
+      available_dev: 'Version %{version} is available — a dev build cannot update in place.'
+      downloading: 'Downloading v%{version} — %{progress}.'
+      ready: 'Version %{version} is staged and verified.'
+      failed: 'Update to v%{version} failed: %{error}.'
+      releases: Releases
+      update_restart: Update and Restart
+      retry_download: Retry download
+      download_update: Download update
+      update_failed: Update failed
+      staged_title: Shardlane update staged
+      staged_body: 'Version %{version} is verified and ready. Settings -> Behavior -> Update and Restart.'
+      available_title: Shardlane update available
+      available_body: 'Version %{version} is ready to download. Settings → Behavior has the link.'
+  window:
+    opacity: Opacity
+    opacity_detail: '%{value}% · default %{default}%'
+    always_on_top: Always on Top
+    always_on_top_detail: Keep the Shardlane window above all others. Same toggle as the Window menu.
+  lazygit:
+    cli: Lazygit CLI
+    cli_detail: Shardlane resolves one executable and hosts it only while the Lazygit surface is visible.
+    executable: Executable
+    executable_detail: Leave empty to use PATH, or enter an absolute executable path. Press Enter or leave the field to apply.
+    refresh: Refresh
+    detecting: Detecting Lazygit…
+    supported: 'Supported — %{detail}'
+    outdated: 'Available without overlay — update recommended — %{detail}'
+    startup_panel: Startup panel
+    startup_panel_detail: The first Lazygit panel shown for a new Project session.
+    screen_mode: Screen mode
+    screen_mode_detail: Initial focused-panel size passed to Lazygit.
+    panel_status: Status
+    panel_branch: Branch
+    panel_log: Log
+    panel_stash: Stash
+    screen_normal: Normal
+    screen_half: Half
+    screen_full: Full
+    mouse_events: Mouse events
+    mouse_events_detail: Forward mouse input through the hosted PTY when Lazygit enables it.
+    side_width: Side panel width
+    side_width_detail: Small overlay preference for narrow right-panel layouts.
+    auto_refresh: Auto refresh
+    auto_refresh_detail: Keep Lazygit status updates enabled while the surface is visible.
+    overlay: Shardlane overlay
+    overlay_detail: Write a disposable runtime overlay for hosted presentation only; user and repository config files remain untouched.
+    config_ownership: Configuration ownership
+    config_ownership_detail: Lazygit keeps owning user and repository configuration. Shardlane only supplies the small runtime overlay when integration is enabled.
+    precedence_note: User + repository config precedence preserved
+  providers:
+    intro: Choose which providers appear in New Agent and History continuation.
+    history_index: Local History Index
+    history_index_loading: Index metadata is being loaded in the background.
+    reveal_in_finder: Reveal in Finder
+    detecting: Detecting…
+    not_found: Not found
+    installed_path: 'Installed · %{path}'
+    cap_history: History
+    cap_live: Live Chat
+    cap_preview: Preview
+    status_available: Available
+    status_unavailable: Unavailable
+    status_checking: Checking…
+    history_status: 'Available — %{sources} sources · %{sessions} indexed sessions'
+    back_to_providers: Back to Providers
+    row_cli: CLI
+    row_history: History
+    row_live: Live Chat
+    row_integration: Herdr integration
+    live_available: Available
+    live_unavailable: Not available
+    integration_deferred: 'Deferred · Herdr hook/session binding pending'
+    integration_no_cli: Herdr CLI not found
+    integration_installed: 'Installed · %{state}'
+    integration_not_installed: 'Not installed · %{state}'
+    integration_unavailable: Herdr status unavailable
+    kind_default: Default
+    kind_custom: Custom
+    source_summary: '%{kind} · %{status} · %{count} sessions'
+    sources_title: History Sources
+    sources_detail: Built-in roots can be disabled; custom roots can be edited or removed.
+    add_location: Add Location
+    restore_defaults: Restore Defaults
+    add_source_prompt: Add History Source
+    edit_source_prompt: Edit History Source
+    edit_item: Edit…
+    remove_item: Remove
+    remove_armed: Click again to Remove
+    remove_confirm_notice: Click Remove again to confirm removing this history source
+    restore_dialog_title: 'Restore %{provider} History Sources'
+    restore_dialog_body: Remove custom locations and re-enable built-in sources? Your local History index will not be deleted.
+    dialog_ok: Restore
+    dialog_cancel: Cancel
+    picker_failed: 'History source picker failed: %{error}'
+  browser:
+    builtin: Built-in browser
+    enabled_detail: Enabled — available from the right panel and surface chooser.
+    disabled_detail: Disabled — browser surfaces stay hidden until re-enabled.
+    new_profile: New profile
+    new_profile_detail: Create an isolated browser profile with its own website data store.
+    new_profile_action: + New Profile
+    profile_default: '%{name} (default)'
+    ephemeral_detail: Ephemeral (private browsing)
+    persistent_detail: Persistent isolated data store
+    set_default: Set Default
+    clear_data: Clear Data
+    clear_armed: Click again to clear
+    delete: Delete
+    delete_armed: Click again to delete
+  mobile:
+    remote_access: Remote Access
+    remote_access_detail: Serve the Remote API on this Mac. Mobile clients connect with the access token.
+    listener_scope: Listener scope
+    listener_scope_detail: Off starts no listener. Loopback binds 127.0.0.1 (this Mac only). All interfaces binds 0.0.0.0 so phones on the network can connect.
+    scope_off: Off
+    scope_loopback: Loopback
+    scope_all_interfaces: All interfaces
+    listener: Listener
+    listening_lan: 'Listening on all interfaces (0.0.0.0:%{port}). Mobile devices on the same network can connect.'
+    listening_loopback: 'Listening at 127.0.0.1:%{port}. Mobile clients can connect.'
+    listener_failed: 'Enabled, but the listener failed to start (port %{port} busy?).'
+    listener_off: Off — no listener thread, no idle cost. Enable to accept mobile connections.
+    running: Running
+    stopped: Stopped
+    port: Port
+    port_detail: Remote API + Mobile Web listen port. Change it when another app occupies the default; press Enter to apply (the listener restarts immediately).
+    port_invalid: Port must be a number between 1024 and 65535
+    mobile_web: Mobile Web
+    mobile_web_detail: Addresses reachable from this network. Click Open, or type one into a phone browser and pair with the QR below.
+    mobile_web_off_detail: Start Remote Access to get a URL.
+    open: Open
+    qr_pair: Pair by QR
+    qr_pair_detail: Scan with a phone camera. The QR carries the connection address and credential; the mobile app reads it and connects automatically.
+    qr_disabled: Enable Remote Access to generate a pairing QR code.
+    qr_failed: QR generation failed
+    connect_label: '%{addr} · token: %{token}'
+    connect_off: Remote Access is off — enable it above to get a pairing code.
+    no_clients: No connected clients
+    no_clients_detail: 'This list is live: connect from the mobile web app and the client appears here.'
+    web_client: 'Web client · %{addr}'
+    client_seen: 'connected %{connected}s ago · last seen %{last_seen}s ago'
+    disconnect: Disconnect
+    access_token: Access token
+    access_token_detail: 'Bearer token for clients. %{token}'
+    copy: Copy
+    reset_token: Reset token
+    reset_token_detail: Revokes every paired client immediately (they re-pair via the new QR). Host identity stays stable.
+  shortcuts:
+    header_command: Command
+    header_scope: Scope
+    header_shortcut: Shortcut
+    scope_global: Global
+    scope_app: App
+    scope_agent_switcher: Agent Switcher
+    rebind_tooltip: Click to rebind · Esc cancels
+    rebind_tooltip_conflicts: 'Click to rebind · Esc cancels · Conflicts with %{conflicts}'
+    conflict_entry: '%{label} (%{chord})'
+    recording: Press keys… (Esc cancels)
+    disabled_suffix: '%{chord} · disabled'
+    reset: Reset
+    disable: Disable
   agent_hooks:
     overview_title: Agent Status Sniffing & Hooks
     overview_body: Autonomous lifecycle hook manager for coding agents across Herdr, tmux, and remote tmux. Automatically intercepts Working, Idle, Blocked, and Released events with 4-tier degradation (Hooks → Herdr Native → Process/Title Sniffing → Silent Fallback).
     ipc_title: Status IPC Channel
-    ipc_active: "Active: ~/.shardlane/run/agent-status.sock"
+    ipc_active: 'Active: %{path}'
     state_installed: Installed (up to date)
     state_outdated: Installed (outdated; click to refresh)
     state_not_installed: Not integrated
@@ -57,6 +301,11 @@ settings:
     install_action: Install
     refresh_action: Refresh
     remove_action: Remove
+host:
+  status_stopped: Stopped
+  status_starting: Starting…
+  status_running: Running
+  status_failed: Failed
 workspace:
   local: (local)
   new: New Workspace…
@@ -73,8 +322,8 @@ project:
   filter: Filter projects…
   none: No projects in this instance
 conversation:
-  tool_group_summary: "%{count} tool calls"
-  thought_for: "Thought for %{duration}"
+  tool_group_summary: '%{count} tool calls'
+  thought_for: 'Thought for %{duration}'
   stopped: Stopped
   thinking_live: Thinking…
   thought_process: Thought process
@@ -94,4 +343,46 @@ shell:
   copy_pane_id: Copy Pane ID
   copy_tab_id: Copy Tab ID
   copy_session_id: Copy Session ID
-  id_copied: "Copied: %{id}"
+  id_copied: 'Copied: %{id}'
+shortcuts:
+  action:
+    app_quit: Quit Shardlane
+    app_settings: Settings
+    app_search: Search
+    app_find: Find in Conversation
+    app_new_window: New Window
+    app_new_task: New Task
+    app_refresh: Reconnect
+    app_help: Help
+    app_reload_config: Reload Config
+    lazygit_open: Open Lazygit
+    agent_switcher_next: Next Agent (Switcher)
+    agent_switcher_prev: Previous Agent (Switcher)
+    agent_switcher_confirm: Confirm Agent Switch
+    agent_switcher_cancel: Cancel Agent Switch
+    sidebar_toggle: Toggle Sidebar
+    sidebar_agents: Toggle Agents
+    terminal_paste: Paste
+    terminal_copy: Copy
+    terminal_select_all: Select All
+    terminal_font_increase: Increase Font Size
+    terminal_font_decrease: Decrease Font Size
+    terminal_font_reset: Reset Font Size
+    pane_split_right: Split Right
+    pane_split_down: Split Down
+    pane_zoom: Toggle Zoom
+    pane_focus_left: Focus Left
+    pane_focus_right: Focus Right
+    pane_focus_up: Focus Up
+    pane_focus_down: Focus Down
+    pane_resize_left: Resize Left
+    pane_resize_right: Resize Right
+    pane_resize_up: Resize Up
+    pane_resize_down: Resize Down
+    pane_close: Close Pane
+    tab_new: New Tab
+    tab_close: Close Tab
+    tab_previous: Previous Tab
+    tab_next: Next Tab
+    project_previous: Previous Project
+    project_next: Next Project

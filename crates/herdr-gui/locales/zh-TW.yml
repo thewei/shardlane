@@ -1,0 +1,384 @@
+# Shardlane 原生外殼繁體中文（台灣用語）目錄（rust-i18n 格式 1：檔名即
+# locale，巢狀鍵展開為點號鍵）。每個鍵必須與 en.yml 等五個兄弟檔案保持
+# 鍵集一致（由 i18n 目錄一致性測試強制）。佔位符 %{name} 必須原樣保留。
+settings:
+  section:
+    appearance: 主題
+    terminal: 終端機
+    lazygit: Lazygit
+    shortcuts: 快速鍵
+    behavior: 行為
+    window: 視窗
+    providers: 提供者
+    agent_hooks: Agent Hook
+    skill: 技能
+    mobile: 行動裝置
+    browser: 瀏覽器
+  theme_category:
+    light: 淺色
+    dark: 深色
+  option:
+    auto: 自動
+    sidebar: 側邊欄
+    native_tabs: 原生分頁
+    herdr_tui: Herdr TUI
+    compact: 緊密
+    hidden: 隱藏
+    top: 頂端
+    bottom: 底部
+    dots: 圓點
+    symbols: 圖示
+  appearance:
+    title: 外觀
+    subtitle: 先選擇外觀模式，再選擇 Herdr 內建主題——App 介面與終端機表面同時跟隨。
+    mode_light: 淺色
+    mode_light_detail: 單一淺色主題
+    mode_dark: 深色
+    mode_dark_detail: 單一深色主題
+    mode_auto: 自動
+    mode_auto_detail: 跟隨 macOS；需要兩者都選
+    notice_unofficial_theme: 目前的 Herdr 主題不是 Shardlane 的視覺預設集之一。可透過下方卡片將官方內建主題寫入 Herdr 設定。
+    notice_auto_both: '兩種選擇都會生效：淺色外觀使用淺色主題，深色外觀使用深色主題。'
+    language_title: 語言
+    language_subtitle: Shardlane 原生外殼的介面語言。缺漏的翻譯會回退為英文。
+  herdr_tui:
+    title: Herdr TUI
+    subtitle: 託管 Herdr 終端機 UI 的偏好設定。它們存放在真實的 Herdr 設定中，對所有 Herdr 用戶端生效。修改後會重新啟動託管終端機工作階段。
+    config_file: 設定檔
+    reload: 重新載入
+    copy_on_select: 選取即複製
+    copy_on_select_detail: Herdr ui.copy_on_select。影響所有 Herdr 用戶端的原生滑鼠選取行為。
+    mouse_capture: 滑鼠擷取
+    mouse_capture_detail: 'Herdr ui.mouse_capture：在所有用戶端啟用 Herdr 的滑鼠感知 UI。'
+    scroll_lines: 滑鼠捲動行數
+    scroll_lines_detail: 'Herdr ui.mouse_scroll_lines：滾輪每格移動的列數。'
+    sidebar_start_collapsed: 啟動時摺疊側邊欄
+    sidebar_start_collapsed_detail: Herdr ui.sidebar_start_collapsed。這是 Herdr 的啟動偏好，不是 Shardlane 獨有的覆寫。
+    sidebar_collapsed_mode: 摺疊側邊欄模式
+    sidebar_collapsed_mode_detail: Herdr ui.sidebar_collapsed_mode。隱藏在 Shardlane 中最合適；緊密模式仍可供一般 Herdr 用戶端使用。
+    pane_borders: 窗格邊框
+    pane_borders_detail: 'Herdr ui.pane_borders。'
+    pane_outer_borders: 外層窗格邊框
+    pane_outer_borders_detail: 'Herdr ui.pane_outer_borders。'
+    pane_scrollbars: 窗格捲軸
+    pane_scrollbars_detail: 'Herdr ui.pane_scrollbars。'
+    pane_gaps: 窗格間距
+    pane_gaps_detail: 'Herdr ui.pane_gaps。'
+    hide_single_tab: 單一分頁時隱藏分頁列
+    hide_single_tab_detail: 'Herdr ui.hide_tab_bar_when_single_tab。'
+    tab_position: 分頁列位置
+    tab_position_detail: 'Herdr ui.tab_bar_position。'
+    status_indicators: 狀態指示器
+    status_indicators_detail: 'Herdr ui.status_indicators。'
+  terminal:
+    title: 終端機
+    subtitle: 工作面託管一個 Herdr TUI。Herdr 的一般使用者設定具權威性；Shardlane 不維護第二份託管 TUI 設定。
+    host_status: Herdr 宿主狀態
+    host_actions: 宿主動作
+    host_actions_detail: 重新啟動託管的 Herdr 終端機處理程序。
+    restart: 重新啟動
+    status_stopped_detail: TUI 宿主未執行。點擊「重新啟動」以啟動。
+    status_starting_detail: TUI 宿主啟動中…
+    status_running_detail: Herdr TUI 處理程序運作中，正在接收導覽指令。
+    status_failed_detail: TUI 宿主發生錯誤。
+    font_family: 字型系列
+    font_family_detail: 套用於所有可見的終端機窗格。
+    font_size: 字型大小
+    font_size_detail: '%{size} pt · 預設 %{default} pt · ⌘0 重設'
+    font_changed: '終端機字型大小 %{size} pt'
+    line_height: 行高
+    line_height_detail: '%{height} px · 預設 %{default} px'
+    padding: 內距
+    padding_detail: '字元網格四周 %{padding} px · 預設 %{default}'
+    tab_bar: 分頁列
+    tab_bar_detail: 在側邊欄樹中顯示 Project 分頁，或在終端機內容上方顯示為原生分頁。
+    cursor_style: 游標樣式
+    cursor_style_detail: '自動模式跟隨執行中的程式（包含視窗失焦時的空心游標）。預設：自動。'
+    cursor_block: 方塊
+    cursor_bar: 直線
+    cursor_underline: 底線
+    cursor_blink: 游標閃爍
+    cursor_blink_detail: '自動模式跟隨程式的閃爍設定。強制閃爍將其開啟；穩定保持游標實心。預設：自動。'
+    cursor_blink_on: 閃爍
+    cursor_blink_steady: 穩定
+    agent_notifications: Agent 通知
+    agent_notifications_detail: 僅對有意義的 Agent 狀態變化使用 macOS 通知。
+  behavior:
+    updates:
+      check: 檢查更新
+      check_detail: '定期與 GitHub 發布清單比對（預設：每 24 小時一次）。'
+      auto_download: 在背景下載更新
+      auto_download_detail: 當檢查發現新版本時自動下載並驗證，讓「更新並重新啟動」保持一鍵操作。
+      latest: 最新版本
+      up_to_date: '已是最新——正在執行 v%{version}；每 %{hours} 小時檢查一次。'
+      available: '新版本 %{version} 可用。'
+      available_dev: '新版本 %{version} 可用——開發版無法就地更新。'
+      downloading: '正在下載 v%{version}——%{progress}。'
+      ready: '版本 %{version} 已暫存並驗證。'
+      failed: '更新至 v%{version} 失敗：%{error}。'
+      releases: 發布頁面
+      update_restart: 更新並重新啟動
+      retry_download: 重試下載
+      download_update: 下載更新
+      update_failed: 更新失敗
+      staged_title: Shardlane 更新已就緒
+      staged_body: '版本 %{version} 已驗證完畢。設定 -> 行為 -> 更新並重新啟動。'
+      available_title: Shardlane 有可用更新
+      available_body: '版本 %{version} 已可下載。設定 → 行為 中有連結。'
+  window:
+    opacity: 不透明度
+    opacity_detail: '%{value}% · 預設 %{default}%'
+    always_on_top: 最上層顯示
+    always_on_top_detail: 讓 Shardlane 視窗保持在其他視窗之上。與「視窗」選單中的開關相同。
+  lazygit:
+    cli: Lazygit CLI
+    cli_detail: Shardlane 解析一個執行檔，並僅在 Lazygit 介面可見時託管它。
+    executable: 執行檔
+    executable_detail: 留空使用 PATH，或輸入執行檔的絕對路徑。按 Enter 或移開焦點即生效。
+    refresh: 重新整理
+    detecting: 正在偵測 Lazygit…
+    supported: '受支援——%{detail}'
+    outdated: '無疊加層亦可用——建議更新——%{detail}'
+    startup_panel: 啟動面板
+    startup_panel_detail: 新 Project 工作階段顯示的第一個 Lazygit 面板。
+    screen_mode: 螢幕模式
+    screen_mode_detail: 傳給 Lazygit 的初始聚焦面板尺寸。
+    panel_status: Status
+    panel_branch: Branch
+    panel_log: Log
+    panel_stash: Stash
+    screen_normal: 一般
+    screen_half: 半螢幕
+    screen_full: 全螢幕
+    mouse_events: 滑鼠事件
+    mouse_events_detail: 當 Lazygit 啟用滑鼠時，透過託管 PTY 轉發滑鼠輸入。
+    side_width: 側面板寬度
+    side_width_detail: 針對窄右側面板版面的小型疊加層偏好。
+    auto_refresh: 自動重新整理
+    auto_refresh_detail: 介面可見期間保持 Lazygit 狀態更新開啟。
+    overlay: Shardlane 疊加層
+    overlay_detail: 僅寫入一次性執行時疊加層用於託管顯示；使用者與儲存庫設定檔不受影響。
+    config_ownership: 設定歸屬
+    config_ownership_detail: Lazygit 始終擁有使用者與儲存庫設定。Shardlane 僅在啟用整合時提供小型執行時疊加層。
+    precedence_note: 使用者與儲存庫設定優先順序保持不變
+  providers:
+    intro: 選擇哪些提供者出現在 New Agent 與歷史接續中。
+    history_index: 本機歷史索引
+    history_index_loading: 索引中繼資料正在幕後載入。
+    reveal_in_finder: 在 Finder 中顯示
+    detecting: 偵測中…
+    not_found: 找不到
+    installed_path: '已安裝 · %{path}'
+    cap_history: 歷史
+    cap_live: 即時對話
+    cap_preview: 預覽
+    status_available: 可用
+    status_unavailable: 無法使用
+    status_checking: 檢查中…
+    history_status: '可用——%{sources} 個來源 · %{sessions} 個已建立索引的工作階段'
+    back_to_providers: 返回提供者列表
+    row_cli: CLI
+    row_history: 歷史
+    row_live: 即時對話
+    row_integration: Herdr 整合
+    live_available: 可用
+    live_unavailable: 無法使用
+    integration_deferred: '已延後 · Herdr hook/工作階段綁定待完成'
+    integration_no_cli: 找不到 Herdr CLI
+    integration_installed: '已安裝 · %{state}'
+    integration_not_installed: '未安裝 · %{state}'
+    integration_unavailable: Herdr 狀態無法取得
+    kind_default: 預設
+    kind_custom: 自訂
+    source_summary: '%{kind} · %{status} · %{count} 個工作階段'
+    sources_title: 歷史來源
+    sources_detail: 內建來源可停用；自訂來源可編輯或移除。
+    add_location: 新增位置
+    restore_defaults: 還原預設
+    add_source_prompt: 新增歷史來源
+    edit_source_prompt: 編輯歷史來源
+    edit_item: 編輯…
+    remove_item: 移除
+    remove_armed: 再點一次以移除
+    remove_confirm_notice: 再點一次「移除」以確認移除此歷史來源
+    restore_dialog_title: '還原 %{provider} 的歷史來源'
+    restore_dialog_body: 移除自訂位置並重新啟用內建來源？本機歷史索引不會被刪除。
+    dialog_ok: 還原
+    dialog_cancel: 取消
+    picker_failed: '歷史來源選擇器失敗：%{error}'
+  browser:
+    builtin: 內建瀏覽器
+    enabled_detail: 已啟用——可從右側面板與介面選擇器使用。
+    disabled_detail: 已停用——瀏覽器介面將保持隱藏，直到重新啟用。
+    new_profile: 新增設定檔
+    new_profile_detail: 建立一個擁有獨立網站資料儲存庫的隔離瀏覽器設定檔。
+    new_profile_action: + 新增設定檔
+    profile_default: '%{name}（預設）'
+    ephemeral_detail: 臨時（私密瀏覽）
+    persistent_detail: 持久性隔離資料儲存
+    set_default: 設為預設
+    clear_data: 清除資料
+    clear_armed: 再點一次以清除
+    delete: 刪除
+    delete_armed: 再點一次以刪除
+  mobile:
+    remote_access: 遠端存取
+    remote_access_detail: 在這台 Mac 上提供 Remote API。行動裝置用戶端使用存取權杖連線。
+    listener_scope: 監聽範圍
+    listener_scope_detail: 關閉時不啟動監聽器。僅本機繫結 127.0.0.1。所有介面繫結 0.0.0.0，網路內的手機即可連線。
+    scope_off: 關閉
+    scope_loopback: 僅本機
+    scope_all_interfaces: 所有介面
+    listener: 監聽器
+    listening_lan: '正在所有介面 (0.0.0.0:%{port}) 上監聽。同一網路的行動裝置可以連線。'
+    listening_loopback: '正在 127.0.0.1:%{port} 上監聽。行動裝置用戶端可以連線。'
+    listener_failed: '已啟用，但監聽器啟動失敗（連接埠 %{port} 被佔用？）。'
+    listener_off: 已關閉——無監聽執行緒，無閒置成本。啟用後可接受行動裝置連線。
+    running: 執行中
+    stopped: 已停止
+    port: 連接埠
+    port_detail: Remote API 與行動 Web 的監聽連接埠。預設連接埠被其他 App 佔用時可修改；按 Enter 生效（監聽器立即重新啟動）。
+    port_invalid: 連接埠必須是 1024 到 65535 之間的數字
+    mobile_web: 行動 Web
+    mobile_web_detail: 此網路內可連線的位址。點擊「開啟」，或在手機瀏覽器輸入位址並使用下方 QR Code 配對。
+    mobile_web_off_detail: 啟動遠端存取以取得位址。
+    open: 開啟
+    qr_pair: 掃描 QR Code 配對
+    qr_pair_detail: 用手機相機掃描。QR Code 內含連線位址與憑證；行動 App 讀取後自動連線。
+    qr_disabled: 啟用遠端存取以產生配對 QR Code。
+    qr_failed: QR Code 產生失敗
+    connect_label: '%{addr} · 權杖：%{token}'
+    connect_off: 遠端存取已關閉——在上方啟用後取得配對碼。
+    no_clients: 沒有已連線的用戶端
+    no_clients_detail: 此列表即時更新：從行動 Web App 連線後，用戶端會出現在這裡。
+    web_client: 'Web 用戶端 · %{addr}'
+    client_seen: '已連線 %{connected} 秒 · 最近活動 %{last_seen} 秒前'
+    disconnect: 中斷連線
+    access_token: 存取權杖
+    access_token_detail: '用戶端使用的 Bearer 權杖。%{token}'
+    copy: 複製
+    reset_token: 重設權杖
+    reset_token_detail: 立即撤銷所有已配對的用戶端（它們透過新 QR Code 重新配對）。主機身分保持不變。
+  shortcuts:
+    header_command: 指令
+    header_scope: 範圍
+    header_shortcut: 快速鍵
+    scope_global: 全域
+    scope_app: App
+    scope_agent_switcher: Agent 切換器
+    rebind_tooltip: 點擊重新綁定 · Esc 取消
+    rebind_tooltip_conflicts: '點擊重新綁定 · Esc 取消 · 與 %{conflicts} 衝突'
+    conflict_entry: '%{label}（%{chord}）'
+    recording: 請按鍵…（Esc 取消）
+    disabled_suffix: '%{chord} · 已停用'
+    reset: 重設
+    disable: 停用
+  agent_hooks:
+    overview_title: Agent 狀態偵測與 Hook
+    overview_body: 跨 Herdr、tmux 與遠端 tmux 的編碼 Agent 自主生命週期 Hook 管理器。自動攔截 Working、Idle、Blocked、Released 事件，並提供 4 層降級（Hook → Herdr 原生 → 處理程序/標題偵測 → 靜默回退）。
+    ipc_title: 狀態 IPC 通道
+    ipc_active: '作用中：%{path}'
+    state_installed: 已安裝（最新）
+    state_outdated: 已安裝（過時；點擊重新整理）
+    state_not_installed: 未整合
+    state_herdr_managed: 偵測到 Herdr 官方 hook（點擊「整合」升級以支援 tmux/遠端）
+    state_unsupported: 不支援
+    action_install: 整合
+    action_refresh: 更新
+    action_uninstall: 移除
+  skill:
+    overview_title: Shardlane Agent 技能
+    overview_body: 安裝名為 `shardlane` 的技能檔，教導編碼 Agent 唯讀的 `shardlane` CLI（工作區、Project、作用中的 Agent），以及透過 herdr CLI 管理它們的精確 HERDR_SESSION 定位規則。Herdr 始終是唯一的執行時權威。
+    state_installed: 已安裝（最新）
+    state_outdated: 已安裝（內容不同；安裝會重新整理為內建版本）
+    state_missing: 未安裝
+    state_external: 已符號連結——由外部管理，不做變更
+    install_action: 安裝
+    refresh_action: 重新整理
+    remove_action: 移除
+host:
+  status_stopped: 已停止
+  status_starting: 啟動中…
+  status_running: 執行中
+  status_failed: 已失敗
+workspace:
+  local: （本機）
+  new: 新增工作區…
+  filter: 篩選工作區…
+  none: 尚無工作區
+  group_herdr: Herdr 工作區
+  group_tmux: tmux 工作階段
+  group_uuyc: UU 遠端終端機
+  group_luvus: Luvus 工作階段
+tab:
+  filter: 篩選分頁…
+  none: 此工作區尚無分頁
+project:
+  filter: 篩選 Project…
+  none: 此執行個體尚無 Project
+conversation:
+  tool_group_summary: '%{count} 次工具呼叫'
+  thought_for: '已思考 %{duration}'
+  stopped: 已停止
+  thinking_live: 思考中…
+  thought_process: 思考過程
+  thinking: 思考中
+  hide_thinking: 隱藏思考
+  show_thinking: 顯示思考
+  copy_message: 複製訊息
+  message_copied: 訊息已複製
+  copy_answer: 複製回答
+  answer_copied: 回答已複製
+  you: 你
+  sending: 傳送中…
+  working: 工作中…
+  context_compacted: 上下文已壓縮
+shell:
+  copy_ids: 複製 ID
+  copy_pane_id: 複製窗格 ID
+  copy_tab_id: 複製分頁 ID
+  copy_session_id: 複製工作階段 ID
+  id_copied: '已複製：%{id}'
+shortcuts:
+  action:
+    app_quit: 結束 Shardlane
+    app_settings: 設定
+    app_search: 搜尋
+    app_find: 在對話中尋找
+    app_new_window: 新增視窗
+    app_new_task: 新增任務
+    app_refresh: 重新連線
+    app_help: 輔助說明
+    app_reload_config: 重新載入設定
+    lazygit_open: 開啟 Lazygit
+    agent_switcher_next: 下一個 Agent（切換器）
+    agent_switcher_prev: 上一個 Agent（切換器）
+    agent_switcher_confirm: 確認切換 Agent
+    agent_switcher_cancel: 取消切換 Agent
+    sidebar_toggle: 切換側邊欄
+    sidebar_agents: 切換 Agent 列表
+    terminal_paste: 貼上
+    terminal_copy: 複製
+    terminal_select_all: 全選
+    terminal_font_increase: 放大字型
+    terminal_font_decrease: 縮小字型
+    terminal_font_reset: 重設字型大小
+    pane_split_right: 向右分割
+    pane_split_down: 向下分割
+    pane_zoom: 切換縮放
+    pane_focus_left: 聚焦左側
+    pane_focus_right: 聚焦右側
+    pane_focus_up: 聚焦上方
+    pane_focus_down: 聚焦下方
+    pane_resize_left: 向左調整大小
+    pane_resize_right: 向右調整大小
+    pane_resize_up: 向上調整大小
+    pane_resize_down: 向下調整大小
+    pane_close: 關閉窗格
+    tab_new: 新增分頁
+    tab_close: 關閉分頁
+    tab_previous: 上一個分頁
+    tab_next: 下一個分頁
+    project_previous: 上一個 Project
+    project_next: 下一個 Project
+

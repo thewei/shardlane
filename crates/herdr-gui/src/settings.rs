@@ -299,14 +299,20 @@ impl ProvidersConfig {
 // lives in shardlane-host::workspace_config; the legacy client-side grouping feature that
 // consumed it was deleted (2026-09-01 multi-instance cleanup), so the GUI no longer re-exports it.
 
-/// Interface language of Shardlane's native shell (i18n). Only English ships
-/// today; adding a language = a new variant + `locales/<code>.yml` in
-/// `crates/herdr-gui`. The catalog and gpui-component's own strings share one
-/// process-global locale owned by `crate::i18n`.
+/// Interface language of Shardlane's native shell (i18n). English is the
+/// default and the fallback locale; each variant has a sibling
+/// `locales/<code>.yml` in `crates/herdr-gui`, and every key lands in all
+/// sibling files atomically (enforced by the i18n catalog parity test). The
+/// catalog and gpui-component's own strings share one process-global locale
+/// owned by `crate::i18n`.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum Language {
     #[default]
     En,
+    ZhCn,
+    ZhTw,
+    Ja,
+    Ko,
 }
 
 impl serde::Serialize for Language {
@@ -320,12 +326,22 @@ impl serde::Serialize for Language {
 
 impl Language {
     /// Every supported language (Settings menu order).
-    pub const ALL: [Language; 1] = [Language::En];
+    pub const ALL: [Language; 5] = [
+        Language::En,
+        Language::ZhCn,
+        Language::ZhTw,
+        Language::Ja,
+        Language::Ko,
+    ];
 
     /// Locale code matching the `locales/<code>.yml` file stem.
     pub fn code(self) -> &'static str {
         match self {
             Self::En => "en",
+            Self::ZhCn => "zh-CN",
+            Self::ZhTw => "zh-TW",
+            Self::Ja => "ja",
+            Self::Ko => "ko",
         }
     }
 
@@ -333,6 +349,10 @@ impl Language {
     pub fn display_name(self) -> &'static str {
         match self {
             Self::En => "English",
+            Self::ZhCn => "简体中文",
+            Self::ZhTw => "繁體中文",
+            Self::Ja => "日本語",
+            Self::Ko => "한국어",
         }
     }
 
@@ -342,6 +362,10 @@ impl Language {
     pub fn from_config_value(raw: &str) -> Self {
         match raw.trim().to_ascii_lowercase().as_str() {
             "en" => Self::En,
+            "zh" | "zh-cn" | "zh_cn" | "zh-hans" => Self::ZhCn,
+            "zh-tw" | "zh_tw" | "zh-hant" => Self::ZhTw,
+            "ja" => Self::Ja,
+            "ko" => Self::Ko,
             _ => Self::default(),
         }
     }
@@ -1259,10 +1283,19 @@ mod tests {
             serde_json::json!("en")
         );
 
+        // Every shipped locale round-trips the same way.
+        let chinese: ApplicationConfig = serde_json::from_str(r#"{"ui": {"language": "zh-CN"}}"#)
+            .unwrap_or_else(|error| panic!("{error}"));
+        assert_eq!(chinese.ui.language, Language::ZhCn);
+        assert_eq!(
+            serde_json::to_value(chinese.ui.language).unwrap_or_else(|error| panic!("{error}")),
+            serde_json::json!("zh-CN")
+        );
+
         // A locale from a newer release (or a typo) must not fail the whole
         // config load: it normalizes to the default and the next canonical
         // save writes the supported spelling.
-        let lenient: ApplicationConfig = serde_json::from_str(r#"{"ui": {"language": "zh-CN"}}"#)
+        let lenient: ApplicationConfig = serde_json::from_str(r#"{"ui": {"language": "fr"}}"#)
             .unwrap_or_else(|error| panic!("{error}"));
         assert_eq!(lenient.ui.language, Language::En);
         assert_eq!(
@@ -1273,13 +1306,15 @@ mod tests {
 
     #[test]
     fn config_diff_tracks_language_changes() {
-        // With a single variant both sides are En, so the diff must be quiet;
-        // the language that lands next extends this test with a true case.
+        // Same language on both sides is quiet; a real switch is reported so
+        // the shell can apply the new locale.
         let current = ApplicationConfig::default();
         let mut next = current.clone();
         next.ui.language = Language::En;
         assert!(!ConfigDiff::between(&current, &next).language);
         assert!(!ConfigDiff::between(&current, &next).theme);
+        next.ui.language = Language::ZhCn;
+        assert!(ConfigDiff::between(&current, &next).language);
     }
 
     #[test]
