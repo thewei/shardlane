@@ -25,6 +25,7 @@ pub mod herdr;
 pub mod history_continuation;
 pub mod ids;
 pub mod live_handoff;
+pub mod local_socket;
 /// Backend-neutral Multiplexer API (docs/multiplexer-api.md): the runtime seam
 /// consumed by the macOS shell and the Remote API. Herdr is the first adapter;
 /// assembly happens only in `mux::registry::MuxRegistry`.

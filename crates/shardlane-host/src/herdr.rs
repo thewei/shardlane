@@ -14,6 +14,7 @@
 //! (remote API)
 
 use crate::diagnostics::lag_log;
+use crate::local_socket::{connect as local_connect, wait as local_wait, LocalSocketPath};
 use crate::{
     AgentRef as HostAgentRef, AgentRuntime, AgentStatus as HostAgentStatus, RuntimeAgent,
     RuntimeAgentPromptRequest, RuntimeAgentRead, RuntimeAgentReadFormat, RuntimeAgentReadRequest,
@@ -25,7 +26,6 @@ use std::{
     collections::HashMap,
     env,
     io::{BufRead, BufReader, Write},
-    os::unix::net::UnixStream,
     path::{Path, PathBuf},
     process::{Command, Stdio},
     sync::OnceLock,
@@ -778,7 +778,7 @@ struct ApiError {
 
 #[derive(Clone)]
 pub struct HerdrClient {
-    socket_path: PathBuf,
+    socket_path: LocalSocketPath,
     runtime_version: Option<String>,
     protocol: Option<u32>,
     /// True only when this client bootstrap actually started the Herdr server with an explicit
@@ -790,7 +790,7 @@ impl HerdrClient {
     /// Test-only constructor: direct socket path, bypasses bootstrap (for mock socket tests).
     pub fn for_test_socket(socket_path: PathBuf) -> Self {
         Self {
-            socket_path,
+            socket_path: LocalSocketPath::new(socket_path),
             runtime_version: None,
             protocol: Some(20),
             server_started_with_supplied_config: false,
@@ -816,9 +816,10 @@ impl HerdrClient {
     ) -> Result<Self, HerdrError> {
         ensure_herdr_installed()?;
         let socket_path = Self::session_socket_path(session.unwrap_or("default"));
-        let needs_server_start = !socket_path.exists()
+        let socket = LocalSocketPath::new(socket_path);
+        let needs_server_start = !socket.exists_ready()
             || (Self {
-                socket_path: socket_path.clone(),
+                socket_path: socket.clone(),
                 runtime_version: None,
                 protocol: None,
                 server_started_with_supplied_config: false,
@@ -827,13 +828,13 @@ impl HerdrClient {
             .is_err();
         let server_started_with_supplied_config = if needs_server_start {
             start_server_for_session(session, server_config_path)?;
-            wait_for_socket(&socket_path)?;
+            wait_for_socket(&socket)?;
             server_config_path.is_some()
         } else {
             false
         };
         let mut client = Self {
-            socket_path,
+            socket_path: socket,
             runtime_version: None,
             protocol: None,
             server_started_with_supplied_config,
@@ -874,20 +875,21 @@ impl HerdrClient {
     /// behalf.
     pub fn connect() -> Result<Self, HerdrError> {
         let socket_path = socket_path();
-        Self::connect_to(&socket_path)
+        Self::connect_to(socket_path.raw())
     }
 
     /// Side-effect-free connect with an explicit socket path (for isolated
     /// test injection).
     pub fn connect_to(socket_path: &Path) -> Result<Self, HerdrError> {
-        if !socket_path.exists() {
+        let socket = LocalSocketPath::new(socket_path.to_path_buf());
+        if !socket.exists_ready() {
             return Err(HerdrError::SocketUnavailable(
                 socket_path.display().to_string(),
                 "socket not found; connect() never starts a server".to_string(),
             ));
         }
         let mut client = Self {
-            socket_path: socket_path.to_path_buf(),
+            socket_path: socket,
             runtime_version: None,
             protocol: None,
             server_started_with_supplied_config: false,
@@ -1328,7 +1330,7 @@ impl HerdrClient {
         id: &str,
         subscriptions: Value,
     ) -> Result<async_channel::Receiver<HerdrEvent>, HerdrError> {
-        let mut stream = UnixStream::connect(&self.socket_path).map_err(|err| {
+        let mut stream = local_connect(&self.socket_path).map_err(|err| {
             HerdrError::SocketUnavailable(self.socket_path.display().to_string(), err.to_string())
         })?;
         // A bounded timeout lets a canceled GPUI subscription drop its receiver and lets the
@@ -1652,7 +1654,7 @@ impl HerdrClient {
 
     fn call<T: DeserializeOwned>(&self, method: &str, params: Value) -> Result<T, HerdrError> {
         let started = Instant::now();
-        let stream = UnixStream::connect(&self.socket_path).map_err(|err| {
+        let stream = local_connect(&self.socket_path).map_err(|err| {
             HerdrError::SocketUnavailable(self.socket_path.display().to_string(), err.to_string())
         })?;
         // Same read timeout as the subscription path (see rpc_read_timeout):
@@ -2148,30 +2150,56 @@ impl HerdrState {
 // pattern as agent_cli::resolve_binary) → conventional user-level bin
 // directories as a fallback.
 
-/// Cache for the login shell PATH query (`zsh -lic` costs ~100ms; run once).
-static LOGIN_SHELL_PATH: OnceLock<Option<String>> = OnceLock::new();
-
 /// Finds an executable in a colon-separated PATH value (pure, testable).
 fn find_in_path_value(path_value: &str, name: &str) -> Option<PathBuf> {
     path_value
-        .split(':')
+        .split(path_separator())
         .filter(|dir| !dir.is_empty())
         .map(|dir| Path::new(dir).join(name))
-        .find(|candidate| candidate.is_file())
+        .find(|candidate| cli_candidate_exists(candidate))
+}
+
+/// PATH separator: `;` on Windows, `:` elsewhere.
+fn path_separator() -> char {
+    if cfg!(windows) {
+        ';'
+    } else {
+        ':'
+    }
+}
+
+/// Windows CLIs carry an `.exe` suffix; accept both the bare and suffixed form.
+fn cli_candidate_exists(candidate: &Path) -> bool {
+    if candidate.is_file() {
+        return true;
+    }
+    #[cfg(windows)]
+    {
+        let mut exe = candidate.as_os_str().to_owned();
+        exe.push(".exe");
+        return Path::new(&exe).is_file();
+    }
+    #[cfg(not(windows))]
+    {
+        false
+    }
 }
 
 /// User-level CLI install directories (wax/cargo/homebrew conventions): the
 /// fallback when the login shell is unavailable.
 fn fallback_cli_directories() -> Vec<PathBuf> {
     let mut dirs = Vec::new();
-    if let Some(home) = env::var_os("HOME") {
+    if let Some(home) = env::var_os("HOME").or_else(|| env::var_os("USERPROFILE")) {
         let home = PathBuf::from(home);
         dirs.push(home.join(".local/bin"));
         dirs.push(home.join(".wax/bin"));
         dirs.push(home.join(".cargo/bin"));
     }
-    dirs.push(PathBuf::from("/opt/homebrew/bin"));
-    dirs.push(PathBuf::from("/usr/local/bin"));
+    #[cfg(not(windows))]
+    {
+        dirs.push(PathBuf::from("/opt/homebrew/bin"));
+        dirs.push(PathBuf::from("/usr/local/bin"));
+    }
     dirs
 }
 
@@ -2180,17 +2208,27 @@ fn fallback_cli_directories() -> Vec<PathBuf> {
 /// the user's real PATH; stdout noise from .zshrc only pollutes the first
 /// segment and does not affect hits on later real directories.
 fn login_shell_path() -> Option<String> {
-    LOGIN_SHELL_PATH
-        .get_or_init(|| {
-            let output = Command::new("/bin/zsh")
-                .args(["-lic", "printf %s \"$PATH\""])
-                .stdin(Stdio::null())
-                .output()
-                .ok()?;
-            let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            (!path.is_empty()).then_some(path)
-        })
-        .clone()
+    #[cfg(windows)]
+    {
+        // /bin/zsh does not exist on Windows; PATH + install dirs are the
+        // discovery surface there.
+        return None;
+    }
+    #[cfg(not(windows))]
+    {
+        static LOGIN_SHELL_PATH: OnceLock<Option<String>> = OnceLock::new();
+        LOGIN_SHELL_PATH
+            .get_or_init(|| {
+                let output = Command::new("/bin/zsh")
+                    .args(["-lic", "printf %s \"$PATH\""])
+                    .stdin(Stdio::null())
+                    .output()
+                    .ok()?;
+                let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                (!path.is_empty()).then_some(path)
+            })
+            .clone()
+    }
 }
 
 /// Resolves the absolute path of a user-level installed CLI (shared by
@@ -2360,26 +2398,13 @@ fn start_server_for_session(
     Ok(())
 }
 
-fn wait_for_socket(path: &Path) -> Result<(), HerdrError> {
-    for _ in 0..30 {
-        if path.exists() {
-            return Ok(());
-        }
-        thread::sleep(Duration::from_millis(100));
-    }
-    Err(HerdrError::SocketUnavailable(
-        path.display().to_string(),
-        "timed out waiting for herdr server".to_string(),
-    ))
+fn wait_for_socket(path: &LocalSocketPath) -> Result<(), HerdrError> {
+    local_wait(path, 30)
+        .map_err(|message| HerdrError::SocketUnavailable(path.display().to_string(), message))
 }
 
-fn socket_path_for_session_name(session: &str) -> PathBuf {
-    let home = env::var_os("HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("."));
-    home.join(".config/herdr/sessions")
-        .join(session)
-        .join("herdr.sock")
+fn socket_path_for_session_name(session: &str) -> LocalSocketPath {
+    session_socket_for(session)
 }
 
 /// One row of `herdr session list --json`: a Herdr instance.
@@ -2435,23 +2460,71 @@ pub fn list_sessions() -> Option<Vec<HerdrSessionListing>> {
 /// `~/.config/herdr/sessions/<name>/`. Free-function form for callers that
 /// only need the location.
 pub fn session_socket_path_for(session: &str) -> PathBuf {
+    session_socket_for(session).raw().to_path_buf()
+}
+
+/// LocalSocketPath form of the session socket (transport-layer address:
+/// filesystem path on unix, named-pipe path on Windows).
+fn session_socket_for(session: &str) -> LocalSocketPath {
     if session == "default" {
         socket_path()
     } else {
-        socket_path_for_session_name(session)
+        #[cfg(windows)]
+        {
+            LocalSocketPath::new(pipe_name_for_relative(&format!(
+                "sessions/{session}/herdr.sock"
+            )))
+        }
+        #[cfg(not(windows))]
+        {
+            LocalSocketPath::new(
+                herdr_config_dir()
+                    .join("sessions")
+                    .join(session)
+                    .join("herdr.sock"),
+            )
+        }
     }
+}
+
+/// Herdr's config directory: `~/.config/herdr` (unix) / `%APPDATA%\herdr`
+/// (Windows, per herdr's documented config layout).
+fn herdr_config_dir() -> PathBuf {
+    #[cfg(windows)]
+    {
+        if let Some(appdata) = env::var_os("APPDATA") {
+            return PathBuf::from(appdata).join("herdr");
+        }
+    }
+    home_dir().join(".config/herdr")
+}
+
+fn home_dir() -> PathBuf {
+    env::var_os("HOME")
+        .or_else(|| env::var_os("USERPROFILE"))
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("."))
+}
+
+/// Windows named-pipe form: herdr's pipe namespace mirrors the config-dir
+/// layout (`\\.\pipe\herdr\` + the relative socket path). `HERDR_SOCKET_PATH`
+/// stays the authoritative override; the default convention here is verified
+/// against live herdr by the Windows release job before any tag ships.
+#[cfg(windows)]
+fn pipe_name_for_relative(relative: &str) -> PathBuf {
+    PathBuf::from(format!(
+        "\\\\.\\pipe\\herdr\\{}",
+        relative.replace(':', "\\").replace('/', "\\")
+    ))
 }
 
 /// The directory herdr persists a session in (herdr's own `default` session
 /// uses the base config dir, other sessions `sessions/<name>`).
 pub fn session_dir_for(session: &str) -> PathBuf {
-    let home = env::var_os("HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("."));
     if session == "default" {
-        home.join(".config/herdr")
+        herdr_config_dir()
     } else {
-        home.join(".config/herdr/sessions").join(session)
+        herdr_config_dir().join("sessions").join(session)
     }
 }
 
@@ -2492,17 +2565,21 @@ pub fn write_session_display_name(session: &str, display_name: &str) -> Result<(
     .map_err(|error| error.to_string())
 }
 
-fn socket_path() -> PathBuf {
+fn socket_path() -> LocalSocketPath {
     if let Some(path) = env::var_os("HERDR_SOCKET_PATH") {
-        return PathBuf::from(path);
+        return LocalSocketPath::new(PathBuf::from(path));
     }
     if let Some(session) = env::var_os("HERDR_SESSION") {
         return socket_path_for_session_name(&session.to_string_lossy());
     }
-    let home = env::var_os("HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("."));
-    home.join(".config/herdr/herdr.sock")
+    #[cfg(windows)]
+    {
+        LocalSocketPath::new(pipe_name_for_relative("herdr.sock"))
+    }
+    #[cfg(not(windows))]
+    {
+        LocalSocketPath::new(herdr_config_dir().join("herdr.sock"))
+    }
 }
 
 /// Stops a named session's server (`herdr session stop <name>`). Idempotent
@@ -2544,7 +2621,30 @@ mod tests {
     #[test]
     fn socket_path_should_default_to_config_dir() {
         let path = socket_path();
-        assert!(path.ends_with(".config/herdr/herdr.sock") || path.ends_with("herdr.sock"));
+        let raw = path.raw();
+        assert!(
+            raw.ends_with(".config/herdr/herdr.sock") || raw.ends_with("herdr.sock"),
+            "unexpected default socket: {raw:?}"
+        );
+    }
+
+    /// Windows named-pipe convention (mirror of the config-dir layout). The
+    /// release workflow verifies this against live herdr before a tag ships.
+    #[cfg(windows)]
+    #[test]
+    fn windows_pipe_names_mirror_the_config_dir_layout() {
+        assert_eq!(
+            pipe_name_for_relative("herdr.sock"),
+            PathBuf::from("\\\\.\\pipe\\herdr\\herdr.sock")
+        );
+        assert_eq!(
+            pipe_name_for_relative("sessions/work/herdr.sock"),
+            PathBuf::from("\\\\.\\pipe\\herdr\\sessions\\work\\herdr.sock")
+        );
+        assert_eq!(
+            session_socket_path_for("work"),
+            PathBuf::from("\\\\.\\pipe\\herdr\\sessions\\work\\herdr.sock")
+        );
     }
 
     #[test]
@@ -2565,18 +2665,21 @@ mod tests {
             .all(|(key, _)| key != "HERDR_CONFIG_PATH"));
     }
 
+    #[cfg(unix)]
     #[test]
     fn direct_or_test_connections_never_claim_server_config_ownership() {
         let client = HerdrClient::for_test_socket(PathBuf::from("/tmp/herdr-test.sock"));
         assert!(!client.server_started_with_supplied_config());
     }
 
+    #[cfg(unix)]
     #[test]
     fn command_exists_should_find_shell() {
         assert!(resolve_user_cli("sh")
             .is_some_and(|path| { path.is_absolute() && path.ends_with("sh") }));
     }
 
+    #[cfg(unix)]
     #[test]
     fn find_in_path_value_locates_file_and_skips_empty_segments() {
         let dir = std::env::temp_dir().join("shardlane-path-scan-test");
@@ -2590,6 +2693,7 @@ mod tests {
         assert!(find_in_path_value(&path_value, "wax").is_none());
     }
 
+    #[cfg(unix)]
     #[test]
     fn fallback_cli_directories_cover_user_bins_and_homebrew() {
         let dirs = fallback_cli_directories();
@@ -3116,6 +3220,7 @@ mod tests {
         assert_eq!(panes.panes[0].terminal_id.as_deref(), Some("term_1"));
     }
 
+    #[cfg(unix)]
     #[test]
     fn workspace_state_issues_fewer_rpcs_than_host_bootstrap_state() {
         // C32: callers that only correlate workspaces/tabs/agents must not
@@ -3235,6 +3340,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn agent_start_read_timeout_covers_the_server_startup_wait() {
         // AC-01: a start that waits up to 45s server-side must not die at the
@@ -3255,6 +3361,7 @@ mod tests {
     }
 
     /// What the fake server does after reading one request.
+    #[cfg(unix)]
     enum ServerAction {
         /// Send this raw line as the response.
         Line(String),
@@ -3265,6 +3372,7 @@ mod tests {
     /// Scripted one-shot fake Herdr socket: answers each accepted connection
     /// with the next scripted action and records the requested methods.
     /// `keep`ing the tempdir means cleanup is the OS's business.
+    #[cfg(unix)]
     fn scripted_herdr_server_actions(
         actions: Vec<ServerAction>,
     ) -> (
@@ -3319,6 +3427,7 @@ mod tests {
         (socket_path, received)
     }
 
+    #[cfg(unix)]
     fn scripted_herdr_server(
         responses: Vec<String>,
     ) -> (
@@ -3334,6 +3443,7 @@ mod tests {
     /// Scripted one-shot fake Herdr socket that records (method, params) per
     /// request — the C32 RPC-count assertions need the request params, not
     /// just the method names.
+    #[cfg(unix)]
     fn scripted_request_recorder(responses: Vec<String>) -> (std::path::PathBuf, RecordedRequests) {
         let socket_path = tempfile::tempdir()
             .unwrap_or_else(|error| panic!("tempdir: {error}"))
@@ -3379,6 +3489,7 @@ mod tests {
         (socket_path, received)
     }
 
+    #[cfg(unix)]
     fn prompt_params() -> AgentPromptParams {
         AgentPromptParams {
             target: "pane-1".to_string(),
@@ -3387,6 +3498,7 @@ mod tests {
         }
     }
 
+    #[cfg(unix)]
     #[test]
     fn prompt_agent_blocked_never_sends_raw_keys() {
         let (socket, received) = scripted_herdr_server(vec![
@@ -3406,6 +3518,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn prompt_agent_not_found_returns_typed_error_without_keys() {
         let (socket, received) = scripted_herdr_server(vec![
@@ -3423,6 +3536,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn prompt_server_timeout_is_delivery_uncertain_and_never_retried() {
         let (socket, received) = scripted_herdr_server(vec![
@@ -3444,6 +3558,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn prompt_parked_stalled_recovers_with_exactly_one_enter_and_confirms() {
         // The one sanctioned recovery: agent_prompt_stalled → one Enter on the
@@ -3468,6 +3583,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn mutating_rpc_eof_after_write_is_delivery_uncertain() {
         // R2-01/CR-04: the request was written; the server closing before a
@@ -3488,6 +3604,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn mutating_rpc_malformed_response_after_write_is_delivery_uncertain() {
         let (socket, _received) =
@@ -3509,6 +3626,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn non_mutating_rpc_malformed_response_stays_a_plain_parse_error() {
         let (socket, _received) =
@@ -3524,6 +3642,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn prompt_parked_stalled_recovery_failure_is_delivery_uncertain_after_enter() {
         let (socket, received) = scripted_herdr_server(vec![
@@ -3738,6 +3857,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     #[ignore = "real isolated Herdr runtime smoke; uses only a local fake pi executable"]
     fn isolated_agent_runtime_contract_smoke_uses_fake_local_agent() {
         use std::os::unix::fs::PermissionsExt as _;
@@ -3790,12 +3910,12 @@ mod tests {
             Err(error) => panic!("failed to start isolated Herdr server: {error}"),
         };
         let _server = ServerGuard(server);
-        if let Err(error) = wait_for_socket(&socket_path) {
+        if let Err(error) = wait_for_socket(&LocalSocketPath::new(socket_path.clone())) {
             panic!("isolated Herdr socket did not become ready: {error}");
         }
 
         let client = HerdrClient {
-            socket_path,
+            socket_path: LocalSocketPath::new(socket_path),
             runtime_version: None,
             protocol: Some(20),
             server_started_with_supplied_config: false,

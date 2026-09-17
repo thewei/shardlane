@@ -18,6 +18,16 @@ thiserror = { workspace = true }
 tokio = { workspace = true, features = ["sync"] }
 uuid = { workspace = true }
 
+[target.'cfg(target_os = "windows")'.dependencies]
+# Named-pipe client transport for the Herdr Windows local socket
+# (crates/shardlane-host/src/local_socket.rs).
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_Storage_FileSystem",
+    "Win32_System_IO",
+    "Win32_System_Threading",
+] }
+
 [lints]
 workspace = true
 
