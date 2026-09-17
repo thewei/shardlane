@@ -76,11 +76,17 @@ impl ShardlaneApp {
         // three-way choice instead of an implied LocalNetwork behind the master toggle.
         let listener_scope_herdr = herdr.clone();
         let listener_scope_control = Segmented::new("mobile-listener-scope", surface)
-            .option(shardlane_remote::ListenerMode::Off, "Off")
-            .option(shardlane_remote::ListenerMode::Loopback, "Loopback")
+            .option(
+                shardlane_remote::ListenerMode::Off,
+                i18n::t("settings.mobile.scope_off"),
+            )
+            .option(
+                shardlane_remote::ListenerMode::Loopback,
+                i18n::t("settings.mobile.scope_loopback"),
+            )
             .option(
                 shardlane_remote::ListenerMode::LocalNetwork,
-                "All interfaces",
+                i18n::t("settings.mobile.scope_all_interfaces"),
             )
             .value(remote.listener_mode)
             .on_change(move |mode, _, app| {
@@ -99,19 +105,27 @@ impl ShardlaneApp {
         let listener_detail = if remote_enabled {
             if remote_running {
                 if is_lan_mode {
-                    format!(
-                        "Listening on all interfaces (0.0.0.0:{remote_port}). \
-                         Mobile devices on the same network can connect."
+                    i18n::t_with(
+                        "settings.mobile.listening_lan",
+                        &[("port", remote_port.to_string())],
                     )
+                    .to_string()
                 } else {
-                    format!("Listening at 127.0.0.1:{remote_port}. Mobile clients can connect.")
+                    i18n::t_with(
+                        "settings.mobile.listening_loopback",
+                        &[("port", remote_port.to_string())],
+                    )
+                    .to_string()
                 }
             } else {
-                format!("Enabled, but the listener failed to start (port {remote_port} busy?).")
+                i18n::t_with(
+                    "settings.mobile.listener_failed",
+                    &[("port", remote_port.to_string())],
+                )
+                .to_string()
             }
         } else {
-            "Off — no listener thread, no idle cost. Enable to accept mobile connections."
-                .to_string()
+            i18n::t("settings.mobile.listener_off").to_string()
         };
         let all_addrs: Vec<String> = if is_lan_mode {
             let mut addrs = Vec::new();
@@ -153,24 +167,28 @@ impl ShardlaneApp {
                     .text_size(crate::theme::FONT_BODY)
                     .line_height(px(18.0))
                     .opacity(0.82)
-                    .child(if remote_running { "Running" } else { "Stopped" }),
+                    .child(if remote_running {
+                        i18n::t("settings.mobile.running")
+                    } else {
+                        i18n::t("settings.mobile.stopped")
+                    }),
             )
             .into_any_element();
 
         // Mobile Web address rows: list every available IP; each opens on click
         let mut url_rows: Vec<AnyElement> = Vec::new();
         url_rows.push(settings_card_row(
-            "Remote Access",
-            "Serve the Remote API on this Mac. Mobile clients connect with the access token.",
+            &i18n::t("settings.mobile.remote_access"),
+            &i18n::t("settings.mobile.remote_access_detail"),
             remote_toggle,
         ));
         url_rows.push(settings_card_row(
-            "Listener scope",
-            "Off starts no listener. Loopback binds 127.0.0.1 (this Mac only). All interfaces binds 0.0.0.0 so phones on the network can connect.",
+            &i18n::t("settings.mobile.listener_scope"),
+            &i18n::t("settings.mobile.listener_scope_detail"),
             listener_scope_control,
         ));
         url_rows.push(settings_card_row(
-            "Listener",
+            &i18n::t("settings.mobile.listener"),
             &listener_detail,
             listener_status,
         ));
@@ -186,8 +204,8 @@ impl ShardlaneApp {
             None => div().into_any_element(),
         };
         url_rows.push(settings_card_row(
-            "Port",
-            "Remote API + Mobile Web listen port. Change it when another app occupies the default; press Enter to apply (the listener restarts immediately).",
+            &i18n::t("settings.mobile.port"),
+            &i18n::t("settings.mobile.port_detail"),
             port_control,
         ));
         // notate 2026-08-29 F3: all available addresses merge into a single Mobile Web row,
@@ -228,19 +246,19 @@ impl ShardlaneApp {
                                     },
                                 )
                                 .child(Icon::new(ComponentIconName::Globe).with_size(px(14.0)))
-                                .child("Open"),
+                                .child(i18n::t("settings.mobile.open")),
                         ),
                 );
             }
             url_rows.push(settings_card_row(
-                "Mobile Web",
-                "Addresses reachable from this network. Click Open, or type one into a phone browser and pair with the QR below.",
+                &i18n::t("settings.mobile.mobile_web"),
+                &i18n::t("settings.mobile.mobile_web_detail"),
                 address_column.into_any_element(),
             ));
         } else {
             url_rows.push(settings_card_row(
-                "Mobile Web",
-                "Start Remote Access to get a URL.",
+                &i18n::t("settings.mobile.mobile_web"),
+                &i18n::t("settings.mobile.mobile_web_off_detail"),
                 div().into_any_element(),
             ));
         }
@@ -274,25 +292,32 @@ impl ShardlaneApp {
                         .text_size(crate::theme::FONT_META)
                         .line_height(px(16.0))
                         .opacity(0.7)
-                        .child("Enable Remote Access to generate a pairing QR code."),
+                        .child(i18n::t("settings.mobile.qr_disabled")),
                 )
                 .into_any_element(),
         };
 
         let connect_label = if remote_running && !token.is_empty() {
-            format!(
-                "{connect_addr} · token: {}",
-                mask_token(&token, "…").unwrap_or_else(|| token.clone())
+            i18n::t_with(
+                "settings.mobile.connect_label",
+                &[
+                    ("addr", connect_addr.clone()),
+                    (
+                        "token",
+                        mask_token(&token, "…").unwrap_or_else(|| token.clone()),
+                    ),
+                ],
             )
+            .to_string()
         } else {
-            "Remote Access is off — enable it above to get a pairing code.".to_string()
+            i18n::t("settings.mobile.connect_off").to_string()
         };
 
         let pairing_card = settings_card(
             surface,
             vec![settings_card_row(
-                "Pair by QR",
-                "Scan with a phone camera. The QR carries the connection address and credential; the mobile app reads it and connects automatically.",
+                &i18n::t("settings.mobile.qr_pair"),
+                &i18n::t("settings.mobile.qr_pair_detail"),
                 div().into_any_element(),
             )],
         )
@@ -320,8 +345,8 @@ impl ShardlaneApp {
         let mut client_rows = Vec::new();
         if connections.is_empty() {
             client_rows.push(settings_card_row(
-                "No connected clients",
-                "This list is live: connect from the mobile web app and the client appears here.",
+                &i18n::t("settings.mobile.no_clients"),
+                &i18n::t("settings.mobile.no_clients_detail"),
                 div().into_any_element(),
             ));
         } else {
@@ -352,15 +377,26 @@ impl ShardlaneApp {
                         },
                     )
                     .child(Icon::new(ComponentIconName::Close).with_size(px(14.0)))
-                    .child("Disconnect")
+                    .child(i18n::t("settings.mobile.disconnect"))
                     .into_any_element();
 
                 client_rows.push(settings_card_row(
-                    &format!("Web client · {}", connection.addr),
-                    &format!(
-                        "connected {}s ago · last seen {}s ago",
-                        connection.connected_at.elapsed().as_secs(),
-                        connection.last_seen.elapsed().as_secs(),
+                    &i18n::t_with(
+                        "settings.mobile.web_client",
+                        &[("addr", connection.addr.clone())],
+                    ),
+                    &i18n::t_with(
+                        "settings.mobile.client_seen",
+                        &[
+                            (
+                                "connected",
+                                connection.connected_at.elapsed().as_secs().to_string(),
+                            ),
+                            (
+                                "last_seen",
+                                connection.last_seen.elapsed().as_secs().to_string(),
+                            ),
+                        ],
                     ),
                     disconnect_button,
                 ));
@@ -388,13 +424,13 @@ impl ShardlaneApp {
                 });
             })
             .child(Icon::new(ComponentIconName::Copy).with_size(px(14.0)))
-            .child("Copy")
+            .child(i18n::t("settings.mobile.copy"))
             .into_any_element();
         let rotate_herdr = herdr.clone();
         let rotate_button = Button::new("mobile-token-rotate")
             .custom(content_button)
             .xsmall()
-            .label("Reset token")
+            .label(i18n::t("settings.mobile.reset_token"))
             .on_click(move |_, _, cx| {
                 rotate_herdr.update(cx, |this, cx| {
                     this.config.remote.rotate_access_token();
@@ -408,13 +444,16 @@ impl ShardlaneApp {
             surface,
             vec![
                 settings_card_row(
-                    "Access token",
-                    &format!("Bearer token for clients. {token_masked}"),
+                    &i18n::t("settings.mobile.access_token"),
+                    &i18n::t_with(
+                        "settings.mobile.access_token_detail",
+                        &[("token", token_masked.clone())],
+                    ),
                     copy_token,
                 ),
                 settings_card_row(
-                    "Reset token",
-                    "Revokes every paired client immediately (they re-pair via the new QR). Host identity stays stable.",
+                    &i18n::t("settings.mobile.reset_token"),
+                    &i18n::t("settings.mobile.reset_token_detail"),
                     rotate_button.into_any_element(),
                 ),
             ],
@@ -491,7 +530,7 @@ impl ShardlaneApp {
                 }
             }
             _ => {
-                window.push_notification("Port must be a number between 1024 and 65535", cx);
+                window.push_notification(i18n::t("settings.mobile.port_invalid").to_string(), cx);
                 if let Some(input) = &self.mobile_port_input {
                     let restored = current.to_string();
                     input.update(cx, |state, cx| {
@@ -515,7 +554,9 @@ fn render_qr(payload: &str, foreground: gpui::Hsla, background: gpui::Hsla) -> A
     let Ok(code) =
         qrcode::QrCode::with_error_correction_level(payload.as_bytes(), qrcode::EcLevel::M)
     else {
-        return div().child("QR generation failed").into_any_element();
+        return div()
+            .child(i18n::t("settings.mobile.qr_failed"))
+            .into_any_element();
     };
     let modules = code.width();
     // to_colors(): a row-major module matrix (Dark = dark module).
