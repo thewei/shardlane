@@ -8,7 +8,7 @@ crates/ - Shardlane application and read-only Agent-history code
 ui/ - thin Crepuscularity shell composition templates
 vendor/ - bundled native runtime artifacts (ghostty-vt) + patched gpui 0.2.2 (see vendor/gpui/PACING-PATCH.md, wired via [patch.crates-io])
 scripts/ - tiered verification and composable UI acceptance entrypoints (verify.sh: check/unit/history/ui/fast/full)
-site/ - public landing page published to GitHub Pages (static HTML/CSS, no build step)
+site/ - public site (landing + downloads page) published to GitHub Pages (static HTML/CSS, no build step)
 docs/ - public architecture, interaction, performance, packaging, and remote documentation
 .agents/skills/ - project-local engineering workflow/checklists
 .github/ - CI and release workflows

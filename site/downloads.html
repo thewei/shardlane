@@ -1,0 +1,196 @@
+<!doctype html>
+<!--
+  [INPUT]: depends on styles.css, assets/mark.svg, assets/icon.png, and the
+  fixed GitHub Releases asset names (Shardlane-macos-aarch64.zip,
+  Shardlane-macos-x86_64.zip, Shardlane-linux-x86_64.tar.gz,
+  Shardlane-windows-x86_64.zip, each with a .sha256 sidecar); the version
+  label optionally enhances via the api.github.com latest-release endpoint
+  (CORS-enabled; failure is silent and leaves the static version)
+  [OUTPUT]: the downloads page: one glass card per release platform with a
+  platform-matched primary download (kept as the static no-JS href), a
+  SHA-256 link, and per-platform install notes; links use the stable
+  releases/latest/download permalinks so the page never goes stale
+  [POS]: the second page in site/, published as-is by
+  .github/workflows/pages.yml; index.html routes unsupported platforms here
+  [PROTOCOL]: Update this header on change, then check CLAUDE.md.
+-->
+<html lang="en" class="no-js">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <script>document.documentElement.classList.remove('no-js');</script>
+  <title>Download Shardlane: macOS, Linux and Windows builds</title>
+  <meta name="description" content="Download the latest Shardlane release for Apple Silicon and Intel Macs, Linux x86_64 and Windows x86_64 — direct archives with SHA-256 checksums.">
+  <link rel="icon" type="image/svg+xml" href="assets/mark.svg">
+  <link rel="alternate icon" type="image/png" href="assets/icon.png">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <a class="skip" href="#main">Skip to main content</a>
+
+  <div class="aurora" aria-hidden="true">
+    <div class="blob blob-1"></div>
+    <div class="blob blob-2"></div>
+    <div class="blob blob-3"></div>
+  </div>
+
+  <header class="nav">
+    <a class="brand" href="./">
+      <img src="assets/mark.svg" alt="" width="24" height="24">
+      <span>Shardlane</span>
+    </a>
+    <nav class="navlinks" aria-label="Site">
+      <a href="./#backends">Backends</a>
+      <a href="./#workspaces">Workspaces</a>
+      <a href="./#architecture">Architecture</a>
+      <a href="https://github.com/thewei/shardlane/tree/main/docs">Docs</a>
+    </nav>
+    <a class="nav-dl" data-platform-download href="https://github.com/thewei/shardlane/releases/latest/download/Shardlane-macos-aarch64.zip">Download</a>
+  </header>
+
+  <main id="main">
+    <section class="backends" id="downloads">
+      <header class="sec-head">
+        <p class="sec-kicker">Downloads</p>
+        <h2>Latest release: <span data-dl-version>v0.1.17</span></h2>
+        <p class="sec-sub">
+          Every build ships as a plain archive with a SHA-256 sidecar, straight from
+          GitHub Releases. macOS archives are ad-hoc signed (not notarized) — approve
+          the first launch after verifying the checksum.
+        </p>
+      </header>
+
+      <div class="backend-grid">
+        <article class="bcard">
+          <div class="bcard-top">
+            <img class="blogo" src="assets/icon.png" alt="" width="44" height="44">
+            <span class="brole brole-primary">Apple Silicon</span>
+          </div>
+          <h3>macOS · aarch64</h3>
+          <p class="bdesc">macOS 13+. Ad-hoc signed; Gatekeeper asks once on first launch.</p>
+          <code>Shardlane-macos-aarch64.zip</code>
+          <ul class="bfeats">
+            <li>Unzip, drag Shardlane.app to Applications</li>
+            <li><a href="https://github.com/thewei/shardlane/releases/latest/download/Shardlane-macos-aarch64.zip.sha256">SHA-256 checksum</a></li>
+          </ul>
+          <a class="blink" href="https://github.com/thewei/shardlane/releases/latest/download/Shardlane-macos-aarch64.zip">Download<span aria-hidden="true"> →</span></a>
+        </article>
+
+        <article class="bcard" data-aos-delay="100">
+          <div class="bcard-top">
+            <img class="blogo" src="assets/icon.png" alt="" width="44" height="44">
+            <span class="brole">Intel Macs</span>
+          </div>
+          <h3>macOS · x86_64</h3>
+          <p class="bdesc">macOS 13+ on Intel. Same ad-hoc signing as the arm64 build.</p>
+          <code>Shardlane-macos-x86_64.zip</code>
+          <ul class="bfeats">
+            <li>Unzip, drag Shardlane.app to Applications</li>
+            <li><a href="https://github.com/thewei/shardlane/releases/latest/download/Shardlane-macos-x86_64.zip.sha256">SHA-256 checksum</a></li>
+          </ul>
+          <a class="blink" href="https://github.com/thewei/shardlane/releases/latest/download/Shardlane-macos-x86_64.zip">Download<span aria-hidden="true"> →</span></a>
+        </article>
+
+        <article class="bcard">
+          <div class="bcard-top">
+            <img class="blogo" src="assets/icon.png" alt="" width="44" height="44">
+            <span class="brole brole-remote">Linux · x86_64</span>
+          </div>
+          <h3>Linux · x86_64</h3>
+          <p class="bdesc">Wayland or X11 session with a Vulkan driver. The herdr runtime is installed separately.</p>
+          <code>Shardlane-linux-x86_64.tar.gz</code>
+          <ul class="bfeats">
+            <li>Untar, then run <code>./shardlane</code></li>
+            <li><a href="https://github.com/thewei/shardlane/releases/latest/download/Shardlane-linux-x86_64.tar.gz.sha256">SHA-256 checksum</a></li>
+          </ul>
+          <a class="blink" href="https://github.com/thewei/shardlane/releases/latest/download/Shardlane-linux-x86_64.tar.gz">Download<span aria-hidden="true"> →</span></a>
+        </article>
+
+        <article class="bcard">
+          <div class="bcard-top">
+            <img class="blogo" src="assets/icon.png" alt="" width="44" height="44">
+            <span class="brole brole-new">Windows · x86_64</span>
+          </div>
+          <h3>Windows · x86_64</h3>
+          <p class="bdesc">Windows 10/11. The zip is not signed; SmartScreen may confirm the first run.</p>
+          <code>Shardlane-windows-x86_64.zip</code>
+          <ul class="bfeats">
+            <li>Unzip, then run <code>shardlane.exe</code></li>
+            <li><a href="https://github.com/thewei/shardlane/releases/latest/download/Shardlane-windows-x86_64.zip.sha256">SHA-256 checksum</a></li>
+          </ul>
+          <a class="blink" href="https://github.com/thewei/shardlane/releases/latest/download/Shardlane-windows-x86_64.zip">Download<span aria-hidden="true"> →</span></a>
+        </article>
+      </div>
+
+      <p class="arch-fine">
+        The in-app updater (Settings → Behavior) checks this feed automatically on macOS;
+        Linux and Windows builds surface a notice with a link back to this page.
+        <a href="https://github.com/thewei/shardlane/releases">Browse all releases</a>.
+      </p>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <div class="foot-row">
+      <p class="foot-brand"><img src="assets/mark.svg" alt="" width="20" height="20"> Shardlane is the client; the backends are the runtime.</p>
+      <nav class="foot-links" aria-label="Footer">
+        <a href="./">Home</a>
+        <a href="https://github.com/thewei/shardlane">GitHub</a>
+        <a href="https://github.com/thewei/shardlane/releases">Releases</a>
+        <a href="https://herdr.dev">Herdr</a>
+      </nav>
+    </div>
+    <p class="foot-fine">© 2026 Wilson · GPL-3.0 · built with GPUI and libghostty-vt</p>
+  </footer>
+  <script>
+    (function () {
+      var nav = document.querySelector('.nav');
+      var onScroll = function () {
+        nav.classList.toggle('scrolled', window.scrollY > 24);
+      };
+      onScroll();
+      window.addEventListener('scroll', onScroll, { passive: true });
+    })();
+    (function () {
+      // Display-only version enhancement: never load-bearing, silent on failure.
+      fetch('https://api.github.com/repos/thewei/shardlane/releases/latest')
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (release) {
+          if (!release || !release.tag_name) return;
+          document.querySelectorAll('[data-dl-version]').forEach(function (el) {
+            el.textContent = release.tag_name;
+          });
+        })
+        .catch(function () { /* keep the static version */ });
+    })();
+    (function () {
+      // Highlight the card matching this browser's platform.
+      var ua = navigator.userAgent;
+      var arch = 'arm';
+      var pick = null;
+      if (/Macintosh/.test(ua)) {
+        pick = /Macintosh/.test(ua) ? 'macos-aarch64' : null;
+        if (navigator.userAgentData && navigator.userAgentData.getHighEntropyValue) {
+          navigator.userAgentData.getHighEntropyValue(['architecture']).then(function (hint) {
+            mark(hint && hint.architecture === 'x86' ? 'macos-x86_64' : 'macos-aarch64');
+          }).catch(function () { mark(pick); });
+          return;
+        }
+        mark(pick);
+      } else if (/Windows/.test(ua)) {
+        mark('windows-x86_64');
+      } else if (/Linux/.test(ua)) {
+        mark('linux-x86_64');
+      }
+      function mark(key) {
+        document.querySelectorAll('.bcard').forEach(function (card) {
+          var link = card.querySelector('a.blink');
+          if (link && link.href.indexOf(key) !== -1) {
+            card.style.outline = '1px solid rgba(109, 139, 255, 0.55)';
+          }
+        });
+      }
+    })();
+  </script>
+</body>
+</html>

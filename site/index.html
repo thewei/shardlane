@@ -5,14 +5,14 @@
   assets/luvus-logo.png; scroll-reveal stagger depends on the AOS 2.3.4 CDN
   (the only external request); download links depend on the fixed GitHub
   Releases asset names Shardlane-macos-aarch64(.zip|.sha256)
-  [OUTPUT]: the single Shardlane site page: deep-space aurora glassmorphism
+  [OUTPUT]: the Shardlane landing page (beside downloads.html): deep-space aurora glassmorphism
   (designs/site-deai Option D final) — sticky glass nav with a scrolled
   compact state, large hero + floating aurora blobs + glass
   nav/cards/product window, AOS scroll-reveal stagger across sections, with
   the multi-backend matrix (Herdr/tmux/UU Remote/Luvus) as a first-class
   citizen; a no-JS / no-CDN / reduced-motion fallback keeps all content
   visible
-  [POS]: the only page in site/, published as-is by
+  [POS]: the entry page in site/, published as-is by
   .github/workflows/pages.yml; the design-final record lives in
   designs/site-deai/README.md
   [PROTOCOL]: Update this header on change, then check CLAUDE.md.
@@ -57,16 +57,17 @@
     <!-- ============ HERO ============ -->
     <section class="hero">
       <div class="hero-copy">
-        <p class="pill rise"><i></i>Native macOS · four multiplexer backends · v0.1.16</p>
+    <p class="pill rise"><i></i>Native · macOS, Linux &amp; Windows · four multiplexer backends · v0.1.17</p>
         <h1 class="rise d1">Every backend.<br><span class="grad">One native lane.</span></h1>
         <p class="sub rise d2">
-          A GPU-accelerated macOS workspace for coding agents. Herdr, tmux, UU Remote and
+          A GPU-accelerated native workspace for coding agents on macOS, Linux and Windows. Herdr, tmux, UU Remote and
           Luvus behind one neutral seam — sessions stay authoritative on the backend,
           Shardlane just makes them beautiful.
         </p>
         <div class="cta rise d3">
           <a class="btn-primary" data-platform-download href="https://github.com/thewei/shardlane/releases/latest/download/Shardlane-macos-aarch64.zip">Download</a>
           <a class="btn-ghost" href="https://github.com/thewei/shardlane">★ Star on GitHub</a>
+          <a class="btn-ghost" href="downloads.html">All platforms</a>
         </div>
         <p class="runtime-note rise d4">
           <span class="prompt">$</span> wax install herdr
@@ -274,23 +275,45 @@
       }
     })();
     (function () {
-      // Platform-aware download: the only built artifact today is the
-      // Apple Silicon zip; every other platform lands on the releases page
-      // instead of a zip it cannot run. Extend the map as new builds land.
-      var arm64 = 'https://github.com/thewei/shardlane/releases/latest/download/Shardlane-macos-aarch64.zip';
-      var releases = 'https://github.com/thewei/shardlane/releases';
+      // Platform-aware download: one built archive per release platform.
+      // Unknown platforms land on downloads.html instead of an archive they
+      // cannot run. The static href (no-JS fallback) stays the arm64 zip.
+      var base = 'https://github.com/thewei/shardlane/releases/latest/download/';
+      var map = {
+        'macos-arm64': base + 'Shardlane-macos-aarch64.zip',
+        'macos-x64': base + 'Shardlane-macos-x86_64.zip',
+        'linux-x64': base + 'Shardlane-linux-x86_64.tar.gz',
+        'windows-x64': base + 'Shardlane-windows-x86_64.zip'
+      };
+      var downloads = 'downloads.html';
       function apply(href) {
         document.querySelectorAll('[data-platform-download]').forEach(function (a) {
           a.href = href;
         });
       }
-      if (!/Macintosh/.test(navigator.userAgent)) { apply(releases); return; }
+      function pick() {
+        var ua = navigator.userAgent;
+        if (/Macintosh/.test(ua)) return map['macos-arm64'];
+        if (/Windows/.test(ua)) return map['windows-x64'];
+        if (/Linux/.test(ua)) return map['linux-x64'];
+        return downloads;
+      }
       if (navigator.userAgentData && navigator.userAgentData.getHighEntropyValue) {
-        navigator.userAgentData.getHighEntropyValue(['architecture'])
+        navigator.userAgentData.getHighEntropyValue(['architecture', 'platform'])
           .then(function (hint) {
-            apply(hint && hint.architecture === 'x86' ? releases : arm64);
+            var arch = hint && hint.architecture;
+            var platform = (hint && hint.platform || '').toLowerCase();
+            if (platform.indexOf('mac') !== -1) {
+              apply(arch === 'x86' ? map['macos-x64'] : map['macos-arm64']);
+            } else if ((hint && hint.platform || '').indexOf('Windows') !== -1) {
+              apply(map['windows-x64']);
+            } else {
+              apply(pick());
+            }
           })
-          .catch(function () { apply(arm64); });
+          .catch(function () { apply(pick()); });
+      } else {
+        apply(pick());
       }
     })();
   </script>

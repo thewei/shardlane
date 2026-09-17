@@ -1,7 +1,7 @@
 # site/
 > L2 | Parent: /CLAUDE.md
 
-index.html: the single site page, deep-space aurora glassmorphism (design
+index.html: the entry page (landing + downloads routing), deep-space aurora glassmorphism (design
 final: designs/site-deai/ Option D, chosen by the user on 2026-09-09):
 sticky glass floating nav (compact "scrolled" state past 24px), large hero
 (pill badge + gradient accent headline, two CTAs: a platform-aware
@@ -45,6 +45,7 @@ cards and the mockup sidebar.
 assets/luvus-logo.png: official Luvus logo, from
 github.com/RizRiyz/luvus assets/logo.png (1000px), used on the backend
 matrix cards.
+downloads.html: the downloads page — one glass card per release platform (macOS arm64/x86_64, Linux x86_64, Windows x86_64) reusing the bcard style; all links use the stable releases/latest/download permalinks (never stale), the version label optionally enhances via the GitHub API (failure silent), and the card matching the visitor platform gets a highlight outline.
 CLAUDE.md: this file.
 
 [PROTOCOL]: Update this header on change, then check CLAUDE.md.
