@@ -24,7 +24,27 @@
   possible; only symbol/layout comparison is available. Before relying on a
   rebuild, pin a Ghostty commit and record it here per the upgrade flow below.
 
-## Upgrade flow (the binary itself is the ABI authority)
+## Multi-target layout (2026-09-12)
+
+Vendored archives now live per Rust target triple so the release matrix can
+build macOS (arm64 + x86_64), Linux x86_64 and Windows x86_64 from the same
+repository:
+
+- `lib/<rust-triple>/libghostty-vt.a` — unix targets (darwin/linux)
+- `lib/<rust-triple>/ghostty-vt.lib` — the windows-msvc target (COFF)
+- `lib/libghostty-vt.a` — legacy single archive, kept only as the
+  `aarch64-apple-darwin` fallback inside `build.rs`
+
+Produce a target archive with `scripts/vendor-ghostty-vt.sh --triple
+<rust-triple> --ghostty-ref <tag-or-commit>` (or trigger
+`.github/workflows/vendor-ghostty-vt.yml`); the script runs the ABI gate
+(exported ghostty_* symbol set vs the baseline archive + embedded
+struct-layout JSON fingerprint) before installing, and appends the
+provenance entry below. Windows note: the default named-pipe convention
+(`\\.\pipe\herdr\...`) that the client mirrors for Herdr sockets is
+verified separately against live herdr by the release workflow.
+
+NaN
 
 1. **Source**: clone Ghostty upstream at the target tag/commit (nightly
    releases ship no library artifact; build it yourself) and use the

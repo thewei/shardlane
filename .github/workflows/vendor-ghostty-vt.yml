@@ -1,0 +1,82 @@
+name: vendor-ghostty-vt
+
+# One-click producer for the per-target vendored libghostty-vt archives
+# (scripts/vendor-ghostty-vt.sh). Run it with the ghostty_ref input set to
+# the pinned upstream commit, download the artifacts, and commit them under
+# vendor/ghostty-vt/lib/<triple>/ together with the PIN.md entry the script
+# appends. The script's ABI gate (symbol baseline + layout fingerprint) runs
+# inside the workflow, so an artifact that lands here already passed.
+#
+# [PROTOCOL]: Update .github/CLAUDE.md on change, then check /CLAUDE.md.
+
+on:
+  workflow_dispatch:
+    inputs:
+      ghostty_ref:
+        description: "Ghostty tag or commit to build from"
+        required: true
+
+jobs:
+  darwin:
+    strategy:
+      matrix:
+        include:
+          - triple: aarch64-apple-darwin
+            runs-on: macos-15
+          - triple: x86_64-apple-darwin
+            runs-on: macos-15
+    runs-on: ${{ matrix.runs-on }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install zig
+        run: pip install ziglang && echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Vendor matrix-triple
+        run: scripts/vendor-ghostty-vt.sh --triple ${{ matrix.triple }} --ghostty-ref "${{ inputs.ghostty_ref }}" --zig zig
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ghostty-vt-${{ matrix.triple }}
+          path: |
+            vendor/ghostty-vt/lib/${{ matrix.triple }}/*
+            vendor/ghostty-vt/PIN.md
+
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install zig
+        run: pip install ziglang && echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Vendor x86_64-unknown-linux-gnu
+        run: scripts/vendor-ghostty-vt.sh --triple x86_64-unknown-linux-gnu --ghostty-ref "${{ inputs.ghostty_ref }}" --zig zig
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ghostty-vt-x86_64-unknown-linux-gnu
+          path: |
+            vendor/ghostty-vt/lib/x86_64-unknown-linux-gnu/*
+            vendor/ghostty-vt/PIN.md
+
+  windows:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install zig
+        run: pip install ziglang
+      - name: Vendor x86_64-pc-windows-msvc (bash via git; zig from pip Scripts)
+        shell: bash
+        run: |
+          ZIG="$(python -m ziglang 2>/dev/null && echo py || true)"
+          scripts/vendor-ghostty-vt.sh --triple x86_64-pc-windows-msvc --ghostty-ref "${{ inputs.ghostty_ref }}" --zig "$(python -c 'import ziglang,os;print(os.path.join(os.path.dirname(ziglang.__file__), "zig"))')"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ghostty-vt-x86_64-pc-windows-msvc
+          path: |
+            vendor/ghostty-vt/lib/x86_64-pc-windows-msvc/*
+            vendor/ghostty-vt/PIN.md
