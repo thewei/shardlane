@@ -168,23 +168,30 @@ impl ShardlaneApp {
                     let chord = shortcuts::effective_chord(other, config)
                         .map(shortcuts::format_chord_display)
                         .unwrap_or_else(|| "—".to_string());
-                    format!("{label} ({chord})")
+                    crate::i18n::t_with(
+                        "settings.shortcuts.conflict_entry",
+                        &[("label", label.to_string()), ("chord", chord)],
+                    )
+                    .to_string()
                 })
                 .collect::<std::collections::BTreeSet<_>>()
                 .into_iter()
                 .collect::<Vec<_>>();
             let tooltip = if conflict_note.is_empty() {
-                "Click to rebind · Esc cancels".to_string()
+                crate::i18n::t("settings.shortcuts.rebind_tooltip").to_string()
             } else {
-                format!(
-                    "Click to rebind · Esc cancels · Conflicts with {}",
-                    conflict_note.join(", ")
+                crate::i18n::t_with(
+                    "settings.shortcuts.rebind_tooltip_conflicts",
+                    &[("conflicts", conflict_note.join(", "))],
                 )
+                .to_string()
             };
             let scope_label = match entry.scope {
-                ShortcutScope::Global => "Global",
-                ShortcutScope::App => "App",
-                ShortcutScope::AgentSwitcher => "Agent Switcher",
+                ShortcutScope::Global => crate::i18n::t("settings.shortcuts.scope_global"),
+                ShortcutScope::App => crate::i18n::t("settings.shortcuts.scope_app"),
+                ShortcutScope::AgentSwitcher => {
+                    crate::i18n::t("settings.shortcuts.scope_agent_switcher")
+                }
             };
 
             let row = h_flex()
@@ -201,7 +208,7 @@ impl ShardlaneApp {
                         .truncate()
                         .text_size(crate::theme::FONT_BODY)
                         .text_color(if is_disabled { muted } else { foreground })
-                        .child(entry.label),
+                        .child(crate::i18n::t_dyn(&shortcuts::label_key(entry.id))),
                 )
                 .child(
                     div()
@@ -252,9 +259,13 @@ impl ShardlaneApp {
                                 }),
                             )
                             .child(if recording_this {
-                                "Press keys… (Esc cancels)".to_string()
+                                crate::i18n::t("settings.shortcuts.recording").to_string()
                             } else if is_disabled {
-                                format!("{display} · disabled")
+                                crate::i18n::t_with(
+                                    "settings.shortcuts.disabled_suffix",
+                                    &[("chord", display)],
+                                )
+                                .to_string()
                             } else {
                                 display
                             }),
@@ -280,7 +291,7 @@ impl ShardlaneApp {
                                     this.reset_shortcut_override(entry.id, cx);
                                 }),
                             )
-                            .child("Reset"),
+                            .child(crate::i18n::t("settings.shortcuts.reset")),
                     )
                 })
                 .when(!is_disabled, |row| {
@@ -303,7 +314,7 @@ impl ShardlaneApp {
                                     this.toggle_shortcut_disabled(entry.id, cx);
                                 }),
                             )
-                            .child("Disable"),
+                            .child(crate::i18n::t("settings.shortcuts.disable")),
                     )
                 })
                 .into_any_element();
@@ -325,7 +336,7 @@ impl ShardlaneApp {
                     .text_size(crate::theme::FONT_META)
                     .font_weight(gpui::FontWeight::MEDIUM)
                     .text_color(muted)
-                    .child("Command"),
+                    .child(crate::i18n::t("settings.shortcuts.header_command")),
             )
             .child(
                 div()
@@ -333,7 +344,7 @@ impl ShardlaneApp {
                     .text_size(crate::theme::FONT_META)
                     .font_weight(gpui::FontWeight::MEDIUM)
                     .text_color(muted)
-                    .child("Scope"),
+                    .child(crate::i18n::t("settings.shortcuts.header_scope")),
             )
             .child(
                 div()
@@ -341,7 +352,7 @@ impl ShardlaneApp {
                     .text_size(crate::theme::FONT_META)
                     .font_weight(gpui::FontWeight::MEDIUM)
                     .text_color(muted)
-                    .child("Shortcut"),
+                    .child(crate::i18n::t("settings.shortcuts.header_shortcut")),
             );
 
         v_flex()
