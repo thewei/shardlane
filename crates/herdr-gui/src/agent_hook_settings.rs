@@ -39,8 +39,18 @@ impl ShardlaneApp {
 
         // 1. Overview Card: Description & Degradation System
         let ipc_status_text = shardlane_host::AgentHookIpcServer::default_socket_path()
-            .map(|p| format!("Active: {}", p.display()))
-            .unwrap_or_else(|| crate::i18n::t("settings.agent_hooks.ipc_active").to_string());
+            .map(|p| {
+                crate::i18n::t_with(
+                    "settings.agent_hooks.ipc_active",
+                    &[("path", p.display().to_string())],
+                )
+            })
+            .unwrap_or_else(|| {
+                crate::i18n::t_with(
+                    "settings.agent_hooks.ipc_active",
+                    &[("path", "~/.shardlane/run/agent-status.sock".to_string())],
+                )
+            });
 
         let overview_card = settings_card(
             surface,

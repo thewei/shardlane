@@ -596,12 +596,12 @@ pub enum HerdrTuiHostStatus {
 }
 
 impl HerdrTuiHostStatus {
-    pub fn label(self) -> &'static str {
+    pub fn label(self) -> gpui::SharedString {
         match self {
-            Self::Stopped => "Stopped",
-            Self::Starting => "Starting…",
-            Self::Running => "Running",
-            Self::Failed => "Failed",
+            Self::Stopped => crate::i18n::t("host.status_stopped"),
+            Self::Starting => crate::i18n::t("host.status_starting"),
+            Self::Running => crate::i18n::t("host.status_running"),
+            Self::Failed => crate::i18n::t("host.status_failed"),
         }
     }
 }
