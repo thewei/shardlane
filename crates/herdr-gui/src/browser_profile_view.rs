@@ -160,13 +160,14 @@ impl ShardlaneApp {
 
         // notate 2026-08-29 G1: Enabled is a real toggle (it gates the right panel's Browser
         // entry) instead of a static badge with no control.
+        let enabled_detail = if browser_config.enabled {
+            i18n::t("settings.browser.enabled_detail").to_string()
+        } else {
+            i18n::t("settings.browser.disabled_detail").to_string()
+        };
         rows.push(settings_card_row(
-            "Built-in browser",
-            if browser_config.enabled {
-                "Enabled — available from the right panel and surface chooser."
-            } else {
-                "Disabled — browser surfaces stay hidden until re-enabled."
-            },
+            &i18n::t("settings.browser.builtin"),
+            &enabled_detail,
             crate::ui::controls::Toggle::new("browser-enabled", surface)
                 .checked(browser_config.enabled)
                 .on_change({
@@ -196,12 +197,12 @@ impl ShardlaneApp {
         }
 
         rows.push(settings_card_row(
-            "New profile",
-            "Create an isolated browser profile with its own website data store.",
+            &i18n::t("settings.browser.new_profile"),
+            &i18n::t("settings.browser.new_profile_detail"),
             Button::new("browser-profile-new")
                 .custom(content_button)
                 .xsmall()
-                .label("+ New Profile")
+                .label(i18n::t("settings.browser.new_profile_action"))
                 .on_click(cx.listener(|this, _, _, cx| {
                     this.browser_profile_create(cx);
                 }))
@@ -226,12 +227,16 @@ impl ShardlaneApp {
         let profile_id = profile.id.clone();
         let is_synthesized_default = profile.id == "default" && is_default;
         let detail = if profile.ephemeral {
-            "Ephemeral (private browsing)"
+            i18n::t("settings.browser.ephemeral_detail")
         } else {
-            "Persistent isolated data store"
+            i18n::t("settings.browser.persistent_detail")
         };
         let title = if is_default {
-            format!("{} (default)", profile.name)
+            i18n::t_with(
+                "settings.browser.profile_default",
+                &[("name", profile.name.clone())],
+            )
+            .to_string()
         } else {
             profile.name.clone()
         };
@@ -257,7 +262,7 @@ impl ShardlaneApp {
                                 this.browser_profile_set_default(&id, cx);
                             }),
                         )
-                        .child("Set Default"),
+                        .child(i18n::t("settings.browser.set_default")),
                 );
             }
             // Audit E03: destructive chips are two-click armed — the first click arms the
@@ -305,9 +310,9 @@ impl ShardlaneApp {
                         }),
                     )
                     .child(if clear_armed {
-                        "Click again to clear"
+                        i18n::t("settings.browser.clear_armed")
                     } else {
-                        "Clear Data"
+                        i18n::t("settings.browser.clear_data")
                     }),
             );
             let id = profile_id.clone();
@@ -339,13 +344,13 @@ impl ShardlaneApp {
                         }),
                     )
                     .child(if delete_armed {
-                        "Click again to delete"
+                        i18n::t("settings.browser.delete_armed")
                     } else {
-                        "Delete"
+                        i18n::t("settings.browser.delete")
                     }),
             );
         }
 
-        settings_card_row(&title, detail, actions.into_any_element())
+        settings_card_row(&title, &detail, actions.into_any_element())
     }
 }
