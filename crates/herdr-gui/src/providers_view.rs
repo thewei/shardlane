@@ -91,11 +91,11 @@ fn source_session_count(app: &ShardlaneApp, location: &HistorySourceLocation) ->
 fn source_status(
     location: &HistorySourceLocation,
     probe: Option<&HashMap<HistorySourceKey, bool>>,
-) -> &'static str {
+) -> gpui::SharedString {
     match probe.and_then(|probe| probe.get(&location.key)).copied() {
-        None => "Checking…",
-        Some(true) => "Available",
-        Some(false) => "Unavailable",
+        None => i18n::t("settings.providers.status_checking"),
+        Some(true) => i18n::t("settings.providers.status_available"),
+        Some(false) => i18n::t("settings.providers.status_unavailable"),
     }
 }
 
@@ -105,18 +105,27 @@ fn provider_capability_text(
     caps: &ProviderCapabilities,
 ) -> String {
     let installed = match app.provider_availability.as_ref() {
-        None => "Detecting…".to_string(),
+        None => i18n::t("settings.providers.detecting").to_string(),
         Some(available) => available
             .get(&agent)
-            .map(|path| format!("Installed · {}", display_path(Path::new(path))))
-            .unwrap_or_else(|| "Not found".to_string()),
+            .map(|path| {
+                i18n::t_with(
+                    "settings.providers.installed_path",
+                    &[("path", display_path(Path::new(path)))],
+                )
+                .to_string()
+            })
+            .unwrap_or_else(|| i18n::t("settings.providers.not_found").to_string()),
     };
-    let mut parts = vec![installed, "History".to_string()];
+    let mut parts = vec![
+        installed,
+        i18n::t("settings.providers.cap_history").to_string(),
+    ];
     if caps.live == LiveCapability::AppendLog {
-        parts.push("Live Chat".to_string());
+        parts.push(i18n::t("settings.providers.cap_live").to_string());
     }
     if caps.exposure == ProviderExposure::Preview {
-        parts.push("Preview".to_string());
+        parts.push(i18n::t("settings.providers.cap_preview").to_string());
     }
     parts.join(" · ")
 }
@@ -134,7 +143,7 @@ fn history_status_text(
         .filter(|location| location.agent() == agent)
         .collect::<Vec<_>>();
     if locations.is_empty() {
-        return "Unavailable".to_string();
+        return i18n::t("settings.providers.status_unavailable").to_string();
     }
     let checked = locations
         .iter()
@@ -142,22 +151,25 @@ fn history_status_text(
         .copied()
         .collect::<Vec<_>>();
     if checked.len() != locations.len() {
-        return "Checking…".to_string();
+        return i18n::t("settings.providers.status_checking").to_string();
     }
     let available = checked.iter().filter(|available| **available).count();
     if available == 0 {
-        return "Unavailable".to_string();
+        return i18n::t("settings.providers.status_unavailable").to_string();
     }
     let sessions = locations
         .iter()
         .filter(|location| probe.is_some_and(|probe| probe.get(&location.key) == Some(&true)))
         .map(|location| source_session_count(app, location))
         .sum::<usize>();
-    format!(
-        "Available · {available} source{} · {sessions} indexed session{}",
-        plural(available),
-        plural(sessions)
+    i18n::t_with(
+        "settings.providers.history_status",
+        &[
+            ("sources", available.to_string()),
+            ("sessions", sessions.to_string()),
+        ],
     )
+    .to_string()
 }
 
 fn integration_status_text(app: &ShardlaneApp, agent: AgentId) -> String {
@@ -166,42 +178,42 @@ fn integration_status_text(app: &ShardlaneApp, agent: AgentId) -> String {
         .as_ref()
         .and_then(|all| all.iter().find(|health| health.provider == agent))
     else {
-        return "Checking…".to_string();
+        return i18n::t("settings.providers.status_checking").to_string();
     };
     if matches!(
         health.strategy,
         shardlane_host::agent_integrations::AgentIntegrationStrategy::Deferred
     ) {
-        return "Deferred · Herdr hook/session binding pending".to_string();
+        return i18n::t("settings.providers.integration_deferred").to_string();
     }
     if !health.herdr_cli_present {
-        return "Herdr CLI not found".to_string();
+        return i18n::t("settings.providers.integration_no_cli").to_string();
     }
     if let Some(official) = &health.official {
         return if official.is_current {
-            format!("Installed · {}", official.raw_state)
+            i18n::t_with(
+                "settings.providers.integration_installed",
+                &[("state", official.raw_state.clone())],
+            )
+            .to_string()
         } else {
-            format!("Not installed · {}", official.raw_state)
+            i18n::t_with(
+                "settings.providers.integration_not_installed",
+                &[("state", official.raw_state.clone())],
+            )
+            .to_string()
         };
     }
     match health.strategy {
         shardlane_host::agent_integrations::AgentIntegrationStrategy::HerdrScreenOnly
         | shardlane_host::agent_integrations::AgentIntegrationStrategy::HerdrScreenWithManagedSessionBridge
         | shardlane_host::agent_integrations::AgentIntegrationStrategy::ManagedLifecycleBridge => {
-            "Herdr status unavailable".to_string()
+            i18n::t("settings.providers.integration_unavailable").to_string()
         }
         shardlane_host::agent_integrations::AgentIntegrationStrategy::HerdrOfficial { .. }
         | shardlane_host::agent_integrations::AgentIntegrationStrategy::Deferred => {
-            "Herdr status unavailable".to_string()
+            i18n::t("settings.providers.integration_unavailable").to_string()
         }
-    }
-}
-
-fn plural(value: usize) -> &'static str {
-    if value == 1 {
-        ""
-    } else {
-        "s"
     }
 }
 
@@ -424,7 +436,7 @@ impl ShardlaneApp {
         }
         self.history_remove_confirm = Some((agent, path, std::time::Instant::now()));
         window.push_notification(
-            "Click Remove again to confirm removing this history source",
+            i18n::t("settings.providers.remove_confirm_notice").to_string(),
             cx,
         );
     }
@@ -452,7 +464,11 @@ impl ShardlaneApp {
             files: false,
             directories: true,
             multiple: false,
-            prompt: Some("Add History Source".into()),
+            prompt: Some(
+                i18n::t("settings.providers.add_source_prompt")
+                    .to_string()
+                    .into(),
+            ),
         });
         let window_handle = window.window_handle();
         let locations = self.history.roster.locations.clone();
@@ -461,7 +477,11 @@ impl ShardlaneApp {
                 Ok(Ok(Some(paths))) => paths.into_iter().next(),
                 Ok(Ok(None)) | Err(_) => None,
                 Ok(Err(error)) => {
-                    let message = format!("History source picker failed: {error}");
+                    let message = i18n::t_with(
+                        "settings.providers.picker_failed",
+                        &[("error", error.to_string())],
+                    )
+                    .to_string();
                     let _ = cx.update_window(window_handle, |_, window, cx| {
                         window.push_notification(message.clone(), cx);
                     });
@@ -504,7 +524,11 @@ impl ShardlaneApp {
             files: false,
             directories: true,
             multiple: false,
-            prompt: Some("Edit History Source".into()),
+            prompt: Some(
+                i18n::t("settings.providers.edit_source_prompt")
+                    .to_string()
+                    .into(),
+            ),
         });
         let window_handle = window.window_handle();
         let locations = self
@@ -526,7 +550,11 @@ impl ShardlaneApp {
                 Ok(Ok(Some(paths))) => paths.into_iter().next(),
                 Ok(Ok(None)) | Err(_) => None,
                 Ok(Err(error)) => {
-                    let message = format!("History source picker failed: {error}");
+                    let message = i18n::t_with(
+                        "settings.providers.picker_failed",
+                        &[("error", error.to_string())],
+                    )
+                    .to_string();
                     let _ = cx.update_window(window_handle, |_, window, cx| {
                         window.push_notification(message.clone(), cx);
                     });
@@ -654,7 +682,7 @@ impl ShardlaneApp {
             .collect::<Vec<_>>();
         let index_row = self.history_index_snapshot.as_ref().map(|snapshot| {
             settings_card_row(
-                "Local History Index",
+                &i18n::t("settings.providers.history_index"),
                 &format!(
                     "{} · {}",
                     display_path(&snapshot.path),
@@ -663,7 +691,7 @@ impl ShardlaneApp {
                 Button::new("history-index-reveal")
                     .ghost()
                     .xsmall()
-                    .label("Reveal in Finder")
+                    .label(i18n::t("settings.providers.reveal_in_finder"))
                     .on_click({
                         let path = snapshot.path.clone();
                         move |_, _, _| {
@@ -684,7 +712,7 @@ impl ShardlaneApp {
                     .text_size(theme::FONT_BODY)
                     .line_height(px(18.0))
                     .opacity(0.72)
-                    .child("Choose which providers appear in New Agent and History continuation."),
+                    .child(i18n::t("settings.providers.intro")),
             )
             .child(settings_card(surface, rows));
         if let Some(row) = index_row {
@@ -693,8 +721,8 @@ impl ShardlaneApp {
             content = content.child(settings_card(
                 surface,
                 vec![settings_card_row(
-                    "Local History Index",
-                    "Index metadata is being loaded in the background.",
+                    &i18n::t("settings.providers.history_index"),
+                    &i18n::t("settings.providers.history_index_loading"),
                     Spinner::new().xsmall().into_any_element(),
                 )],
             ));
@@ -714,12 +742,12 @@ impl ShardlaneApp {
         let caps = shardlane_history::provider_capabilities(agent);
         let capability = caps
             .map(|caps| provider_capability_text(self, agent, caps))
-            .unwrap_or_else(|| "History".to_string());
+            .unwrap_or_else(|| i18n::t("settings.providers.cap_history").to_string());
         let back = Button::new("providers-back")
             .ghost()
             .xsmall()
             .icon(Icon::new(ComponentIconName::ArrowLeft).xsmall())
-            .tooltip("Back to Providers")
+            .tooltip(i18n::t("settings.providers.back_to_providers"))
             .on_click({
                 let herdr = herdr.clone();
                 move |_, _, app| {
@@ -731,37 +759,40 @@ impl ShardlaneApp {
             .as_ref()
             .and_then(|available| available.get(&agent))
             .map(|path| display_path(Path::new(path)))
-            .unwrap_or_else(|| "Not found".to_string());
+            .unwrap_or_else(|| i18n::t("settings.providers.not_found").to_string());
+        let live_detail = if caps.is_some_and(|caps| caps.live == LiveCapability::AppendLog) {
+            i18n::t("settings.providers.live_available")
+        } else {
+            i18n::t("settings.providers.live_unavailable")
+        };
         let availability_rows = vec![
             settings_card_row(
-                "CLI",
+                &i18n::t("settings.providers.row_cli"),
                 &cli_path,
                 div()
                     .text_size(theme::FONT_META)
                     .text_color(surface.foreground.opacity(0.72))
                     .child(match self.provider_availability.as_ref() {
-                        None => "Detecting…",
-                        Some(available) if available.contains_key(&agent) => "Installed",
-                        Some(_) => "Not found",
+                        None => i18n::t("settings.providers.detecting"),
+                        Some(available) if available.contains_key(&agent) => {
+                            i18n::t("settings.providers.status_available")
+                        }
+                        Some(_) => i18n::t("settings.providers.not_found"),
                     })
                     .into_any_element(),
             ),
             settings_card_row(
-                "History",
+                &i18n::t("settings.providers.row_history"),
                 &history_status_text(self, agent, self.history_source_probe.as_ref()),
                 div().text_size(theme::FONT_META).into_any_element(),
             ),
             settings_card_row(
-                "Live Chat",
-                if caps.is_some_and(|caps| caps.live == LiveCapability::AppendLog) {
-                    "Available"
-                } else {
-                    "Not available"
-                },
+                &i18n::t("settings.providers.row_live"),
+                &live_detail,
                 div().text_size(theme::FONT_META).into_any_element(),
             ),
             settings_card_row(
-                "Herdr integration",
+                &i18n::t("settings.providers.row_integration"),
                 &integration_status_text(self, agent),
                 div().text_size(theme::FONT_META).into_any_element(),
             ),
@@ -782,8 +813,8 @@ impl ShardlaneApp {
             let source = location.clone();
             let display = display_path(location.path());
             let kind = match location.kind {
-                HistorySourceKind::Default => "Default",
-                HistorySourceKind::Custom => "Custom",
+                HistorySourceKind::Default => i18n::t("settings.providers.kind_default"),
+                HistorySourceKind::Custom => i18n::t("settings.providers.kind_custom"),
             };
             let count = source_session_count(self, &location);
             let status = source_status(&location, self.history_source_probe.as_ref());
@@ -813,20 +844,28 @@ impl ShardlaneApp {
                 )
                 .dropdown_menu(move |mut popup, _, cx| {
                     let reveal = path_for_reveal.clone();
-                    popup = popup.item(PopupMenuItem::new("Reveal in Finder").on_click(
-                        move |_, _, _| {
-                            let _ = reveal_in_finder(&reveal);
-                        },
-                    ));
+                    popup = popup.item(
+                        PopupMenuItem::new(i18n::t("settings.providers.reveal_in_finder"))
+                            .on_click(move |_, _, _| {
+                                let _ = reveal_in_finder(&reveal);
+                            }),
+                    );
                     if let Some(edit_root) = edit_root.clone() {
                         let edit_herdr = menu_herdr.clone();
-                        popup = popup.item(PopupMenuItem::new("Edit…").on_click(
-                            move |_, window, app| {
-                                edit_herdr.update(app, |view, cx| {
-                                    view.edit_history_source(agent, edit_root.clone(), window, cx);
-                                });
-                            },
-                        ));
+                        popup = popup.item(
+                            PopupMenuItem::new(i18n::t("settings.providers.edit_item")).on_click(
+                                move |_, window, app| {
+                                    edit_herdr.update(app, |view, cx| {
+                                        view.edit_history_source(
+                                            agent,
+                                            edit_root.clone(),
+                                            window,
+                                            cx,
+                                        );
+                                    });
+                                },
+                            ),
+                        );
                     }
                     if let Some(remove_root) = remove_root.clone() {
                         let remove_herdr = menu_herdr.clone();
@@ -844,9 +883,9 @@ impl ShardlaneApp {
                             });
                         popup = popup.item(
                             PopupMenuItem::new(if armed {
-                                "Click again to Remove"
+                                i18n::t("settings.providers.remove_armed")
                             } else {
-                                "Remove"
+                                i18n::t("settings.providers.remove_item")
                             })
                             .on_click(move |_, window, app| {
                                 remove_herdr.update(app, |view, cx| {
@@ -881,10 +920,17 @@ impl ShardlaneApp {
                             div()
                                 .text_size(theme::FONT_META)
                                 .text_color(surface.foreground.opacity(0.68))
-                                .child(format!(
-                                    "{kind} · {status} · {count} session{}",
-                                    plural(count)
-                                )),
+                                .child(
+                                    i18n::t_with(
+                                        "settings.providers.source_summary",
+                                        &[
+                                            ("kind", kind.to_string()),
+                                            ("status", status.to_string()),
+                                            ("count", count.to_string()),
+                                        ],
+                                    )
+                                    .to_string(),
+                                ),
                         ),
                 )
                 .child(
@@ -911,42 +957,44 @@ impl ShardlaneApp {
         let add_button = Button::new("history-source-add")
             .ghost()
             .xsmall()
-            .label("Add Location")
+            .label(i18n::t("settings.providers.add_location"))
             .on_click(move |_, window, app| {
                 add_herdr.update(app, |view, cx| view.add_history_source(agent, window, cx));
             });
         let restore_button = Button::new("history-source-restore")
             .ghost()
             .xsmall()
-            .label("Restore Defaults")
+            .label(i18n::t("settings.providers.restore_defaults"))
             .on_click(move |_, window, app| {
                 confirm_restore_provider_sources(agent, window, app, restore_herdr.clone());
             });
         let source_card = settings_card(
             surface,
-                vec![
-                h_flex()
-                    .w_full()
-                    .min_h(px(60.0))
-                    .px(px(20.0))
-                    .py(px(12.0))
-                    .items_center()
-                    .justify_between()
-                    .child(
-                        v_flex()
-                            .min_w_0()
-                            .gap(px(2.0))
-                            .child(div().font_weight(FontWeight::MEDIUM).child("History Sources"))
-                            .child(
-                                div()
-                                    .text_size(theme::FONT_META)
-                                    .text_color(surface.foreground.opacity(0.68))
-                                    .child("Built-in roots can be disabled; custom roots can be edited or removed."),
-                            ),
-                    )
-                    .child(add_button)
-                    .into_any_element(),
-            ]
+            vec![h_flex()
+                .w_full()
+                .min_h(px(60.0))
+                .px(px(20.0))
+                .py(px(12.0))
+                .items_center()
+                .justify_between()
+                .child(
+                    v_flex()
+                        .min_w_0()
+                        .gap(px(2.0))
+                        .child(
+                            div()
+                                .font_weight(FontWeight::MEDIUM)
+                                .child(i18n::t("settings.providers.sources_title")),
+                        )
+                        .child(
+                            div()
+                                .text_size(theme::FONT_META)
+                                .text_color(surface.foreground.opacity(0.68))
+                                .child(i18n::t("settings.providers.sources_detail")),
+                        ),
+                )
+                .child(add_button)
+                .into_any_element()]
             .into_iter()
             .chain(source_rows)
             .chain(std::iter::once(
@@ -1014,17 +1062,23 @@ fn confirm_restore_provider_sources(
     window.open_dialog(cx, move |dialog, _window, _cx| {
         let herdr = herdr.clone();
         dialog
-            .title(format!("Restore {} History Sources", agent.display_name()))
+            .title(
+                i18n::t_with(
+                    "settings.providers.restore_dialog_title",
+                    &[("provider", agent.display_name().to_string())],
+                )
+                .to_string(),
+            )
             .button_props(
                 gpui_component::dialog::DialogButtonProps::default()
-                    .ok_text("Restore")
-                    .cancel_text("Cancel"),
+                    .ok_text(i18n::t("settings.providers.dialog_ok"))
+                    .cancel_text(i18n::t("settings.providers.dialog_cancel")),
             )
             .footer(|ok, cancel, window, cx| vec![cancel(window, cx), ok(window, cx)])
             .child(
                 div()
                     .text_size(theme::FONT_BODY)
-                    .child("Remove custom locations and re-enable built-in sources? Your local History index will not be deleted."),
+                    .child(i18n::t("settings.providers.restore_dialog_body")),
             )
             .on_ok(move |_, _, app| {
                 herdr.update(app, |view, cx| view.restore_provider_sources(agent, cx));
@@ -1075,11 +1129,5 @@ mod tests {
         assert_eq!(format_bytes(0), "0 B");
         assert_eq!(format_bytes(1024), "1.0 KB");
         assert_eq!(format_bytes(1024 * 1024), "1.0 MB");
-    }
-
-    #[test]
-    fn plural_is_stable_for_source_and_session_labels() {
-        assert_eq!(format!("source{}", plural(1)), "source");
-        assert_eq!(format!("source{}", plural(2)), "sources");
     }
 }
