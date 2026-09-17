@@ -499,7 +499,14 @@ impl ShardlaneApp {
         self.sync_config_sliders(cx);
         self.save_config();
         cx.notify();
-        window.push_notification(format!("Terminal font {next:.0} pt"), cx);
+        window.push_notification(
+            i18n::t_with(
+                "settings.terminal.font_changed",
+                &[("size", format!("{next:.0}"))],
+            )
+            .to_string(),
+            cx,
+        );
     }
 
     pub(super) fn increase_terminal_font_size(

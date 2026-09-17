@@ -5,8 +5,9 @@
 //! of the Herdr page merged into the Terminal page's Herdr TUI card (user-wise it all lives in
 //! Terminal); the Herdr section was deleted.
 //!
-//! i18n (2026-09-01): the Appearance page's copy is served through `crate::i18n::t()` and the
-//! Language card switches `settings::Language`; other pages migrate to `t()` surface by surface.
+//! i18n (2026-09-12): every Settings page's copy is served through `crate::i18n::t()`/
+//! `t_with()` (five locales: en/zh-CN/zh-TW/ja/ko) and the Language card switches
+//! `settings::Language`.
 //!
 //! [INPUT]: Depends on `super` (main.rs)'s ShardlaneApp state, the settings/config models,
 //! theme presets, font_catalog (monospace font enumeration), gpui-component controls,
@@ -181,16 +182,19 @@ impl ShardlaneApp {
         let cursor_style_control = Segmented::new("settings-terminal-cursor-style", surface)
             .option(
                 crate::settings::TerminalCursorStylePreference::FollowTerminal,
-                "Auto",
+                i18n::t("settings.option.auto"),
             )
             .option(
                 crate::settings::TerminalCursorStylePreference::Block,
-                "Block",
+                i18n::t("settings.terminal.cursor_block"),
             )
-            .option(crate::settings::TerminalCursorStylePreference::Bar, "Bar")
+            .option(
+                crate::settings::TerminalCursorStylePreference::Bar,
+                i18n::t("settings.terminal.cursor_bar"),
+            )
             .option(
                 crate::settings::TerminalCursorStylePreference::Underline,
-                "Underline",
+                i18n::t("settings.terminal.cursor_underline"),
             )
             .value(cursor_style_preference)
             .on_change(move |preference, _, app| {
@@ -207,12 +211,15 @@ impl ShardlaneApp {
         let cursor_blink_control = Segmented::new("settings-terminal-cursor-blink", surface)
             .option(
                 crate::settings::TerminalCursorBlinkPreference::FollowTerminal,
-                "Auto",
+                i18n::t("settings.option.auto"),
             )
-            .option(crate::settings::TerminalCursorBlinkPreference::On, "Blink")
+            .option(
+                crate::settings::TerminalCursorBlinkPreference::On,
+                i18n::t("settings.terminal.cursor_blink_on"),
+            )
             .option(
                 crate::settings::TerminalCursorBlinkPreference::Off,
-                "Steady",
+                i18n::t("settings.terminal.cursor_blink_steady"),
             )
             .value(cursor_blink_preference)
             .on_change(move |preference, _, app| {
@@ -231,9 +238,18 @@ impl ShardlaneApp {
         let tab_bar_herdr = herdr.clone();
         let tab_bar_placement_control =
             Segmented::new("settings-terminal-tab-bar-placement", surface)
-                .option(crate::settings::TabBarPlacement::Sidebar, "Sidebar")
-                .option(crate::settings::TabBarPlacement::Native, "Native Tabs")
-                .option(crate::settings::TabBarPlacement::HerdrTui, "Herdr TUI")
+                .option(
+                    crate::settings::TabBarPlacement::Sidebar,
+                    i18n::t("settings.option.sidebar"),
+                )
+                .option(
+                    crate::settings::TabBarPlacement::Native,
+                    i18n::t("settings.option.native_tabs"),
+                )
+                .option(
+                    crate::settings::TabBarPlacement::HerdrTui,
+                    i18n::t("settings.option.herdr_tui"),
+                )
                 .value(tab_bar_placement)
                 .on_change(move |placement, _, app| {
                     tab_bar_herdr.update(app, |this, cx| {
@@ -265,7 +281,7 @@ impl ShardlaneApp {
         let herdr_reload_control = Button::new("settings-herdr-reload-config")
             .custom(content_button)
             .xsmall()
-            .label("Reload")
+            .label(i18n::t("settings.herdr_tui.reload"))
             .on_click(move |_, window, app| {
                 reload_herdr.update(app, |this, cx| {
                     this.reload_herdr_config(&ReloadHerdrConfig, window, cx);
@@ -317,8 +333,8 @@ impl ShardlaneApp {
 
         let sidebar_mode_herdr = herdr.clone();
         let sidebar_mode_control = Segmented::new("settings-herdr-sidebar-collapsed-mode", surface)
-            .option("compact".to_string(), "Compact")
-            .option("hidden".to_string(), "Hidden")
+            .option("compact".to_string(), i18n::t("settings.option.compact"))
+            .option("hidden".to_string(), i18n::t("settings.option.hidden"))
             .value(herdr_config.sidebar_collapsed_mode.clone())
             .on_change(move |mode, window, app| {
                 sidebar_mode_herdr.update(app, |this, cx| {
@@ -403,8 +419,8 @@ impl ShardlaneApp {
 
         let tab_position_herdr = herdr.clone();
         let tab_position_control = Segmented::new("settings-herdr-tab-position", surface)
-            .option("top".to_string(), "Top")
-            .option("bottom".to_string(), "Bottom")
+            .option("top".to_string(), i18n::t("settings.option.top"))
+            .option("bottom".to_string(), i18n::t("settings.option.bottom"))
             .value(herdr_config.tab_bar_position.clone())
             .on_change(move |position, window, app| {
                 tab_position_herdr.update(app, |this, cx| {
@@ -419,8 +435,8 @@ impl ShardlaneApp {
 
         let indicators_herdr = herdr.clone();
         let indicators_control = Segmented::new("settings-herdr-status-indicators", surface)
-            .option("dots".to_string(), "Dots")
-            .option("symbols".to_string(), "Symbols")
+            .option("dots".to_string(), i18n::t("settings.option.dots"))
+            .option("symbols".to_string(), i18n::t("settings.option.symbols"))
             .value(herdr_config.status_indicators.clone())
             .on_change(move |style, window, app| {
                 indicators_herdr.update(app, |this, cx| {
@@ -654,73 +670,73 @@ impl ShardlaneApp {
             surface,
             vec![
                 settings_card_row(
-                    "Herdr TUI",
-                    "Preferences of the hosted Herdr terminal UI. They live in the real Herdr config and apply to every Herdr client. Changing them restarts the hosted terminal session.",
+                    &i18n::t("settings.herdr_tui.title"),
+                    &i18n::t("settings.herdr_tui.subtitle"),
                     h_flex().into_any_element(),
                 ),
                 settings_card_row(
-                    "Config file",
+                    &i18n::t("settings.herdr_tui.config_file"),
                     &herdr_config_path,
                     herdr_reload_control,
                 ),
                 settings_card_row(
-                    "Copy on select",
-                    "Herdr ui.copy_on_select. This affects native Herdr mouse selection behavior in every Herdr client.",
+                    &i18n::t("settings.herdr_tui.copy_on_select"),
+                    &i18n::t("settings.herdr_tui.copy_on_select_detail"),
                     herdr_copy_control,
                 ),
                 settings_card_row(
-                    "Mouse capture",
-                    "Herdr ui.mouse_capture: enable Herdr's mouse-aware UI in every client.",
+                    &i18n::t("settings.herdr_tui.mouse_capture"),
+                    &i18n::t("settings.herdr_tui.mouse_capture_detail"),
                     mouse_capture_control,
                 ),
                 settings_card_row(
-                    "Mouse scroll lines",
-                    "Herdr ui.mouse_scroll_lines: rows moved per wheel notch.",
+                    &i18n::t("settings.herdr_tui.scroll_lines"),
+                    &i18n::t("settings.herdr_tui.scroll_lines_detail"),
                     herdr_scroll_lines_control,
                 ),
                 settings_card_row(
-                    "Start sidebar collapsed",
-                    "Herdr ui.sidebar_start_collapsed. This is a Herdr launch preference, not a Shardlane-only override.",
+                    &i18n::t("settings.herdr_tui.sidebar_start_collapsed"),
+                    &i18n::t("settings.herdr_tui.sidebar_start_collapsed_detail"),
                     sidebar_start_control,
                 ),
                 settings_card_row(
-                    "Collapsed sidebar mode",
-                    "Herdr ui.sidebar_collapsed_mode. Hidden is the cleanest fit inside Shardlane; Compact remains available for normal Herdr clients too.",
+                    &i18n::t("settings.herdr_tui.sidebar_collapsed_mode"),
+                    &i18n::t("settings.herdr_tui.sidebar_collapsed_mode_detail"),
                     sidebar_mode_control,
                 ),
                 settings_card_row(
-                    "Pane borders",
-                    "Herdr ui.pane_borders.",
+                    &i18n::t("settings.herdr_tui.pane_borders"),
+                    &i18n::t("settings.herdr_tui.pane_borders_detail"),
                     pane_borders_control,
                 ),
                 settings_card_row(
-                    "Outer pane borders",
-                    "Herdr ui.pane_outer_borders.",
+                    &i18n::t("settings.herdr_tui.pane_outer_borders"),
+                    &i18n::t("settings.herdr_tui.pane_outer_borders_detail"),
                     pane_outer_borders_control,
                 ),
                 settings_card_row(
-                    "Pane scrollbars",
-                    "Herdr ui.pane_scrollbars.",
+                    &i18n::t("settings.herdr_tui.pane_scrollbars"),
+                    &i18n::t("settings.herdr_tui.pane_scrollbars_detail"),
                     pane_scrollbars_control,
                 ),
                 settings_card_row(
-                    "Pane gaps",
-                    "Herdr ui.pane_gaps.",
+                    &i18n::t("settings.herdr_tui.pane_gaps"),
+                    &i18n::t("settings.herdr_tui.pane_gaps_detail"),
                     pane_gaps_control,
                 ),
                 settings_card_row(
-                    "Hide single-tab bar",
-                    "Herdr ui.hide_tab_bar_when_single_tab.",
+                    &i18n::t("settings.herdr_tui.hide_single_tab"),
+                    &i18n::t("settings.herdr_tui.hide_single_tab_detail"),
                     hide_single_tab_control,
                 ),
                 settings_card_row(
-                    "Tab bar position",
-                    "Herdr ui.tab_bar_position.",
+                    &i18n::t("settings.herdr_tui.tab_position"),
+                    &i18n::t("settings.herdr_tui.tab_position_detail"),
                     tab_position_control,
                 ),
                 settings_card_row(
-                    "Status indicators",
-                    "Herdr ui.status_indicators.",
+                    &i18n::t("settings.herdr_tui.status_indicators"),
+                    &i18n::t("settings.herdr_tui.status_indicators_detail"),
                     indicators_control,
                 ),
             ],
@@ -730,30 +746,31 @@ impl ShardlaneApp {
         // Embedded/TUI mode selection; the Terminal card keeps appearance preferences + host restore
         // state/actions (plan §18).
         let mut terminal_rows = vec![settings_card_row(
-            "Terminal",
-            "The work surface hosts one Herdr TUI. Herdr's normal user config is authoritative; Shardlane does not maintain a second hosted-TUI config.",
+            &i18n::t("settings.terminal.title"),
+            &i18n::t("settings.terminal.subtitle"),
             h_flex().into_any_element(),
         )];
         {
             let tui_status = self.tui_host.status;
             let tui_status_label = tui_status.label();
-            let tui_status_detail = self
-                .tui_host
-                .last_error
-                .as_deref()
-                .unwrap_or(match tui_status {
-                    crate::herdr_tui::HerdrTuiHostStatus::Stopped => {
-                        "TUI host is not running. Click Restart to launch."
-                    }
-                    crate::herdr_tui::HerdrTuiHostStatus::Starting => "TUI host is starting up…",
-                    crate::herdr_tui::HerdrTuiHostStatus::Running => {
-                        "Herdr TUI process is active and receiving navigation commands."
-                    }
-                    crate::herdr_tui::HerdrTuiHostStatus::Failed => {
-                        "TUI host encountered an error."
-                    }
-                })
-                .to_string();
+            let tui_status_detail =
+                self.tui_host
+                    .last_error
+                    .clone()
+                    .unwrap_or_else(|| match tui_status {
+                        crate::herdr_tui::HerdrTuiHostStatus::Stopped => {
+                            i18n::t("settings.terminal.status_stopped_detail").to_string()
+                        }
+                        crate::herdr_tui::HerdrTuiHostStatus::Starting => {
+                            i18n::t("settings.terminal.status_starting_detail").to_string()
+                        }
+                        crate::herdr_tui::HerdrTuiHostStatus::Running => {
+                            i18n::t("settings.terminal.status_running_detail").to_string()
+                        }
+                        crate::herdr_tui::HerdrTuiHostStatus::Failed => {
+                            i18n::t("settings.terminal.status_failed_detail").to_string()
+                        }
+                    });
             let glyph_level = match tui_status {
                 crate::herdr_tui::HerdrTuiHostStatus::Stopped => {
                     crate::status::AttentionLevel::Idle
@@ -771,7 +788,7 @@ impl ShardlaneApp {
             let status_glyph =
                 crate::status::status_glyph_container("tui-status-glyph", glyph_level, cx);
             terminal_rows.push(settings_card_row(
-                "Herdr host status",
+                &i18n::t("settings.terminal.host_status"),
                 &format!("{tui_status_label} — {tui_status_detail}"),
                 status_glyph,
             ));
@@ -783,7 +800,7 @@ impl ShardlaneApp {
                     Button::new("tui-restart")
                         .custom(content_button)
                         .xsmall()
-                        .label("Restart")
+                        .label(i18n::t("settings.terminal.restart"))
                         .on_click(move |_, window, app| {
                             restart_herdr.update(app, |this, cx| {
                                 this.restart_tui_surface(window, cx);
@@ -792,80 +809,98 @@ impl ShardlaneApp {
                 )
                 .into_any_element();
             terminal_rows.push(settings_card_row(
-                "Host actions",
-                "Restart the hosted Herdr terminal process.",
+                &i18n::t("settings.terminal.host_actions"),
+                &i18n::t("settings.terminal.host_actions_detail"),
                 tui_actions,
             ));
         }
         terminal_rows.extend([
             settings_card_row(
-                "Font family",
-                "Used by every visible terminal pane.",
+                &i18n::t("settings.terminal.font_family"),
+                &i18n::t("settings.terminal.font_family_detail"),
                 font_control,
             ),
-                settings_card_row(
-                    "Font size",
-                    // Audit E23: surface the default and the hidden ⌘0 reset next to the value.
-                    &format!(
-                        "{font_size:.0} pt · default {:.0} pt · ⌘0 resets",
-                        settings::TerminalConfig::default().font_size
-                    ),
-                    Slider::new(&self.font_size_slider)
-                        .ml(px(8.0))
-                        .mr(px(8.0))
-                        .bg(content_theme.foreground.opacity(0.18))
-                        .text_color(content_theme.primary)
-                        .w(px(240.0))
-                        .max_w_full()
-                        .into_any_element(),
+            settings_card_row(
+                &i18n::t("settings.terminal.font_size"),
+                // Audit E23: surface the default and the hidden ⌘0 reset next to the value.
+                &i18n::t_with(
+                    "settings.terminal.font_size_detail",
+                    &[
+                        ("size", format!("{font_size:.0}")),
+                        (
+                            "default",
+                            format!("{:.0}", settings::TerminalConfig::default().font_size),
+                        ),
+                    ],
                 ),
-                settings_card_row(
-                    "Line height",
-                    &format!(
-                        "{line_height:.0} px · default {:.0} px",
-                        settings::TerminalConfig::default().line_height
-                    ),
-                    Slider::new(&self.line_height_slider)
-                        .ml(px(8.0))
-                        .mr(px(8.0))
-                        .bg(content_theme.foreground.opacity(0.18))
-                        .text_color(content_theme.primary)
-                        .w(px(240.0))
-                        .max_w_full()
-                        .into_any_element(),
+                Slider::new(&self.font_size_slider)
+                    .ml(px(8.0))
+                    .mr(px(8.0))
+                    .bg(content_theme.foreground.opacity(0.18))
+                    .text_color(content_theme.primary)
+                    .w(px(240.0))
+                    .max_w_full()
+                    .into_any_element(),
+            ),
+            settings_card_row(
+                &i18n::t("settings.terminal.line_height"),
+                &i18n::t_with(
+                    "settings.terminal.line_height_detail",
+                    &[
+                        ("height", format!("{line_height:.0}")),
+                        (
+                            "default",
+                            format!("{:.0}", settings::TerminalConfig::default().line_height),
+                        ),
+                    ],
                 ),
-                settings_card_row(
-                    "Padding",
-                    &format!(
-                        "{terminal_padding:.0} px around the character grid · default {:.0}",
-                        settings::TerminalConfig::default().padding
-                    ),
-                    padding_control,
+                Slider::new(&self.line_height_slider)
+                    .ml(px(8.0))
+                    .mr(px(8.0))
+                    .bg(content_theme.foreground.opacity(0.18))
+                    .text_color(content_theme.primary)
+                    .w(px(240.0))
+                    .max_w_full()
+                    .into_any_element(),
+            ),
+            settings_card_row(
+                &i18n::t("settings.terminal.padding"),
+                &i18n::t_with(
+                    "settings.terminal.padding_detail",
+                    &[
+                        ("padding", format!("{terminal_padding:.0}")),
+                        (
+                            "default",
+                            format!("{:.0}", settings::TerminalConfig::default().padding),
+                        ),
+                    ],
                 ),
-                settings_card_row(
-                    "Tab bar",
-                    "Show Project tabs in the Sidebar tree or as native tabs above the terminal content.",
-                    tab_bar_placement_control,
-                ),
-                settings_card_row(
-                    "Cursor style",
-                    "Auto follows the running program (including the hollow caret when the window loses focus). Default: Auto.",
-                    cursor_style_control,
-                ),
-                settings_card_row(
-                    "Cursor blinking",
-                    "Auto follows the program's blink mode. Blink forces it on; Steady keeps the caret solid. Default: Auto.",
-                    cursor_blink_control,
-                ),
-            ]);
+                padding_control,
+            ),
+            settings_card_row(
+                &i18n::t("settings.terminal.tab_bar"),
+                &i18n::t("settings.terminal.tab_bar_detail"),
+                tab_bar_placement_control,
+            ),
+            settings_card_row(
+                &i18n::t("settings.terminal.cursor_style"),
+                &i18n::t("settings.terminal.cursor_style_detail"),
+                cursor_style_control,
+            ),
+            settings_card_row(
+                &i18n::t("settings.terminal.cursor_blink"),
+                &i18n::t("settings.terminal.cursor_blink_detail"),
+                cursor_blink_control,
+            ),
+        ]);
 
         let terminal_card = settings_card(surface, terminal_rows);
 
         let behavior_card = settings_card(
             surface,
             vec![settings_card_row(
-                "Agent notifications",
-                "Use macOS notifications only for meaningful Agent state transitions.",
+                &i18n::t("settings.terminal.agent_notifications"),
+                &i18n::t("settings.terminal.agent_notifications_detail"),
                 notifications_control,
             )],
         );
@@ -901,14 +936,17 @@ impl ShardlaneApp {
             })
             .into_any_element();
 
-        let up_to_date = format!(
-            "Up to date — running v{}; checked every {} h.",
-            env!("CARGO_PKG_VERSION"),
-            self.config.updates.interval_hours
-        );
+        let up_to_date = i18n::t_with(
+            "settings.behavior.updates.up_to_date",
+            &[
+                ("version", env!("CARGO_PKG_VERSION").to_string()),
+                ("hours", self.config.updates.interval_hours.to_string()),
+            ],
+        )
+        .to_string();
         // One factory for both the first download and a retry after failure;
         // both read the same recorded manifest.
-        let download_action = |id: &'static str, label: &'static str| {
+        let download_action = |id: &'static str, label: gpui::SharedString| {
             let manifest = crate::update_check::last_newer()?;
             let herdr = herdr.downgrade();
             Some(
@@ -922,7 +960,10 @@ impl ShardlaneApp {
                             Some(herdr.clone()),
                             app,
                         ) {
-                            crate::notifications::show("Update failed", &error);
+                            crate::notifications::show(
+                                &i18n::t("settings.behavior.updates.update_failed"),
+                                &error,
+                            );
                         }
                     })
                     .into_any_element(),
@@ -933,16 +974,17 @@ impl ShardlaneApp {
             if !crate::update_install::can_install() {
                 match crate::update_check::last_newer() {
                     Some(latest) => (
-                        format!(
-                            "Version {} is available — a dev build cannot update in place.",
-                            latest.version
-                        ),
+                        i18n::t_with(
+                            "settings.behavior.updates.available_dev",
+                            &[("version", latest.version.clone())],
+                        )
+                        .to_string(),
                         {
-                            let url = latest.url.clone();
+                            let url = latest.asset_for_current_platform().url;
                             Button::new("settings-updates-releases")
                                 .custom(content_button)
                                 .xsmall()
-                                .label("Releases")
+                                .label(i18n::t("settings.behavior.updates.releases"))
                                 .on_click(move |_, _, cx| {
                                     cx.open_url(&url);
                                 })
@@ -958,43 +1000,74 @@ impl ShardlaneApp {
                         downloaded_bytes,
                         total_bytes,
                     } => (
-                        format!(
-                            "Downloading v{} — {}.",
-                            version,
-                            crate::update_install::format_progress(downloaded_bytes, total_bytes)
-                        ),
+                        i18n::t_with(
+                            "settings.behavior.updates.downloading",
+                            &[
+                                ("version", version.clone()),
+                                (
+                                    "progress",
+                                    crate::update_install::format_progress(
+                                        downloaded_bytes,
+                                        total_bytes,
+                                    ),
+                                ),
+                            ],
+                        )
+                        .to_string(),
                         div().into_any_element(),
                     ),
-                    crate::update_install::InstallState::Ready { version } => {
-                        (format!("Version {version} is staged and verified."), {
+                    crate::update_install::InstallState::Ready { version } => (
+                        i18n::t_with(
+                            "settings.behavior.updates.ready",
+                            &[("version", version.clone())],
+                        )
+                        .to_string(),
+                        {
                             let herdr = herdr.downgrade();
                             Button::new("settings-updates-restart")
                                 .custom(content_button)
                                 .xsmall()
-                                .label("Update and Restart")
+                                .label(i18n::t("settings.behavior.updates.update_restart"))
                                 .on_click(move |_, _, app| {
                                     if let Err(error) = crate::update_install::install_and_restart()
                                     {
-                                        crate::notifications::show("Update failed", &error);
+                                        crate::notifications::show(
+                                            &i18n::t("settings.behavior.updates.update_failed"),
+                                            &error,
+                                        );
                                         if let Some(herdr) = herdr.upgrade() {
                                             herdr.update(app, |_, cx| cx.notify());
                                         }
                                     }
                                 })
                                 .into_any_element()
-                        })
-                    }
+                        },
+                    ),
                     crate::update_install::InstallState::Failed { version, error } => (
-                        format!("Update to v{version} failed: {error}."),
-                        download_action("settings-updates-retry", "Retry download")
-                            .unwrap_or_else(|| div().into_any_element()),
+                        i18n::t_with(
+                            "settings.behavior.updates.failed",
+                            &[("version", version.clone()), ("error", error.clone())],
+                        )
+                        .to_string(),
+                        download_action(
+                            "settings-updates-retry",
+                            i18n::t("settings.behavior.updates.retry_download"),
+                        )
+                        .unwrap_or_else(|| div().into_any_element()),
                     ),
                     crate::update_install::InstallState::Idle => {
                         match crate::update_check::last_newer() {
                             Some(latest) => (
-                                format!("Version {} is available.", latest.version),
-                                download_action("settings-updates-download", "Download update")
-                                    .unwrap_or_else(|| div().into_any_element()),
+                                i18n::t_with(
+                                    "settings.behavior.updates.available",
+                                    &[("version", latest.version.clone())],
+                                )
+                                .to_string(),
+                                download_action(
+                                    "settings-updates-download",
+                                    i18n::t("settings.behavior.updates.download_update"),
+                                )
+                                .unwrap_or_else(|| div().into_any_element()),
                             ),
                             None => (up_to_date, div().into_any_element()),
                         }
@@ -1006,16 +1079,20 @@ impl ShardlaneApp {
             surface,
             vec![
                 settings_card_row(
-                    "Check for updates",
-                    "Periodically compare against the GitHub release manifest (default: every 24 h).",
+                    &i18n::t("settings.behavior.updates.check"),
+                    &i18n::t("settings.behavior.updates.check_detail"),
                     updates_toggle,
                 ),
                 settings_card_row(
-                    "Download updates in the background",
-                    "When a check finds a newer release, download and verify it automatically so Update and Restart stays one click.",
+                    &i18n::t("settings.behavior.updates.auto_download"),
+                    &i18n::t("settings.behavior.updates.auto_download_detail"),
                     updates_auto_toggle,
                 ),
-                settings_card_row("Latest version", &updates_status_detail, updates_action),
+                settings_card_row(
+                    &i18n::t("settings.behavior.updates.latest"),
+                    &updates_status_detail,
+                    updates_action,
+                ),
             ],
         );
 
@@ -1030,32 +1107,38 @@ impl ShardlaneApp {
                 });
             })
             .into_any_element();
-        let window_card =
-            settings_card(
-                surface,
-                vec![settings_card_row(
-                "Opacity",
-                // Audit E23: annotate the default next to the current value.
-                &format!(
-                    "{:.0}% · default {:.0}%",
-                    opacity * 100.0,
-                    settings::WindowConfig::default().opacity * 100.0
+        let window_card = settings_card(
+            surface,
+            vec![
+                settings_card_row(
+                    &i18n::t("settings.window.opacity"),
+                    // Audit E23: annotate the default next to the current value.
+                    &i18n::t_with(
+                        "settings.window.opacity_detail",
+                        &[
+                            ("value", format!("{:.0}", opacity * 100.0)),
+                            (
+                                "default",
+                                format!("{:.0}", settings::WindowConfig::default().opacity * 100.0),
+                            ),
+                        ],
+                    ),
+                    Slider::new(&self.opacity_slider)
+                        .ml(px(8.0))
+                        .mr(px(8.0))
+                        .bg(content_theme.foreground.opacity(0.18))
+                        .text_color(content_theme.primary)
+                        .w(px(240.0))
+                        .max_w_full()
+                        .into_any_element(),
                 ),
-                Slider::new(&self.opacity_slider)
-                    .ml(px(8.0))
-                    .mr(px(8.0))
-                    .bg(content_theme.foreground.opacity(0.18))
-                    .text_color(content_theme.primary)
-                    .w(px(240.0))
-                    .max_w_full()
-                    .into_any_element(),
-            ),
-            settings_card_row(
-                "Always on Top",
-                "Keep the Shardlane window above all others. Same toggle as the Window menu.",
-                always_on_top_control,
-            )],
-            );
+                settings_card_row(
+                    &i18n::t("settings.window.always_on_top"),
+                    &i18n::t("settings.window.always_on_top_detail"),
+                    always_on_top_control,
+                ),
+            ],
+        );
 
         // Providers list/detail and source policy live in their own view module;
         // both surfaces consume the roster generation held by HistoryUiState.
@@ -1071,25 +1154,26 @@ impl ShardlaneApp {
             .lazygit_detection
             .as_ref()
             .map(|detection| match detection.compatibility {
-                crate::right_panel::lazygit::LazygitCompatibility::Supported => {
-                    format!("Supported — {}", detection.detail)
-                }
-                crate::right_panel::lazygit::LazygitCompatibility::Outdated => {
-                    format!(
-                        "Available without overlay — update recommended — {}",
-                        detection.detail
-                    )
-                }
+                crate::right_panel::lazygit::LazygitCompatibility::Supported => i18n::t_with(
+                    "settings.lazygit.supported",
+                    &[("detail", detection.detail.clone())],
+                )
+                .to_string(),
+                crate::right_panel::lazygit::LazygitCompatibility::Outdated => i18n::t_with(
+                    "settings.lazygit.outdated",
+                    &[("detail", detection.detail.clone())],
+                )
+                .to_string(),
                 crate::right_panel::lazygit::LazygitCompatibility::Missing => {
                     detection.detail.clone()
                 }
             })
-            .unwrap_or_else(|| "Detecting Lazygit…".to_string());
+            .unwrap_or_else(|| i18n::t("settings.lazygit.detecting").to_string());
         let lazygit_refresh_herdr = herdr.clone();
         let lazygit_refresh_control = Button::new("settings-lazygit-refresh")
             .custom(content_button)
             .xsmall()
-            .label("Refresh")
+            .label(i18n::t("settings.lazygit.refresh"))
             .on_click(move |_, _, app| {
                 lazygit_refresh_herdr.update(app, |this, cx| {
                     this.refresh_lazygit_detection(cx);
@@ -1098,10 +1182,22 @@ impl ShardlaneApp {
             .into_any_element();
         let lazygit_panel_herdr = herdr.clone();
         let lazygit_panel_control = Segmented::new("settings-lazygit-startup-panel", surface)
-            .option(crate::settings::LazygitStartupPanel::Status, "Status")
-            .option(crate::settings::LazygitStartupPanel::Branch, "Branch")
-            .option(crate::settings::LazygitStartupPanel::Log, "Log")
-            .option(crate::settings::LazygitStartupPanel::Stash, "Stash")
+            .option(
+                crate::settings::LazygitStartupPanel::Status,
+                i18n::t("settings.lazygit.panel_status"),
+            )
+            .option(
+                crate::settings::LazygitStartupPanel::Branch,
+                i18n::t("settings.lazygit.panel_branch"),
+            )
+            .option(
+                crate::settings::LazygitStartupPanel::Log,
+                i18n::t("settings.lazygit.panel_log"),
+            )
+            .option(
+                crate::settings::LazygitStartupPanel::Stash,
+                i18n::t("settings.lazygit.panel_stash"),
+            )
             .value(lazygit_config.startup_panel)
             .on_change(move |value, _, app| {
                 lazygit_panel_herdr.update(app, |this, cx| {
@@ -1116,9 +1212,18 @@ impl ShardlaneApp {
             .into_any_element();
         let lazygit_screen_herdr = herdr.clone();
         let lazygit_screen_control = Segmented::new("settings-lazygit-screen-mode", surface)
-            .option(crate::settings::LazygitScreenMode::Normal, "Normal")
-            .option(crate::settings::LazygitScreenMode::Half, "Half")
-            .option(crate::settings::LazygitScreenMode::Full, "Full")
+            .option(
+                crate::settings::LazygitScreenMode::Normal,
+                i18n::t("settings.lazygit.screen_normal"),
+            )
+            .option(
+                crate::settings::LazygitScreenMode::Half,
+                i18n::t("settings.lazygit.screen_half"),
+            )
+            .option(
+                crate::settings::LazygitScreenMode::Full,
+                i18n::t("settings.lazygit.screen_full"),
+            )
             .value(lazygit_config.screen_mode)
             .on_change(move |value, _, app| {
                 lazygit_screen_herdr.update(app, |this, cx| {
@@ -1221,13 +1326,13 @@ impl ShardlaneApp {
             surface,
             vec![
                 settings_card_row(
-                    "Lazygit CLI",
-                    "Shardlane resolves one executable and hosts it only while the Lazygit surface is visible.",
+                    &i18n::t("settings.lazygit.cli"),
+                    &i18n::t("settings.lazygit.cli_detail"),
                     lazygit_status_control,
                 ),
                 settings_card_row(
-                    "Executable",
-                    "Leave empty to use PATH, or enter an absolute executable path. Press Enter or leave the field to apply.",
+                    &i18n::t("settings.lazygit.executable"),
+                    &i18n::t("settings.lazygit.executable_detail"),
                     lazygit_executable_control,
                 ),
             ],
@@ -1236,13 +1341,13 @@ impl ShardlaneApp {
             surface,
             vec![
                 settings_card_row(
-                    "Startup panel",
-                    "The first Lazygit panel shown for a new Project session.",
+                    &i18n::t("settings.lazygit.startup_panel"),
+                    &i18n::t("settings.lazygit.startup_panel_detail"),
                     lazygit_panel_control,
                 ),
                 settings_card_row(
-                    "Screen mode",
-                    "Initial focused-panel size passed to Lazygit.",
+                    &i18n::t("settings.lazygit.screen_mode"),
+                    &i18n::t("settings.lazygit.screen_mode_detail"),
                     lazygit_screen_control,
                 ),
             ],
@@ -1251,13 +1356,13 @@ impl ShardlaneApp {
             surface,
             vec![
                 settings_card_row(
-                    "Mouse events",
-                    "Forward mouse input through the hosted PTY when Lazygit enables it.",
+                    &i18n::t("settings.lazygit.mouse_events"),
+                    &i18n::t("settings.lazygit.mouse_events_detail"),
                     lazygit_mouse_control,
                 ),
                 settings_card_row(
-                    "Side panel width",
-                    "Small overlay preference for narrow right-panel layouts.",
+                    &i18n::t("settings.lazygit.side_width"),
+                    &i18n::t("settings.lazygit.side_width_detail"),
                     lazygit_width_control,
                 ),
             ],
@@ -1265,8 +1370,8 @@ impl ShardlaneApp {
         let lazygit_git_card = settings_card(
             surface,
             vec![settings_card_row(
-                "Auto refresh",
-                "Keep Lazygit status updates enabled while the surface is visible.",
+                &i18n::t("settings.lazygit.auto_refresh"),
+                &i18n::t("settings.lazygit.auto_refresh_detail"),
                 lazygit_auto_refresh_control,
             )],
         );
@@ -1274,18 +1379,18 @@ impl ShardlaneApp {
             surface,
             vec![
                 settings_card_row(
-                    "Shardlane overlay",
-                    "Write a disposable runtime overlay for hosted presentation only; user and repository config files remain untouched.",
+                    &i18n::t("settings.lazygit.overlay"),
+                    &i18n::t("settings.lazygit.overlay_detail"),
                     lazygit_integration_control,
                 ),
                 settings_card_row(
-                    "Configuration ownership",
-                    "Lazygit keeps owning user and repository configuration. Shardlane only supplies the small runtime overlay when integration is enabled.",
+                    &i18n::t("settings.lazygit.config_ownership"),
+                    &i18n::t("settings.lazygit.config_ownership_detail"),
                     div()
                         .min_w_0()
                         .text_size(theme::FONT_META)
                         .text_color(content_theme.muted)
-                        .child("User + repository config precedence preserved")
+                        .child(i18n::t("settings.lazygit.precedence_note"))
                         .into_any_element(),
                 ),
             ],

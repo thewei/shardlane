@@ -4105,17 +4105,15 @@ fn main() {
                 if prefs.check_enabled {
                     let result = cx
                         .background_executor()
-                        .spawn(async {
-                            crate::update_check::check(env!("CARGO_PKG_VERSION"))
-                        })
+                        .spawn(async { crate::update_check::check(env!("CARGO_PKG_VERSION")) })
                         .await;
                     if let Ok(Some(manifest)) = result {
                         if crate::update_check::record_newer(manifest.clone()) {
                             crate::notifications::show(
-                                "Shardlane update available",
-                                &format!(
-                                    "Version {} is ready to download. Settings → Behavior has the link.",
-                                    manifest.version
+                                &i18n::t("settings.behavior.updates.available_title"),
+                                &i18n::t_with(
+                                    "settings.behavior.updates.available_body",
+                                    &[("version", manifest.version.clone())],
                                 ),
                             );
                         }
