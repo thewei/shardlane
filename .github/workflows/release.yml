@@ -1,5 +1,13 @@
 name: release
 
+# Multi-platform release pipeline (v0.1.17+): four build jobs produce the
+# per-platform archive + SHA-256 pairs, then one publish job assembles the
+# GitHub release and the backward-compatible multi-platform latest.json.
+# Merge gate: the windows job's live-herdr socket verification must pass
+# before any tag publishes.
+#
+# [PROTOCOL]: Update .github/CLAUDE.md on change, then check /CLAUDE.md.
+
 on:
   push:
     tags:
@@ -12,7 +20,7 @@ jobs:
   macos-aarch64:
     runs-on: macos-15
     env:
-      ARM_TARGET: aarch64-apple-darwin
+      TARGET: aarch64-apple-darwin
     steps:
       - uses: actions/checkout@v7
 
@@ -27,11 +35,11 @@ jobs:
         run: cargo install cargo-bundle --version 0.11.0 --locked
 
       - name: Build, sign, and verify release app bundle
-        run: scripts/package-macos.sh --release --target "$ARM_TARGET"
+        run: scripts/package-macos.sh --release --target "$TARGET"
 
       - name: Verify app bundle
         run: |
-          APP="target/$ARM_TARGET/release/bundle/osx/Shardlane.app"
+          APP="target/$TARGET/release/bundle/osx/Shardlane.app"
           test -d "$APP/Contents/MacOS"
           test -x "$APP/Contents/MacOS/shardlane"
           ARCHS="$(lipo -archs "$APP/Contents/MacOS/shardlane")"
@@ -50,38 +58,173 @@ jobs:
 
       - name: Create ad-hoc ZIP and SHA-256 checksum
         run: |
-          APP="target/$ARM_TARGET/release/bundle/osx/Shardlane.app"
-          scripts/archive-macos.sh \
-            --app "$APP" \
-            --output-dir dist \
-            --architecture aarch64
+          APP="target/$TARGET/release/bundle/osx/Shardlane.app"
+          scripts/archive-macos.sh +            --app "$APP" +            --output-dir dist +            --architecture aarch64
 
-      - name: Publish GitHub release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-macos-aarch64
+          path: dist/*
+          if-no-files-found: error
+
+  macos-x86_64:
+    runs-on: macos-15
+    env:
+      TARGET: x86_64-apple-darwin
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-apple-darwin
+
+      - name: Configure macOS SDK
+        run: echo "SDKROOT=$(xcrun --show-sdk-path)" >> "$GITHUB_ENV"
+
+      - name: Install macOS bundler
+        run: cargo install cargo-bundle --version 0.11.0 --locked
+
+      - name: Build, sign, and verify release app bundle
+        run: scripts/package-macos.sh --release --target "$TARGET"
+
+      - name: Verify app bundle
+        run: |
+          APP="target/$TARGET/release/bundle/osx/Shardlane.app"
+          test -d "$APP/Contents/MacOS"
+          test -x "$APP/Contents/MacOS/shardlane"
+          ARCHS="$(lipo -archs "$APP/Contents/MacOS/shardlane")"
+          [[ "$ARCHS" == "x86_64" ]] || exit 1
+          plutil -lint "$APP/Contents/Info.plist"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+
+      - name: Create ad-hoc ZIP and SHA-256 checksum
+        run: |
+          APP="target/$TARGET/release/bundle/osx/Shardlane.app"
+          scripts/archive-macos.sh +            --app "$APP" +            --output-dir dist +            --architecture x86_64
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-macos-x86_64
+          path: dist/*
+          if-no-files-found: error
+
+  linux-x86_64:
+    runs-on: ubuntu-24.04
+    env:
+      TARGET: x86_64-unknown-linux-gnu
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-gnu
+
+      - name: Install link-time runtime headers
+        run: sudo apt-get update && sudo apt-get install -y libwayland-dev libxkbcommon-dev libvulkan-dev
+
+      - name: Build release binary
+        run: cargo build --locked --release --target "$TARGET" --bin shardlane
+
+      - name: Package tar.gz + SHA-256
+        run: scripts/package-linux.sh --target "$TARGET"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-linux-x86_64
+          path: dist/*
+          if-no-files-found: error
+
+  windows-x86_64:
+    runs-on: windows-2025
+    env:
+      TARGET: x86_64-pc-windows-msvc
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Build release binary
+        run: cargo build --locked --release --target $env:TARGET --bin shardlane
+
+      - name: Verify client socket discovery against live herdr (merge gate)
+        shell: pwsh
+        run: |
+          irm https://herdr.dev/install.ps1 | iex
+          herdr --version
+          # Start the default server; herdr binds its named pipe on boot.
+          $server = Start-Process -FilePath "herdr" -ArgumentList "server" -PassThru -WindowStyle Hidden
+          try {
+            $deadline = (Get-Date).AddSeconds(30)
+            $expected = '\\.\pipe\herdr\herdr.sock'
+            $found = $null
+            while ((Get-Date) -lt $deadline -and -not $found) {
+              $pipes = [System.IO.Directory]::GetFiles('\\.\pipe\') | Where-Object { $_ -like '*herdr*' }
+              $found = $pipes | Select-Object -First 1
+              if (-not $found) { Start-Sleep -Milliseconds 300 }
+            }
+            if (-not $found) { Write-Host "::error::live herdr did not bind a named pipe within 30s"; exit 1 }
+            Write-Host "live herdr pipe: $found"
+            if ($found -ne $expected) {
+              Write-Host "::error::pipe convention drifted: client expects $expected, live herdr binds $found"
+              exit 1
+            }
+          } finally {
+            if ($server -and -not $server.HasExited) { Stop-Process -Id $server.Id -Force -ErrorAction SilentlyContinue }
+          }
+
+      - name: Run herdr client-side unit tests
+        run: "cargo test --locked -p shardlane-host --lib herdr:: --target $env:TARGET"
+
+      - name: Package zip + SHA-256
+        shell: pwsh
+        run: scripts/package-windows.ps1 -Target $env:TARGET
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-windows-x86_64
+          path: dist/*
+          if-no-files-found: error
+
+  publish:
+    needs: [macos-aarch64, macos-x86_64, linux-x86_64, windows-x86_64]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Collect archives
+        run: |
+          mkdir -p dist
+          find artifacts -type f -exec cp {} dist/ ;
+          ls -la dist/
+
+      - name: Publish GitHub release with multi-platform manifest
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          ARCHIVE="$(find dist -maxdepth 1 -type f -name '*.zip' -print -quit)"
-          CHECKSUM="$ARCHIVE.sha256"
-          test -n "$ARCHIVE"
-          test -f "$CHECKSUM"
-          if ! gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release create "$GITHUB_REF_NAME" \
-              --verify-tag \
-              --generate-notes \
-              --notes "macOS Apple Silicon (arm64) artifact: ad-hoc signed and not notarized. Verify the ZIP with the accompanying SHA-256 file; first launch on another Mac requires explicit user approval."
-          fi
-          gh release upload "$GITHUB_REF_NAME" \
-            "$ARCHIVE" \
-            "$CHECKSUM" \
-            --clobber
-          # Update manifest for the client's periodic check: it fetches this
-          # file through the releases/latest/download permalink, so the newest
-          # release always carries the freshest copy.
+          TAG="${GITHUB_REF_NAME}"
           VERSION="${GITHUB_REF_NAME#v}"
-          ASSET_NAME="$(basename "$ARCHIVE")"
-          printf '{\n  "version": "%s",\n  "url": "https://github.com/%s/releases/download/%s/%s",\n  "notes_url": "https://github.com/%s/releases/tag/%s"\n}\n' \
-            "$VERSION" "$GITHUB_REPOSITORY" "$GITHUB_REF_NAME" "$ASSET_NAME" "$GITHUB_REPOSITORY" "$GITHUB_REF_NAME" \
-            > latest.json
+          REPO="${GITHUB_REPOSITORY}"
+          NOTES_URL="https://github.com/$REPO/releases/tag/$TAG"
+          permalink() { printf 'https://github.com/%s/releases/download/%s/%s' "$REPO" "$TAG" "$1"; }
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --verify-tag --generate-notes \
+              --notes "macOS archives are ad-hoc signed (not notarized): verify the SHA-256 file and approve the first launch. Linux ships as a tar.gz with runtime requirements in the README. Windows ships as a zip."
+          fi
+          gh release upload "$TAG" dist/* --clobber
+          jq -n \
+            --arg version "$VERSION" \
+            --arg arm64 "$(permalink Shardlane-macos-aarch64.zip)" \
+            --arg x64 "$(permalink Shardlane-macos-x86_64.zip)" \
+            --arg lin64 "$(permalink Shardlane-linux-x86_64.tar.gz)" \
+            --arg win64 "$(permalink Shardlane-windows-x86_64.zip)" \
+            --arg notes_url "$NOTES_URL" \
+            '{version: $version, url: $arm64, notes_url: $notes_url, platforms: {"darwin-arm64": {archive: "Shardlane-macos-aarch64.zip", sha256: "Shardlane-macos-aarch64.zip.sha256", url: $arm64}, "darwin-x86_64": {archive: "Shardlane-macos-x86_64.zip", sha256: "Shardlane-macos-x86_64.zip.sha256", url: $x64}, "linux-x86_64": {archive: "Shardlane-linux-x86_64.tar.gz", sha256: "Shardlane-linux-x86_64.tar.gz.sha256", url: $lin64}, "windows-x86_64": {archive: "Shardlane-windows-x86_64.zip", sha256: "Shardlane-windows-x86_64.zip.sha256", url: $win64}}}' > latest.json
           python3 -m json.tool latest.json > /dev/null
-          gh release upload "$GITHUB_REF_NAME" latest.json --clobber
+          gh release upload "$TAG" latest.json --clobber

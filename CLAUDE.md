@@ -23,13 +23,17 @@ README.md - developer setup, run, checks, packaging, and product scope
 THIRD_PARTY_NOTICES.md - required notices for third-party material only
 scripts/package-macos.sh - reproducible macOS build/sign/verify/install entrypoint
 scripts/release-macos.sh - one-click release: gates + Mobile Web + install + dist archive
+scripts/vendor-ghostty-vt.sh - ABI-gated producer of per-target vendored libghostty-vt archives
+scripts/package-linux.sh - Linux release tar.gz packaging entrypoint
+scripts/package-windows.ps1 - Windows release zip packaging entrypoint
+.github/workflows/vendor-ghostty-vt.yml - dispatch producer for the four vendored archives
 scripts/archive-macos.sh - reproducible macOS app ZIP/checksum entrypoint
 docs/macos-packaging-and-development.md - packaging, Mobile Web composition, and debug runbook
 docs/client-product-architecture.md - unique architecture source of truth
 docs/ui-acceptance-testing.md - isolated real-app acceptance, Computer Use MCP, native fallback, and ground-truth evidence
 scripts/acceptance-capabilities.py + scripts/acceptance/ - no-GUI capability inventory, MCP probe, and composable backend assertions
 .github/workflows/checks.yml - macOS CI gates plus no-GUI UI acceptance/unit preflight
-.github/workflows/release.yml - arm64 macOS release archives published on v* tags
+.github/workflows/release.yml - four-target release matrix (macOS arm64/x86_64, Linux x86_64, Windows x86_64) + multi-platform latest.json published on v* tags
 .github/workflows/pages.yml - GitHub Pages deployment for site/
 .agents/skills/herdr-client-development/SKILL.md - Shardlane engineering workflow
 .agents/skills/ui-acceptance-testing/SKILL.md - reusable UI acceptance driver/isolation/evidence workflow
