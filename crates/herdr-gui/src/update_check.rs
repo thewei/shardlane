@@ -2,7 +2,9 @@
 //!
 //! The release workflow uploads a small update manifest (latest.json) as a
 //! release asset on every tag; this module fetches it through the stable
-//! releases/latest/download permalink, compares it against the running
+//! releases/latest/download permalink, selects the running platform asset
+//! from the optional platforms map (legacy flat-url fallback), compares it
+//! against the running
 //! CARGO_PKG_VERSION, and records the result for the Settings card. All
 //! transport is curl (system binary, bounded timeout) so the GUI crate keeps
 //! zero HTTP-client dependencies.
@@ -18,6 +20,7 @@
 //! [PROTOCOL]: Update this header on change, then check CLAUDE.md.
 
 use serde::Deserialize;
+use std::collections::BTreeMap;
 use std::process::Command;
 use std::sync::Mutex;
 use std::time::Duration;
@@ -26,13 +29,62 @@ use std::time::Duration;
 const DEFAULT_MANIFEST_URL: &str =
     "https://github.com/thewei/shardlane/releases/latest/download/latest.json";
 
+/// Stable platform keys shared with site/downloads.html and the release
+/// workflow's latest.json platforms map. `unsupported` falls back to the
+/// manifest's top-level url (the macOS arm64 permalink).
+pub fn platform_key() -> &'static str {
+    match (std::env::consts::OS, std::env::consts::ARCH) {
+        ("macos", "aarch64") => "darwin-arm64",
+        ("macos", "x86_64") => "darwin-x86_64",
+        ("linux", "x86_64") => "linux-x86_64",
+        ("windows", "x86_64") => "windows-x86_64",
+        _ => "unsupported",
+    }
+}
+
+/// One platform's downloadable asset in the multi-platform manifest.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+pub struct PlatformAsset {
+    pub archive: String,
+    #[serde(default)]
+    pub sha256: String,
+    pub url: String,
+}
+
 /// Update manifest published by the release workflow on every tag.
+///
+/// Backward compatible by contract: the top-level `url` stays the macOS
+/// arm64 permalink (0.1.16 clients parse only those fields), while newer
+/// clients prefer the `platforms` entry for the running target and fall
+/// back to the top-level url when the key is missing.
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
 pub struct UpdateManifest {
     pub version: String,
     pub url: String,
     #[serde(default)]
     pub notes_url: Option<String>,
+    #[serde(default)]
+    pub platforms: BTreeMap<String, PlatformAsset>,
+}
+
+impl UpdateManifest {
+    /// The asset for the running platform, with legacy fallback to the flat
+    /// top-level url so a partially written manifest still resolves.
+    pub fn asset_for_current_platform(&self) -> PlatformAsset {
+        if let Some(asset) = self.platforms.get(platform_key()) {
+            return asset.clone();
+        }
+        PlatformAsset {
+            archive: self
+                .url
+                .rsplit('/')
+                .next()
+                .unwrap_or("Shardlane-macos-aarch64.zip")
+                .to_string(),
+            sha256: String::new(),
+            url: self.url.clone(),
+        }
+    }
 }
 
 /// The manifest URL: SHARDLANE_UPDATE_MANIFEST_URL override (isolated tests /
@@ -190,6 +242,7 @@ mod tests {
         clear_newer();
         let manifest = UpdateManifest {
             version: "9.9.9".into(),
+            platforms: BTreeMap::new(),
             url: "https://example.com/Shardlane.zip".into(),
             notes_url: None,
         };
@@ -201,10 +254,41 @@ mod tests {
         // A different version notifies again.
         let next = UpdateManifest {
             version: "9.9.10".into(),
+            platforms: BTreeMap::new(),
             url: "https://example.com/Shardlane.zip".into(),
             notes_url: None,
         };
         assert!(record_newer(next));
         clear_newer();
+    }
+
+    #[test]
+    fn platforms_select_the_running_target_with_legacy_fallback() {
+        let manifest: UpdateManifest = serde_json::from_str(
+            r#"{"version":"0.1.17","url":"https://e.com/a.zip","platforms":{"linux-x86_64":{"archive":"linux.tar.gz","sha256":"abc","url":"https://e.com/t.gz"}}}"#,
+        )
+        .unwrap();
+        if platform_key() == "linux-x86_64" {
+            assert_eq!(
+                manifest.asset_for_current_platform().archive,
+                "linux.tar.gz"
+            );
+        }
+        // A missing key falls back to the flat top-level url (0.1.16 shape).
+        let legacy: UpdateManifest =
+            serde_json::from_str(r#"{"version":"0.1.17","url":"https://e.com/a.zip"}"#).unwrap();
+        let asset = legacy.asset_for_current_platform();
+        assert_eq!(asset.url, "https://e.com/a.zip");
+        assert_eq!(asset.archive, "a.zip");
+        assert_eq!(
+            platform_key(),
+            match (std::env::consts::OS, std::env::consts::ARCH) {
+                ("macos", "aarch64") => "darwin-arm64",
+                ("macos", "x86_64") => "darwin-x86_64",
+                ("linux", "x86_64") => "linux-x86_64",
+                ("windows", "x86_64") => "windows-x86_64",
+                _ => "unsupported",
+            }
+        );
     }
 }

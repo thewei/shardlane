@@ -115,7 +115,9 @@ pub fn running_bundle() -> Option<PathBuf> {
 }
 
 pub fn can_install() -> bool {
-    running_bundle().is_some()
+    // Staged install is a macOS .app swap by contract; other platforms
+    // surface the platform-matched release asset / downloads page instead.
+    cfg!(target_os = "macos") && running_bundle().is_some()
 }
 
 fn running_executable_name() -> Option<std::ffi::OsString> {
@@ -272,7 +274,8 @@ pub fn begin_staged_download(
     if safe_version(&manifest.version).is_none() {
         return Err("manifest version is not a safe path component".into());
     }
-    let total_bytes = content_length(&manifest.url);
+    let asset = manifest.asset_for_current_platform();
+    let total_bytes = content_length(&asset.url);
     set_state(InstallState::Downloading {
         version: manifest.version.clone(),
         downloaded_bytes: 0,
@@ -284,11 +287,17 @@ pub fn begin_staged_download(
         let outcome = download_pipeline(manifest, base, total_bytes, generation, cx).await;
         match outcome {
             Ok(()) => {
-                set_state_if_current(generation, InstallState::Ready { version: version.clone() });
+                set_state_if_current(
+                    generation,
+                    InstallState::Ready {
+                        version: version.clone(),
+                    },
+                );
                 crate::notifications::show(
-                    "Shardlane update staged",
-                    &format!(
-                        "Version {version} is verified and ready. Settings -> Behavior -> Update and Restart."
+                    &crate::i18n::t("settings.behavior.updates.staged_title"),
+                    &crate::i18n::t_with(
+                        "settings.behavior.updates.staged_body",
+                        &[("version", version)],
                     ),
                 );
             }
@@ -310,9 +319,10 @@ async fn download_pipeline(
     cx: &mut AsyncApp,
 ) -> Result<(), String> {
     let version_dir = base.join(&manifest.version);
+    let asset = manifest.asset_for_current_platform();
     let zip_path = version_dir
-        .join(archive_name_from_url(&manifest.url).ok_or("manifest URL has no archive name")?);
-    let url = manifest.url.clone();
+        .join(archive_name_from_url(&asset.url).ok_or("manifest URL has no archive name")?);
+    let url = asset.url;
     let version = manifest.version.clone();
 
     // 1. Reset this version's staging area (bounded to our own directory).
