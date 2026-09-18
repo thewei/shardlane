@@ -25,8 +25,8 @@ Herdr technical names are not branding leftovers. Real Herdr APIs, protocol meth
 
 Shardlane owns:
 
-- **Workspaces**, the ordered/color-coded client contexts that group Projects;
-- **Project metadata persistence**: project-to-workspace assignment (`project_paths`), manual path overrides (`project_path_overrides`), and project display preferences. This metadata is the client-side source of truth for how Projects are organized, independent of Herdr runtime lifecycle;
+- the product view of **Workspaces**: one Workspace is one live Herdr instance (a named session) enumerated from `herdr session list` — there is no Shardlane-side workspace registry, only per-session display-name overrides;
+- Project organization inside an instance, derived live from Herdr runtime state through `build_project_index` — Shardlane persists no project-to-workspace assignment;
 - native macOS presentation and navigation;
 - transient pointer/selection/IME/menu state;
 - local appearance and interaction preferences;
@@ -45,182 +45,43 @@ Shardlane must never become a second runtime authority.
 
 **Approved Next (2026-08-30) — Same-Session / Dual-Surface Chat interactions.** Terminal View and Chat View are two product surfaces over the **same Herdr-owned live Agent session**. The native Provider CLI/TUI remains running inside Herdr. Conversation read projection combines the existing read-only transcript/live decoder, narrow Provider hook/plugin/extension events, and Herdr's exact Agent/session/lifecycle state. Ordinary Chat Composer messages continue through the canonical Host Conversation transaction and Herdr `agent.prompt`; a question/approval that belongs to the current in-flight turn is a separate Host-owned `ConversationInteraction` and may be resolved only through an exact Provider hook/plugin response bridge. `blocked` must never be answered by converting the choice into a generic prompt or guessed PTY keys. Companion Shardlane hooks/plugins must coexist with Herdr integrations and must not steal lifecycle authority from Herdr. Provider-native App Server/RPC/native server transports are optional only after a measured **Same-Session Gate** proves one Agent core/session, single-writer ownership, retained native TUI, safe fallback, and acceptable performance. **ACP is explicitly frozen as of 2026-08-30: no ACP dependency, adapter, client/server/proxy, capability field, Host DTO, feature flag, or preparatory runtime code may be added until a later explicit product decision unfreezes it. Passing the Same-Session Gate does not itself authorize ACP work.** The decision/evidence/execution set for this direction is maintained in the internal engineering archive (not published).
 
-### Gradual data ownership evolution (approved direction)
+### Multi-instance model (current — 2026-09-01 no-registry revision)
 
-**Core principle**: Shardlane persists project/workspace organizational metadata as the stable source of truth. Herdr remains the sole session/runtime authority (PTY, process, scrollback, tabs, panes).
+A **Workspace is one live Herdr instance** (a named Herdr session). There is
+no Shardlane-side workspace registry: instances are enumerated live from
+`herdr session list` (`shardlane_host::herdr::list_sessions`), and Herdr own
+persistence (`session.json`) restores workspaces, tabs, and per-Tab cwd
+across server restarts.
 
-#### Current state (Phase 0 — as-built)
+- One Workspace is displayed per window. Each window owns its Herdr client,
+  runtime state, and hosted TUI child for its bound instance
+  (`bind_instance` / `open_or_jump_project` in `main.rs`); switching
+  Workspaces rebinds the window or jumps to that Workspace existing window.
 
-```text
-┌────────────────────────────────────────────────────────────────────┐
-│                        Shardlane (client)                          │
-│                                                                    │
-│  config.json                                                       │
-│  ┌──────────────────────────────────────────────────────────────┐  │
-│  │ workspaces: [                                                │  │
-│  │   { id, name, color, project_paths: ["/path/a", "/path/b"] }│  │
-│  │ ]                                                            │  │
-│  │ project_path_overrides: { "runtime-ws-id" → "/manual/path" }│  │
-│  └──────────────────────────────────────────────────────────────┘  │
-│                                                                    │
-│  ProjectIndex (disposable, rebuilt on every render cycle)          │
-│  ┌──────────────────────────────────────────────────────────────┐  │
-│  │ Merges: Herdr runtime workspaces                             │  │
-│  │       + Script registry project_paths                          │  │
-│  │       + path_overrides                                       │  │
-│  │ Produces: ProjectProjection[] with key, label, path, tabs,   │  │
-│  │           panes, agents, scripts                               │  │
-│  └──────────────────────────────────────────────────────────────┘  │
-│                                                                    │
-│  Workspace resolution pipeline:                                    │
-│  1. active_client_workspace_runtime_ids_with_overrides()           │
-│     ↳ Determines which Herdr runtime workspace IDs belong to the  │
-│       currently active Shardlane Workspace                         │
-│  2. visible_sidebar_projects()                                     │
-│     ↳ Produces VisibleSidebarProject[] for the active workspace    │
-│  3. project_owner_workspace_id_for_config()                        │
-│     ↳ Given a path, finds which Shardlane Workspace owns it       │
-│                                                                    │
-└────────────────────────────────────────────────────────────────────┘
-                            │ socket RPC
-                            ▼
-┌────────────────────────────────────────────────────────────────────┐
-│                        Herdr (runtime)                             │
-│                                                                    │
-│  workspace.list → [{workspace_id, cwd?, label?, agent_status?}]   │
-│  tab.list      → [{tab_id, workspace_id?, title?}]                │
-│  pane.list     → [{pane_id, workspace_id?, cwd?, ...}]            │
-│  agent.list    → [{terminal_id, workspace_id?, cwd?, state?}]     │
-│  events stream → workspace.created, pane.updated, agent.updated…  │
-│                                                                    │
-│  Session truth: PTY lifecycle, scrollback, process PID, terminal   │
-│  control channels, pane layout, tab ordering                       │
-│                                                                    │
-└────────────────────────────────────────────────────────────────────┘
-```
+- Shardlane persists only cosmetics and window bookkeeping: per-session
+  display-name overrides (stored as `workspace.json` inside Herdr's own
+  session directory so the name travels with the session), the machine list
+  (`settings.devices`, local-seeded; SSH socket bridging lives in
+  `ssh_bridge.rs`), and the open-window snapshot (`settings.open_workspaces`)
+  used for launch restore.
 
-#### Reconciliation algorithm (current)
+- Projects, Tabs, Panes, and every Tab cwd inside an instance belong to
+  Herdr. Renaming a Workspace writes only the display-name override;
+  instances are created, stopped, and deleted through the Herdr session CLI,
+  never behind it. Project paths resolve exclusively through
+  `build_project_index` (`workspace_model.rs` feeding
+  `shardlane_host::project_index`).
 
-When Shardlane connects/reconnects or receives events:
+- The legacy client-side Workspace grouping machinery — the
+  `config.workspaces` registry, `project_path_overrides`, the dormant-project
+  policy, the sidebar/status-bar switchers, and the `workspace.N` shortcuts —
+  was deleted on 2026-09-01 and must not be reintroduced.
 
-```text
-On bootstrap / reconnect:
-  1. Fetch workspace.list, tab.list, pane.list, agent.list from Herdr
-  2. Rebuild ProjectIndex from runtime state + ScriptRegistry
-  3. For each runtime workspace:
-     a. Resolve effective_path = path_overrides[runtime_id] ?? runtime.cwd ?? pane.cwd
-     b. Match effective_path against WorkspaceConfig.project_paths
-     c. Unmatched → falls to first (Default) WorkspaceConfig
-  4. Filter by active_workspace → visible projects
-
-On Herdr runtime workspace created:
-  - New runtime workspace auto-appears in Default workspace (no explicit path)
-  - User can "Move to Workspace" or "Set Project Path" to assign it
-
-On Herdr runtime workspace deleted:
-  - ProjectIndex rebuild removes it from live projection
-  - WorkspaceConfig.project_paths entries remain (orphaned but harmless)
-  - path_overrides entry remains until user clears it
-  - No active disruption: project simply disappears from sidebar
-
-On reconnect after crash:
-  - Herdr may have different runtime workspace IDs (not stable across restarts)
-  - Shardlane's project_paths are path-based, not ID-based → survive runtime changes
-  - path_overrides are ID-based → may become stale (handled: stale overrides are harmless)
-```
-
-#### Edge cases and invariants
-
-| Scenario | Behavior |
-|----------|----------|
-| Two runtime workspaces share same path | Both appear in same Shardlane Workspace; distinct sidebar rows |
-| User sets override path to match another workspace's path | Both runtime workspaces appear in the owner workspace |
-| Herdr workspace's cwd changes at runtime | Next ProjectIndex rebuild picks up new path; may shift workspace |
-| User deletes a workspace that owns projects | Projects fall back to Default; config.project_paths cleared |
-| Config file manually edited externally | File watcher detects change, triggers reload and re-render |
-| Herdr disconnects | Sidebar shows stale cached ProjectIndex; reconnect triggers full rebuild |
-
-#### Phase 1 — Orphan cleanup and path stability (next)
-
-**Goal**: Prevent "ghost" projects and make workspace assignment deterministic after Herdr restarts.
-
-Steps:
-1. On reconnect, sweep `project_path_overrides`: remove entries whose `runtime_workspace_id` no longer exists in `workspace.list` AND whose path is not in any `WorkspaceConfig.project_paths`.
-2. On reconnect, sweep `WorkspaceConfig.project_paths`: for each path, if no runtime workspace resolves to it AND no override points to it, mark it as "dormant" (keep in config, hide from sidebar unless user shows archived projects).
-3. Add `last_seen_at_ms` to config path entries for garbage-collection heuristics.
-
-Verification: unit tests for sweep logic; manual smoke: kill Herdr, restart with different workspace IDs, confirm sidebar stabilizes.
-
-#### Phase 2 — Session restore intent (future, pending Herdr API)
-
-**Goal**: When Herdr restarts fresh, Shardlane can recreate runtime workspaces from its persistent config.
-
-Prerequisites:
-- Herdr `workspace.create(cwd)` API stable and idempotent
-- Herdr `tab.create(workspace_id)` API available
-- Clear semantics for "create workspace with specific cwd" vs "reattach to existing"
-
-Steps:
-1. On connect, if Shardlane has `WorkspaceConfig.project_paths` entries that have no matching runtime workspace:
-   a. Prompt user: "Restore sessions for [path1, path2]?" (or auto-restore based on preference)
-   b. Call `workspace.create(cwd=path)` for each
-   c. Store new `runtime_workspace_id` in `path_overrides` for immediate correlation
-2. Respect `one_shot` Scripts and restore them if configured
-
-Verification: integration test with mock Herdr; manual smoke: fresh Herdr instance + existing config.
-
-#### Phase 3 — Full Shardlane-primary model (long-term)
-
-**Goal**: Shardlane defines the project catalog; Herdr sessions are ephemeral materializations.
-
-```text
-┌──────────────────────────────────────────────────────────────┐
-│                    Shardlane (primary)                        │
-│                                                              │
-│  Project Registry (persistent)                               │
-│  ┌────────────────────────────────────────────────────────┐  │
-│  │ projects: [                                            │  │
-│  │   { id, name, path, workspace_id, icon?,               │  │
-│  │     session_intent: { auto_start, shell, env } }       │  │
-│  │ ]                                                      │  │
-│  └────────────────────────────────────────────────────────┘  │
-│                                                              │
-│  Session Manager                                             │
-│  ┌────────────────────────────────────────────────────────┐  │
-│  │ For each Project with session_intent:                  │  │
-│  │   if materialized → track runtime_workspace_id         │  │
-│  │   if not materialized → create on demand via Herdr API │  │
-│  │   if runtime disappears → mark as suspended            │  │
-│  └────────────────────────────────────────────────────────┘  │
-│                                                              │
-└──────────────────────────────────────────────────────────────┘
-                            │
-                            ▼
-┌──────────────────────────────────────────────────────────────┐
-│              Herdr (ephemeral session runtime)                │
-│  Creates/destroys sessions on Shardlane's request            │
-│  Still owns: PTY, process, scrollback, pane layout           │
-└──────────────────────────────────────────────────────────────┘
-```
-
-This phase requires significant Herdr protocol evolution and is explicitly deferred.
-
-#### Migration safety rules
-
-- Each phase is independently mergeable; the system is usable if any future phase never ships.
-- Phase 0 (current) is the production baseline; no regression from today's behavior.
-- Config schema changes use `version` field and additive-only fields with `#[serde(default)]`.
-- `project_path_overrides` keyed by runtime ID are inherently ephemeral; code must tolerate stale entries gracefully (filter, ignore, eventually GC — never crash).
-- Path normalization uses the cached `normalized_project_path()` function; equality checks use `project_paths_match()` which handles trailing slashes, canonicalization, and case sensitivity.
-
-#### Herdr change detection (sync resilience)
-
-Shardlane cannot assume Herdr state is stable between event-stream reconnects. Defensive behaviors:
-
-1. **Full rebuild on reconnect**: `visible_state()` after event-stream reconnection triggers a complete `ProjectIndex::build()` and sidebar re-render.
-2. **No runtime ID persistence for display**: Sidebar renders from `ProjectIndex` rebuilt per frame; stale runtime IDs in `path_overrides` are filtered out gracefully.
-3. **Event-driven incremental updates**: `workspace.created`, `workspace.deleted`, `pane.updated` patch the in-memory `HerdrState` and trigger incremental sidebar notifications without full `visible_state()` calls.
-4. **Graceful degradation**: If Herdr is unreachable, the sidebar shows "Reconnecting" state; no workspace management operations crash; config saves continue to work for offline changes.
+Reconnect behavior stays defensive: event-stream reconnection triggers a full
+`visible_state()` rebuild of the disposable `ProjectIndex`; runtime events
+patch the in-memory `HerdrState` incrementally without full snapshots; and an
+unreachable Herdr degrades the Sidebar to a reconnecting state without
+crashing workspace management or blocking config saves.
 
 ## 2. Non-goals
 
@@ -260,22 +121,27 @@ Custom code must have a concrete reason to exist: missing API, incompatible ABI,
 
 ## 4. Workspace and Project model
 
-Shardlane adds one client-owned grouping layer above the Herdr runtime without duplicating runtime authority:
+Shardlane projects one window onto one Herdr instance without duplicating runtime authority:
 
 ```text
-Shardlane Workspace
-  └─ Project  ← projection of one Herdr runtime workspace
-      ├─ Tab
-      │   └─ Pane
-      ├─ Script
-      ├─ Agent
-      └─ History Conversation
+Shardlane window
+  └─ Workspace = one live Herdr instance (named session)
+      └─ Project ← projection of one Herdr runtime workspace
+          ├─ Tab
+          │   └─ Pane
+          ├─ Script
+          ├─ Agent
+          └─ History Conversation
 ```
 
-A **Workspace** is a Shardlane-owned context. It has client-owned identity, name, order, color, active state, and Project membership. Deleting or reordering a Workspace must never close or delete a Herdr runtime resource. Exactly one Workspace is active; when only one exists the compact Workspace switcher is hidden.
+A **Workspace** is the product view of one Herdr instance. Identity, order,
+tabs, panes, process lifecycle, and persistence belong to the runtime;
+Shardlane adds only a per-session display-name override. Workspaces are
+enumerated live (there is no client-side registry), and exactly one Workspace
+is bound per window; switching rebinds the window or jumps to the existing
+window for that instance.
 
-A **Project** is the user-facing projection of a Herdr runtime workspace. Herdr's real `Workspace` type, `workspace_id`, `workspace.*` protocol methods, and runtime events remain technically named Workspace at the integration boundary. Shardlane code above that boundary uses Project terminology whenever it describes the product/domain concept. `ProjectIndex` is a disposable derived index that correlates runtime workspace identity, project path, Tabs, Panes, Agents, and Scripts; it is not a second source of truth.
-
+A **Project** is the user-facing projection of a Herdr runtime workspace. Herdr real `Workspace` type, `workspace_id`, `workspace.*` protocol methods, and runtime events remain technically named Workspace at the integration boundary. Shardlane code above that boundary uses Project terminology whenever it describes the product/domain concept. `ProjectIndex` is a disposable derived index that correlates runtime workspace identity, project path, Tabs, Panes, Agents, and Scripts; it is not a second source of truth.
 Current projection policy:
 
 - all Herdr runtime workspaces are projected as lightweight **Project** Sidebar/search metadata;
@@ -409,7 +275,7 @@ files or creates a second runtime authority.
 
 History presentation bounds how many variable-height transcript messages it constructs at once, and replaceable source/page work is cancelled when selection changes. Very large sources use a Shardlane-owned disposable **page-addressable** transcript cache keyed by direct session identity plus source agent/native id/path/mtime/size. The cache stores normalized transcript metadata, fixed message pages, and a `seq → message_index` lookup so History/search-target navigation can load only the current bounded window. `HistoryUiState` must not retain an entire cached transcript after selection. The former whole-transcript blob is legacy-read-only and may only be consumed once for migration into page cache; new cache writes do not duplicate a full blob. Changed sources are prewarmed during the same background adapter parse already required for scanner/FTS indexing, so Shardlane must not parse a newly indexed source again merely because the user opens it. Corrupt/stale entries are disposable misses and rebuild from the read-only adapter source. Unchanged legacy rows that predate prewarming are migrated progressively under a strict per-scan count/byte budget; this backfill writes only the derived page cache and must not reindex unchanged FTS/session metadata. Anything still uncached may take the complete adapter parser compatibility path once, but the resulting full object is reduced to the requested window and dropped after the page cache is written. This cache never mutates external Agent history stores and does not misuse the FTS `UNINDEXED session_key` as a transcript index. Sidebar/search metadata may preload independently, but metadata loading must not implicitly select or parse a transcript; transcript cache lookup/parsing begins only when the user opens/selects a conversation. History metadata refresh is stale-while-revalidate: an already rendered project/history projection remains visible while the background index refresh runs, and Sidebar entities are notified only when visible metadata actually changes. A same-project refresh must never clear cached rows merely to show a loading state.
 
-History session metadata keeps both the source/display fact `project_path` and a normalized stable `project_key`. `project_key` uses the same canonical-path/component normalization semantics as the client Project key and is indexed with `updated_at`; Project History queries and scoped History search filter on this key directly. Older catalogs are backfilled once on normal catalog open. The History catalog may persist this derived lookup key, but it does not become a second Project/runtime authority: live runtime identity still belongs to Herdr and `ProjectIndex` remains a disposable client projection. Shardlane Workspace History scope is derived by expanding that Workspace's owned Project paths; the History catalog does not persist Workspace ownership.
+History session metadata keeps both the source/display fact `project_path` and a normalized stable `project_key`. `project_key` uses the same canonical-path/component normalization semantics as the client Project key and is indexed with `updated_at`; Project History queries and scoped History search filter on this key directly. Older catalogs are backfilled once on normal catalog open. The History catalog may persist this derived lookup key, but it does not become a second Project/runtime authority: live runtime identity still belongs to Herdr and `ProjectIndex` remains a disposable client projection. History scope is expressed through these project keys, never through a persisted Workspace grouping; the History catalog does not persist Workspace ownership.
 
 ## 8. Persistence
 
@@ -420,8 +286,8 @@ Shardlane local application data lives under `~/.shardlane/`. Code refers to thi
 - global appearance policy (`system | light | dark`) and application color scheme;
 - sidebar width/collapse state;
 - Project/Agent/Service disclosure state;
-- ordered Shardlane Workspace definitions, active Workspace, Workspace names/colors, and Project membership;
-- terminal font/render preferences and Terminal theme (`follow-app` or independent palette);
+- per-session Workspace display-name overrides, the machine/device list, and the open-window snapshot used for launch restore;
+- terminal font/render preferences (terminal colors derive from the user Herdr config.toml theme: Shardlane seeds and reports only theme-derived colors and has no Terminal palette of its own);
 - copy-on-select and Agent system-notification preference;
 - Browser/right panel preferences;
 - small global defaults that do not belong to a Project asset;
@@ -431,8 +297,8 @@ Shardlane local application data lives under `~/.shardlane/`. Code refers to thi
 - pinned Sidebar tab IDs (`ui.sidebar.pinned_tabs`) — session-scoped UI
   preference storing Herdr runtime tab IDs; a stale sweep on every
   navigation reconcile drops IDs absent from the live Herdr snapshot so
-  restarts cannot accumulate dead IDs (mirrors the `project_path_overrides`
-  GC contract).
+  restarts cannot accumulate dead IDs (IDs absent from the live Herdr snapshot
+  are swept on every navigation reconcile).
 
 **File-first durable-data rule.** Shardlane-owned user data should remain reconstructible from human-inspectable files. The existing Workspace/Sidebar state already satisfies this rule because it lives in `config.json`; do not split it into extra files without a concrete ownership/write-conflict reason. Larger independent domains use separate files/directories where ownership demands it: Browser Profile metadata may use `browser-profiles.json`, and Shortcut overrides may use `shortcuts.json`. (The former Notes/Bookmarks/Annotation file stores were removed with those product branches on 2026-08-27.) All aggregate writes are revision-guarded and atomic; external edits are validated before replacing the last-known-good in-memory projection. Runtime/search indexes may be in-memory or disposable caches and must always rebuild from the user files. A database may still exist for a domain-specific **derived index/cache** such as the existing History search/page index, but it must not become the source of truth for Workspace/Sidebar assets.
 

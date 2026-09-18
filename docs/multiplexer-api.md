@@ -279,7 +279,7 @@ non-Herdr backends via capability flags.
 
 ### Domain 10 — Client-local presentation state (D; never in the API)
 
-Shardlane Workspace grouping/color/order and settings cosmetics, pinned sidebar tab
+Workspace display-name overrides and settings cosmetics, pinned sidebar tab
 IDs, sidebar width/collapse, language/theme preferences, `FocusIntent` local
 navigation, windows/shortcuts, right-click menu composition, Files panel local file
 operations, the Lazygit auxiliary PTY, the web preview, and the device list / SSH
