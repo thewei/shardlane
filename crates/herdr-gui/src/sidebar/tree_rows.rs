@@ -205,13 +205,7 @@ impl ShardlaneApp {
             RowLevel::Primary,
             move |window, app| {
                 focus_herdr.update(app, |this, cx| {
-                    if !this.sidebar_tabs_enabled() {
-                        // When tabs live in the native tab strip or terminal TUI, Projects don't expand
-                        // a Tab subtree, so a click focuses the Project.
-                        this.focus_project_from_sidebar(focus_id.clone(), window, cx);
-                    } else {
-                        this.toggle_project_folder(focus_id.clone(), window, cx);
-                    }
+                    this.toggle_project_folder(focus_id.clone(), window, cx);
                 });
             },
             cx,

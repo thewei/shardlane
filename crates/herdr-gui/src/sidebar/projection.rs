@@ -30,7 +30,7 @@ pub(super) fn sidebar_panes_for_tab(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::herdr::LayoutPane;
+    use crate::herdr::{LayoutPane, LayoutRect};
 
     #[test]
     fn pane_projection_follows_authoritative_layout_position() {

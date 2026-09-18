@@ -259,18 +259,9 @@ impl ShardlaneApp {
                 !expanded,
                 cx,
             ));
-            if expanded && self.native_tabs_enabled() {
-                // Native-tab placement: the per-Tab subtree is presented by the content-area
-                // Tab strip; the Sidebar keeps the Project row (one presentation owner per
-                // the `terminal.tab_bar_placement` setting).
-                workspace_scrolling =
-                    workspace_scrolling.child(sidebar_hint_row("Tabs live in the tab bar", cx));
-            } else if expanded && self.herdr_tui_tabs_enabled() {
-                // Herdr-TUI placement: the per-Tab subtree is managed directly inside the terminal
-                // by Herdr's hosted TUI; the Sidebar keeps the Project row.
-                workspace_scrolling =
-                    workspace_scrolling.child(sidebar_hint_row("Tabs live in terminal", cx));
-            } else if expanded {
+            if expanded {
+                // Tab presentation is fixed: the Sidebar always renders the per-Project
+                // Tab subtree, while the hosted TUI keeps its own chrome in parallel.
                 let tabs = self.tabs_for_workspace(&workspace.workspace_id);
                 if let Some(error) = project_pane_errors.get(&workspace.workspace_id) {
                     // Audit A11: a failed workspace_panes load must not render as a silently

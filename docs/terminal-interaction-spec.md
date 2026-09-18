@@ -40,9 +40,10 @@ Implemented and covered by automated tests/code-level validation:
 
 - singleton hosted child/PTY lifecycle with restart cooldown, token-scoped
   polling, synchronous-kill teardown (no orphans on quit/Crepus restart);
-- TUI chrome projection: the hosted process runs on a compensated raw grid;
-  Shardlane paints only Herdr's authoritative `pane.layout.area` rectangle,
-  and the same projection translates pointer cells and selection coordinates;
+- fixed Tab presentation (2026-09-18): the hosted TUI always keeps its own
+  chrome (Tab bar included, even with a single Tab) and the Sidebar always
+  renders the per-Project Tab subtree; the visible grid IS the raw TUI grid —
+  there is no chrome crop, compensated grid, or coordinate translation;
 - GPUI-font-metric-derived terminal geometry shared by grid sizing, paint,
   cursor, selection, mouse, links and IME placement;
 - Ghostty-grid-anchored styled-run paint with wide-cell spacer boundaries;
@@ -59,10 +60,11 @@ Implemented and covered by automated tests/code-level validation:
   local key encoder (≤6 steps) otherwise; Shift escapes translation;
 - per-target (singleton) text selection with Ghostty semantic word/line
   expansion; soft-wrap-aware copy formatter; copy-on-select preference;
-- ordinary right click owned by Shardlane's native menu: Copy / Paste /
-  Select All only; Right press and Right drag/motion are never encoded into
-  the PTY, so Herdr's own TUI menu cannot open underneath (`tui_native_
-  context_menu_owns_button` regression pins this);
+- ordinary right click owned by the Herdr TUI itself (2026-09-18): every
+  button, Right included, is encoded straight to the hosted PTY, so Herdr's
+  own TUI context menu is the only right-click menu (`Self::terminal_mouse_button`
+  maps Right and the SGR report path forwards it — the client registers no
+  native terminal menu and never withholds Right press/motion);
 - navigation converges on `FocusIntent` (`shell_navigation.rs`):
   Project/Tab/Pane/Agent intents drive the protocol-20 chain
   `workspace.focus → tab.focus → pane.focus`, with `agent.focus(terminal_id)`
@@ -84,7 +86,8 @@ Remaining protocol-level limitations (documented, not worked around):
 3. there is no protocol method to clear Herdr-side retained scrollback.
 
 Manual acceptance still open: real trackpad feel (slow/fast/momentum),
-Chinese/Japanese IME candidates, right-click menu visuals, packaged-app run.
+Chinese/Japanese IME candidates, the Herdr TUI's own right-click menu visuals,
+packaged-app run.
 
 ## 3. Focus
 
@@ -202,13 +205,14 @@ write VT sequences. Cursor geometry uses the shared measured cell size.
 
 ## 13. Context menus
 
-The hosted terminal surface has exactly one right-click owner: Shardlane's
-native menu. It keeps **Copy / Paste / Select All** and may mirror authoritative Herdr Pane
-operations (**Rename, Move to New Tab / existing Tab, Swap directions, Split Right/Down, Toggle
-Zoom, Process Info, Close**) through the same Herdr action layer used elsewhere. Right-button
-traffic is never forwarded to the hosted PTY, so Herdr's own TUI menu cannot open underneath the
-native menu. Tab/workspace context menus use the same action layer as keyboard/main-menu commands;
-a menu item never implements a second behavior path.
+The hosted terminal surface has exactly one right-click owner: the Herdr TUI
+itself (2026-09-18). Right press/motion/release are encoded straight to the
+hosted PTY like every other button, so the TUI's own context menu opens;
+Shardlane registers no native terminal menu on the hosted surface. Clipboard
+and Pane operations (Copy/Paste/Select All, Rename, Move, Swap, Split, Zoom,
+Process Info, Close) remain available through keyboard shortcuts and the
+Sidebar Pane rows, which use the same Herdr action layer as main-menu
+commands; a menu item never implements a second behavior path.
 
 ## 14. Main macOS menu
 
@@ -237,9 +241,9 @@ Settings/Search/New Agent and return without losing or duplicating the first
 keystroke.
 
 Pointer: left-click focus; drag selection (forward/reverse, word/line,
-double/triple-click-drag); right click opens exactly one native menu (clipboard + mirrored Herdr
-Pane operations) and never Herdr's own TUI menu; mouse-aware TUI apps still receive
-left/middle/hover/wheel; slow trackpad, fast flick, momentum — fine steps, no giant jumps and no
+double/triple-click-drag); right click is encoded to the hosted PTY and opens
+Herdr's own TUI menu; mouse-aware TUI apps still receive
+left/middle/right/hover/wheel; slow trackpad, fast flick, momentum — fine steps, no giant jumps and no
 black/theme-background flashing during partial repaint.
 
 Navigation: Project/Tab/Agent clicks, Global Search results, History

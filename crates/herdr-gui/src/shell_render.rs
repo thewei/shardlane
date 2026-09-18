@@ -1,69 +1,8 @@
 //! [INPUT]: Depends on the ShardlaneApp type from the crate root (super) and existing types/imports (use super::*); no independent external dependencies.
-//! [OUTPUT]: Exposes ShardlaneApp's shell chrome render tree: client_shell/sidebar/search bar/overlay assembly (including the native-tab-strip placement of the work surface and the full-content file_preview_page branch), plus the hosted Herdr TUI's GPUI native Pane context menu (Copy/Paste/Select All + Herdr Rename/Move/Swap/Split/Zoom/Process Info/Copy IDs + Close); mouse down/up wiring covers the full lifecycle of drag-selection and protocol mouse; terminal geometry (terminal_size/terminal_canvas_origin) accounts for the native tab strip height.
+//! [OUTPUT]: Exposes ShardlaneApp's shell chrome render tree: client_shell/sidebar/search bar/overlay assembly (including the full-content file_preview_page branch); mouse down/up wiring covers the full lifecycle of drag-selection and protocol mouse — every button, Right included, is encoded to the hosted PTY so the Herdr TUI's own context menu is the only right-click menu.
 //! [POS]: The `crates/herdr-gui` shell render responsibility domain, mechanically split out of main.rs; together with sibling shell_* modules it forms ShardlaneApp's method surface.
 use super::*;
-use crate::ui::menus::{menu_action, menu_action_cx};
-
-#[derive(Clone)]
-struct TuiContextPane {
-    pane_id: String,
-    workspace_id: String,
-    label: String,
-    move_targets: Vec<(String, String)>,
-}
-
 impl ShardlaneApp {
-    fn tui_context_pane_at_position(
-        &self,
-        position: crepuscularity_gpui::Point<Pixels>,
-    ) -> Option<TuiContextPane> {
-        let tab_id = self.state.focused_tab_id.as_deref()?;
-        let layout = self.state.layout_for_tab(tab_id)?;
-        let geometry = self.full_terminal_selection_geometry();
-        let local_x = (position.x.to_f64() - geometry.origin_x).max(0.0);
-        let local_y = (position.y.to_f64() - geometry.origin_y).max(0.0);
-        let raw_col =
-            (local_x / self.terminal_cell_width()).floor().max(0.0) as u32 + layout.area.x;
-        let raw_row =
-            (local_y / self.terminal_cell_height()).floor().max(0.0) as u32 + layout.area.y;
-        let layout_pane = layout.panes.iter().find(|pane| {
-            raw_col >= pane.rect.x
-                && raw_col < pane.rect.x.saturating_add(pane.rect.width)
-                && raw_row >= pane.rect.y
-                && raw_row < pane.rect.y.saturating_add(pane.rect.height)
-        })?;
-        let pane = self
-            .state
-            .panes
-            .iter()
-            .find(|pane| pane.pane_id == layout_pane.pane_id)?;
-        let workspace_id = pane
-            .workspace_id
-            .clone()
-            .or_else(|| layout.workspace_id.clone())?;
-        let label = pane
-            .label
-            .clone()
-            .or_else(|| pane.title.clone())
-            .or_else(|| pane.terminal_title.clone())
-            .unwrap_or_else(|| pane.pane_id.clone());
-        let move_targets = self
-            .state
-            .tabs
-            .iter()
-            .filter(|tab| {
-                tab.workspace_id.as_deref() == Some(workspace_id.as_str()) && tab.tab_id != tab_id
-            })
-            .map(|tab| (tab.tab_id.clone(), self.tab_title(tab)))
-            .collect();
-        Some(TuiContextPane {
-            pane_id: pane.pane_id.clone(),
-            workspace_id,
-            label,
-            move_targets,
-        })
-    }
-
     pub(super) fn terminal_content_padding(&self) -> f32 {
         self.config.terminal.padding.clamp(0.0, 32.0)
     }
@@ -155,19 +94,7 @@ impl ShardlaneApp {
                         &self.config.shortcuts,
                     ))
                 });
-            // Native-tab placement (terminal.tab_bar_placement): a Tab strip above the work
-            // surface. Pure presentation over Herdr's authoritative Tab order; `native_tab_bar_height`
-            // keeps the terminal geometry (grid size + hit-test origin) in sync.
-            if self.native_tabs_enabled() {
-                let tab_bar = self.native_tab_bar(theme, cx);
-                v_flex()
-                    .size_full()
-                    .child(tab_bar)
-                    .child(surface)
-                    .into_any_element()
-            } else {
-                v_flex().size_full().child(surface).into_any_element()
-            }
+            v_flex().size_full().child(surface).into_any_element()
         };
         let sidebar_width = self.shell_sidebar_width as f32;
 
@@ -698,10 +625,7 @@ impl ShardlaneApp {
     pub(super) fn terminal_canvas_origin(&self) -> (f64, f64) {
         // The native Tab strip sits between the title bar and the terminal canvas, so the
         // grid origin (mouse hit-testing, selection mapping) starts below it.
-        (
-            self.sidebar_width(),
-            self.chrome_height() + self.native_tab_bar_height(),
-        )
+        (self.sidebar_width(), self.chrome_height())
     }
 
     pub(super) fn terminal_size(&self, window: &Window) -> TerminalSize {
@@ -710,8 +634,7 @@ impl ShardlaneApp {
         // cell sizes make a small window generate a larger Ghostty grid than GPUI can paint,
         // which clips the right edge and bottom rows.
         let width = (size.width.to_f64() - self.sidebar_width()).max(1.0);
-        let height =
-            (size.height.to_f64() - self.chrome_height() - self.native_tab_bar_height()).max(1.0);
+        let height = (size.height.to_f64() - self.chrome_height()).max(1.0);
         let padding = f64::from(self.terminal_content_padding()) * 2.0;
         let content_width = (width - padding).max(1.0);
         let content_height = (height - padding - TERMINAL_PAINT_FUDGE).max(1.0);
@@ -844,7 +767,8 @@ impl ShardlaneApp {
         // TUI-only: the host canvas = measurement canvas + single-slot Ghostty frame projection. The
         // Embedded local-scrollback wheel, deep-history hint rows, and Split/Zoom/Close context-menu
         // forks were deleted with the per-pane render path; the wheel is owned by tui_surface_view's
-        // SGR reporting, and right-click by its native Copy/Paste/Select All menu.
+        // SGR reporting, and right-click by the hosted TUI's own context menu (encoded
+        // to the PTY like every other button).
         let terminal = v_flex()
             .flex_1()
             .min_h_0()
@@ -896,8 +820,6 @@ impl ShardlaneApp {
             cx,
         );
         let preedit = self.ime_preedit_overlay(herdr_tui::TUI_TARGET, &self.terminal_frame, cx);
-        let has_selection = self.focused_has_selection();
-        let menu_herdr = cx.entity();
         let surface = div()
             .relative()
             .flex()
@@ -927,19 +849,10 @@ impl ShardlaneApp {
                 cx.listener(Self::handle_tui_mouse_down),
             )
             .on_mouse_down(MouseButton::Right, cx.listener(Self::handle_tui_mouse_down))
-            // Plain right-click is deliberately not forwarded to the hosted PTY when native
-            // menus are active. Herdr's TUI menu is therefore suppressed and GPUI owns the
-            // standard macOS terminal menu. When Herdr TUI takes over, right clicks and drags
-            // are forwarded directly to the hosted PTY.
+            // 右键直接编码进托管 PTY：TUI 自己的上下文菜单是唯一的右键菜单，
+            // 客户端不再注册原生菜单，也不拦截 Right 的按下/拖动/抬起。
             .on_mouse_move(
                 cx.listener(move |this, event: &MouseMoveEvent, _window, cx| {
-                    if event
-                        .pressed_button
-                        .as_ref()
-                        .is_some_and(|b| this.tui_native_context_menu_owns_button(b))
-                    {
-                        return;
-                    }
                     let geometry = this.full_terminal_selection_geometry();
                     this.handle_terminal_mouse_move_target(
                         herdr_tui::TUI_TARGET,
@@ -976,9 +889,6 @@ impl ShardlaneApp {
             .on_mouse_up(
                 MouseButton::Right,
                 cx.listener(move |this, event, _window, cx| {
-                    if this.tui_native_context_menu_owns_button(&MouseButton::Right) {
-                        return;
-                    }
                     let geometry = this.full_terminal_selection_geometry();
                     this.handle_terminal_mouse_up_target(
                         herdr_tui::TUI_TARGET,
@@ -1016,212 +926,7 @@ impl ShardlaneApp {
                 },
             );
 
-        if self.herdr_tui_context_menu_enabled() {
-            surface.into_any_element()
-        } else {
-            surface
-                .context_menu(move |menu, window, cx| {
-                    let copy_herdr = menu_herdr.clone();
-                    let paste_herdr = menu_herdr.clone();
-                    let select_all_herdr = menu_herdr.clone();
-                    let mut menu = menu
-                        .item(
-                            PopupMenuItem::new("Copy")
-                                .disabled(!has_selection)
-                                .on_click(move |_, window, app| {
-                                    copy_herdr.update(app, |this, cx| this.copy(&Copy, window, cx));
-                                }),
-                        )
-                        .item(PopupMenuItem::new("Paste").on_click(move |_, window, app| {
-                            paste_herdr.update(app, |this, cx| this.paste(&Paste, window, cx));
-                        }))
-                        .item(
-                            PopupMenuItem::new("Select All").on_click(move |_, window, app| {
-                                select_all_herdr.update(app, |this, cx| {
-                                    this.select_all(&SelectAll, window, cx)
-                                });
-                            }),
-                        );
-
-                    let Some(context_pane) = menu_herdr
-                        .read(cx)
-                        .tui_context_pane_at_position(window.mouse_position())
-                    else {
-                        return menu;
-                    };
-                    let TuiContextPane {
-                        pane_id,
-                        workspace_id,
-                        label,
-                        move_targets,
-                    } = context_pane;
-                    // Copy IDs: the pane's Tab and this window's bound instance are
-                    // resolved at menu-build time so unavailable items never render.
-                    let (pane_tab_id, session_id) = {
-                        let app = menu_herdr.read(cx);
-                        (
-                            app.state
-                                .panes
-                                .iter()
-                                .find(|pane| pane.pane_id == pane_id)
-                                .and_then(|pane| pane.tab_id.clone()),
-                            app.binding
-                                .as_ref()
-                                .map(|binding| binding.session_name().to_string()),
-                        )
-                    };
-
-                    menu = menu
-                        .item(PopupMenuItem::separator())
-                        .item({
-                            let pane_id = pane_id.clone();
-                            menu_action("Rename Pane…", &menu_herdr, move |this, window, cx| {
-                                this.open_pane_rename(pane_id.clone(), label.clone(), window, cx)
-                            })
-                        })
-                        .item({
-                            let pane_id = pane_id.clone();
-                            let workspace_id = workspace_id.clone();
-                            menu_action("Move to New Tab", &menu_herdr, move |this, window, cx| {
-                                this.move_pane_to_new_tab_by_id(
-                                    pane_id.clone(),
-                                    workspace_id.clone(),
-                                    window,
-                                    cx,
-                                )
-                            })
-                        });
-
-                    if !move_targets.is_empty() {
-                        menu = menu.submenu("Move to Tab", window, cx, {
-                            let herdr = menu_herdr.clone();
-                            let pane_id = pane_id.clone();
-                            move |submenu, _, _| {
-                                move_targets
-                                    .iter()
-                                    .fold(submenu, |submenu, (tab_id, title)| {
-                                        let pane_id = pane_id.clone();
-                                        let tab_id = tab_id.clone();
-                                        submenu.item(menu_action(
-                                            title.clone(),
-                                            &herdr,
-                                            move |this, window, cx| {
-                                                this.move_pane_to_tab_by_id(
-                                                    pane_id.clone(),
-                                                    tab_id.clone(),
-                                                    window,
-                                                    cx,
-                                                )
-                                            },
-                                        ))
-                                    })
-                            }
-                        });
-                    }
-
-                    menu.submenu("Swap Pane", window, cx, {
-                        let herdr = menu_herdr.clone();
-                        let pane_id = pane_id.clone();
-                        move |submenu, _, _| {
-                            [
-                                ("Left", "left"),
-                                ("Right", "right"),
-                                ("Up", "up"),
-                                ("Down", "down"),
-                            ]
-                            .into_iter()
-                            .fold(
-                                submenu,
-                                |submenu, (label, direction)| {
-                                    let pane_id = pane_id.clone();
-                                    submenu.item(menu_action_cx(label, &herdr, move |this, cx| {
-                                        this.swap_pane_direction_by_id(
-                                            pane_id.clone(),
-                                            direction,
-                                            cx,
-                                        )
-                                    }))
-                                },
-                            )
-                        }
-                    })
-                    .item(PopupMenuItem::separator())
-                    .item({
-                        let pane_id = pane_id.clone();
-                        menu_action_cx("Split Right", &menu_herdr, move |this, cx| {
-                            this.split_pane_right_by_id(pane_id.clone(), cx)
-                        })
-                    })
-                    .item({
-                        let pane_id = pane_id.clone();
-                        menu_action_cx("Split Down", &menu_herdr, move |this, cx| {
-                            this.split_pane_down_by_id(pane_id.clone(), cx)
-                        })
-                    })
-                    .item({
-                        let pane_id = pane_id.clone();
-                        menu_action_cx("Toggle Pane Zoom", &menu_herdr, move |this, cx| {
-                            this.toggle_pane_zoom_by_id(pane_id.clone(), cx)
-                        })
-                    })
-                    .item({
-                        let pane_id = pane_id.clone();
-                        menu_action("Process Info…", &menu_herdr, move |this, window, cx| {
-                            this.show_pane_process_info_by_id(pane_id.clone(), window, cx)
-                        })
-                    })
-                    .submenu(crate::i18n::t("shell.copy_ids"), window, cx, {
-                        let herdr = menu_herdr.clone();
-                        let pane_id = pane_id.clone();
-                        move |submenu, _, _| {
-                            let submenu = submenu.item({
-                                let pane_id = pane_id.clone();
-                                menu_action(
-                                    crate::i18n::t("shell.copy_pane_id"),
-                                    &herdr,
-                                    move |this, window, cx| {
-                                        this.copy_runtime_id(pane_id.clone(), window, cx)
-                                    },
-                                )
-                            });
-                            let submenu = match pane_tab_id.clone() {
-                                Some(tab_id) => submenu.item({
-                                    let tab_id = tab_id.clone();
-                                    menu_action(
-                                        crate::i18n::t("shell.copy_tab_id"),
-                                        &herdr,
-                                        move |this, window, cx| {
-                                            this.copy_runtime_id(tab_id.clone(), window, cx)
-                                        },
-                                    )
-                                }),
-                                None => submenu,
-                            };
-                            match session_id.clone() {
-                                Some(session) => submenu.item({
-                                    let session = session.clone();
-                                    menu_action(
-                                        crate::i18n::t("shell.copy_session_id"),
-                                        &herdr,
-                                        move |this, window, cx| {
-                                            this.copy_runtime_id(session.clone(), window, cx)
-                                        },
-                                    )
-                                }),
-                                None => submenu,
-                            }
-                        }
-                    })
-                    .item(PopupMenuItem::separator())
-                    .item({
-                        let pane_id = pane_id.clone();
-                        menu_action_cx("Close Pane", &menu_herdr, move |this, cx| {
-                            this.close_pane_by_id(pane_id.clone(), workspace_id.clone(), cx)
-                        })
-                    })
-                })
-                .into_any_element()
-        }
+        surface.into_any_element()
     }
 
     /// TUI host failure placeholder: an inline recovery surface in the content area. After TUI-only

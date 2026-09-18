@@ -10,18 +10,16 @@
 //! Shardlane does not reimplement the Herdr TUI and keeps driving focus through the API.
 //!
 //! [INPUT]: `crate::herdr::HerdrClient` focus wrappers (workspace_focus/tab_focus/
-//!          pane_focus/agent_focus), Herdr `pane.layout.area`,
-//!          the user's Herdr config.toml
+//!          pane_focus/agent_focus), the user's Herdr config.toml
 //! [OUTPUT]: `TUI_TARGET` (host surface identifier), user Herdr config read/write/validation,
 //!           atomic `ThemeScheme` theme writes (`ThemeAppearanceMode`/`theme_appearance_mode`/
 //!           `effective_theme_selections`/`theme_scheme_update`, the Theme page's only theme path),
-//!           `execute_focus_plan` (navigation chain), `TuiChromeProjection`, the `HerdrTuiHostState`
+//!           `ensure_tui_tab_bar_always_visible` (startup tab-bar normalization),
+//!           `execute_focus_plan` (navigation chain), the `HerdrTuiHostState`
 //!           lifecycle model, `protocol_supported` (cached metadata check, no RPC)
-//! [POS]: The strategy layer for the TUI presentation mode (spawn environment/navigation chain/chrome projection); PTY transport belongs to
+//! [POS]: The strategy layer for the TUI presentation mode (spawn environment/navigation chain); PTY transport belongs to
 //!          `terminal_stream.rs`, rendering to the existing Ghostty/GPUI stack, and all terminal semantics to Herdr
 
-use crate::ghostty::TerminalFrame;
-use crate::herdr::LayoutRect;
 use shardlane_host::diagnostics::lag_log;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -42,7 +40,6 @@ pub struct HerdrUserConfigSnapshot {
     pub pane_outer_borders: bool,
     pub pane_scrollbars: bool,
     pub pane_gaps: bool,
-    pub hide_tab_bar_when_single_tab: bool,
     pub tab_bar_position: String,
     pub status_indicators: String,
 }
@@ -63,7 +60,6 @@ impl Default for HerdrUserConfigSnapshot {
             pane_outer_borders: true,
             pane_scrollbars: true,
             pane_gaps: true,
-            hide_tab_bar_when_single_tab: false,
             tab_bar_position: "top".to_string(),
             status_indicators: "dots".to_string(),
         }
@@ -92,7 +88,6 @@ pub enum HerdrUserConfigUpdate {
     PaneOuterBorders(bool),
     PaneScrollbars(bool),
     PaneGaps(bool),
-    HideTabBarWhenSingleTab(bool),
     TabBarPosition(String),
     StatusIndicators(String),
 }
@@ -195,103 +190,6 @@ pub fn theme_scheme_update(
 /// TUI host surface identifier (terminal_target value; namespace-isolated from controllers).
 pub const TUI_TARGET: &str = "herdr-tui";
 
-/// Herdr-owned navigation chrome surrounding the authoritative Pane area inside the
-/// hosted TUI. Shardlane never redraws that chrome; it projects only the Pane rectangle
-/// while the full `herdr` process keeps running off-screen behind the same PTY.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct TuiChromeProjection {
-    pub left: u16,
-    pub top: u16,
-    pub right: u16,
-    pub bottom: u16,
-}
-
-impl TuiChromeProjection {
-    pub fn from_layout(outer_cols: u16, outer_rows: u16, area: LayoutRect) -> Option<Self> {
-        let left = u16::try_from(area.x).ok()?;
-        let raw_top = u16::try_from(area.y).ok()?;
-        let width = u16::try_from(area.width).ok()?;
-        let height = u16::try_from(area.height).ok()?;
-        if width == 0
-            || height == 0
-            || left.saturating_add(width) > outer_cols
-            || raw_top.saturating_add(height) > outer_rows
-        {
-            return None;
-        }
-        // In Herdr 0.8, the top Tab bar was reflected in `area.y = 1`. In Herdr 0.9+, `area.y`
-        // is reported relative to the pane area (`area.y = 0`), while `area.height` remains
-        // `outer_rows - top_chrome` (e.g. 39 rows for a 40-row terminal with a 1-row tab bar).
-        // When `raw_top == 0` and `height < outer_rows`, the missing vertical rows belong to
-        // the top chrome (Herdr desktop tab bar at row 0), never the bottom.
-        let top = if raw_top > 0 {
-            raw_top
-        } else {
-            outer_rows.saturating_sub(height)
-        };
-        let bottom = outer_rows.saturating_sub(top.saturating_add(height));
-        Some(Self {
-            left,
-            top,
-            right: outer_cols.saturating_sub(left.saturating_add(width)),
-            bottom,
-        })
-    }
-
-    pub fn is_empty(self) -> bool {
-        self.left == 0 && self.top == 0 && self.right == 0 && self.bottom == 0
-    }
-
-    pub fn outer_grid(self, visible_cols: u16, visible_rows: u16) -> (u16, u16) {
-        (
-            visible_cols
-                .saturating_add(self.left)
-                .saturating_add(self.right),
-            visible_rows
-                .saturating_add(self.top)
-                .saturating_add(self.bottom),
-        )
-    }
-
-    pub fn project_frame(self, frame: &TerminalFrame) -> TerminalFrame {
-        frame.project_rect(self.left, self.top, self.right, self.bottom)
-    }
-
-    pub fn visible_to_raw_cell(self, cell: (u16, u16)) -> (u16, u16) {
-        (
-            cell.0.saturating_add(self.left),
-            cell.1.saturating_add(self.top),
-        )
-    }
-
-    pub fn raw_to_visible_cell(self, cell: (u16, u16)) -> Option<(u16, u16)> {
-        (cell.0 >= self.left && cell.1 >= self.top).then_some((
-            cell.0.saturating_sub(self.left),
-            cell.1.saturating_sub(self.top),
-        ))
-    }
-
-    pub fn visible_to_raw_selection(
-        self,
-        selection: ((u16, u16), (u16, u16)),
-    ) -> ((u16, u16), (u16, u16)) {
-        (
-            self.visible_to_raw_cell(selection.0),
-            self.visible_to_raw_cell(selection.1),
-        )
-    }
-
-    pub fn raw_to_visible_selection(
-        self,
-        selection: ((u16, u16), (u16, u16)),
-    ) -> Option<((u16, u16), (u16, u16))> {
-        Some((
-            self.raw_to_visible_cell(selection.0)?,
-            self.raw_to_visible_cell(selection.1)?,
-        ))
-    }
-}
-
 /// Build a spawn environment with herdr identity variables stripped. Pure function.
 pub fn sanitized_spawn_env(
     source: &std::collections::HashMap<String, String>,
@@ -371,9 +269,6 @@ fn herdr_user_config_snapshot_from_document(document: &DocumentMut) -> HerdrUser
         pane_gaps: config_item(document, "ui", "pane_gaps")
             .and_then(|item| item.as_bool())
             .unwrap_or(true),
-        hide_tab_bar_when_single_tab: config_item(document, "ui", "hide_tab_bar_when_single_tab")
-            .and_then(|item| item.as_bool())
-            .unwrap_or(false),
         tab_bar_position: config_item(document, "ui", "tab_bar_position")
             .and_then(|item| item.as_str())
             .unwrap_or("top")
@@ -454,9 +349,6 @@ fn apply_herdr_user_config_update(
         HerdrUserConfigUpdate::PaneGaps(enabled) => {
             document["ui"]["pane_gaps"] = value(*enabled);
         }
-        HerdrUserConfigUpdate::HideTabBarWhenSingleTab(enabled) => {
-            document["ui"]["hide_tab_bar_when_single_tab"] = value(*enabled);
-        }
         HerdrUserConfigUpdate::TabBarPosition(position) => {
             if position != "top" && position != "bottom" {
                 return Err(format!("invalid tab_bar_position: {position}"));
@@ -494,6 +386,45 @@ pub fn update_herdr_user_config(
     std::fs::rename(&temporary, &path)
         .map_err(|error| format!("install {}: {error}", path.display()))?;
     load_herdr_user_config()
+}
+
+/// 产品裁决（2026-09-18）：TUI 自身的 Tab 栏永远显示（即使只有一个 Tab）。
+/// Settings 不再暴露 `ui.hide_tab_bar_when_single_tab`；启动时把历史遗留的
+/// `true` 归位为 `false`（同一套校验+原子改名写入路径）。键缺失或已是
+/// `false` 时是纯读，不写文件。返回 `true` 表示发生了写入。
+pub fn ensure_tui_tab_bar_always_visible() -> Result<bool, String> {
+    let path = herdr_user_config_path();
+    let mut document = load_system_config_document(&path)?;
+    if !normalize_tab_bar_always_visible(&mut document) {
+        return Ok(false);
+    }
+    let parent = path
+        .parent()
+        .ok_or_else(|| "Herdr config has no parent directory".to_string())?;
+    std::fs::create_dir_all(parent)
+        .map_err(|error| format!("create {}: {error}", parent.display()))?;
+    let temporary = path.with_extension(format!("tmp-shardlane-{}", std::process::id()));
+    std::fs::write(&temporary, document.to_string())
+        .map_err(|error| format!("write {}: {error}", temporary.display()))?;
+    if let Ok(metadata) = std::fs::metadata(&path) {
+        let _ = std::fs::set_permissions(&temporary, metadata.permissions());
+    }
+    validate_herdr_tui_config(&temporary)?;
+    std::fs::rename(&temporary, &path)
+        .map_err(|error| format!("install {}: {error}", path.display()))?;
+    Ok(true)
+}
+
+/// 纯函数核心：仅当 `ui.hide_tab_bar_when_single_tab` 当前为 `true` 时改写为
+/// `false` 并返回 `true`（发生了变更）；缺失/已合规则原样返回 `false`。
+fn normalize_tab_bar_always_visible(document: &mut DocumentMut) -> bool {
+    let needs_write = config_item(document, "ui", "hide_tab_bar_when_single_tab")
+        .and_then(|item| item.as_bool())
+        .unwrap_or(false);
+    if needs_write {
+        document["ui"]["hide_tab_bar_when_single_tab"] = value(false);
+    }
+    needs_write
 }
 
 fn validate_herdr_tui_config(path: &Path) -> Result<(), String> {
@@ -681,6 +612,34 @@ mouse_capture = false
         assert!(!snapshot.theme_auto_switch);
         assert_eq!(snapshot.sidebar_collapsed_mode, "compact");
         assert!(snapshot.pane_borders);
+    }
+
+    #[test]
+    fn tab_bar_always_visible_migration_only_rewrites_a_true_flag() {
+        let mut legacy = r#"
+[ui]
+hide_tab_bar_when_single_tab = true
+mouse_capture = false
+"#
+        .parse::<DocumentMut>()
+        .unwrap();
+        assert!(normalize_tab_bar_always_visible(&mut legacy));
+        assert_eq!(
+            legacy["ui"]["hide_tab_bar_when_single_tab"].as_bool(),
+            Some(false)
+        );
+        // Unrelated keys survive the normalization write.
+        assert_eq!(legacy["ui"]["mouse_capture"].as_bool(), Some(false));
+        // Already-compliant documents (key missing or false) stay untouched.
+        let mut missing = DocumentMut::new();
+        assert!(!normalize_tab_bar_always_visible(&mut missing));
+        let mut compliant = r#"
+[ui]
+hide_tab_bar_when_single_tab = false
+"#
+        .parse::<DocumentMut>()
+        .unwrap();
+        assert!(!normalize_tab_bar_always_visible(&mut compliant));
     }
 
     #[test]
@@ -991,92 +950,6 @@ dark_name = "one-dark"
                 );
             }
         }
-    }
-
-    #[test]
-    #[allow(clippy::expect_used)] // Test assertion: the layout constant is constructed within this test, always Some.
-    fn chrome_projection_tracks_sidebar_and_tab_bar_insets() {
-        let projection = TuiChromeProjection::from_layout(
-            120,
-            40,
-            LayoutRect {
-                x: 26,
-                y: 1,
-                width: 94,
-                height: 38,
-            },
-        )
-        .unwrap_or_default();
-        assert_eq!(
-            projection,
-            TuiChromeProjection {
-                left: 26,
-                top: 1,
-                right: 0,
-                bottom: 1,
-            }
-        );
-        assert_eq!(projection.outer_grid(94, 38), (120, 40));
-        assert_eq!(projection.visible_to_raw_cell((0, 0)), (26, 1));
-        assert_eq!(projection.raw_to_visible_cell((26, 1)), Some((0, 0)));
-        assert_eq!(projection.raw_to_visible_cell((25, 1)), None);
-    }
-
-    #[test]
-    fn chrome_projection_handles_herdr_0_9_relative_layout() {
-        // Herdr 0.9 reports pane-local area (y: 0, height: rows - 1). The 1 missing row
-        // represents the top Tab bar (row 0), never the bottom.
-        let projection = TuiChromeProjection::from_layout(
-            120,
-            40,
-            LayoutRect {
-                x: 0,
-                y: 0,
-                width: 120,
-                height: 39,
-            },
-        )
-        .unwrap_or_default();
-        assert_eq!(
-            projection,
-            TuiChromeProjection {
-                left: 0,
-                top: 1,
-                right: 0,
-                bottom: 0,
-            }
-        );
-        assert_eq!(projection.outer_grid(120, 39), (120, 40));
-        assert_eq!(projection.visible_to_raw_cell((0, 0)), (0, 1));
-        assert_eq!(projection.raw_to_visible_cell((0, 1)), Some((0, 0)));
-        assert_eq!(projection.raw_to_visible_cell((0, 0)), None);
-    }
-
-    #[test]
-    fn chrome_projection_projects_frame_and_cursor_to_pane_origin() {
-        let line = |cells: &[&str]| crate::ghostty::TerminalLine {
-            cells: cells.iter().map(|cell| (*cell).to_string()).collect(),
-            ..Default::default()
-        };
-        let frame = TerminalFrame {
-            lines: vec![
-                line(&["t", "a", "b", "s", "!"]),
-                line(&["s", "A", "B", "C", "x"]),
-                line(&["b", "o", "t", "t", "m"]),
-            ],
-            cursor: Some((2, 1)),
-            ..Default::default()
-        };
-        let projection = TuiChromeProjection {
-            left: 1,
-            top: 1,
-            right: 1,
-            bottom: 1,
-        };
-        let projected = projection.project_frame(&frame);
-        assert_eq!(projected.lines.len(), 1);
-        assert_eq!(projected.lines[0].cells, vec!["A", "B", "C"]);
-        assert_eq!(projected.cursor, Some((1, 0)));
     }
 
     #[test]

@@ -19,9 +19,6 @@ settings:
     dark: 深色
   option:
     auto: 自動
-    sidebar: 側邊欄
-    native_tabs: 原生分頁
-    herdr_tui: Herdr TUI
     compact: 緊密
     hidden: 隱藏
     top: 頂端
@@ -64,8 +61,6 @@ settings:
     pane_scrollbars_detail: 'Herdr ui.pane_scrollbars。'
     pane_gaps: 窗格間距
     pane_gaps_detail: 'Herdr ui.pane_gaps。'
-    hide_single_tab: 單一分頁時隱藏分頁列
-    hide_single_tab_detail: 'Herdr ui.hide_tab_bar_when_single_tab。'
     tab_position: 分頁列位置
     tab_position_detail: 'Herdr ui.tab_bar_position。'
     status_indicators: 狀態指示器
@@ -90,8 +85,6 @@ settings:
     line_height_detail: '%{height} px · 預設 %{default} px'
     padding: 內距
     padding_detail: '字元網格四周 %{padding} px · 預設 %{default}'
-    tab_bar: 分頁列
-    tab_bar_detail: 在側邊欄樹中顯示 Project 分頁，或在終端機內容上方顯示為原生分頁。
     cursor_style: 游標樣式
     cursor_style_detail: '自動模式跟隨執行中的程式（包含視窗失焦時的空心游標）。預設：自動。'
     cursor_block: 方塊

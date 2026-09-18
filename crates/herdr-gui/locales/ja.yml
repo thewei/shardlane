@@ -20,9 +20,6 @@ settings:
     dark: ダーク
   option:
     auto: 自動
-    sidebar: サイドバー
-    native_tabs: ネイティブタブ
-    herdr_tui: Herdr TUI
     compact: コンパクト
     hidden: 非表示
     top: 上
@@ -65,8 +62,6 @@ settings:
     pane_scrollbars_detail: 'Herdr ui.pane_scrollbars。'
     pane_gaps: ペイン間隔
     pane_gaps_detail: 'Herdr ui.pane_gaps。'
-    hide_single_tab: タブ 1 枚時にタブバーを隠す
-    hide_single_tab_detail: 'Herdr ui.hide_tab_bar_when_single_tab。'
     tab_position: タブバーの位置
     tab_position_detail: 'Herdr ui.tab_bar_position。'
     status_indicators: ステータスインジケーター
@@ -91,8 +86,6 @@ settings:
     line_height_detail: '%{height} px · 既定 %{default} px'
     padding: パディング
     padding_detail: '文字グリッドの周囲 %{padding} px · 既定 %{default}'
-    tab_bar: タブバー
-    tab_bar_detail: Project タブをサイドバーツリーに表示するか、ターミナル内容の上にネイティブタブとして表示します。
     cursor_style: カーソル形状
     cursor_style_detail: '自動は実行中のプログラムに追従します（ウィンドウ非フォーカス時の中空カーソルを含む）。既定：自動。'
     cursor_block: ブロック

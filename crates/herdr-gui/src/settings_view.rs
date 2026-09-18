@@ -34,7 +34,6 @@ impl ShardlaneApp {
         let agent_notifications = self.config.behavior.agent_notifications;
         let cursor_style_preference = self.config.terminal.cursor_style;
         let cursor_blink_preference = self.config.terminal.cursor_blink;
-        let tab_bar_placement = self.config.terminal.tab_bar_placement;
         let font_size = self.config.terminal.font_size.clamp(10.0, 24.0);
         let line_height = self.config.terminal.line_height.clamp(14.0, 34.0);
         let terminal_padding = self.terminal_content_padding();
@@ -232,36 +231,6 @@ impl ShardlaneApp {
             })
             .into_any_element();
 
-        // Tab bar placement: where the active Project's Tab list is presented. Both sides keep
-        // Herdr's Tab order/lifecycle authority; this only swaps the presentation owner
-        // (Sidebar Tab rows vs the native content-area Tab strip).
-        let tab_bar_herdr = herdr.clone();
-        let tab_bar_placement_control =
-            Segmented::new("settings-terminal-tab-bar-placement", surface)
-                .option(
-                    crate::settings::TabBarPlacement::Sidebar,
-                    i18n::t("settings.option.sidebar"),
-                )
-                .option(
-                    crate::settings::TabBarPlacement::Native,
-                    i18n::t("settings.option.native_tabs"),
-                )
-                .option(
-                    crate::settings::TabBarPlacement::HerdrTui,
-                    i18n::t("settings.option.herdr_tui"),
-                )
-                .value(tab_bar_placement)
-                .on_change(move |placement, _, app| {
-                    tab_bar_herdr.update(app, |this, cx| {
-                        this.config.terminal.tab_bar_placement = *placement;
-                        this.save_config();
-                        this.notify_sidebar(cx);
-                        this.schedule_tui_chrome_probe(None, true, cx);
-                        cx.notify();
-                    });
-                })
-                .into_any_element();
-
         let notifications_herdr = herdr.clone();
         let notifications_control = Toggle::new("settings-agent-notifications", surface)
             .checked(agent_notifications)
@@ -396,20 +365,6 @@ impl ShardlaneApp {
                 pane_gaps_herdr.update(app, |this, cx| {
                     this.apply_herdr_user_config_update_and_restart(
                         herdr_tui::HerdrUserConfigUpdate::PaneGaps(enabled),
-                        window,
-                        cx,
-                    );
-                });
-            })
-            .into_any_element();
-
-        let single_tab_herdr = herdr.clone();
-        let hide_single_tab_control = Toggle::new("settings-herdr-hide-single-tab", surface)
-            .checked(herdr_config.hide_tab_bar_when_single_tab)
-            .on_change(move |enabled, window, app| {
-                single_tab_herdr.update(app, |this, cx| {
-                    this.apply_herdr_user_config_update_and_restart(
-                        herdr_tui::HerdrUserConfigUpdate::HideTabBarWhenSingleTab(enabled),
                         window,
                         cx,
                     );
@@ -725,11 +680,6 @@ impl ShardlaneApp {
                     pane_gaps_control,
                 ),
                 settings_card_row(
-                    &i18n::t("settings.herdr_tui.hide_single_tab"),
-                    &i18n::t("settings.herdr_tui.hide_single_tab_detail"),
-                    hide_single_tab_control,
-                ),
-                settings_card_row(
                     &i18n::t("settings.herdr_tui.tab_position"),
                     &i18n::t("settings.herdr_tui.tab_position_detail"),
                     tab_position_control,
@@ -876,11 +826,6 @@ impl ShardlaneApp {
                     ],
                 ),
                 padding_control,
-            ),
-            settings_card_row(
-                &i18n::t("settings.terminal.tab_bar"),
-                &i18n::t("settings.terminal.tab_bar_detail"),
-                tab_bar_placement_control,
             ),
             settings_card_row(
                 &i18n::t("settings.terminal.cursor_style"),

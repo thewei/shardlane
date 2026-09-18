@@ -160,9 +160,6 @@ impl ShardlaneApp {
         self.terminal_pending_frame = false;
         self.tui_adopted_grid = None;
         self.terminal_poll_wake = None;
-        self.tui_chrome_projection = crate::herdr_tui::TuiChromeProjection::default();
-        self.terminal_frame_projection = crate::herdr_tui::TuiChromeProjection::default();
-        self.tui_chrome_last_probe = None;
         if reset_surface {
             self.terminal_surface_size = None;
             self.set_terminal_frame(Arc::new(TerminalFrame::default()), None, cx);
@@ -190,12 +187,6 @@ impl ShardlaneApp {
     ) {
         let trace = crate::terminal_trace::enabled();
         let apply_started = trace.then(Instant::now);
-        let projection_started = trace.then(Instant::now);
-        let projection = if self.terminal_target.as_deref() == Some(herdr_tui::TUI_TARGET) {
-            self.tui_chrome_projection
-        } else {
-            Default::default()
-        };
         // B16: `plan` carries the extraction's exact row-level verdict (RAW bitfield
         // signatures are the cell's complete storage). It is only ever supplied together with
         // a frame extracted via `frame_reusing(Some(self.terminal_raw_frame))`, so the plan's
@@ -206,22 +197,16 @@ impl ShardlaneApp {
             frame.as_ref(),
             plan.as_ref(),
         );
-        // The pane may only exploit the plan when the visible frame IS the raw grid this
-        // round AND was last round (equal, empty projections): a chrome projection crops and
-        // re-indexes rows, so raw row indices would not describe the painted grid. Anything
-        // else keeps the plan out of the pane path (correctness over speed).
+        // The visible frame IS the raw grid (the hosted TUI's own chrome is always
+        // shown, never cropped), so the plan's row indices always describe the painted
+        // grid and the pane path can exploit them unconditionally.
         let applied_with_plan = plan.is_some();
-        let pane_plan = if projection.is_empty() && self.terminal_frame_projection == projection {
-            plan
-        } else {
-            None
-        };
-        if raw_unchanged && self.terminal_frame_projection == projection {
+        let pane_plan = plan;
+        if raw_unchanged {
             if trace {
                 crate::terminal_trace::event(format_args!(
-                    "stage=frame.apply unchanged=true planned={} projected={} rows={} projection_us=0 compare_us=0 total_us={}",
+                    "stage=frame.apply unchanged=true planned={} rows={} compare_us=0 total_us={}",
                     applied_with_plan,
-                    !projection.is_empty(),
                     self.terminal_frame.lines.len(),
                     apply_started
                         .map(crate::terminal_trace::elapsed_us)
@@ -231,16 +216,9 @@ impl ShardlaneApp {
             self.terminal_raw_frame = frame;
             return;
         }
-        // Keep the raw Ghostty grid separate from the visible projection. The Hosted Herdr TUI
-        // includes navigation chrome beyond the pane, so the projected frame has a different
-        // shape and cannot be reused as the signature baseline for the next polling round.
+        // Keep the raw Ghostty grid as the signature-reuse baseline for the next polling round.
         self.terminal_raw_frame = frame.clone();
-        let projected = !projection.is_empty();
-        let mut frame = if projected {
-            Arc::new(projection.project_frame(&frame))
-        } else {
-            frame
-        };
+        let mut frame = frame;
         let retained_surface_background = if self.terminal_target.as_deref()
             == Some(herdr_tui::TUI_TARGET)
             && frame.surface_background.is_none()
@@ -251,9 +229,6 @@ impl ShardlaneApp {
         } else {
             false
         };
-        let projection_us = projection_started
-            .map(crate::terminal_trace::elapsed_us)
-            .unwrap_or(0);
         let previous_surface_background = self
             .terminal_frame
             .surface_background
@@ -262,8 +237,8 @@ impl ShardlaneApp {
         let surface_background_changed = previous_surface_background != next_surface_background;
         let compare_started = trace.then(Instant::now);
         // B16: under `pane_plan` the stored visible frame is the plan's baseline projected by
-        // the same (empty) projection, so the deep compare's verdict is already decided —
-        // RowsChanged means a raw row (hence a visible row, no crop) differs, and RowsUnchanged
+        // the same grid, so the deep compare's verdict is already decided —
+        // RowsChanged means a raw row (hence a visible row) differs, and RowsUnchanged
         // reaching this point means the scalars differ (the equal-scalar case early-returned
         // above). Without the plan: today's deep comparison, unchanged.
         let unchanged = if pane_plan.is_some() {
@@ -276,10 +251,9 @@ impl ShardlaneApp {
             .map(crate::terminal_trace::elapsed_us)
             .unwrap_or(0);
         if unchanged {
-            self.terminal_frame_projection = projection;
             if trace {
                 crate::terminal_trace::event(format_args!(
-                    "stage=frame.apply unchanged=true projected={projected} rows={} projection_us={projection_us} compare_us={compare_us} total_us={}",
+                    "stage=frame.apply unchanged=true rows={} compare_us={compare_us} total_us={}",
                     frame.lines.len(),
                     apply_started
                         .map(crate::terminal_trace::elapsed_us)
@@ -320,7 +294,6 @@ impl ShardlaneApp {
             ));
         }
         self.terminal_frame = frame.clone();
-        self.terminal_frame_projection = projection;
         self.last_terminal_frame_at = Some(Instant::now());
         self.terminal_pending_frame = false;
         // Only notify TerminalPane — never root/sidebar (cached siblings stay cold). The pane
@@ -338,7 +311,7 @@ impl ShardlaneApp {
         }
         if trace {
             crate::terminal_trace::event(format_args!(
-                "stage=frame.apply unchanged=false projected={projected} rows={} projection_us={projection_us} compare_us={compare_us} pane_update_us={} total_us={}",
+                "stage=frame.apply unchanged=false rows={} compare_us={compare_us} pane_update_us={} total_us={}",
                 self.terminal_frame.lines.len(),
                 pane_started
                     .map(crate::terminal_trace::elapsed_us)
@@ -510,8 +483,8 @@ impl ShardlaneApp {
         self.resize_main_terminal_to_size(size, cx);
     }
 
-    /// Hosted TUI resize: the local Ghostty model reflows immediately and the compensated
-    /// raw grid goes to the shared session's resize seam; the Herdr TUI repaints naturally
+    /// Hosted TUI resize: the local Ghostty model reflows immediately and the visible
+    /// grid goes to the shared session's resize seam; the Herdr TUI repaints naturally
     /// via its own PTY output.
     pub(super) fn resize_main_terminal_to_size(
         &mut self,
@@ -522,7 +495,6 @@ impl ShardlaneApp {
             return;
         }
         self.terminal_size = Some(size);
-        let transport_size = self.tui_raw_terminal_size(size);
         let Some(local_terminal) = self.terminal.clone() else {
             cx.notify();
             return;
@@ -530,7 +502,7 @@ impl ShardlaneApp {
         let token = self.terminal_token;
 
         // Local model reflow (async lock); once done, project the reflow frame immediately; within the
-        // same lock, write the compensated raw grid to the host PTY (TIOCSWINSZ/SIGWINCH) — the Herdr
+        // same lock, write the grid to the host PTY (TIOCSWINSZ/SIGWINCH) — the Herdr
         // TUI then repaints naturally.
         cx.spawn(async move |this, cx| {
             let result = cx
@@ -540,15 +512,8 @@ impl ShardlaneApp {
                         .lock()
                         .map_err(|err| err.to_string())
                         .and_then(|mut session| {
-                            let frame = session.resize_local(
-                                transport_size.0,
-                                transport_size.1,
-                                transport_size.2,
-                                transport_size.3,
-                            )?;
-                            session
-                                .input_handle()
-                                .resize(transport_size.0, transport_size.1)?;
+                            let frame = session.resize_local(size.0, size.1, size.2, size.3)?;
+                            session.input_handle().resize(size.0, size.1)?;
                             Ok(frame)
                         })
                 })
@@ -559,8 +524,8 @@ impl ShardlaneApp {
                 }
                 match result {
                     Ok(frame) => {
-                        // The model now holds exactly the compensated transport grid.
-                        view.tui_adopted_grid = Some((transport_size.0, transport_size.1));
+                        // The model now holds exactly this grid.
+                        view.tui_adopted_grid = Some((size.0, size.1));
                         // Root re-render so the "Restore Width" fallback tracks the grid.
                         cx.notify();
                         // Resize reflows the whole grid: no row plan exists.

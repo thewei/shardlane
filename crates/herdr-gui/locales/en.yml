@@ -24,9 +24,6 @@ settings:
     dark: Dark
   option:
     auto: Auto
-    sidebar: Sidebar
-    native_tabs: Native Tabs
-    herdr_tui: Herdr TUI
     compact: Compact
     hidden: Hidden
     top: Top
@@ -69,8 +66,6 @@ settings:
     pane_scrollbars_detail: 'Herdr ui.pane_scrollbars.'
     pane_gaps: Pane gaps
     pane_gaps_detail: 'Herdr ui.pane_gaps.'
-    hide_single_tab: Hide single-tab bar
-    hide_single_tab_detail: 'Herdr ui.hide_tab_bar_when_single_tab.'
     tab_position: Tab bar position
     tab_position_detail: 'Herdr ui.tab_bar_position.'
     status_indicators: Status indicators
@@ -95,8 +90,6 @@ settings:
     line_height_detail: '%{height} px · default %{default} px'
     padding: Padding
     padding_detail: '%{padding} px around the character grid · default %{default}'
-    tab_bar: Tab bar
-    tab_bar_detail: Show Project tabs in the Sidebar tree or as native tabs above the terminal content.
     cursor_style: Cursor style
     cursor_style_detail: 'Auto follows the running program (including the hollow caret when the window loses focus). Default: Auto.'
     cursor_block: Block

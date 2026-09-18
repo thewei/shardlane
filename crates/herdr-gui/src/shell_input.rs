@@ -162,14 +162,10 @@ impl ShardlaneApp {
         let fallback_us = fallback_started
             .map(crate::terminal_trace::elapsed_us)
             .unwrap_or(0);
-        let semantic_selection = if target == herdr_tui::TUI_TARGET {
-            self.tui_chrome_projection
-                .visible_to_raw_selection(selection)
-        } else {
-            selection
-        };
         let request = PendingTerminalCopy {
-            selection: semantic_selection,
+            // Visible grid == raw grid (TUI chrome always shown): the selection maps
+            // straight into the Ghostty model's semantic copy path.
+            selection,
             fallback_text: fallback_text.clone(),
             generation: self.terminal_token,
         };
@@ -250,11 +246,6 @@ impl ShardlaneApp {
         }
         (self.terminal_target.as_deref() == Some(herdr_tui::TUI_TARGET))
             .then(|| herdr_tui::TUI_TARGET.to_string())
-    }
-
-    pub(super) fn focused_has_selection(&self) -> bool {
-        self.focused_terminal_target()
-            .is_some_and(|target| self.selections.contains_key(&target))
     }
 
     pub(super) fn extract_selection_text(&self, start: (u16, u16), end: (u16, u16)) -> String {

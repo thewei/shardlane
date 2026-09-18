@@ -109,25 +109,17 @@ impl ShardlaneApp {
         cell: (u16, u16),
         line: bool,
     ) -> Option<TerminalSelection> {
-        let tui_projection = target == herdr_tui::TUI_TARGET;
-        let raw_cell = if tui_projection {
-            self.tui_visible_to_raw_cell(cell)
-        } else {
-            cell
-        };
+        // The visible grid IS the raw grid (TUI chrome always shown): no coordinate
+        // translation between selection space and the Ghostty model.
         let fallback = self.selections.get(target).copied();
-        self.selection_at_terminal(target, fallback, |managed, fallback| {
+        self.selection_at_terminal(target, fallback, |managed, _fallback| {
             let selection = if line {
-                managed.select_line_at(raw_cell)
+                managed.select_line_at(cell)
             } else {
-                managed.select_word_at(raw_cell)
+                managed.select_word_at(cell)
             };
             let selection = selection.ok().flatten()?;
-            if tui_projection {
-                self.tui_raw_to_visible_selection(selection).or(fallback)
-            } else {
-                Some(selection)
-            }
+            Some(selection)
         })
     }
 
@@ -171,31 +163,17 @@ impl ShardlaneApp {
             return Some((anchor, current));
         }
         let fallback = self.selections.get(target).copied();
-        let tui_projection = target == herdr_tui::TUI_TARGET;
-        let raw_anchor = if tui_projection {
-            self.tui_visible_to_raw_cell(anchor)
-        } else {
-            anchor
-        };
-        let raw_current = if tui_projection {
-            self.tui_visible_to_raw_cell(current)
-        } else {
-            current
-        };
+        // Visible grid == raw grid: anchors map straight into the Ghostty model.
         self.selection_at_terminal(target, fallback, |managed, fallback| {
             let selection = match mode {
-                TerminalSelectionMode::Word => managed.select_word_drag(raw_anchor, raw_current),
-                TerminalSelectionMode::Line => managed.select_line_drag(raw_anchor, raw_current),
+                TerminalSelectionMode::Word => managed.select_word_drag(anchor, current),
+                TerminalSelectionMode::Line => managed.select_line_drag(anchor, current),
                 TerminalSelectionMode::Cell => unreachable!(),
             };
             let Some(selection) = selection.ok().flatten() else {
                 return fallback;
             };
-            if tui_projection {
-                self.tui_raw_to_visible_selection(selection).or(fallback)
-            } else {
-                Some(selection)
-            }
+            Some(selection)
         })
     }
 
@@ -312,7 +290,7 @@ impl ShardlaneApp {
         position_x: f64,
         position_y: f64,
     ) -> Option<(TerminalMouseGeometry, (f64, f64))> {
-        let mut size = if self.terminal_target.as_deref() == Some(target) {
+        let size = if self.terminal_target.as_deref() == Some(target) {
             self.terminal_size
         } else if target == crate::right_panel::lazygit::LAZYGIT_TARGET {
             self.lazygit_size()
@@ -321,13 +299,9 @@ impl ShardlaneApp {
         }?;
         let cell_width = self.terminal_cell_width();
         let cell_height = self.terminal_cell_height();
-        let mut x = (position_x - origin_x).max(0.0);
-        let mut y = (position_y - origin_y).max(0.0);
-        if target == herdr_tui::TUI_TARGET {
-            x += cell_width * f64::from(self.tui_chrome_projection.left);
-            y += cell_height * f64::from(self.tui_chrome_projection.top);
-            size = self.tui_raw_terminal_size(size);
-        }
+        // Visible grid == raw grid: pixel positions map straight into the model's grid.
+        let x = (position_x - origin_x).max(0.0);
+        let y = (position_y - origin_y).max(0.0);
         let geometry = TerminalMouseGeometry {
             screen_width: u32::from(size.2.max(1)),
             screen_height: u32::from(size.3.max(1)),

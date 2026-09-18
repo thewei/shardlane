@@ -50,7 +50,6 @@ mod shell_projects;
 mod shell_render;
 mod shell_scroll_search;
 mod shell_settings;
-mod shell_tabs;
 mod shell_terminal_stream;
 mod shell_theme;
 mod shell_tui;
@@ -84,10 +83,10 @@ use crepuscularity_gpui::{
     actions, bounds, canvas, div, gpui_window_options, point, px, rgb, size, AnyElement, AnyView,
     AnyWindowHandle, App, Application, Bounds, Context, Entity, FocusHandle, Focusable,
     InputHandler, IntoElement, KeyBinding, Keystroke, Menu, MenuItem, MouseButton, MouseDownEvent,
-    MouseMoveEvent, MouseUpEvent, PathPromptOptions, Pixels, Render, ScrollHandle,
-    ScrollWheelEvent, SharedString, StyleRefinement, Subscription, SystemMenuType,
-    Task as BackgroundJob, TouchPhase, UTF16Selection, WeakEntity, Window, WindowAppearance,
-    WindowBackgroundAppearance, WindowBounds, WindowId,
+    MouseMoveEvent, MouseUpEvent, PathPromptOptions, Pixels, Render, ScrollWheelEvent,
+    SharedString, StyleRefinement, Subscription, SystemMenuType, Task as BackgroundJob, TouchPhase,
+    UTF16Selection, WeakEntity, Window, WindowAppearance, WindowBackgroundAppearance, WindowBounds,
+    WindowId,
 };
 use futures::future::{select, Either};
 use ghostty::{
@@ -109,8 +108,8 @@ use gpui_component::{
 };
 use herdr::{
     herdr_cli_path, installed_cli_version, Agent, AgentStatusPatch, DeviceEndpoint, HerdrEvent,
-    HerdrState, LayoutRect, NavigationState, Pane, PaneLayout, PaneLayoutActionResult,
-    PaneMoveResult, PaneProcessInfo, Tab, TabCreatedResult, TabSurfaceState, Workspace,
+    HerdrState, NavigationState, Pane, PaneLayout, PaneLayoutActionResult, PaneMoveResult,
+    PaneProcessInfo, Tab, TabCreatedResult, TabSurfaceState, Workspace,
 };
 use input::{ghostty_terminal_key, key_name};
 use interaction::InteractiveSurfaceExt as _;
@@ -1582,20 +1581,12 @@ struct ShardlaneApp {
     /// the Herdr TUI child's OSC 10/11 queries. Both derive from the active Herdr
     /// official theme; `None` until the first hosted attach/theme application.
     hosted_terminal_colors: Option<(u32, u32)>,
-    /// The most recent raw Ghostty frame before the presentation-only Herdr chrome projection. The projected
-    /// `terminal_frame` has fewer rows/cols and cannot serve as the signature-reuse baseline for the hosted TUI.
+    /// The most recent raw Ghostty frame; it doubles as the signature-reuse baseline for
+    /// `TerminalFramePlan` extraction (the visible frame IS the raw frame — the hosted
+    /// TUI's own chrome is always shown, never cropped).
     terminal_raw_frame: Arc<TerminalFrame>,
-    /// The projection deriving `terminal_frame` from `terminal_raw_frame`; when the raw frame's allocation is
-    /// unchanged, the presentation path can use it to skip a second deep projection.
-    terminal_frame_projection: crate::herdr_tui::TuiChromeProjection,
     terminal_frame: Arc<TerminalFrame>,
     terminal_pane: Entity<TerminalPane>,
-    /// Horizontal scroll of the native content-area Tab strip (shell_tabs.rs); the strip's
-    /// page arrows and edge clamping read/mutate this handle.
-    native_tab_scroll: ScrollHandle,
-    /// Last scroll max seen by the strip's measure canvas, so the page arrows re-render once
-    /// when the strip starts/stops overflowing (max_offset is only written during paint).
-    native_tab_scroll_max: std::cell::Cell<f64>,
     pending_copy_selection: Option<PendingTerminalCopy>,
     /// Sender side of the hosted terminal's poll wake channel (audit B20): a pended
     /// copy-on-select wakes the poll immediately instead of waiting out the backoff.
@@ -1678,23 +1669,14 @@ struct ShardlaneApp {
     show_help: bool,
     show_settings: bool,
     tui_host: crate::herdr_tui::HerdrTuiHostState,
-    /// The Hosted Herdr TUI's presentation-only chrome projection. Herdr/Ghostty still hold the
-    /// full screen; Shardlane shows only the Pane region matching `pane.layout.area`.
-    tui_chrome_projection: crate::herdr_tui::TuiChromeProjection,
-    /// Pane size seen by the most recent chrome probe; unchanged across probes
-    /// with a grown allowance is the stale-transport race signature.
-    tui_chrome_last_probe: Option<(u32, u32)>,
     /// The viewer-local model's actual grid after adopting a remote viewer's shared-session
-    /// resize. Chrome margins for the adoption path must be derived from this grid, not from
-    /// the desktop's compensated target grid.
+    /// resize, compared against the desktop's own target grid by the "Restore Width" path.
     tui_adopted_grid: Option<(u16, u16)>,
     /// TUI host respawn cooldown deadline (short-term loop prevention after process exit/spawn failure);
     /// navigation/restart actions can punch through the cooldown (ensure_tui_surface's force).
     tui_respawn_blocked_until: Option<Instant>,
     /// The TUI mode's most recent focus chain task: the last click wins (same semantics as _navigation_task).
     _tui_focus_task: BackgroundJob<()>,
-    /// Hosted chrome geometry probe; runs only briefly after attach/focus, never periodic polling.
-    _tui_projection_task: BackgroundJob<()>,
     /// Applying hosted-TUI presentation config is serialized by replacement: a newer Settings
     /// change cancels the previous prepare/reload/restart task so rapid theme clicks cannot race.
     _tui_config_apply_task: BackgroundJob<()>,
@@ -2278,6 +2260,14 @@ impl ShardlaneApp {
             ));
             herdr_tui::HerdrUserConfigSnapshot::default()
         });
+        // 产品裁决（2026-09-18）：TUI 自身的 Tab 栏永远显示（即使只有一个 Tab）。
+        // 历史版本可能把 ui.hide_tab_bar_when_single_tab 写成 true，启动时归位为 false；
+        // 失败只降级为日志，不阻塞启动。
+        if let Err(error) = herdr_tui::ensure_tui_tab_bar_always_visible() {
+            lag_log(format_args!(
+                "herdr.config tab-bar-always-visible migration skipped: {error}"
+            ));
+        }
         // Audit A18: the same auto-switch-aware resolution as sync_app_theme_from_herdr/theme()
         // (the bootstrap variant previously only looked at theme_name).
         if let Some(preset) = resolved_theme_preset(&herdr_user_config, true) {
@@ -2412,11 +2402,8 @@ impl ShardlaneApp {
             terminal_token: 0,
             hosted_terminal_colors: None,
             terminal_raw_frame: Arc::new(TerminalFrame::default()),
-            terminal_frame_projection: crate::herdr_tui::TuiChromeProjection::default(),
             terminal_frame: Arc::new(TerminalFrame::default()),
             terminal_pane,
-            native_tab_scroll: ScrollHandle::new(),
-            native_tab_scroll_max: std::cell::Cell::new(-1.0),
             pending_copy_selection: None,
             terminal_poll_wake: None,
             last_terminal_frame_at: None,
@@ -2464,12 +2451,9 @@ impl ShardlaneApp {
             show_help: false,
             show_settings: false,
             tui_host: crate::herdr_tui::HerdrTuiHostState::default(),
-            tui_chrome_projection: crate::herdr_tui::TuiChromeProjection::default(),
-            tui_chrome_last_probe: None,
             tui_adopted_grid: None,
             tui_respawn_blocked_until: None,
             _tui_focus_task: BackgroundJob::ready(()),
-            _tui_projection_task: BackgroundJob::ready(()),
             _tui_config_apply_task: BackgroundJob::ready(()),
             settings_section: SettingsSection::default(),
             settings_provider_detail: None,
@@ -4486,11 +4470,6 @@ fn poll_managed_terminal(
                                     cx.notify();
                                     // Shared-geometry adoption reflows the grid: no row plan.
                                     view.set_terminal_frame(Arc::new(frame), None, cx);
-                                    view.schedule_tui_chrome_probe(
-                                        view.state.focused_pane_id.clone(),
-                                        false,
-                                        cx,
-                                    );
                                     active = true;
                                 }
                                 Ok(None) => {}

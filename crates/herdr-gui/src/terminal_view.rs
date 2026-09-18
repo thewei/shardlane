@@ -1355,15 +1355,6 @@ mod tests {
         };
         let overlays = terminal_block_glyph_overlays(line, style);
         assert_eq!(overlays.len(), 3, "raw frame must overlay every ▕ cell");
-
-        // The hosted surface paints the projected (chrome-cropped) frame.
-        let projected = frame.project_rect(1, 0, 0, 0);
-        let projected_overlays = terminal_block_glyph_overlays(&projected.lines[0], style);
-        assert_eq!(
-            projected_overlays.len(),
-            3,
-            "projected frame must overlay every ▕ cell"
-        );
     }
 
     /// The rows container is laid out at the fixed cell grid (rows × cell_height).

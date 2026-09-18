@@ -505,27 +505,14 @@ pub struct TerminalConfig {
     /// Forces caret blinking on/off; `follow-terminal` defers to the program's
     /// blink mode (DECTCEM-adjacent `?12` semantics projected by the VT model).
     pub cursor_blink: TerminalCursorBlinkPreference,
-    /// Where the active Project's Tab list is presented: the canonical Sidebar
-    /// tree, or a native Tab strip at the top of the content area (both remain
-    /// pure presentations of Herdr's authoritative Tab order).
-    pub tab_bar_placement: TabBarPlacement,
 }
 
-/// Presentation target for the Project Tab list (client-owned display preference;
-/// Tab runtime state stays Herdr-authoritative either way).
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum TabBarPlacement {
-    /// Tabs render as Sidebar rows under their Project.
-    #[default]
-    Sidebar,
-    /// Tabs render as a native Tab strip above the hosted terminal content;
-    /// the Sidebar keeps Projects without the per-Tab subtree.
-    Native,
-    /// Tabs and context menu are rendered and handled directly by Herdr TUI
-    /// inside the terminal; the Sidebar keeps Projects without the per-Tab subtree.
-    HerdrTui,
-}
+// Tab presentation is fixed (2026-09-18): the Sidebar always renders the
+// per-Project Tab subtree and the hosted Herdr TUI always keeps its own chrome
+// (Tab bar included, even with a single Tab). The former
+// `terminal.tab_bar_placement` selector and its native Tab strip were removed;
+// stale keys in old config files are ignored by serde's unknown-field behavior
+// and disappear on the next canonical save; no permanent migration machinery exists.
 
 /// Lazygit startup and Shardlane-owned overlay preferences. User/repository Lazygit
 /// configuration remains authoritative for every key not explicitly represented here.
@@ -617,7 +604,6 @@ impl Default for TerminalConfig {
             padding: 8.0,
             cursor_style: TerminalCursorStylePreference::FollowTerminal,
             cursor_blink: TerminalCursorBlinkPreference::FollowTerminal,
-            tab_bar_placement: TabBarPlacement::default(),
         }
     }
 }
@@ -1247,29 +1233,16 @@ mod tests {
     }
 
     #[test]
-    fn tab_bar_placement_kebab_round_trip_and_diff() {
-        // The user-facing config spelling is kebab-case; the Sidebar default keeps old
-        // configs (without the key) unchanged.
-        assert_eq!(
-            serde_json::to_value(TabBarPlacement::Sidebar).unwrap(),
-            serde_json::json!("sidebar")
-        );
-        assert_eq!(
-            serde_json::to_value(TabBarPlacement::Native).unwrap(),
-            serde_json::json!("native")
-        );
-        assert_eq!(
-            serde_json::to_value(TabBarPlacement::HerdrTui).unwrap(),
-            serde_json::json!("herdr-tui")
-        );
-        let legacy: TerminalConfig = serde_json::from_str(r#"{"font_family":"Menlo"}"#)
-            .unwrap_or_else(|error| panic!("{error}"));
-        assert_eq!(legacy.tab_bar_placement, TabBarPlacement::Sidebar);
-
-        let current = ApplicationConfig::default();
-        let mut next = current.clone();
-        next.terminal.tab_bar_placement = TabBarPlacement::Native;
-        assert!(ConfigDiff::between(&current, &next).terminal);
+    fn terminal_config_ignores_legacy_tab_bar_placement_key() {
+        // Tab presentation is fixed now; a config written by an older build must
+        // still load (the stale key is dropped) and stay byte-stable on save.
+        let legacy: ApplicationConfig =
+            serde_json::from_str(r#"{"terminal": {"tab-bar-placement": "native"}}"#)
+                .unwrap_or_else(|error| panic!("{error}"));
+        let saved = serde_json::to_value(&legacy).unwrap_or_else(|error| panic!("{error}"));
+        assert!(saved["terminal"]
+            .as_object()
+            .is_none_or(|terminal| !terminal.contains_key("tab-bar-placement")));
     }
 
     #[test]

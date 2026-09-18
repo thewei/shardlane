@@ -20,9 +20,6 @@ settings:
     dark: 다크
   option:
     auto: 자동
-    sidebar: 사이드바
-    native_tabs: 네이티브 탭
-    herdr_tui: Herdr TUI
     compact: 컴팩트
     hidden: 숨김
     top: 위
@@ -65,8 +62,6 @@ settings:
     pane_scrollbars_detail: 'Herdr ui.pane_scrollbars.'
     pane_gaps: 페인 간격
     pane_gaps_detail: 'Herdr ui.pane_gaps.'
-    hide_single_tab: 탭 하나일 때 탭 바 숨기기
-    hide_single_tab_detail: 'Herdr ui.hide_tab_bar_when_single_tab.'
     tab_position: 탭 바 위치
     tab_position_detail: 'Herdr ui.tab_bar_position.'
     status_indicators: 상태 표시기
@@ -91,8 +86,6 @@ settings:
     line_height_detail: '%{height} px · 기본값 %{default} px'
     padding: 패딩
     padding_detail: '문자 그리드 주변 %{padding} px · 기본값 %{default}'
-    tab_bar: 탭 바
-    tab_bar_detail: Project 탭을 사이드바 트리에 표시하거나 터미널 콘텐츠 위에 네이티브 탭으로 표시합니다.
     cursor_style: 커서 모양
     cursor_style_detail: '자동은 실행 중인 프로그램을 따릅니다(창 포커스를 잃을 때의 속 빈 커서 포함). 기본값: 자동.'
     cursor_block: 블록

@@ -316,10 +316,6 @@ impl ShardlaneApp {
         if diff.is_empty() {
             return;
         }
-        // The Tab-bar placement swaps the Sidebar Tab subtree for the content-area strip, so a
-        // change (including an external config edit) must invalidate the cached Sidebar too.
-        let tab_bar_placement_changed =
-            self.config.terminal.tab_bar_placement != next.terminal.tab_bar_placement;
         self.config = next;
         // SCT-03: shortcut changes (including external config.json edits) → immediate runtime rebinding,
         // no silent drops and no waiting for a restart.
@@ -353,10 +349,6 @@ impl ShardlaneApp {
         }
         if diff.terminal {
             self.apply_terminal_render_settings(cx);
-            if tab_bar_placement_changed {
-                self.notify_sidebar(cx);
-                self.schedule_tui_chrome_probe(None, true, cx);
-            }
         }
         if diff.lazygit {
             self.refresh_lazygit_detection(cx);

@@ -19,9 +19,6 @@ settings:
     dark: 深色
   option:
     auto: 自动
-    sidebar: 侧栏
-    native_tabs: 原生标签页
-    herdr_tui: Herdr TUI
     compact: 紧凑
     hidden: 隐藏
     top: 顶部
@@ -64,8 +61,6 @@ settings:
     pane_scrollbars_detail: 'Herdr ui.pane_scrollbars。'
     pane_gaps: 窗格间距
     pane_gaps_detail: 'Herdr ui.pane_gaps。'
-    hide_single_tab: 单标签页时隐藏标签栏
-    hide_single_tab_detail: 'Herdr ui.hide_tab_bar_when_single_tab。'
     tab_position: 标签栏位置
     tab_position_detail: 'Herdr ui.tab_bar_position。'
     status_indicators: 状态指示器
@@ -90,8 +85,6 @@ settings:
     line_height_detail: '%{height} px · 默认 %{default} px'
     padding: 内边距
     padding_detail: '字符网格四周 %{padding} px · 默认 %{default}'
-    tab_bar: 标签栏
-    tab_bar_detail: 在侧栏树中显示 Project 标签页，或在终端内容上方显示为原生标签页。
     cursor_style: 光标样式
     cursor_style_detail: '自动模式跟随运行中的程序（包括窗口失焦时的空心光标）。默认：自动。'
     cursor_block: 方块

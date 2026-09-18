@@ -586,33 +586,6 @@ impl ShardlaneApp {
         self.persist_current_workspace_state(cx);
     }
 
-    /// Native-tab placement (`terminal.tab_bar_placement`): a Sidebar Project click focuses the
-    /// Project instead of expanding a Tab subtree — the Tabs are presented by the content-area
-    /// Tab strip. Keeps the same Project-context side effects as `toggle_project_folder` so the
-    /// New Agent composer and the right panel follow the clicked Project.
-    pub(super) fn focus_project_from_sidebar(
-        &mut self,
-        workspace_id: String,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.pending_close_tab = None;
-        // Multi-instance model: rows synthesized from the Project registry carry a
-        // "project:<id>" id. Clicking one jumps to the Project's window when one
-        // exists, otherwise rebinds THIS window to that instance. Runtime workspace
-        // ids (the bound instance's own workspaces) keep the legacy focus path.
-        if let Some(project_id) = workspace_id.strip_prefix("project:") {
-            self.open_or_jump_project(project_id, window, cx);
-            return;
-        }
-        self.new_agent_context_workspace_id = Some(workspace_id.clone());
-        if self.new_agent_open {
-            self.select_new_agent_project(workspace_id.clone(), window, cx);
-        }
-        self.sync_right_panel_for_project_context(cx);
-        self.apply_focus_intent(FocusIntent::project(workspace_id), window, cx);
-    }
-
     pub(super) fn merge_workspace_panes(
         &mut self,
         workspace_id: &str,
