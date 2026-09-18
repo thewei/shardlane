@@ -382,3 +382,5 @@ shortcuts:
     project_previous: 上一个 Project
     project_next: 下一个 Project
 
+sidebar:
+  back_to_app: 返回应用

@@ -382,3 +382,6 @@ shortcuts:
     tab_next: 次のタブ
     project_previous: 前の Project
     project_next: 次の Project
+
+sidebar:
+  back_to_app: アプリに戻る

@@ -81,5 +81,5 @@ pub(super) fn secondary_sidebar_back_row(
             on_activate,
         )
         .child(Icon::new(ComponentIconName::ChevronLeft).xsmall())
-        .child("Back to app")
+        .child(crate::i18n::t("sidebar.back_to_app"))
 }

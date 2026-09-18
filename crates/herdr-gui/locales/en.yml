@@ -386,3 +386,6 @@ shortcuts:
     tab_next: Next Tab
     project_previous: Previous Project
     project_next: Next Project
+
+sidebar:
+  back_to_app: Back to app

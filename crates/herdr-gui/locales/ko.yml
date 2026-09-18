@@ -383,3 +383,5 @@ shortcuts:
     project_previous: 이전 Project
     project_next: 다음 Project
 
+sidebar:
+  back_to_app: 앱으로 돌아가기
