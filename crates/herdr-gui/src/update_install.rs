@@ -2,9 +2,11 @@
 //!
 //! Completes the story started by update_check: once a newer release
 //! manifest is on record, this module downloads the release ZIP (curl,
-//! bounded), verifies its SHA-256 against the release's .sha256 asset
-//! (shasum), extracts the bundle with ditto into a versioned staging
-//! directory, and -- on an explicit "Update and Restart" -- swaps the
+//! bounded), verifies its SHA-256 against the manifest pinned digest or
+//! the release .sha256 asset (shasum), extracts the bundle with ditto,
+//! gates the staged bundle behind codesign verification plus a signing-team
+//! match against the running app, and -- on an explicit Update and
+//! Restart -- swaps the
 //! running .app with the staged one (rename the current bundle to a backup,
 //! move the staged bundle into place, roll back on any failure) and
 //! relaunches through the macOS "open" service. Every filesystem path is
@@ -14,12 +16,12 @@
 //! old open-the-releases-page behavior.
 //!
 //! [INPUT]: depends on update_check::UpdateManifest, the system curl/shasum/
-//! ditto/open binaries, gpui App/AsyncApp/WeakEntity for the download
+//! ditto/codesign/open binaries, gpui App/AsyncApp/WeakEntity for the download
 //! pipeline, and crate::notifications
 //! [OUTPUT]: exposes InstallState + install_state, begin_staged_download,
 //! install_and_restart, cleanup_after_restart, can_install, and the pure
 //! helpers parse_checksum / safe_version / archive_name_from_url /
-//! format_progress
+//! format_progress / expected_checksum / signature_policy_allows
 //! [POS]: herdr-gui's update-install lifecycle beside update_check.rs (the
 //! check answers "is something newer", install answers "get it on disk and
 //! swap"); the Settings Behavior card projects the state machine, and the
@@ -228,8 +230,23 @@ fn content_length(url: &str) -> Option<u64> {
         .and_then(|value| value.trim().parse().ok())
 }
 
-fn verify_archive(zip: &Path, archive_url: &str) -> Result<(), String> {
-    let expected = fetch_checksum(archive_url)?;
+/// The expected digest: the manifest pinned sha256 when it carries a
+/// valid one, otherwise the release .sha256 sidecar asset. Both channels
+/// share the manifest origin, so the pin is defense-in-depth against a
+/// swapped sidecar, not the trust root (that is the signature gate below).
+fn expected_checksum(
+    manifest_checksum: &str,
+    fetch_sidecar: impl FnOnce() -> Result<String, String>,
+) -> Result<String, String> {
+    let pinned = manifest_checksum.trim();
+    if pinned.len() == 64 && pinned.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Ok(pinned.to_ascii_lowercase());
+    }
+    fetch_sidecar()
+}
+
+fn verify_archive(zip: &Path, archive_url: &str, manifest_checksum: &str) -> Result<(), String> {
+    let expected = expected_checksum(manifest_checksum, || fetch_checksum(archive_url))?;
     let actual = file_sha256(zip)?;
     if !expected.eq_ignore_ascii_case(&actual) {
         return Err("SHA-256 mismatch -- the download is corrupted or tampered with".into());
@@ -249,6 +266,72 @@ fn extract_archive(zip: &Path, into: &Path) -> Result<(), String> {
         return Err(format!("extraction failed: {}", output.status));
     }
     Ok(())
+}
+
+// --- Code-signature gate ---
+
+/// Structural integrity of a bundle: codesign --verify --strict, the same
+/// gate the packaging script and release workflow run. Both ad-hoc and
+/// identity-signed bundles pass; a tampered or unsigned one fails.
+fn codesign_verify(bundle: &Path) -> Result<(), String> {
+    let output = Command::new("codesign")
+        .args(["--verify", "--strict"])
+        .arg(bundle)
+        .stdin(Stdio::null())
+        .output()
+        .map_err(|error| format!("codesign spawn failed: {error}"))?;
+    if !output.status.success() {
+        return Err("bundle fails codesign --verify --strict".into());
+    }
+    Ok(())
+}
+
+/// The bundle signing team from codesign -dv --verbose=4 (metadata goes to
+/// stderr): None for ad-hoc or unsigned bundles ("not set").
+fn signature_team(bundle: &Path) -> Result<Option<String>, String> {
+    let output = Command::new("codesign")
+        .args(["-dv", "--verbose=4"])
+        .arg(bundle)
+        .stdin(Stdio::null())
+        .output()
+        .map_err(|error| format!("codesign spawn failed: {error}"))?;
+    if !output.status.success() {
+        return Err("bundle has no readable code signature".into());
+    }
+    let text = String::from_utf8_lossy(&output.stderr);
+    Ok(text
+        .lines()
+        .find_map(|line| line.strip_prefix("TeamIdentifier="))
+        .map(str::trim)
+        .filter(|team| !team.is_empty() && *team != "not set")
+        .map(str::to_string))
+}
+
+/// Pure trust policy for the swap. The RUNNING bundle is the anchor: a
+/// team-signed app may only be replaced by the same team; an ad-hoc running
+/// bundle (local/dev install) has no anchor, so the integrity check above
+/// remains its only gate.
+fn signature_policy_allows(
+    running: Option<&str>,
+    staged: Option<&str>,
+) -> Result<(), &'static str> {
+    match (running, staged) {
+        (Some(expected), Some(actual)) if expected == actual => Ok(()),
+        (Some(_), Some(_)) => Err("staged update is signed by a different team"),
+        (Some(_), None) => Err("staged update is not team-signed like the running app"),
+        (None, _) => Ok(()),
+    }
+}
+
+/// Full signature gate for a staged bundle: structural verification plus the
+/// team match against the running app. Failing to read the running bundle
+/// team (unsigned dev install) degrades to integrity-only rather than
+/// blocking updates.
+fn verify_staged_signature(running: &Path, staged: &Path) -> Result<(), String> {
+    codesign_verify(staged)?;
+    let running_team = signature_team(running).ok().flatten();
+    let staged_team = signature_team(staged)?;
+    signature_policy_allows(running_team.as_deref(), staged_team.as_deref()).map_err(str::to_string)
 }
 
 // --- Download pipeline ---
@@ -322,6 +405,7 @@ async fn download_pipeline(
     let asset = manifest.asset_for_current_platform();
     let zip_path = version_dir
         .join(archive_name_from_url(&asset.url).ok_or("manifest URL has no archive name")?);
+    let manifest_checksum = asset.sha256;
     let url = asset.url;
     let version = manifest.version.clone();
 
@@ -399,7 +483,7 @@ async fn download_pipeline(
     let verify_zip = zip_path.clone();
     let verify_url = url.clone();
     cx.background_executor()
-        .spawn(async move { verify_archive(&verify_zip, &verify_url) })
+        .spawn(async move { verify_archive(&verify_zip, &verify_url, &manifest_checksum) })
         .await?;
     let extract_zip = zip_path.clone();
     let extract_dir = version_dir.clone();
@@ -425,6 +509,17 @@ async fn download_pipeline(
     if !staged_executable_present {
         return Err("staged bundle is missing its executable".into());
     }
+    // 4. Signature gate: the staged bundle must pass codesign verification
+    //    and carry the same signing team as the running app before it may
+    //    be swapped in (ad-hoc dev installs degrade to integrity-only).
+    let running = running_bundle();
+    let staged_bundle = version_dir.join(APP_BUNDLE_NAME);
+    cx.background_executor()
+        .spawn(async move {
+            let running = running.ok_or_else(|| "cannot resolve the running bundle".to_string())?;
+            verify_staged_signature(&running, &staged_bundle)
+        })
+        .await?;
     let _ = std::fs::remove_file(&zip_path);
     Ok(())
 }
@@ -462,6 +557,8 @@ pub fn install_and_restart() -> Result<(), String> {
     {
         return Err("staged bundle is missing its executable".into());
     }
+    verify_staged_signature(&current, &staged)
+        .map_err(|error| format!("staged update failed the signature gate: {error}"))?;
     let target = parent.join(APP_BUNDLE_NAME);
     let backup = parent.join(format!("{BACKUP_PREFIX}{version}"));
 
@@ -621,5 +718,46 @@ mod tests {
             return;
         }
         assert!(!can_install());
+    }
+
+    #[test]
+    fn expected_checksum_prefers_a_valid_manifest_pin() {
+        let pinned = "a".repeat(64);
+        assert_eq!(
+            expected_checksum(&pinned, || Err("sidecar must not be fetched".into())).unwrap(),
+            pinned
+        );
+        assert_eq!(
+            expected_checksum(&pinned.to_uppercase(), || Err("never".into())).unwrap(),
+            pinned,
+            "an uppercase pin normalizes to lowercase"
+        );
+    }
+
+    #[test]
+    fn expected_checksum_falls_back_to_the_sidecar_asset() {
+        for manifest in ["", "   ", "abc", &"z".repeat(64)] {
+            assert_eq!(
+                expected_checksum(manifest, || Ok("sidecar-digest".into())).unwrap(),
+                "sidecar-digest",
+                "an invalid pin must fall back: {manifest:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn signature_policy_anchors_on_the_running_team() {
+        assert!(signature_policy_allows(Some("TEAM1"), Some("TEAM1")).is_ok());
+        assert!(signature_policy_allows(None, None).is_ok());
+        // An ad-hoc running bundle has no anchor; integrity stays the gate.
+        assert!(signature_policy_allows(None, Some("TEAM9")).is_ok());
+        assert_eq!(
+            signature_policy_allows(Some("TEAM1"), Some("TEAM2")).unwrap_err(),
+            "staged update is signed by a different team"
+        );
+        assert_eq!(
+            signature_policy_allows(Some("TEAM1"), None).unwrap_err(),
+            "staged update is not team-signed like the running app"
+        );
     }
 }

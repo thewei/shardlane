@@ -81,6 +81,8 @@ impl UpdateManifest {
                 .next()
                 .unwrap_or("Shardlane-macos-aarch64.zip")
                 .to_string(),
+            // No manifest pin in the legacy shape: the installer falls back
+            // to the release .sha256 sidecar asset.
             sha256: String::new(),
             url: self.url.clone(),
         }
