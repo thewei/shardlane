@@ -3,9 +3,12 @@
 //! [INPUT]: Depends on `super` (main.rs)'s ShardlaneApp state and remote handle,
 //! settings_view's settings_card/settings_card_row card vocabulary, the qrcode crate
 //! (matrix generation), and gpui-component Input/Toggle/Button controls
-//! [OUTPUT]: Exposes `ShardlaneApp::mobile_settings_content` (the content column of the mobile-control secondary surface),
-//! `ensure_mobile_port_input`/`commit_mobile_port` (lazy port input creation and commit;
-//! committing calls apply_remote_settings to restart the listener)
+//! [OUTPUT]: Exposes ShardlaneApp::mobile_settings_content (the content column of the
+//! mobile-control secondary surface), ensure_mobile_port_input/commit_mobile_port
+//! (lazy port input creation and commit; committing calls apply_remote_settings to
+//! restart the listener), and the mobile_surface_enabled product gate (debug builds
+//! on / release builds off; SHARDLANE_MOBILE_SURFACE=1/0 overrides) owning Mobile
+//! entry visibility for the Sidebar footer icon and both Settings nav renderers
 //! [POS]: One of main.rs's presentation-layer splits (sibling of settings_view.rs);
 //! connection/token facts belong to shardlane-remote (RemoteServerHandle); this file only does presentation and action entry points
 
@@ -17,6 +20,31 @@ use crate::ui::controls::{ControlSurface, Segmented, Toggle};
 const QR_QUIET_ZONE: usize = 2;
 /// QR rendered side length (logical pixels).
 const QR_RENDER_SIZE: f32 = 176.0;
+
+/// Mobile surface product gate (2026-09-19): Mobile is not product-ready yet, so the
+/// Sidebar footer phone button and the Settings nav entries stay hidden by default.
+/// Default follows the build profile: development builds (debug_assertions) show the
+/// entries, release builds hide them; SHARDLANE_MOBILE_SURFACE=1/0 (also
+/// true/false/yes/no/on/off) forces the gate either way so a packaged release build
+/// can still be self-tested.
+pub(crate) fn mobile_surface_enabled() -> bool {
+    static GATE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *GATE.get_or_init(|| {
+        std::env::var("SHARDLANE_MOBILE_SURFACE")
+            .ok()
+            .and_then(|value| parse_env_flag(&value))
+            .unwrap_or(cfg!(debug_assertions))
+    })
+}
+
+/// Parses a boolean-style env value; None lets the caller fall back to the default.
+fn parse_env_flag(value: &str) -> Option<bool> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "1" | "true" | "yes" | "on" => Some(true),
+        "0" | "false" | "no" | "off" => Some(false),
+        _ => None,
+    }
+}
 
 impl ShardlaneApp {
     pub(super) fn mobile_settings_content(
@@ -590,4 +618,20 @@ fn render_qr(payload: &str, foreground: gpui::Hsla, background: gpui::Hsla) -> A
         .bg(background)
         .child(grid)
         .into_any_element()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_env_flag;
+
+    #[test]
+    fn env_flag_parses_explicit_on_off_and_rejects_unknown() {
+        assert_eq!(parse_env_flag("1"), Some(true));
+        assert_eq!(parse_env_flag(" true "), Some(true));
+        assert_eq!(parse_env_flag("ON"), Some(true));
+        assert_eq!(parse_env_flag("0"), Some(false));
+        assert_eq!(parse_env_flag("no"), Some(false));
+        assert_eq!(parse_env_flag(""), None);
+        assert_eq!(parse_env_flag("maybe"), None);
+    }
 }

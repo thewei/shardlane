@@ -1499,6 +1499,22 @@ fn settings_sidebar_orders_providers_before_skill_mobile_and_browser() {
 }
 
 #[test]
+fn settings_nav_gate_hides_mobile_while_preserving_all_order() {
+    // Mobile surface gate: with the gate off, visible_sections must drop exactly
+    // Mobile and keep the remaining sections in the canonical ALL order.
+    let without_mobile: Vec<_> = super::SettingsSection::visible_sections_with(false).collect();
+    assert!(!without_mobile.contains(&super::SettingsSection::Mobile));
+    let expected: Vec<_> = super::SettingsSection::ALL
+        .into_iter()
+        .filter(|section| *section != super::SettingsSection::Mobile)
+        .collect();
+    assert_eq!(without_mobile, expected);
+
+    let with_mobile: Vec<_> = super::SettingsSection::visible_sections_with(true).collect();
+    assert_eq!(with_mobile, super::SettingsSection::ALL.to_vec());
+}
+
+#[test]
 fn agent_switcher_chords_are_registered_configurable_and_swallow_aware() {
     // Audit E07: the Ctrl-Tab switcher family used to be internal-only bindings — not in the
     // registry, absent from help, and invisible to chord_is_bound's terminal swallow decision.

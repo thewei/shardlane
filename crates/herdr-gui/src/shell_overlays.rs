@@ -264,6 +264,11 @@ impl ShardlaneApp {
 
     /// Open the mobile control surface: switch to Settings's Mobile section.
     pub(super) fn open_mobile_surface(&mut self, cx: &mut Context<Self>) {
+        // Gate invariant (mobile_view::mobile_surface_enabled): while Mobile is
+        // disabled no caller may reach the surface, so the imperative entry no-ops.
+        if !crate::mobile_view::mobile_surface_enabled() {
+            return;
+        }
         self.show_settings = true;
         self.show_help = false;
         self.new_agent_open = false;

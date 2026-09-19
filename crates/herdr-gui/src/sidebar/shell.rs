@@ -1,4 +1,4 @@
-//! [INPUT]: Constants, types, and root-level imports from the sidebar module root (`super`); full inheritance via `use super::*`.
+//! [INPUT]: Constants, types, and root-level imports from the sidebar module root (`super`); full inheritance via `use super::*`; plus the Mobile product gate `crate::mobile_view::mobile_surface_enabled` (footer phone icon visibility).
 //! [OUTPUT]: Provides ShardlaneApp::sidebar() — the full assembly of the Sidebar's single navigation surface (Agents/Projects sections — live agents only, history lives in the History surface; collapsing, drag and drop, projection consumption).
 //! [POS]: Main assembly layer of `crates/herdr-gui::sidebar`; consumes the output of rows/tree_rows/pane_rows/service_rows/projection/section_layout; mechanically split out of sidebar.rs and sharing the module-root namespace with its sibling submodules.
 use super::*;
@@ -703,39 +703,41 @@ impl ShardlaneApp {
                         )
                     })
                     .child(div().flex_1())
-                    .child(
-                        div()
-                            .id("shardlane-sidebar-mobile-icon")
-                            .size(ROW_HEIGHT)
-                            .flex_shrink_0()
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .rounded(component_theme.radius)
-                            .cursor_pointer()
-                            .hover(|s| {
-                                s.bg(component_theme
-                                    .sidebar_accent
-                                    .opacity(INTERACTIVE_HOVER_OPACITY))
-                            })
-                            .active(|s| s.bg(component_theme.sidebar_accent))
-                            .tooltip(crate::ui::tooltip::tooltip_fn("Mobile"))
-                            .shardlane_interactive(
-                                component_theme.primary.opacity(INTERACTIVE_FOCUS_OPACITY),
-                                move |window, app| {
-                                    footer_herdr.update(app, |this, cx| {
-                                        this.open_mobile_surface(cx);
-                                        let _ = window;
-                                    });
-                                },
-                            )
-                            .child(
-                                Icon::empty()
-                                    .path("icons/smartphone.svg")
-                                    .with_size(px(15.0))
-                                    .text_color(component_theme.muted_foreground),
-                            ),
-                    )
+                    .when(crate::mobile_view::mobile_surface_enabled(), |footer| {
+                        footer.child(
+                            div()
+                                .id("shardlane-sidebar-mobile-icon")
+                                .size(ROW_HEIGHT)
+                                .flex_shrink_0()
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .rounded(component_theme.radius)
+                                .cursor_pointer()
+                                .hover(|s| {
+                                    s.bg(component_theme
+                                        .sidebar_accent
+                                        .opacity(INTERACTIVE_HOVER_OPACITY))
+                                })
+                                .active(|s| s.bg(component_theme.sidebar_accent))
+                                .tooltip(crate::ui::tooltip::tooltip_fn("Mobile"))
+                                .shardlane_interactive(
+                                    component_theme.primary.opacity(INTERACTIVE_FOCUS_OPACITY),
+                                    move |window, app| {
+                                        footer_herdr.update(app, |this, cx| {
+                                            this.open_mobile_surface(cx);
+                                            let _ = window;
+                                        });
+                                    },
+                                )
+                                .child(
+                                    Icon::empty()
+                                        .path("icons/smartphone.svg")
+                                        .with_size(px(15.0))
+                                        .text_color(component_theme.muted_foreground),
+                                ),
+                        )
+                    })
                     .child(
                         div()
                             .id("shardlane-sidebar-settings-icon")

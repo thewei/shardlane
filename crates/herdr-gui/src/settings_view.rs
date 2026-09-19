@@ -430,8 +430,7 @@ impl ShardlaneApp {
             .into_any_element();
 
         let compact_nav = h_flex().w_full().flex_wrap().gap_1().children(
-            SettingsSection::ALL
-                .into_iter()
+            SettingsSection::visible_sections()
                 .enumerate()
                 .map(|(ix, section)| {
                     let section_herdr = herdr.clone();
@@ -1451,9 +1450,11 @@ impl ShardlaneApp {
                     .when(selected_section == SettingsSection::Shortcuts, |page| {
                         page.child(self.render_shortcuts_settings(window, cx))
                     })
-                    .when(selected_section == SettingsSection::Mobile, |page| {
-                        page.child(self.mobile_settings_content(window, cx))
-                    })
+                    .when(
+                        selected_section == SettingsSection::Mobile
+                            && crate::mobile_view::mobile_surface_enabled(),
+                        |page| page.child(self.mobile_settings_content(window, cx)),
+                    )
                     .when(selected_section == SettingsSection::Browser, |page| {
                         page.child(self.render_browser_settings(window, cx))
                     })

@@ -192,8 +192,7 @@ impl ShardlaneApp {
             .as_ref()
             .map(|s| s.read(cx).value().to_lowercase())
             .unwrap_or_default();
-        let sections = SettingsSection::ALL
-            .into_iter()
+        let sections = SettingsSection::visible_sections()
             .filter(|section| query.is_empty() || section.label().to_lowercase().contains(&query))
             .collect::<Vec<_>>();
         let mut navigation = div().flex().flex_col().gap(px(3.0));

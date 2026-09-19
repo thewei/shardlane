@@ -325,6 +325,22 @@ impl SettingsSection {
             Self::Browser => gpui_component::Icon::new(ComponentIconName::Globe),
         }
     }
+
+    /// Sections actually rendered in the Settings navigation (2026-09-19): Mobile is
+    /// not product-ready, so both nav renderers (sidebar list + compact bar) draw
+    /// from visible_sections and Mobile disappears while the mobile_view gate is off.
+    fn visible_sections() -> impl Iterator<Item = Self> {
+        Self::visible_sections_with(crate::mobile_view::mobile_surface_enabled())
+    }
+
+    /// Pure form of visible_sections; the flag parameter exists solely for order
+    /// regression tests.
+    fn visible_sections_with(mobile_surface_enabled: bool) -> impl Iterator<Item = Self> {
+        Self::ALL.into_iter().filter(move |section| match section {
+            Self::Mobile => mobile_surface_enabled,
+            _ => true,
+        })
+    }
 }
 
 /// R6: Host name for hello/bootstrap display (the machine name; cached once per process).
