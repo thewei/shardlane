@@ -34,6 +34,30 @@ mod tests;
 pub mod transport;
 pub mod wake;
 
+/// One replayable approval choice decoded by a provider adapter. Both the
+/// label and the key bytes come from the adapter's verified provider rules
+/// (never invented downstream); adapters that cannot derive them stably must
+/// not emit an approval at all.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LiveApprovalOption {
+    pub label: String,
+    pub keys: Vec<u8>,
+}
+
+/// Provider-neutral pending approval request projected through LiveFacts.
+/// Ephemeral by design: adapters clear it as soon as the provider stream
+/// shows turn progress past the request.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LiveApproval {
+    /// Stable provider id (Codex call_id); a new id is a new request.
+    pub id: String,
+    /// tool | permission | plan (only decoded kinds are ever constructed).
+    pub kind: String,
+    /// The provider's own text (command / patch summary / reason).
+    pub prompt: String,
+    pub options: Vec<LiveApprovalOption>,
+}
+
 /// Line-level changes reported by the decoder (snapshot index space;
 /// idempotent upsert semantics).
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -64,6 +88,8 @@ pub struct LiveFacts {
     pub updated_at: i64,
     pub unknown_lines: u32,
     pub session_id: Option<String>,
+    /// Pending approval request, if the provider is currently blocked on one.
+    pub pending_approval: Option<LiveApproval>,
 }
 
 /// Provider decoder interface sharing the same `feed_line` state machine as
@@ -120,6 +146,7 @@ impl LiveDecoderState for ClaudeSession {
             updated_at: self.updated_at,
             unknown_lines: self.unknown_lines,
             session_id: None,
+            pending_approval: None,
         }
     }
 
@@ -134,7 +161,9 @@ impl LiveDecoderState for ClaudeSession {
 
 impl LiveDecoderState for CodexSession {
     fn fresh() -> Self {
-        Self::new()
+        // The live path loads the effective approval keymap (vendor defaults
+        // + user config overrides); pure/test constructions keep built-ins.
+        Self::with_configured_approval_keys()
     }
 
     fn feed_line(&mut self, line: &str) {
@@ -166,6 +195,7 @@ impl LiveDecoderState for CodexSession {
             updated_at: self.updated_at,
             unknown_lines: self.unknown_lines,
             session_id: None,
+            pending_approval: self.pending_approval.clone(),
         }
     }
 
@@ -212,6 +242,7 @@ impl LiveDecoderState for PiSession {
             updated_at: self.last_ts,
             unknown_lines: self.unknown_lines,
             session_id: self.session_id.clone(),
+            pending_approval: None,
         }
     }
 
@@ -279,6 +310,7 @@ impl LiveDecoderState for CommandCodeSession {
             updated_at: self.updated_at,
             unknown_lines: self.unknown_lines,
             session_id: self.header.as_ref().map(|h| h.id.clone()),
+            pending_approval: None,
         }
     }
 
@@ -336,6 +368,7 @@ impl LiveDecoderState for CursorSession {
             updated_at: self.updated_at,
             unknown_lines: self.unknown_lines,
             session_id: None,
+            pending_approval: None,
         }
     }
 
@@ -387,6 +420,7 @@ impl LiveDecoderState for KimiSession {
             updated_at: 0,
             unknown_lines: self.unknown_lines,
             session_id: None,
+            pending_approval: None,
         }
     }
 

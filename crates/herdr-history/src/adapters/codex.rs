@@ -1,9 +1,26 @@
 // SPDX-License-Identifier: MIT
 // Portions Copyright (c) 2026 Corey Chiu; retained under the upstream MIT terms.
 
+//! [INPUT]: Depends on the Codex rollout JSONL shape (session_meta /
+//! turn_context / response_item / event_msg), crate::live's DecoderUpdate +
+//! LiveApproval, and the vendored Codex binary's TUI keymap contract
+//! (approval.approve|approve_for_session|deny default chords, verifiable in
+//! codex-rs tui/src/keymap.rs built_in_defaults) with user overrides from
+//! [tui.keymap.approval] in CODEX_HOME/config.toml.
+//! [OUTPUT]: CodexAdapter (history scanning/parsing), CodexSession (the
+//! line-level interpretation state shared by full parsing and live), and the
+//! pending-approval live facts (exec/apply_patch approval requests with
+//! replayable key options).
+//! [POS]: The Codex provider knowledge authority of shardlane-history: the
+//! only place Codex rollout semantics and TUI key bindings are interpreted.
+//! Replay options are emitted only when they can be derived from verified
+//! rules; anything else is left to Terminal (never-blind-send).
+//! [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+
 use super::parse_utils::*;
 use super::sqlite_ro::open_sqlite_ro;
 use super::{units_from_messages, AgentHistoryAdapter};
+use crate::live::{LiveApproval, LiveApprovalOption};
 use crate::models::*;
 use anyhow::Result;
 use rusqlite::Connection;
@@ -12,6 +29,104 @@ use std::collections::HashMap;
 use std::fs;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
+
+// ============================================================================
+// Codex TUI 审批键位契约（永不盲发的 keys 来源）
+// ============================================================================
+
+/// Codex TUI approval-modal action keys. Defaults are the vendor's
+/// `built_in_defaults` (codex-rs tui/src/keymap.rs); the user may rebind via
+/// config.toml `[tui.keymap.approval]` — sending a stale default after a
+/// rebind would be a blind send, so overrides are loaded when available.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct CodexApprovalKeys {
+    pub(crate) approve: Vec<u8>,
+    pub(crate) approve_for_session: Vec<u8>,
+    pub(crate) deny: Vec<u8>,
+}
+
+impl CodexApprovalKeys {
+    /// Vendor defaults, verified against codex-rs keymap.rs (approve = "y",
+    /// approve_for_session = "a", deny = "d").
+    pub(crate) fn built_in() -> Self {
+        Self {
+            approve: vec![b'y'],
+            approve_for_session: vec![b'a'],
+            deny: vec![b'd'],
+        }
+    }
+
+    /// Apply parsed config overrides (already scoped to approval actions).
+    pub(crate) fn with_overrides(mut self, overrides: &[(String, Vec<u8>)]) -> Self {
+        for (action, keys) in overrides {
+            match action.as_str() {
+                "approve" => self.approve = keys.clone(),
+                "approve_for_session" => self.approve_for_session = keys.clone(),
+                "deny" => self.deny = keys.clone(),
+                _ => {}
+            }
+        }
+        self
+    }
+}
+
+/// Minimal line scan of config.toml for `[tui.keymap.approval]` bindings
+/// (the form the TUI /keymap flow writes) plus `[tui.keymap]` dotted
+/// `approval.<action> = "x"` entries. Anything exotic keeps the vendor
+/// default — the grid-signature guard still protects the replay, and a
+/// stale default hits an unbound key (no-op) rather than a wrong action in
+/// the common rebind case.
+pub(crate) fn parse_approval_keymap_overrides(config: &str) -> Vec<(String, Vec<u8>)> {
+    let mut overrides = Vec::new();
+    let mut section = String::new();
+    for line in config.lines() {
+        let line = line.trim();
+        if line.starts_with('[') && line.ends_with(']') {
+            section = line[1..line.len() - 1].trim().to_string();
+            continue;
+        }
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
+        let key = key.trim();
+        let value = value.trim();
+        // Only simple string bindings: name = "x".
+        let Some(inner) = value.strip_prefix('"').and_then(|v| v.strip_suffix('"')) else {
+            continue;
+        };
+        let action = if section == "tui.keymap.approval" {
+            key.to_string()
+        } else if section == "tui.keymap" {
+            match key.strip_prefix("approval.") {
+                Some(action) => action.to_string(),
+                None => continue,
+            }
+        } else {
+            continue;
+        };
+        overrides.push((action, inner.as_bytes().to_vec()));
+    }
+    overrides
+}
+
+/// Load the effective approval keys once per process: built-in defaults with
+/// CODEX_HOME/config.toml overrides applied when the file is readable.
+pub(crate) fn approval_keys() -> CodexApprovalKeys {
+    use std::sync::OnceLock;
+    static KEYS: OnceLock<CodexApprovalKeys> = OnceLock::new();
+    KEYS.get_or_init(|| {
+        let config = std::env::var_os("CODEX_HOME")
+            .filter(|value| !value.is_empty())
+            .map(PathBuf::from)
+            .unwrap_or_else(|| home_dir().join(".codex"))
+            .join("config.toml");
+        let overrides = fs::read_to_string(&config)
+            .map(|text| parse_approval_keymap_overrides(&text))
+            .unwrap_or_default();
+        CodexApprovalKeys::built_in().with_overrides(&overrides)
+    })
+    .clone()
+}
 
 pub struct CodexAdapter {
     sessions_dir: PathBuf,
@@ -183,6 +298,14 @@ pub(crate) struct CodexSession {
     pub(crate) updated_at: i64,
     pub(crate) unknown_lines: u32,
     pub(crate) update: crate::live::DecoderUpdate,
+    /// Pending approval request (live-ephemeral): set by an
+    /// exec/apply_patch approval request event, cleared by the next
+    /// turn-progress evidence. Full parsing never surfaces it.
+    pub(crate) pending_approval: Option<LiveApproval>,
+    /// Approval action keys in effect for this session (loaded from the
+    /// vendored TUI keymap defaults + user config on the live path; built-ins
+    /// in pure/test constructions).
+    pub(crate) approval_keys: CodexApprovalKeys,
 }
 
 impl CodexSession {
@@ -201,7 +324,17 @@ impl CodexSession {
             updated_at: 0,
             unknown_lines: 0,
             update: crate::live::DecoderUpdate::default(),
+            pending_approval: None,
+            approval_keys: CodexApprovalKeys::built_in(),
         }
+    }
+
+    /// Live-path construction: built-in defaults with the user's
+    /// [tui.keymap.approval] overrides applied (loaded once per process).
+    pub(crate) fn with_configured_approval_keys() -> Self {
+        let mut session = Self::new();
+        session.approval_keys = approval_keys();
+        session
     }
 
     pub(crate) fn count_unknown_line(&mut self) {
@@ -284,6 +417,7 @@ impl CodexSession {
             }
             return;
         };
+        self.track_pending_approval(row_type, payload);
 
         match row_type {
             "session_meta" => {
@@ -379,6 +513,120 @@ impl CodexSession {
             updated_at: self.updated_at,
             unknown_lines: self.unknown_lines,
         }
+    }
+}
+
+/// Turn-progress event types that prove an approval menu is no longer up
+/// (the turn moved on, so the pending request resolved — usually by the user
+/// answering in the TUI). Anything NOT in this list (e.g. token_count) keeps
+/// the pending request alive; the Chat-side grid guard still protects every
+/// replay, so a missed clear degrades to Stale, never to a blind send.
+fn approval_cleared_by(row_type: &str, event_type: &str) -> bool {
+    match row_type {
+        "response_item" => true,
+        "event_msg" => matches!(
+            event_type,
+            "exec_command_begin"
+                | "agent_message"
+                | "user_message"
+                | "item_started"
+                | "item_completed"
+                | "turn_completed"
+                | "turn_aborted"
+                | "task_started"
+                | "task_complete"
+        ),
+        _ => false,
+    }
+}
+
+impl CodexSession {
+    /// Update the pending-approval projection from one decoded rollout row.
+    fn track_pending_approval(&mut self, row_type: &str, payload: &Value) {
+        let event_type = payload.get("type").and_then(Value::as_str).unwrap_or("");
+        if row_type == "event_msg" {
+            match event_type {
+                "exec_approval_request" | "apply_patch_approval_request" => {
+                    self.pending_approval = self.decode_approval_request(event_type, payload);
+                }
+                _ if approval_cleared_by(row_type, event_type) => {
+                    self.pending_approval = None;
+                }
+                _ => {}
+            }
+            return;
+        }
+        if approval_cleared_by(row_type, event_type) {
+            self.pending_approval = None;
+        }
+    }
+
+    /// Build the provider-neutral approval facts from a decoded request
+    /// event. Requires a call_id (unidentifiable requests are skipped —
+    /// fail-closed); options come only from the verified keymap contract.
+    fn decode_approval_request(&self, event_type: &str, payload: &Value) -> Option<LiveApproval> {
+        let call_id = payload.get("call_id").and_then(Value::as_str)?;
+        if call_id.is_empty() {
+            return None;
+        }
+        let reason = payload
+            .get("reason")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|text| !text.is_empty());
+        let prompt = if event_type == "apply_patch_approval_request" {
+            let summary = payload
+                .get("summary")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|text| !text.is_empty())
+                .unwrap_or("apply patch");
+            match reason {
+                Some(reason) => format!("{summary} — {reason}"),
+                None => summary.to_string(),
+            }
+        } else {
+            let command = payload
+                .get("command")
+                .and_then(Value::as_array)
+                .map(|argv| {
+                    argv.iter()
+                        .filter_map(Value::as_str)
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                })
+                .filter(|text| !text.is_empty())
+                .unwrap_or_else(|| "exec command".to_string());
+            match reason {
+                Some(reason) => format!("{command} — {reason}"),
+                None => command,
+            }
+        };
+        // Option labels are the TUI's own action names; keys come from the
+        // verified keymap (defaults + user overrides). "when available"
+        // actions are safe to expose: an unavailable action key is a no-op in
+        // the TUI, and the grid guard + frame confirmation still gate the
+        // replay end-to-end.
+        let options = vec![
+            LiveApprovalOption {
+                label: "Approve".to_string(),
+                keys: self.approval_keys.approve.clone(),
+            },
+            LiveApprovalOption {
+                label: "Approve for session".to_string(),
+                keys: self.approval_keys.approve_for_session.clone(),
+            },
+            LiveApprovalOption {
+                label: "Deny".to_string(),
+                keys: self.approval_keys.deny.clone(),
+            },
+        ];
+        Some(LiveApproval {
+            id: call_id.to_string(),
+            kind: "tool".to_string(),
+            prompt,
+            options,
+        })
     }
 }
 
