@@ -2014,9 +2014,7 @@ impl ShardlaneApp {
                         return None;
                     }
                     let current_hash = grid_text_hash(&view.raw_tui_grid_rows());
-                    let Some(request) = view.chat.model.approval.as_mut() else {
-                        return None;
-                    };
+                    let request = view.chat.model.approval.as_mut()?;
                     if request.state != ApprovalState::Sent {
                         return None;
                     }

@@ -220,6 +220,7 @@ mod tests {
                 updated_at: 1_000,
                 unknown_lines: 0,
                 session_id: Some("s1".into()),
+                pending_approval: None,
             },
             generation: 3,
         }
