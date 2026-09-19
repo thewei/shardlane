@@ -240,9 +240,13 @@ impl ShardlaneApp {
             let m = menu
                 .item({
                     let ws = workspace_id.clone();
-                    menu_action("New Tab", &herdr, move |this, window, cx| {
-                        this.create_tab_in_workspace(Some(ws.clone()), window, cx)
-                    })
+                    menu_action(
+                        crate::i18n::t("sidebar.new_tab"),
+                        &herdr,
+                        move |this, window, cx| {
+                            this.create_tab_in_workspace(Some(ws.clone()), window, cx)
+                        },
+                    )
                 })
                 .item({
                     let ws = menu_rename_id.clone();
@@ -557,9 +561,13 @@ impl ShardlaneApp {
                 menu.item({
                     let tab_id = rename_id.clone();
                     let label = rename_label.clone();
-                    menu_action("Rename Tab…", &herdr, move |this, window, cx| {
-                        this.open_tab_rename(tab_id.clone(), label.clone(), window, cx)
-                    })
+                    menu_action(
+                        crate::i18n::t("shell.tab_rename"),
+                        &herdr,
+                        move |this, window, cx| {
+                            this.open_tab_rename(tab_id.clone(), label.clone(), window, cx)
+                        },
+                    )
                 })
                 .item({
                     let tab_id = rename_id.clone();
@@ -572,9 +580,11 @@ impl ShardlaneApp {
                 .item(PopupMenuItem::separator())
                 .item({
                     let tab_id = close_id.clone();
-                    menu_action("Close Tab", &herdr, move |this, window, cx| {
-                        this.close_tab_by_id(tab_id.clone(), window, cx)
-                    })
+                    menu_action(
+                        crate::i18n::t("shell.tab_close"),
+                        &herdr,
+                        move |this, window, cx| this.close_tab_by_id(tab_id.clone(), window, cx),
+                    )
                 })
             })
             .into_any_element()

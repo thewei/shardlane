@@ -329,6 +329,8 @@ conversation:
   working: 作業中…
   context_compacted: コンテキストを圧縮しました
 shell:
+  tab_rename: タブを改名…
+  tab_close: タブを閉じる
   copy_ids: ID をコピー
   copy_pane_id: ペイン ID をコピー
   copy_tab_id: タブ ID をコピー
@@ -379,3 +381,4 @@ shortcuts:
 
 sidebar:
   back_to_app: アプリに戻る
+  new_tab: タブを追加

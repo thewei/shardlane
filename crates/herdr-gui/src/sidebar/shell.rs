@@ -260,8 +260,9 @@ impl ShardlaneApp {
                 cx,
             ));
             if expanded {
-                // Tab presentation is fixed: the Sidebar always renders the per-Project
-                // Tab subtree, while the hosted TUI keeps its own chrome in parallel.
+                // Tab 呈现（2026-09-19 修订）：Sidebar 始终渲染每个 Project 的 Tab
+                // 子树并持有创建/重命名/关闭入口；宿主 TUI 只在多 Tab 时显示自己的
+                // Tab 栏（单 Tab 由启动迁移经 Herdr 配置隐藏）。
                 let tabs = self.tabs_for_workspace(&workspace.workspace_id);
                 if let Some(error) = project_pane_errors.get(&workspace.workspace_id) {
                     // Audit A11: a failed workspace_panes load must not render as a silently
@@ -360,6 +361,47 @@ impl ShardlaneApp {
                         }
                     }
                 }
+                // 显式"新增 Tab"行：Tab 子树的创建入口，与 Tab 行的 rename/close
+                // 一起构成完整闭环；创建仍走 Herdr tab.create
+                // （create_tab_in_workspace），Herdr 保持 Tab 生命周期的所有者。
+                let new_tab_herdr = herdr.clone();
+                let new_tab_workspace_id = workspace.workspace_id.clone();
+                workspace_scrolling = workspace_scrolling.child(
+                    div()
+                        .id(ElementId::Name(
+                            format!("shardlane-project-new-tab-{new_tab_workspace_id}").into(),
+                        ))
+                        .h(ROW_HEIGHT_SUB)
+                        .flex_shrink_0()
+                        .pl(LEAD_INSET + SUB_INDENT)
+                        .pr(SIDEBAR_EDGE)
+                        .flex()
+                        .items_center()
+                        .gap(SPACE_XS)
+                        .text_size(FONT_LABEL)
+                        .text_color(component_theme.muted_foreground)
+                        .cursor_pointer()
+                        .hover(|style| {
+                            style.bg(component_theme.foreground.opacity(crate::theme::WASH_HOVER))
+                        })
+                        .on_click(move |_, window, app| {
+                            app.stop_propagation();
+                            new_tab_herdr.update(app, |this, cx| {
+                                this.create_tab_in_workspace(
+                                    Some(new_tab_workspace_id.clone()),
+                                    window,
+                                    cx,
+                                )
+                            });
+                        })
+                        .child(icon("icons/plus.svg").with_size(px(14.0)))
+                        .child(
+                            div()
+                                .min_w_0()
+                                .truncate()
+                                .child(crate::i18n::t("sidebar.new_tab")),
+                        ),
+                );
             }
         }
 

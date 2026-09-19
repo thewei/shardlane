@@ -333,6 +333,8 @@ conversation:
   working: Working…
   context_compacted: Context compacted
 shell:
+  tab_rename: Rename Tab…
+  tab_close: Close Tab
   copy_ids: Copy IDs
   copy_pane_id: Copy Pane ID
   copy_tab_id: Copy Tab ID
@@ -383,3 +385,4 @@ shortcuts:
 
 sidebar:
   back_to_app: Back to app
+  new_tab: New Tab

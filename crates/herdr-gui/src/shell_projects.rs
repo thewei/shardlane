@@ -1,5 +1,5 @@
 //! [INPUT]: Depends on the ShardlaneApp type from the crate root (super) and existing types/imports (use super::*); no independent external dependencies.
-//! [OUTPUT]: Exposes ShardlaneApp's project/tab management: create/close/pin; Tab drag's conversion to Herdr's authoritative order with a before-target and `tab.move`; Project drag's `workspace.move_block` write-back (ordering authority always belongs to Herdr; the Shardlane Workspace only filters membership); sidebar history loading (inherent impl shard).
+//! [OUTPUT]: Exposes ShardlaneApp's project/tab management: create/close; Tab drag's conversion to Herdr's authoritative order with a before-target and `tab.move`; Project drag's `workspace.move_block` write-back (ordering authority always belongs to Herdr; the Shardlane Workspace only filters membership); sidebar history loading (inherent impl shard).
 //! [POS]: The `crates/herdr-gui` shell projects responsibility domain, mechanically split out of main.rs; together with sibling shell_* modules it forms ShardlaneApp's method surface.
 use super::*;
 

@@ -328,6 +328,8 @@ conversation:
   working: 工作中…
   context_compacted: 上下文已压缩
 shell:
+  tab_rename: 重命名标签页…
+  tab_close: 关闭标签页
   copy_ids: 复制 ID
   copy_pane_id: 复制窗格 ID
   copy_tab_id: 复制标签页 ID
@@ -378,3 +380,4 @@ shortcuts:
 
 sidebar:
   back_to_app: 返回应用
+  new_tab: 新增 Tab

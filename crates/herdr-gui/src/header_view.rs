@@ -1,7 +1,9 @@
-//! Header/titlebar presentation layer: instance/Project/Tab three-layer breadcrumbs, the single bidirectional
-//! Chat⇄Terminal switch, the Chat presentation mode's centered Agent identity+status title,
-//! the History secondary surface's Search/Refresh/Copy Markdown consolidation (to the left of the
-//! right-panel toggle) with compact-layout fallback, and operation indicators.
+//! Header/titlebar presentation layer: instance/Project/Tab three-layer breadcrumbs (the Tab
+//! layer carries a hover-revealed "…" menu acting on the displayed Tab through the shared
+//! rename/close channels), the single bidirectional Chat⇄Terminal switch, the Chat presentation
+//! mode's centered Agent identity+status title, the History secondary surface's
+//! Search/Refresh/Copy Markdown consolidation (to the left of the right-panel toggle) with
+//! compact-layout fallback, and operation indicators.
 //!
 //! The whole content row is hover-revealed (2026-09-19): chrome (buttons, breadcrumbs, indicators)
 //! renders at opacity 0 until the pointer enters the titlebar strip; the strip itself stays a drag
@@ -129,6 +131,8 @@ impl ShardlaneApp {
             .unwrap_or_else(|| "Shardlane".to_string());
         let instance_title = instance_title.unwrap_or_else(|| "Shardlane".to_string());
         let tab_title = self.active_tab().map(|tab| self.tab_title(tab));
+        // The Tab crumb's "…" menu acts on exactly the tab the crumb displays.
+        let active_tab_id = self.active_tab().map(|tab| tab.tab_id.clone());
         let secondary_header_title = if self.history.open {
             Some(("History", None))
         } else if self.show_settings {
@@ -213,6 +217,7 @@ impl ShardlaneApp {
         let history_search_herdr = herdr.clone();
         let history_refresh_herdr = herdr.clone();
         let chat_header_herdr = herdr.clone();
+        let tab_more_menu_herdr = herdr.clone();
         let script_launcher_herdr = herdr.clone();
         let script_menu_herdr = herdr.clone();
         let script_add_herdr = herdr.clone();
@@ -939,14 +944,111 @@ impl ShardlaneApp {
                                                 .text_color(terminal_header_muted)
                                                 .child(div().min_w_0().max_w(px(200.0)).truncate().child(title.clone()))
                                                 .tooltip(format!("Switch Tab · {title}"));
-                                            crate::switcher_panel::tab_switcher_panel(
+                                            let tab_switcher = crate::switcher_panel::tab_switcher_panel(
                                                 tab_picker_herdr.clone(),
                                                 tabs,
                                                 gpui::Corner::TopLeft,
                                                 "shardlane-header-tab-popover",
                                                 "shardlane-header-tab-filter",
                                                 tab_button,
-                                            )
+                                            );
+                                            // Tab 层悬停浮现"…"操作菜单（2026-09-19）：hover 由本
+                                            // 容器状态化记录，"…"按钮用 opacity 隐藏而非卸载——
+                                            // element opacity 不会被锚定弹层（DeferredDraw）捕获，
+                                            // 卸载会在指针移入弹层的瞬间杀死弹层，opacity 不会。
+                                            // 重命名/关闭走 Sidebar Tab 行同一套 tab.rename/tab.close
+                                            // 通道，不新增第二实现。
+                                            let tab_more_herdr = tab_more_menu_herdr.clone();
+                                            let tab_more_rename_id = active_tab_id.clone();
+                                            let tab_more_rename_label = title.clone();
+                                            let tab_more_close_id = active_tab_id.clone();
+                                            let tab_more_button = Button::new("titlebar-tab-more")
+                                                .custom(terminal_header_button)
+                                                .xsmall()
+                                                .icon(
+                                                    Icon::new(ComponentIconName::Ellipsis)
+                                                        .xsmall(),
+                                                )
+                                                .tooltip("Tab actions")
+                                                .dropdown_menu_with_anchor(
+                                                    gpui::Corner::TopRight,
+                                                    move |mut menu, _, _| {
+                                                        if let Some(tab_id) =
+                                                            tab_more_rename_id.clone()
+                                                        {
+                                                            let label =
+                                                                tab_more_rename_label.clone();
+                                                            let herdr = tab_more_herdr.clone();
+                                                            menu = menu.item(
+                                                                PopupMenuItem::new(crate::i18n::t(
+                                                                    "shell.tab_rename",
+                                                                ))
+                                                                .on_click(
+                                                                    move |_, window, app| {
+                                                                        herdr.update(
+                                                                            app,
+                                                                            |this, cx| {
+                                                                                this.open_tab_rename(
+                                                                                    tab_id.clone(),
+                                                                                    label.clone(),
+                                                                                    window,
+                                                                                    cx,
+                                                                                )
+                                                                            },
+                                                                        );
+                                                                    },
+                                                                ),
+                                                        );
+                                                        }
+                                                        if let Some(tab_id) =
+                                                            tab_more_close_id.clone()
+                                                        {
+                                                            let herdr = tab_more_herdr.clone();
+                                                            menu = menu.item(
+                                                                PopupMenuItem::new(crate::i18n::t(
+                                                                    "shell.tab_close",
+                                                                ))
+                                                                .on_click(
+                                                                    move |_, window, app| {
+                                                                        herdr.update(
+                                                                            app,
+                                                                            |this, cx| {
+                                                                                this.close_tab_by_id(
+                                                                                    tab_id.clone(),
+                                                                                    window,
+                                                                                    cx,
+                                                                                )
+                                                                            },
+                                                                        );
+                                                                    },
+                                                                ),
+                                                        );
+                                                        }
+                                                        menu
+                                                    },
+                                                );
+                                            h_flex()
+                                                .id("titlebar-tab-crumb")
+                                                .min_w_0()
+                                                .flex_shrink()
+                                                .on_hover(cx.listener(
+                                                    |this, hovered: &bool, _, cx| {
+                                                        this.header_tab_more_hovered = *hovered;
+                                                        cx.notify();
+                                                    },
+                                                ))
+                                                .child(tab_switcher)
+                                                .child(
+                                                    div()
+                                                        .flex_none()
+                                                        .opacity(if self.header_tab_more_hovered
+                                                        {
+                                                            1.0
+                                                        } else {
+                                                            0.0
+                                                        })
+                                                        .child(tab_more_button),
+                                                )
                                         })
                                     })
                                 })

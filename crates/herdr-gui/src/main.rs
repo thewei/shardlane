@@ -1616,6 +1616,9 @@ struct ShardlaneApp {
     /// Content Header hover reveal: the titlebar chrome (buttons, breadcrumbs, indicators) renders
     /// transparent until the pointer enters the titlebar strip (2026-09-19 minimalism pass).
     header_hovered: bool,
+    /// Tab breadcrumb hover reveal: the Tab crumb's "…" action menu button is transparent
+    /// until the pointer enters the Tab crumb itself (nested inside the titlebar reveal).
+    header_tab_more_hovered: bool,
     /// Plan 060 Phase 1: Ctrl-Tab Agent Switcher overlay。
     agent_switcher: crate::agent_switcher::AgentSwitcherState,
     /// Sidebar/right panel mid-slide (WidthTween): while Some, render advances each frame
@@ -2431,6 +2434,7 @@ impl ShardlaneApp {
             shell_sidebar_width: sidebar_width,
             sidebar_drag: None,
             header_hovered: false,
+            header_tab_more_hovered: false,
             agent_switcher: crate::agent_switcher::AgentSwitcherState::new(cx.focus_handle()),
             sidebar_slide: None,
             right_panel_slide: None,

@@ -329,6 +329,8 @@ conversation:
   working: 작업 중…
   context_compacted: 컨텍스트 압축됨
 shell:
+  tab_rename: 탭 이름 바꾸기…
+  tab_close: 탭 닫기
   copy_ids: ID 복사
   copy_pane_id: 페인 ID 복사
   copy_tab_id: 탭 ID 복사
@@ -379,3 +381,4 @@ shortcuts:
 
 sidebar:
   back_to_app: 앱으로 돌아가기
+  new_tab: 새 탭
