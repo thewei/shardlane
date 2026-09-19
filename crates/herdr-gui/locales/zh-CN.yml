@@ -297,6 +297,11 @@ host:
   status_starting: 启动中…
   status_running: 运行中
   status_failed: 已失败
+herdr:
+  upgrade:
+    title: Herdr 服务器协议过旧
+    detail: 当前协议 %{actual} · Shardlane 需要 %{min}+。请升级 Herdr（Homebrew 安装：brew upgrade herdr），然后重试。
+    retry: 重试连接
 workspace:
   local: （本地）
   new: 新建工作区…
