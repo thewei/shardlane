@@ -296,6 +296,11 @@ host:
   status_starting: 起動中…
   status_running: 実行中
   status_failed: 失敗
+herdr:
+  upgrade:
+    title: Herdr サーバーのプロトコルが古すぎます
+    detail: '現在のプロトコルは %{actual} · Shardlane は %{min}+ を必要とします。Herdr をアップグレードし（Homebrew インストール: brew upgrade herdr）、再試行してください。'
+    retry: 接続を再試行
 workspace:
   local: （ローカル）
   new: 新規ワークスペース…

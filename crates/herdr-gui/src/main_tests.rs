@@ -8,8 +8,8 @@ use super::{
     should_project_terminal_frame, sidebar_should_auto_collapse, terminal_drain_budget_bytes,
     terminal_focus_report_action, terminal_frame_min_interval_for_activity,
     terminal_frame_retry_interval, wait_for_terminal_poll, AgentNotificationKind, ClientSearchItem,
-    ClientSearchTarget, OperationalSummary, TerminalFocusReportAction, TerminalInputCommand,
-    TerminalPollTrigger,
+    ClientSearchTarget, ConnectionStatus, OperationalSummary, TerminalFocusReportAction,
+    TerminalInputCommand, TerminalPollTrigger, UpgradeGate,
 };
 use crate::herdr::{
     Agent, AgentStatusPatch, HerdrState, LayoutPane, LayoutRect, NavigationState, Pane, PaneLayout,
@@ -1593,5 +1593,51 @@ fn terminal_frame_plan_replaces_deep_grid_compare_only_on_proven_rows() {
         &frame(None),
         &frame(Some((2, 1))),
         Some(&TerminalFramePlan::Unknown)
+    ));
+}
+
+#[test]
+fn upgrade_gate_boundary_blocks_only_protocol_below_minimum() {
+    // M07 #7: the host enforces supports_protocol (min 19); the GUI mirrors the
+    // same boundary in one pure function — 19/18 and 20/19 block, 19/19 passes.
+    assert_eq!(
+        UpgradeGate::blocks(19, 18),
+        Some(UpgradeGate {
+            min: 19,
+            actual: 18
+        })
+    );
+    assert_eq!(UpgradeGate::blocks(19, 19), None);
+    assert_eq!(
+        UpgradeGate::blocks(20, 19),
+        Some(UpgradeGate {
+            min: 20,
+            actual: 19
+        })
+    );
+    assert_eq!(UpgradeGate::blocks(19, 21), None);
+}
+
+#[test]
+fn connection_error_classification_lifts_only_incompatible_protocol() {
+    // M07 #7: the structured IncompatibleProtocol becomes the upgrade-gate
+    // state; every other failure keeps the plain Offline copy.
+    assert_eq!(
+        ConnectionStatus::from_connection_error(
+            &shardlane_host::mux::MuxError::IncompatibleProtocol {
+                min: 19,
+                actual: 18,
+            }
+        ),
+        ConnectionStatus::UpgradeBlocked(UpgradeGate {
+            min: 19,
+            actual: 18
+        })
+    );
+    assert!(matches!(
+        ConnectionStatus::from_connection_error(&shardlane_host::mux::MuxError::Api(
+            "socket gone".to_string()
+        )),
+        ConnectionStatus::Offline(_)
     ));
 }

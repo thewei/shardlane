@@ -300,6 +300,11 @@ host:
   status_starting: Starting…
   status_running: Running
   status_failed: Failed
+herdr:
+  upgrade:
+    title: Herdr server protocol is too old
+    detail: 'Current protocol %{actual} · Shardlane needs %{min}+. Upgrade Herdr (Homebrew install: brew upgrade herdr), then retry.'
+    retry: Retry connection
 workspace:
   local: (local)
   new: New Workspace…

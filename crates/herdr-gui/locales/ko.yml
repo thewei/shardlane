@@ -296,6 +296,11 @@ host:
   status_starting: 시작 중…
   status_running: 실행 중
   status_failed: 실패
+herdr:
+  upgrade:
+    title: Herdr 서버 프로토콜이 너무 오래되었습니다
+    detail: '현재 프로토콜 %{actual} · Shardlane에는 %{min}+이 필요합니다. Herdr를 업그레이드한 후(Homebrew 설치: brew upgrade herdr) 다시 시도하세요.'
+    retry: 연결 재시도
 workspace:
   local: (로컬)
   new: 새 워크스페이스…
