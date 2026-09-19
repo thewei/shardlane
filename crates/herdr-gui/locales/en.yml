@@ -210,6 +210,8 @@ settings:
     builtin: Built-in browser
     enabled_detail: Enabled — available from the right panel and surface chooser.
     disabled_detail: Disabled — browser surfaces stay hidden until re-enabled.
+    preview_discovery: Preview discovery
+    preview_discovery_detail: Scan loopback addresses on this Mac for local dev servers and offer them as Browser preview suggestions. Off by default; loopback (localhost/127.0.0.1) only. Applies to the next scan.
     new_profile: New profile
     new_profile_detail: Create an isolated browser profile with its own website data store.
     new_profile_action: + New Profile

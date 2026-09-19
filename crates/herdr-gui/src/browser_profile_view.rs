@@ -1,7 +1,7 @@
 //! Browser Profile settings section: list, create, and manage browser profiles.
 //!
 //! [INPUT]: BrowserConfig (from ApplicationConfig)
-//! [OUTPUT]: render_browser_settings() + profile management actions (BROWSER-03)
+//! [OUTPUT]: render_browser_settings() (incl. the preview-discovery toggle) + profile management actions (BROWSER-03)
 //! [POS]: Settings UI sub-view; mutates config via save_config() with immediate effect
 
 use super::*;
@@ -175,6 +175,28 @@ impl ShardlaneApp {
                     move |checked, _, app| {
                         herdr.update(app, |this, cx| {
                             this.config.browser.enabled = checked;
+                            this.save_config();
+                            cx.notify();
+                        });
+                    }
+                })
+                .into_any_element(),
+        ));
+
+        // notate 2026-09-19 #4: preview_discovery_enabled ships default-off and was
+        // previously reachable only by hand-editing config.json — surface it as a
+        // toggle right under the Enabled switch. browser_view.rs re-checks the flag
+        // at scan time, so flipping it arms/disarms the omnibox scan immediately.
+        rows.push(settings_card_row(
+            &i18n::t("settings.browser.preview_discovery"),
+            &i18n::t("settings.browser.preview_discovery_detail"),
+            crate::ui::controls::Toggle::new("browser-preview-discovery", surface)
+                .checked(browser_config.preview_discovery_enabled)
+                .on_change({
+                    let herdr = cx.entity();
+                    move |checked, _, app| {
+                        herdr.update(app, |this, cx| {
+                            this.config.browser.preview_discovery_enabled = checked;
                             this.save_config();
                             cx.notify();
                         });

@@ -206,6 +206,8 @@ settings:
     builtin: 内蔵ブラウザ
     enabled_detail: 有効 — 右パネルと画面セレクターから利用できます。
     disabled_detail: 無効 — 再び有効にするまでブラウザ画面は表示されません。
+    preview_discovery: プレビュー検出
+    preview_discovery_detail: この Mac のループバックアドレスをスキャンしてローカル開発サーバーを探し、ブラウザのプレビュー候補として表示します。デフォルトはオフ。対象はループバックアドレス（localhost/127.0.0.1）のみ。変更は次回のスキャンから有効になります。
     new_profile: 新規プロファイル
     new_profile_detail: 独自の Web サイトデータストアを持つ隔離されたブラウザプロファイルを作成します。
     new_profile_action: + 新規プロファイル

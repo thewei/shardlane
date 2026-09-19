@@ -205,6 +205,8 @@ settings:
     builtin: 內建瀏覽器
     enabled_detail: 已啟用——可從右側面板與介面選擇器使用。
     disabled_detail: 已停用——瀏覽器介面將保持隱藏，直到重新啟用。
+    preview_discovery: 預覽服務探測
+    preview_discovery_detail: 掃描本機迴路位址上的本機開發伺服器，作為瀏覽器預君建議。預設關閉；僅限本機迴路位址（localhost/127.0.0.1）。變更於下一次掃描時生效。
     new_profile: 新增設定檔
     new_profile_detail: 建立一個擁有獨立網站資料儲存庫的隔離瀏覽器設定檔。
     new_profile_action: + 新增設定檔
