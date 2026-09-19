@@ -8,7 +8,9 @@
 //! wrappers (workspace/tab/pane/agent/terminal methods, AgentRuntime for
 //! HerdrClient), plus herdr/wax CLI discovery (resolve_user_cli/herdr_cli_path:
 //! a login-shell PATH fallback for the packaged .app so Finder launches don't
-//! hit io NotFound)
+//! hit io NotFound), and the Herdr user-config seam (validate_user_config /
+//! write_user_config_atomic: the runtime's own herdr config check probe plus
+//! a same-directory atomic install)
 //! [POS]: shardlane-host's runtime adapter implementing the SPI defined in
 //! runtime.rs; consumed by both herdr-gui (desktop) and shardlane-remote
 //! (remote API)
@@ -28,7 +30,10 @@ use std::{
     io::{BufRead, BufReader, Write},
     path::{Path, PathBuf},
     process::{Command, Stdio},
-    sync::OnceLock,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        OnceLock,
+    },
     thread,
     time::{Duration, Instant},
 };
@@ -69,6 +74,10 @@ pub enum HerdrError {
     /// supplementation are forbidden (AC-01/AC-02).
     #[error("delivery uncertain: {0}")]
     DeliveryUncertain(String),
+    /// The user's Herdr config was rejected by herdr config check; the
+    /// payload carries the CLI's own diagnosis.
+    #[error("herdr config invalid: {0}")]
+    ConfigInvalid(String),
     #[error("incompatible protocol: requires {min}+; got {actual}")]
     IncompatibleProtocol { min: u32, actual: u32 },
 }
@@ -2332,6 +2341,109 @@ pub fn herdr_tui_command() -> Result<Command, String> {
     Ok(command)
 }
 
+// --- User config validation & atomic install ---
+
+/// Unique suffix source for same-directory temp files so concurrent callers
+/// never collide on one temp name.
+static CONFIG_TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+fn next_config_temp_path(target: &Path, marker: &str) -> PathBuf {
+    let unique = CONFIG_TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
+    target.with_extension(format!(
+        "toml.{}-{}-{}.tmp",
+        marker,
+        std::process::id(),
+        unique
+    ))
+}
+
+/// Run the Herdr CLI's own config probe (herdr config check) against
+/// config_path via HERDR_CONFIG_PATH: the runtime's judgment, never a
+/// client-side TOML parse.
+fn run_config_check(herdr_bin: &Path, config_path: &Path) -> Result<(), HerdrError> {
+    let output = Command::new(herdr_bin)
+        .args(["config", "check"])
+        .env("HERDR_CONFIG_PATH", config_path)
+        .output()?;
+    if output.status.success() {
+        return Ok(());
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let (stdout, stderr) = (stdout.trim(), stderr.trim());
+    let detail = if stdout.is_empty() {
+        stderr.to_string()
+    } else if stderr.is_empty() || stderr == stdout {
+        stdout.to_string()
+    } else {
+        format!("{stdout}; {stderr}")
+    };
+    let detail = if detail.is_empty() {
+        format!("herdr config check exited with {}", output.status)
+    } else {
+        detail
+    };
+    Err(HerdrError::ConfigInvalid(detail))
+}
+
+/// Validate candidate TOML content with the runtime's own probe. The candidate
+/// is checked from a temporary file inside the config's own directory so
+/// relative paths inside the file see the same surroundings as the real config;
+/// the temp file is removed on every path.
+pub fn validate_user_config(herdr_bin: &Path, candidate: &str) -> Result<(), HerdrError> {
+    validate_user_config_at(herdr_bin, &herdr_user_config_path(), candidate)
+}
+
+/// Path-injected core of validate_user_config (tests target an isolated
+/// directory instead of the user's live config).
+fn validate_user_config_at(
+    herdr_bin: &Path,
+    target: &Path,
+    candidate: &str,
+) -> Result<(), HerdrError> {
+    let probe = next_config_temp_path(target, "check");
+    std::fs::write(&probe, candidate)?;
+    let result = run_config_check(herdr_bin, &probe);
+    let _ = std::fs::remove_file(&probe);
+    result
+}
+
+/// Install candidate as the user's Herdr config atomically: write a
+/// same-directory temp file, validate it in place with the config check probe,
+/// then rename it over the real config (same directory, so the rename is
+/// atomic). Any failure removes the temp file and leaves the existing config
+/// untouched.
+pub fn write_user_config_atomic(herdr_bin: &Path, candidate: &str) -> Result<(), HerdrError> {
+    write_user_config_atomic_at(herdr_bin, &herdr_user_config_path(), candidate)
+}
+
+/// Path-injected core of write_user_config_atomic.
+fn write_user_config_atomic_at(
+    herdr_bin: &Path,
+    target: &Path,
+    candidate: &str,
+) -> Result<(), HerdrError> {
+    if let Some(parent) = target.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let temp = next_config_temp_path(target, "install");
+    {
+        let mut file = std::fs::File::create(&temp)?;
+        file.write_all(candidate.as_bytes())?;
+        file.sync_all()?;
+    }
+    // Preserve the existing file's permission bits across the rename.
+    if let Ok(metadata) = std::fs::metadata(target) {
+        let _ = std::fs::set_permissions(&temp, metadata.permissions());
+    }
+    let result = run_config_check(herdr_bin, &temp)
+        .and_then(|()| std::fs::rename(&temp, target).map_err(HerdrError::Io));
+    if result.is_err() {
+        let _ = std::fs::remove_file(&temp);
+    }
+    result
+}
+
 pub fn installed_cli_version() -> Option<String> {
     let output = Command::new(herdr_cli_path()?)
         .arg("--version")
@@ -4007,5 +4119,148 @@ mod tests {
             Ok(value) => value,
             Err(err) => panic!("{err}"),
         }
+    }
+
+    // --- User config validation & atomic install ---
+
+    /// A leftover *.tmp file would mean a failed cleanup contract.
+    fn assert_no_temp_leftovers(dir: &Path) {
+        let leftovers: Vec<String> = std::fs::read_dir(dir)
+            .unwrap_or_else(|error| panic!("read {}: {error}", dir.display()))
+            .filter_map(|entry| entry.ok())
+            .map(|entry| entry.file_name().to_string_lossy().into_owned())
+            .filter(|name| name.ends_with(".tmp"))
+            .collect();
+        assert!(leftovers.is_empty(), "temp files leaked: {leftovers:?}");
+    }
+
+    /// Isolated config directory so tests never touch the user's live config.
+    fn isolated_config_dir(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "shardlane-host-config-{name}-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir)
+            .unwrap_or_else(|error| panic!("create {}: {error}", dir.display()));
+        dir
+    }
+
+    /// Fake herdr probe: copies whatever HERDR_CONFIG_PATH points at into
+    /// `seen` (so tests can assert the probe really read the candidate) and
+    /// exits with the configured code.
+    #[cfg(unix)]
+    struct FakeConfigProbe {
+        bin: PathBuf,
+        seen: PathBuf,
+    }
+
+    #[cfg(unix)]
+    impl FakeConfigProbe {
+        fn write(dir: &Path, exit_code: i32, message: &str) -> Self {
+            use std::os::unix::fs::PermissionsExt as _;
+            let bin = dir.join("fake-herdr");
+            let seen = dir.join("seen-by-probe.toml");
+            let script = format!(
+                "#!/bin/sh\ncp \"$HERDR_CONFIG_PATH\" \"{}\"\nprintf '%s' \"{}\" >&2\nexit {}\n",
+                seen.display(),
+                message,
+                exit_code
+            );
+            std::fs::write(&bin, script)
+                .unwrap_or_else(|error| panic!("write fake probe: {error}"));
+            let mut permissions = std::fs::metadata(&bin)
+                .unwrap_or_else(|error| panic!("fake probe metadata: {error}"))
+                .permissions();
+            permissions.set_mode(0o755);
+            std::fs::set_permissions(&bin, permissions)
+                .unwrap_or_else(|error| panic!("fake probe chmod: {error}"));
+            Self { bin, seen }
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn validate_user_config_maps_probe_rejection_to_config_invalid() {
+        let dir = isolated_config_dir("invalid");
+        let probe = FakeConfigProbe::write(&dir, 1, "unknown config key theme.nope");
+        let target = dir.join("config.toml");
+        let candidate = "[theme]\nnope = \"x\"\n";
+        let Err(error) = validate_user_config_at(&probe.bin, &target, candidate) else {
+            panic!("invalid candidate must be rejected");
+        };
+        match error {
+            HerdrError::ConfigInvalid(message) => {
+                assert!(message.contains("unknown config key"), "{message}");
+            }
+            other => panic!("expected ConfigInvalid, got {other:?}"),
+        }
+        let seen = std::fs::read_to_string(&probe.seen)
+            .unwrap_or_else(|error| panic!("read probe capture: {error}"));
+        assert_eq!(seen, candidate);
+        assert_no_temp_leftovers(&dir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn validate_user_config_accepts_valid_candidate_and_cleans_up() {
+        let dir = isolated_config_dir("valid");
+        let probe = FakeConfigProbe::write(&dir, 0, "");
+        let target = dir.join("config.toml");
+        validate_user_config_at(&probe.bin, &target, "theme = \"tokyonight\"\n")
+            .unwrap_or_else(|error| panic!("valid candidate rejected: {error}"));
+        assert_no_temp_leftovers(&dir);
+    }
+
+    /// Real-herdr contract: the installed CLI must reject an unknown theme
+    /// key. Skipped where herdr is not installed.
+    #[test]
+    fn live_herdr_config_check_rejects_unknown_theme_key() {
+        let Some(herdr) = herdr_cli_path() else {
+            return;
+        };
+        let dir = isolated_config_dir("live-invalid");
+        let target = dir.join("config.toml");
+        let Err(error) =
+            validate_user_config_at(&herdr, &target, "[theme]\nno_such_theme_key = \"x\"\n")
+        else {
+            panic!("live herdr must reject unknown theme key");
+        };
+        assert!(matches!(error, HerdrError::ConfigInvalid(_)), "{error:?}");
+        assert_no_temp_leftovers(&dir);
+    }
+
+    /// Same live contract for a legal sample.
+    #[test]
+    fn live_herdr_config_check_accepts_valid_sample() {
+        let Some(herdr) = herdr_cli_path() else {
+            return;
+        };
+        let dir = isolated_config_dir("live-valid");
+        let target = dir.join("config.toml");
+        validate_user_config_at(&herdr, &target, "[theme]\nname = \"tokyonight\"\n")
+            .unwrap_or_else(|error| panic!("live valid sample rejected: {error}"));
+        assert_no_temp_leftovers(&dir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn write_user_config_atomic_installs_only_valid_content() {
+        let dir = isolated_config_dir("atomic");
+        let target = dir.join("nested").join("config.toml");
+        let rejected = FakeConfigProbe::write(&dir, 1, "bad key");
+        let Err(error) = write_user_config_atomic_at(&rejected.bin, &target, "fresh = true\n")
+        else {
+            panic!("rejected content must fail the atomic write");
+        };
+        assert!(matches!(error, HerdrError::ConfigInvalid(_)), "{error:?}");
+        assert!(!target.exists(), "rejected content must not be installed");
+
+        let accepted = FakeConfigProbe::write(&dir, 0, "");
+        write_user_config_atomic_at(&accepted.bin, &target, "fresh = true\n")
+            .unwrap_or_else(|error| panic!("atomic install failed: {error}"));
+        let installed = std::fs::read_to_string(&target)
+            .unwrap_or_else(|error| panic!("read installed config: {error}"));
+        assert_eq!(installed, "fresh = true\n");
+        assert_no_temp_leftovers(&dir);
     }
 }
