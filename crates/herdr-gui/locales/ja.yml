@@ -259,6 +259,7 @@ settings:
     header_shortcut: ショートカット
     scope_global: グローバル
     scope_app: アプリ
+    scope_conversation: 会話
     scope_agent_switcher: Agent スイッチャー
     rebind_tooltip: クリックで再バインド · Esc でキャンセル
     rebind_tooltip_conflicts: 'クリックで再バインド · Esc でキャンセル · %{conflicts} と競合'

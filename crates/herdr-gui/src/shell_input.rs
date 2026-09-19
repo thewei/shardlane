@@ -57,6 +57,8 @@ impl ShardlaneApp {
     }
 
     /// ⌘F routing: History open → find within History; otherwise Chat presentation mode → Chat.
+    /// 无会话表面时吞键侧不再拦截（Conversation 域），该和弦已透传给托管 TUI；
+    /// 动作侧落到这里自然为空转。
     pub(crate) fn toggle_conversation_find(
         &mut self,
         _: &FindInConversation,
@@ -70,6 +72,14 @@ impl ShardlaneApp {
         {
             self.toggle_chat_find(window, cx);
         }
+    }
+
+    /// Conversation 域开关：当前是否存在可消费 Find 的会话表面（History 打开，
+    /// 或 Chat 呈现模式且已绑定会话）。吞键判定与动作路由共用这一个真值。
+    fn conversation_surface_open(&self) -> bool {
+        self.history.open
+            || (self.chat.model.mode == crate::chat::WorkSurfaceMode::Chat
+                && self.chat.model.binding.is_some())
     }
 
     /// Find bar previous/next match (routed by the current surface).
@@ -350,8 +360,11 @@ impl ShardlaneApp {
         // action + terminal bytes double fire). There is no second hardcoded swallow table anymore;
         // chords dropped by override / disabled no longer hit the registry and pass through to the
         // host terminal per the existing P1-4 semantics.
-        let gui_swallow =
-            crate::input::should_swallow_gui_keystroke_with_config(key, &self.config.shortcuts);
+        let gui_swallow = crate::input::should_swallow_gui_keystroke_with_config(
+            key,
+            &self.config.shortcuts,
+            self.conversation_surface_open(),
+        );
         let surface_blocked = self.terminal_surface_blocked();
         if terminal_keystroke_blocked(gui_swallow, surface_blocked, false) {
             if let Some(started) = trace_started {

@@ -259,6 +259,7 @@ settings:
     header_shortcut: 단축키
     scope_global: 전역
     scope_app: 앱
+    scope_conversation: 대화
     scope_agent_switcher: Agent 전환기
     rebind_tooltip: 클릭하여 다시 바인딩 · Esc 취소
     rebind_tooltip_conflicts: '클릭하여 다시 바인딩 · Esc 취소 · %{conflicts}와(과) 충돌'

@@ -258,6 +258,7 @@ settings:
     header_shortcut: 快速鍵
     scope_global: 全域
     scope_app: App
+    scope_conversation: 會話
     scope_agent_switcher: Agent 切換器
     rebind_tooltip: 點擊重新綁定 · Esc 取消
     rebind_tooltip_conflicts: '點擊重新綁定 · Esc 取消 · 與 %{conflicts} 衝突'

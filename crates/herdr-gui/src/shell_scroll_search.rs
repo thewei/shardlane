@@ -1,5 +1,5 @@
 //! [INPUT]: Depends on the ShardlaneApp type from the crate root (super) and existing types/imports (use super::*); no independent external dependencies.
-//! [OUTPUT]: Exposes ShardlaneApp's terminal scrolling and find: local scroll state machine + ⌘F search/highlight/cycle + client search entries (inherent impl split).
+//! [OUTPUT]: Exposes ShardlaneApp's Global Search entry surface (client_search_items + open_search build the everything-picker over Projects/Tabs/Agents/History) and the terminal wheel residual reset (the only terminal-local scroll state; conversation ⌘F find routing lives in shell_input.rs).
 //! [POS]: The `crates/herdr-gui` shell scroll_search responsibility domain, mechanically split out of main.rs; together with sibling shell_* modules it forms ShardlaneApp's method surface.
 use super::*;
 

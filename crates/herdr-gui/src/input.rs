@@ -3,7 +3,8 @@
 //! [INPUT]: Depends on crepuscularity_gpui's Keystroke and `crate::ghostty`'s TerminalKey
 //! [OUTPUT]: Exposes `key_name` (Script hotkeys/debug naming),
 //!           `should_swallow_gui_keystroke_with_config` (the sole key-swallowing decision — live
-//!             resolved Shortcut Registry; dropped overrides / disabled keys pass through to the host terminal),
+//!             resolved Shortcut Registry; dropped overrides / disabled keys pass through to the host terminal;
+//!             Conversation 域条目按当前会话表面可用性过滤——不可用时和弦透传给托管 TUI),
 //!           `ghostty_terminal_key` (GPUI key → Ghostty physical key + base codepoint),
 //!           `legacy_alt_fallback_byte` (Option-as-Alt fallback byte for pure VT mode),
 //!           platform modifier/chord helpers (serialized with GPUI's actual platform key names)
@@ -310,7 +311,11 @@ const DIGIT_KEYS: [TerminalKey; 10] = [
 /// LIVE user shortcut configuration, not compile-time defaults. Consequences: an
 /// overridden chord fires its GPUI action exactly once (the old default chord now falls
 /// through to the terminal), and a disabled shortcut neither fires nor is swallowed.
-pub fn should_swallow_gui_keystroke_with_config(key: &Keystroke, config: &ShortcutConfig) -> bool {
+pub fn should_swallow_gui_keystroke_with_config(
+    key: &Keystroke,
+    config: &ShortcutConfig,
+    conversation_active: bool,
+) -> bool {
     // F1 is the one unmodified application chord.  Resolve it through the same
     // live registry as every modified binding so disabling/overriding Help does
     // not leave an invisible hard-coded swallow in front of the hosted TUI.
@@ -322,7 +327,7 @@ pub fn should_swallow_gui_keystroke_with_config(key: &Keystroke, config: &Shortc
     {
         return false;
     }
-    chord_is_bound(&keystroke_chord(key), config)
+    chord_is_bound(&keystroke_chord(key), config, conversation_active)
 }
 
 /// Keystroke → registry chord string ("cmd-shift-a" form).
@@ -392,18 +397,21 @@ mod tests {
         let config = ShortcutConfig::default();
         assert!(should_swallow_gui_keystroke_with_config(
             &primary_ks("v", false),
-            &config
+            &config,
+            true
         ));
         assert!(!should_swallow_gui_keystroke_with_config(
             &primary_ks("backspace", false),
-            &config
+            &config,
+            true
         ));
         // Disabled shortcuts are no longer swallowed (the key passes through to the host terminal and triggers no action).
         let mut disabled = ShortcutConfig::default();
         disabled.disabled.insert("terminal.paste".to_string());
         assert!(!should_swallow_gui_keystroke_with_config(
             &primary_ks("v", false),
-            &disabled
+            &disabled,
+            true
         ));
         // User override to a new chord: the new chord is swallowed, the old default chord passes through (P1-4 semantics).
         let mut overridden = ShortcutConfig::default();
@@ -414,18 +422,45 @@ mod tests {
         );
         assert!(!should_swallow_gui_keystroke_with_config(
             &primary_ks("v", false),
-            &overridden
+            &overridden,
+            true
         ));
         assert!(should_swallow_gui_keystroke_with_config(
             &{ primary_ks("v", true) },
-            &overridden
+            &overridden,
+            true
         ));
 
         let mut f1_disabled = ShortcutConfig::default();
         f1_disabled.disabled.insert("app.help".to_string());
         assert!(!should_swallow_gui_keystroke_with_config(
             &ks("f1", false, false),
-            &f1_disabled
+            &f1_disabled,
+            true
+        ));
+    }
+
+    #[test]
+    fn conversation_scoped_chords_pass_through_without_a_conversation_surface() {
+        // ⌘F (app.find) 是唯一的 Conversation 域条目：没有 History/Chat 表面时不得
+        // 吞键——和弦透传给托管 TUI，而不是哑掉；有会话表面时照常吞键开 Find。
+        let config = ShortcutConfig::default();
+        let find =
+            should_swallow_gui_keystroke_with_config(&primary_ks("f", false), &config, false);
+        assert!(
+            !find,
+            "cmd-f must reach the hosted TUI without a conversation surface"
+        );
+        assert!(should_swallow_gui_keystroke_with_config(
+            &primary_ks("f", false),
+            &config,
+            true
+        ));
+        // 其他 App 域和弦不受会话表面开关影响。
+        assert!(should_swallow_gui_keystroke_with_config(
+            &primary_ks("t", false),
+            &config,
+            false
         ));
     }
 

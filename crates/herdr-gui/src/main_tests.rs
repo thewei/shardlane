@@ -1519,8 +1519,12 @@ fn agent_switcher_chords_are_registered_configurable_and_swallow_aware() {
         }
     }
     let config = crate::shortcuts::ShortcutConfig::default();
-    assert!(crate::shortcuts::chord_is_bound("ctrl-tab", &config));
-    assert!(crate::shortcuts::chord_is_bound("ctrl-shift-tab", &config));
+    assert!(crate::shortcuts::chord_is_bound("ctrl-tab", &config, true));
+    assert!(crate::shortcuts::chord_is_bound(
+        "ctrl-shift-tab",
+        &config,
+        true
+    ));
     // The registry-wide test `registry_shortcuts_all_resolve_to_runtime_actions` pins that
     // every id above resolves to its GPUI action (SwitchAgentNext/… mappings).
 }

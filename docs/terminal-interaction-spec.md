@@ -114,8 +114,11 @@ Application shortcuts (one resolved registry — `shortcuts.rs`):
   fall through to the hosted TUI by design;
 - Script custom hotkeys (e.g. `ctrl-alt-f8`) fire even while a composer is
   focused and never reach the PTY (`route_shell_keystroke` pins the route);
-- `⌘F`/`⌘↑`/`⌘↓` are intentionally unbound by Shardlane since the cutover:
-  the hosted TUI owns those semantics.
+- `⌘F`/`⌘↑`/`⌘↓` are not bound on the terminal surface: `⌘↑`/`⌘↓` were
+  never rebound after the cutover, and `⌘F` (Find in Conversation) is
+  Conversation-scoped since 2026-09-19 — without an open History/Chat surface
+  the chord is not swallowed and passes through to the hosted TUI, which owns
+  those semantics.
 
 IME behavior: marked text stays local until committed; candidate positioning
 follows the terminal caret cell geometry; composition is cleared when focus

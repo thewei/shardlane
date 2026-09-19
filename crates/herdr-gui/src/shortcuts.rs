@@ -20,6 +20,10 @@ pub(crate) enum ShortcutScope {
     Global,
     /// Active only when ShardlaneApp root focus_handle owns focus.
     App,
+    /// Active only while a conversation surface (History/Chat) can consume the
+    /// action. GPUI 侧仍挂在 "ShardlaneApp"（动作内部按表面路由）；该域只参与
+    /// 终端吞键判定——表面不可用时和弦透传给托管 TUI，而不是哑掉。
+    Conversation,
     /// Active when the Ctrl-Tab Agent Switcher overlay is visible (audit E07).
     AgentSwitcher,
 }
@@ -30,6 +34,7 @@ impl ShortcutScope {
         match self {
             Self::Global => None,
             Self::App => Some("ShardlaneApp"),
+            Self::Conversation => Some("ShardlaneApp"),
             Self::AgentSwitcher => Some("AgentSwitcher"),
         }
     }
@@ -104,7 +109,7 @@ pub(crate) static REGISTRY: &[ShortcutEntry] = &[
         id: "app.find",
         label: "Find in Conversation",
         default_chord: "cmd-f",
-        scope: ShortcutScope::App,
+        scope: ShortcutScope::Conversation,
         category: ShortcutCategory::App,
     },
     ShortcutEntry {
@@ -592,9 +597,17 @@ pub(crate) fn resolved_bindings(config: &ShortcutConfig) -> Vec<ResolvedBinding>
 /// SCT-02: whether a chord hits any currently effective binding (including new chords after override).
 /// The terminal key-swallowing decision derives from this function and is never hand-synced with the binding table.
 /// A disabled chord no longer matches (the key passes through and triggers no action).
-pub(crate) fn chord_is_bound(chord: &str, config: &ShortcutConfig) -> bool {
+/// Conversation 域条目只在 `conversation_active`（当前存在可消费 Find 的会话表面）
+/// 时参与命中；否则该和弦留给托管 TUI。
+pub(crate) fn chord_is_bound(
+    chord: &str,
+    config: &ShortcutConfig,
+    conversation_active: bool,
+) -> bool {
     REGISTRY.iter().any(|entry| {
-        !config.disabled.contains(entry.id) && effective_chord(entry.id, config) == Some(chord)
+        !config.disabled.contains(entry.id)
+            && (entry.scope != ShortcutScope::Conversation || conversation_active)
+            && effective_chord(entry.id, config) == Some(chord)
     })
 }
 

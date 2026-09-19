@@ -189,6 +189,9 @@ impl ShardlaneApp {
             let scope_label = match entry.scope {
                 ShortcutScope::Global => crate::i18n::t("settings.shortcuts.scope_global"),
                 ShortcutScope::App => crate::i18n::t("settings.shortcuts.scope_app"),
+                ShortcutScope::Conversation => {
+                    crate::i18n::t("settings.shortcuts.scope_conversation")
+                }
                 ShortcutScope::AgentSwitcher => {
                     crate::i18n::t("settings.shortcuts.scope_agent_switcher")
                 }

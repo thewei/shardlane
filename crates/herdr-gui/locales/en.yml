@@ -263,6 +263,7 @@ settings:
     header_shortcut: Shortcut
     scope_global: Global
     scope_app: App
+    scope_conversation: Conversation
     scope_agent_switcher: Agent Switcher
     rebind_tooltip: Click to rebind · Esc cancels
     rebind_tooltip_conflicts: 'Click to rebind · Esc cancels · Conflicts with %{conflicts}'
