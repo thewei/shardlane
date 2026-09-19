@@ -86,6 +86,9 @@ echo '{"hook_event_name":"PreInvocation","conversationId":"<uuid>"}' | \
 - `chat lookup: ... journal=absent (connecting)` - binding retry every 2 s while unbound
 - `chat entry blocked: ...` - the failing entry gate
 - `hook install/refresh/uninstall <agent> -> <outcome>`
+- `hook enrich: agent=antigravity session=... source_turns=N appended=M` - the
+  Antigravity body backfill ran on a SessionStart/TurnComplete event (source
+  turns = agy db turns seen, appended = records actually written after dedupe)
 
 ## Failure signatures (real incidents, 2026-09-19)
 
@@ -95,6 +98,7 @@ echo '{"hook_event_name":"PreInvocation","conversationId":"<uuid>"}' | \
 | Chat open -> `No such file or directory (os error 2)` | catalog virtual path (`<db>#<id>`) fed to the tail transport | HookJournal agents bind the journal source, never the catalog path |
 | Same journal record twice | dual-channel ingest (socket + OSC both arrived, both ingested) | ingest only in the IPC server thread |
 | `agent_session.value` holds an old conversation id | hook events for the new invocation never fired | restart the agent; note PreInvocation fires at the **start of each turn** (first prompt), Stop at turn end - a freshly opened, never-prompted agy TUI fires nothing, so no button until the first prompt |
+| Chat opens (no error) but the view is one blank pane | journal holds lifecycle events only - agy hook payloads carry **no text**, so 0 messages decode; the empty conversation is rendered "blank" | Antigravity enrichment backfills assistant replies from agy's own `conversations/<uuid>.db` on the next hook event; verify via `hook enrich ... appended=N` and `assistant_message` lines in the journal. User prompts are NOT recoverable (absent from both the db plaintext and history.jsonl) |
 | `hook report rejected ... anchor gate` | session id empty/absent and the ancestor walk found nothing | verify walk depth (the direct parent is hook.sh; the agent sits higher) |
 | reinstall reports Installed but behavior is stale | template edited without bumping `CURRENT_HOOK_VERSION` **and every embedded marker** | bump all markers together; the python-compile regression test covers syntax only |
 
@@ -124,3 +128,9 @@ echo '{"hook_event_name":"PreInvocation","conversationId":"<uuid>"}' | \
 3. `Chat opens with os error 2 for agy.` - expected: recognize the catalog
    virtual-path signature; HookJournal agents bind the journal, never the
    catalog's `<db>#<id>` path.
+4. `Chat opens but shows a blank pane for an agy conversation that has real
+   replies.` - expected: check the journal for lifecycle-only records
+   (`session_start`/`turn_complete`, no `assistant_message`), conclude the
+   payload-carries-no-text signature, then trigger a turn in agy and confirm
+   the `hook enrich` line appended records; cross-check counts against
+   `SELECT count(*) FROM steps WHERE step_type=15` in the conversation db.
