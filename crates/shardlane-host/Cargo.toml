@@ -9,6 +9,7 @@ description = "UI-independent Shardlane host contracts and application-service b
 [dependencies]
 async-channel = { workspace = true }
 base64 = { workspace = true }
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
 portable-pty = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -32,4 +33,5 @@ windows-sys = { version = "0.59", features = [
 workspace = true
 
 [dev-dependencies]
+filetime = "0.2"
 tempfile = { workspace = true }
