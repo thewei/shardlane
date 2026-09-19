@@ -7,7 +7,9 @@
 //! [OUTPUT]: Exposes selection interaction methods (begin/drag/sync), the mouse/wheel handler family (the
 //!           first child-row wheel event immediately takes surface ownership),
 //!           try_report_terminal_mouse/wheel, try_translate_alt_screen_wheel, and the
-//!           SelectionGeometry/PendingTerminalCopy/TerminalMouseReport interaction types
+//!           SelectionGeometry/PendingTerminalCopy/TerminalMouseReport interaction types plus
+//!           terminal_mouse_encode_inputs (exact float-geometry pixel→cell mapping into the
+//!           unit-cell SGR encode space — one coordinate source with the painter)
 //! [POS]: The complete home for main.rs's terminal interaction domain; rendering/polling remain in main.rs
 
 use super::*;
@@ -199,6 +201,48 @@ impl ShardlaneApp {
     }
 }
 
+/// Exact pixel→cell mapping for encoded mouse reporting, using the same float
+/// `TerminalGeometry` the painter places cells with.
+///
+/// The Ghostty mouse ABI takes u32 cell dimensions and computes the reported cell as
+/// `floor(px / cell)` (vendored renderer_size.Coordinate.convert). The GPUI painter
+/// instead lays out column c at `c * cell_width` with the float metric (Menlo 12pt ≈
+/// 7.2px). Rounding the metric for the ABI (7.2 → 7) made the reported column drift
+/// right as x grew — `floor(700/7)=100` vs the painted `floor(700/7.2)=97` — so the
+/// hosted TUI drew its drag selection up to 3+ cells ahead of the cursor.
+///
+/// Fix: map with the exact float metric here and hand the encoder a unit-cell grid
+/// (cell 1×1, screen size in cells, position at the target cell's center). The
+/// encoder's `floor((col + 0.5) / 1)` is then the identity, every SGR report lands on
+/// the painted cell, and the encoder's own grid clamp operates on real grid
+/// coordinates. Cell centers (not origins) avoid float truncation flipping an exact
+/// multiple down to the previous cell.
+///
+/// SGR-Pixels (mode 1016) would report cell centers as "pixels"; the Herdr TUI speaks
+/// crossterm SGR cells only — revisit this contract if a hosted app ever enables ?1016.
+fn terminal_mouse_encode_inputs(
+    x_px: f64,
+    y_px: f64,
+    cell_width: f64,
+    cell_height: f64,
+    cols: u16,
+    rows: u16,
+) -> (TerminalMouseGeometry, (f32, f32)) {
+    let cols = u32::from(cols.max(1));
+    let rows = u32::from(rows.max(1));
+    let col = ((x_px.max(0.0) / cell_width.max(f64::EPSILON)).floor() as u32).min(cols - 1);
+    let row = ((y_px.max(0.0) / cell_height.max(f64::EPSILON)).floor() as u32).min(rows - 1);
+    (
+        TerminalMouseGeometry {
+            screen_width: cols,
+            screen_height: rows,
+            cell_width: 1,
+            cell_height: 1,
+        },
+        (col as f32 + 0.5, row as f32 + 0.5),
+    )
+}
+
 /// Mouse selection must use the same palette-derived highlight as the current terminal frame.
 /// Falling back to the historical dark blue is only valid before a palette has been applied;
 /// forcing it on every drag made dark text nearly disappear in light appearance.
@@ -278,10 +322,10 @@ impl ShardlaneApp {
         }
     }
 
-    /// Shared target→size resolution, chrome-offset compensation, and SGR geometry
-    /// construction behind the mouse and wheel report paths (audit B05): a coordinate
-    /// compensation change can only land in one place now. Returns the encoded geometry
-    /// plus the chrome-compensated event position in cell-pixel space.
+    /// Shared target→size resolution and SGR encode-space construction behind the mouse
+    /// and wheel report paths (audit B05): a coordinate mapping change can only land in
+    /// one place now. Returns the encoded geometry plus the event position mapped to
+    /// exact cell-center coordinates in the unit-cell encode space.
     fn terminal_mouse_geometry_for(
         &self,
         target: &str,
@@ -302,13 +346,9 @@ impl ShardlaneApp {
         // Visible grid == raw grid: pixel positions map straight into the model's grid.
         let x = (position_x - origin_x).max(0.0);
         let y = (position_y - origin_y).max(0.0);
-        let geometry = TerminalMouseGeometry {
-            screen_width: u32::from(size.2.max(1)),
-            screen_height: u32::from(size.3.max(1)),
-            cell_width: cell_width.round().max(1.0) as u32,
-            cell_height: cell_height.round().max(1.0) as u32,
-        };
-        Some((geometry, (x, y)))
+        let (geometry, (col, row)) =
+            terminal_mouse_encode_inputs(x, y, cell_width, cell_height, size.0, size.1);
+        Some((geometry, (f64::from(col), f64::from(row))))
     }
 
     pub(super) fn try_report_terminal_mouse(
@@ -744,5 +784,39 @@ mod tests {
             0
         );
         assert!(residual.abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn mouse_encode_cells_match_the_painted_float_grid() {
+        // Menlo 12pt: cell 7.2px. x=700 sits over painted column floor(700/7.2)=97.
+        // The previous ABI-side rounding (cell 7) reported floor(700/7)=100, so the
+        // hosted TUI's drag selection ran ~3 cells ahead of the cursor.
+        let (geometry, (col, row)) = terminal_mouse_encode_inputs(700.0, 36.0, 7.2, 18.0, 140, 38);
+        assert_eq!((col, row), (97.5, 2.5));
+        assert_eq!(geometry.cell_width, 1);
+        assert_eq!(geometry.cell_height, 1);
+        assert_eq!(geometry.screen_width, 140);
+        assert_eq!(geometry.screen_height, 38);
+    }
+
+    #[test]
+    fn mouse_encode_cells_cover_boundaries_and_clamps() {
+        // Cell boundaries belong to the next cell; exact multiples must not truncate
+        // down (the +0.5 center exists for that).
+        let (_, (at_boundary, _)) = terminal_mouse_encode_inputs(72.0, 36.0, 7.2, 18.0, 140, 38);
+        assert_eq!(at_boundary, 10.5);
+        let (_, (before_boundary, _)) =
+            terminal_mouse_encode_inputs(71.99, 36.0, 7.2, 18.0, 140, 38);
+        assert_eq!(before_boundary, 9.5);
+
+        // Negative surface-relative positions clamp to the first cell.
+        let (_, (neg_col, neg_row)) = terminal_mouse_encode_inputs(-5.0, -5.0, 7.2, 18.0, 140, 38);
+        assert_eq!((neg_col, neg_row), (0.5, 0.5));
+
+        // Positions past the grid clamp to the final cell — matching the encoder's
+        // own grid clamp instead of fighting it with a rounded pixel grid.
+        let (_, (max_col, max_row)) =
+            terminal_mouse_encode_inputs(100_000.0, 100_000.0, 7.2, 18.0, 140, 38);
+        assert_eq!((max_col, max_row), (139.5, 37.5));
     }
 }

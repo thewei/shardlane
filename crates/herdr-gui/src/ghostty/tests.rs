@@ -1390,6 +1390,7 @@ fn ghostty_mouse_encoder_tracks_terminal_modes() {
         .unwrap_or_else(|err| panic!("{err}"));
     assert!(disabled.is_empty());
 
+    // Button-event tracking (?1002) is what a TUI enables for drag selection.
     terminal.write(b"\x1b[?1000h\x1b[?1006h");
     let enabled = terminal
         .encode_mouse(
@@ -1404,6 +1405,60 @@ fn ghostty_mouse_encoder_tracks_terminal_modes() {
     let encoded = String::from_utf8(enabled).unwrap_or_else(|err| panic!("{err}"));
     assert!(encoded.starts_with("\x1b[<"));
     assert!(encoded.ends_with('M'));
+}
+
+#[test]
+fn ghostty_mouse_encoder_reproduces_unit_cell_coordinates_exactly() {
+    // The client maps pixels→cells with its float TerminalGeometry (paint-identical)
+    // and reports cell centers on a unit-cell grid (cell 1×1, screen size in cells).
+    // This pins the vendored ABI side of that contract: floor(center / 1) must be the
+    // identity so SGR reports land exactly on the painted cell. The legacy path
+    // (rounded pixel-cell 7 at Menlo 12pt) drifted up to 3+ columns right of the
+    // cursor, so the hosted TUI's selection stopped tracking the mouse.
+    let Ok(runtime) = GhosttyRuntime::detect() else {
+        return;
+    };
+    let Ok(api) = runtime.load_api() else {
+        return;
+    };
+    let mut terminal = match GhosttyTerminal::new(api, 80, 24) {
+        Ok(terminal) => terminal,
+        Err(err) => panic!("{err}"),
+    };
+    // Button-event tracking (?1002) is what a TUI enables for drag selection.
+    terminal.write(b"\x1b[?1002h\x1b[?1006h");
+    let geometry = TerminalMouseGeometry {
+        screen_width: 80,
+        screen_height: 24,
+        cell_width: 1,
+        cell_height: 1,
+    };
+
+    let press = terminal
+        .encode_mouse(
+            TerminalMouseAction::Press,
+            Some(TerminalMouseButton::Left),
+            TerminalModifiers::default(),
+            (30.5, 2.5),
+            geometry,
+            true,
+        )
+        .unwrap_or_else(|err| panic!("{err}"));
+    assert_eq!(press, b"\x1b[<0;31;3M".as_slice());
+
+    // The final cell stays reachable: cell centers clamp inside the encoder's own
+    // grid (screen in cells), not past it.
+    let edge = terminal
+        .encode_mouse(
+            TerminalMouseAction::Motion,
+            Some(TerminalMouseButton::Left),
+            TerminalModifiers::default(),
+            (79.5, 23.5),
+            geometry,
+            true,
+        )
+        .unwrap_or_else(|err| panic!("{err}"));
+    assert_eq!(edge, b"\x1b[<32;80;24M".as_slice());
 }
 
 #[test]
