@@ -172,10 +172,14 @@ impl ShardlaneApp {
         let fallback_us = fallback_started
             .map(crate::terminal_trace::elapsed_us)
             .unwrap_or(0);
+        let semantic_selection = if target == herdr_tui::TUI_TARGET {
+            self.tui_chrome_projection
+                .visible_to_raw_selection(selection)
+        } else {
+            selection
+        };
         let request = PendingTerminalCopy {
-            // Visible grid == raw grid (TUI chrome always shown): the selection maps
-            // straight into the Ghostty model's semantic copy path.
-            selection,
+            selection: semantic_selection,
             fallback_text: fallback_text.clone(),
             generation: self.terminal_token,
         };

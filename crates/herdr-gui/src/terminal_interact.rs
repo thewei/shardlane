@@ -111,17 +111,25 @@ impl ShardlaneApp {
         cell: (u16, u16),
         line: bool,
     ) -> Option<TerminalSelection> {
-        // The visible grid IS the raw grid (TUI chrome always shown): no coordinate
-        // translation between selection space and the Ghostty model.
+        let tui_projection = target == herdr_tui::TUI_TARGET;
+        let raw_cell = if tui_projection {
+            self.tui_visible_to_raw_cell(cell)
+        } else {
+            cell
+        };
         let fallback = self.selections.get(target).copied();
-        self.selection_at_terminal(target, fallback, |managed, _fallback| {
+        self.selection_at_terminal(target, fallback, |managed, fallback| {
             let selection = if line {
-                managed.select_line_at(cell)
+                managed.select_line_at(raw_cell)
             } else {
-                managed.select_word_at(cell)
+                managed.select_word_at(raw_cell)
             };
             let selection = selection.ok().flatten()?;
-            Some(selection)
+            if tui_projection {
+                self.tui_raw_to_visible_selection(selection).or(fallback)
+            } else {
+                Some(selection)
+            }
         })
     }
 
@@ -165,17 +173,18 @@ impl ShardlaneApp {
             return Some((anchor, current));
         }
         let fallback = self.selections.get(target).copied();
-        // Visible grid == raw grid: anchors map straight into the Ghostty model.
+        let raw_anchor = self.tui_visible_to_raw_cell(anchor);
+        let raw_current = self.tui_visible_to_raw_cell(current);
         self.selection_at_terminal(target, fallback, |managed, fallback| {
             let selection = match mode {
-                TerminalSelectionMode::Word => managed.select_word_drag(anchor, current),
-                TerminalSelectionMode::Line => managed.select_line_drag(anchor, current),
+                TerminalSelectionMode::Word => managed.select_word_drag(raw_anchor, raw_current),
+                TerminalSelectionMode::Line => managed.select_line_drag(raw_anchor, raw_current),
                 TerminalSelectionMode::Cell => unreachable!(),
             };
             let Some(selection) = selection.ok().flatten() else {
                 return fallback;
             };
-            Some(selection)
+            self.tui_raw_to_visible_selection(selection).or(fallback)
         })
     }
 
@@ -343,11 +352,21 @@ impl ShardlaneApp {
         }?;
         let cell_width = self.terminal_cell_width();
         let cell_height = self.terminal_cell_height();
-        // Visible grid == raw grid: pixel positions map straight into the model's grid.
-        let x = (position_x - origin_x).max(0.0);
-        let y = (position_y - origin_y).max(0.0);
+        let mut x = (position_x - origin_x).max(0.0);
+        let mut y = (position_y - origin_y).max(0.0);
+        // The hosted TUI paints the chrome-cropped Pane area, but SGR reports land in
+        // the Ghostty model's RAW grid: offset the pixel position by the cropped chrome
+        // and clamp against the compensated grid extent (audit B05 single-seam rule).
+        let (cols, rows) = if target == herdr_tui::TUI_TARGET {
+            x += cell_width * f64::from(self.tui_chrome_projection.left);
+            y += cell_height * f64::from(self.tui_chrome_projection.top);
+            let (cols, rows, _, _) = self.tui_raw_terminal_size(size);
+            (cols, rows)
+        } else {
+            (size.0, size.1)
+        };
         let (geometry, (col, row)) =
-            terminal_mouse_encode_inputs(x, y, cell_width, cell_height, size.0, size.1);
+            terminal_mouse_encode_inputs(x, y, cell_width, cell_height, cols, rows);
         Some((geometry, (f64::from(col), f64::from(row))))
     }
 

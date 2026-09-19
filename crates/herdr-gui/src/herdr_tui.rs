@@ -15,11 +15,13 @@
 //!           atomic `ThemeScheme` theme writes (`ThemeAppearanceMode`/`theme_appearance_mode`/
 //!           `effective_theme_selections`/`theme_scheme_update`, the Theme page's only theme path),
 //!           `ensure_tui_tab_bar_hidden` (startup tab-bar normalization),
-//!           `execute_focus_plan` (navigation chain), the `HerdrTuiHostState`
+//!           `execute_focus_plan` (navigation chain), `TuiChromeProjection`, the `HerdrTuiHostState`
 //!           lifecycle model, `protocol_supported` (cached metadata check, no RPC)
-//! [POS]: The strategy layer for the TUI presentation mode (spawn environment/navigation chain); PTY transport belongs to
+//! [POS]: The strategy layer for the TUI presentation mode (spawn environment/navigation chain/chrome projection); PTY transport belongs to
 //!          `terminal_stream.rs`, rendering to the existing Ghostty/GPUI stack, and all terminal semantics to Herdr
 
+use crate::ghostty::TerminalFrame;
+use crate::herdr::LayoutRect;
 use shardlane_host::diagnostics::lag_log;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -189,6 +191,107 @@ pub fn theme_scheme_update(
 
 /// TUI host surface identifier (terminal_target value; namespace-isolated from controllers).
 pub const TUI_TARGET: &str = "herdr-tui";
+
+/// Herdr-owned navigation chrome surrounding the authoritative Pane area inside the
+/// hosted TUI. Shardlane never redraws that chrome; it projects only the Pane rectangle
+/// while the full `herdr` process keeps running behind the same PTY. The Ghostty model
+/// holds the RAW TUI grid; every painted frame, mouse coordinate, selection, and PTY
+/// resize is compensated through this projection (2026-09-19 产品裁决: TUI 原生
+/// Tab 栏多 Tab 时也要隐藏，恢复客户端裁剪呈现).
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct TuiChromeProjection {
+    pub left: u16,
+    pub top: u16,
+    pub right: u16,
+    pub bottom: u16,
+}
+
+impl TuiChromeProjection {
+    pub fn from_layout(outer_cols: u16, outer_rows: u16, area: LayoutRect) -> Option<Self> {
+        let left = u16::try_from(area.x).ok()?;
+        let raw_top = u16::try_from(area.y).ok()?;
+        let width = u16::try_from(area.width).ok()?;
+        let height = u16::try_from(area.height).ok()?;
+        if width == 0
+            || height == 0
+            || left.saturating_add(width) > outer_cols
+            || raw_top.saturating_add(height) > outer_rows
+        {
+            return None;
+        }
+        // In Herdr 0.8, the top Tab bar was reflected in `area.y = 1`. In Herdr 0.9+,
+        // `area.y` is reported relative to the pane area (`area.y = 0`), while
+        // `area.height` remains `outer_rows - top_chrome` (e.g. 39 rows for a 40-row
+        // terminal with a 1-row tab bar). When `raw_top == 0` and `height < outer_rows`,
+        // the missing vertical rows belong to the top chrome (Herdr desktop tab bar at
+        // row 0), never the bottom.
+        let top = if raw_top > 0 {
+            raw_top
+        } else {
+            outer_rows.saturating_sub(height)
+        };
+        let bottom = outer_rows.saturating_sub(top.saturating_add(height));
+        Some(Self {
+            left,
+            top,
+            right: outer_cols.saturating_sub(left.saturating_add(width)),
+            bottom,
+        })
+    }
+
+    pub fn is_empty(self) -> bool {
+        self.left == 0 && self.top == 0 && self.right == 0 && self.bottom == 0
+    }
+
+    pub fn outer_grid(self, visible_cols: u16, visible_rows: u16) -> (u16, u16) {
+        (
+            visible_cols
+                .saturating_add(self.left)
+                .saturating_add(self.right),
+            visible_rows
+                .saturating_add(self.top)
+                .saturating_add(self.bottom),
+        )
+    }
+
+    pub fn project_frame(self, frame: &TerminalFrame) -> TerminalFrame {
+        frame.project_rect(self.left, self.top, self.right, self.bottom)
+    }
+
+    pub fn visible_to_raw_cell(self, cell: (u16, u16)) -> (u16, u16) {
+        (
+            cell.0.saturating_add(self.left),
+            cell.1.saturating_add(self.top),
+        )
+    }
+
+    pub fn raw_to_visible_cell(self, cell: (u16, u16)) -> Option<(u16, u16)> {
+        (cell.0 >= self.left && cell.1 >= self.top).then_some((
+            cell.0.saturating_sub(self.left),
+            cell.1.saturating_sub(self.top),
+        ))
+    }
+
+    pub fn visible_to_raw_selection(
+        self,
+        selection: ((u16, u16), (u16, u16)),
+    ) -> ((u16, u16), (u16, u16)) {
+        (
+            self.visible_to_raw_cell(selection.0),
+            self.visible_to_raw_cell(selection.1),
+        )
+    }
+
+    pub fn raw_to_visible_selection(
+        self,
+        selection: ((u16, u16), (u16, u16)),
+    ) -> Option<((u16, u16), (u16, u16))> {
+        Some((
+            self.raw_to_visible_cell(selection.0)?,
+            self.raw_to_visible_cell(selection.1)?,
+        ))
+    }
+}
 
 /// Build a spawn environment with herdr identity variables stripped. Pure function.
 pub fn sanitized_spawn_env(

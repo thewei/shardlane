@@ -1580,9 +1580,12 @@ struct ShardlaneApp {
     /// official theme; `None` until the first hosted attach/theme application.
     hosted_terminal_colors: Option<(u32, u32)>,
     /// The most recent raw Ghostty frame; it doubles as the signature-reuse baseline for
-    /// `TerminalFramePlan` extraction (the visible frame IS the raw frame — the hosted
-    /// TUI's own chrome is always shown, never cropped).
+    /// `TerminalFramePlan` extraction (the hosted TUI's chrome is cropped away by
+    /// `tui_chrome_projection` before a frame is stored as visible).
     terminal_raw_frame: Arc<TerminalFrame>,
+    /// The projection the stored visible frame (`terminal_frame`) was cropped with; raw
+    /// row indices describe the painted grid only when it equals the live projection.
+    terminal_frame_projection: crate::herdr_tui::TuiChromeProjection,
     terminal_frame: Arc<TerminalFrame>,
     terminal_pane: Entity<TerminalPane>,
     pending_copy_selection: Option<PendingTerminalCopy>,
@@ -1673,11 +1676,21 @@ struct ShardlaneApp {
     /// The viewer-local model's actual grid after adopting a remote viewer's shared-session
     /// resize, compared against the desktop's own target grid by the "Restore Width" path.
     tui_adopted_grid: Option<(u16, u16)>,
+    /// The chrome crop measured against the grid the viewer model holds. The margins are
+    /// invariant under the desktop's own imposition (Herdr's chrome is fixed-size and the
+    /// Pane absorbs the rest), so crop-only probes reuse the adopted grid instead of
+    /// racing a fresh layout fetch.
+    tui_chrome_projection: crate::herdr_tui::TuiChromeProjection,
+    /// The last pane width/height seen by a re-impose probe: the stale-transport race
+    /// guard keys on an unchanged pane rect measured against a grown adopted grid.
+    tui_chrome_last_probe: Option<(u32, u32)>,
     /// TUI host respawn cooldown deadline (short-term loop prevention after process exit/spawn failure);
     /// navigation/restart actions can punch through the cooldown (ensure_tui_surface's force).
     tui_respawn_blocked_until: Option<Instant>,
     /// The TUI mode's most recent focus chain task: the last click wins (same semantics as _navigation_task).
     _tui_focus_task: BackgroundJob<()>,
+    /// Chrome-probe fallback after attach/focus (short delay, never polls).
+    _tui_projection_task: BackgroundJob<()>,
     /// Applying hosted-TUI presentation config is serialized by replacement: a newer Settings
     /// change cancels the previous prepare/reload/restart task so rapid theme clicks cannot race.
     _tui_config_apply_task: BackgroundJob<()>,
@@ -2416,6 +2429,7 @@ impl ShardlaneApp {
             terminal_token: 0,
             hosted_terminal_colors: None,
             terminal_raw_frame: Arc::new(TerminalFrame::default()),
+            terminal_frame_projection: crate::herdr_tui::TuiChromeProjection::default(),
             terminal_frame: Arc::new(TerminalFrame::default()),
             terminal_pane,
             pending_copy_selection: None,
@@ -2466,8 +2480,11 @@ impl ShardlaneApp {
             show_settings: false,
             tui_host: crate::herdr_tui::HerdrTuiHostState::default(),
             tui_adopted_grid: None,
+            tui_chrome_projection: crate::herdr_tui::TuiChromeProjection::default(),
+            tui_chrome_last_probe: None,
             tui_respawn_blocked_until: None,
             _tui_focus_task: BackgroundJob::ready(()),
+            _tui_projection_task: BackgroundJob::ready(()),
             _tui_config_apply_task: BackgroundJob::ready(()),
             settings_section: SettingsSection::default(),
             settings_provider_detail: None,

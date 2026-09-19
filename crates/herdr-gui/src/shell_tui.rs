@@ -1,5 +1,5 @@
 //! [INPUT]: Depends on the ShardlaneApp type and imports from the crate root (super), `herdr_tui`
-//!           (ordinary `herdr` spawn/system config inheritance/navigation), `ManagedTerminal::host_process`
+//!           (ordinary `herdr` spawn/system config inheritance/navigation/chrome projection), `ManagedTerminal::host_process`
 //!           (PTY transport), `poll_managed_terminal` (frame polling), and the
 //!           resolved Shortcut Registry (unified key swallowing via shell_input::handle_keystroke).
 //! [OUTPUT]: Exposes ShardlaneApp's Herdr TUI host lifecycle:
@@ -8,7 +8,8 @@
 //!           `restart_tui_surface`/`handle_tui_keyboard` (the observer-driven keyboard boundary)/
 //!           `handle_tui_scroll_wheel`/`handle_tui_mouse_down`/
 //!           `restore_tui_grid_on_activation` (activation = the shared-grid width-ownership
-//!           signal)/
+//!           signal; navigation probes are crop-only; a re-probe that grows chrome in BOTH
+//!           edges is rejected as the stale-transport race — see apply_tui_chrome_area)/
 //!           `tui_key_encodes_to_pty`/`text_is_terminal_control_payload`/
 //!           `TUI_RESPAWN_COOLDOWN`.
 //! [POS]: The `crates/herdr-gui` shell primary TUI host responsibility domain (spawn/restart/exit/
@@ -64,6 +65,189 @@ pub(crate) fn text_is_terminal_control_payload(text: &str) -> bool {
 }
 
 impl ShardlaneApp {
+    /// Translate Shardlane's visible Pane grid into the larger raw Herdr TUI grid that
+    /// also contains hidden navigation chrome. `terminal_size` remains the visible SSOT;
+    /// only the hosted PTY/Ghostty transport receives this compensated size.
+    ///
+    /// The chrome allowance comes from the stored chrome projection: Herdr's navigation
+    /// chrome is fixed-size (sidebar, tab bar) and the Pane absorbs the rest, so those
+    /// margins are invariant under the imposition. Deliberately NOT derived from a fresh
+    /// `pane.layout` area here — an area fetched asynchronously can race the adopted grid
+    /// it must be measured against and produce garbage margins.
+    pub(super) fn tui_raw_terminal_size(&self, visible: TerminalSize) -> TerminalSize {
+        let (cols, rows) = self.tui_chrome_projection.outer_grid(visible.0, visible.1);
+        let extra_cols = u32::from(cols.saturating_sub(visible.0));
+        let extra_rows = u32::from(rows.saturating_sub(visible.1));
+        let pixel_width = u32::from(visible.2)
+            .saturating_add((self.terminal_cell_width() * f64::from(extra_cols)).round() as u32)
+            .min(u32::from(u16::MAX)) as u16;
+        let pixel_height = u32::from(visible.3)
+            .saturating_add((self.terminal_cell_height() * f64::from(extra_rows)).round() as u32)
+            .min(u32::from(u16::MAX)) as u16;
+        (cols, rows, pixel_width, pixel_height)
+    }
+
+    pub(super) fn tui_visible_to_raw_cell(&self, cell: (u16, u16)) -> (u16, u16) {
+        self.tui_chrome_projection.visible_to_raw_cell(cell)
+    }
+
+    pub(super) fn tui_raw_to_visible_selection(
+        &self,
+        selection: TerminalSelection,
+    ) -> Option<TerminalSelection> {
+        self.tui_chrome_projection
+            .raw_to_visible_selection(selection)
+    }
+
+    /// Apply Herdr's authoritative Pane-area geometry to the hosted presentation. The
+    /// server/runtime still renders the complete TUI; Shardlane only changes the visible
+    /// projection and compensates the raw PTY size so the Pane keeps the full client grid.
+    ///
+    /// `reimpose=false` is the shared-geometry adoption path (another viewer resized the
+    /// global session): update only the crop — re-imposing our compensated grid here
+    /// would fight the viewer that owns the new global geometry (last writer wins).
+    pub(super) fn apply_tui_chrome_area(
+        &mut self,
+        area: crate::herdr::LayoutRect,
+        reimpose: bool,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        if self.terminal_target.as_deref() != Some(herdr_tui::TUI_TARGET) {
+            return false;
+        }
+        if !self.is_herdr_binding() {
+            if !self.tui_chrome_projection.is_empty() {
+                self.tui_chrome_projection = herdr_tui::TuiChromeProjection::default();
+                let raw_frame = self.terminal_raw_frame.clone();
+                self.set_terminal_frame(raw_frame, None, cx);
+            }
+            return false;
+        }
+        let Some(visible) = self.terminal_surface_size.or(self.terminal_size) else {
+            return false;
+        };
+        // Chrome margins are always measured in the grid the viewer model actually
+        // holds; they are invariant under the desktop's own imposition, so both the
+        // crop-only (adoption/navigation) and reimpose paths share this computation.
+        let (adopted_cols, adopted_rows) = self.tui_adopted_grid.unwrap_or((visible.0, visible.1));
+        // 2026-09-19 产品裁决: the hosted TUI's own chrome (Tab bar included) is always
+        // cropped away for Herdr bindings — multi-Tab windows must not surface it.
+        let Some(next) =
+            herdr_tui::TuiChromeProjection::from_layout(adopted_cols, adopted_rows, area)
+        else {
+            return false;
+        };
+        // Anti-feedback guard: reimpose probes run right after the transport
+        // resize, and a backend whose pane absorbs the new grid can still report
+        // the pre-resize pane rect for a moment. Adopting that stale rect would
+        // grow the chrome allowance by the whole stale delta and re-impose a
+        // bigger grid — a compounding loop. The race signature is an UNCHANGED
+        // pane area measured against a grown adopted grid: the probe raced the
+        // resize and read the old layout again. A genuinely changed area always
+        // differs from the previous probe, so it still lands. First measurement
+        // (empty projection) is exempt.
+        if reimpose
+            && !self.tui_chrome_projection.is_empty()
+            && Some((area.width, area.height)) == self.tui_chrome_last_probe
+            && (next.right > self.tui_chrome_projection.right
+                || next.bottom > self.tui_chrome_projection.bottom)
+        {
+            lag_log(format_args!(
+                "tui.chrome stale probe rejected: unchanged pane {}x{} with growing allowance right={} bottom={}",
+                area.width, area.height,
+                next.right, next.bottom
+            ));
+            return false;
+        }
+        self.tui_chrome_last_probe = Some((area.width, area.height));
+        let projection_changed = next != self.tui_chrome_projection;
+        if projection_changed {
+            lag_log(format_args!(
+                "tui.chrome projection left={} top={} right={} bottom={} grid={}x{} pane={}x{} reimpose={}",
+                next.left, next.top, next.right, next.bottom, adopted_cols, adopted_rows,
+                area.width, area.height, reimpose,
+            ));
+            self.tui_chrome_projection = next;
+        }
+        if !reimpose {
+            if !projection_changed {
+                return false;
+            }
+            // Re-project the already-adopted raw grid under the new crop. No extraction
+            // happened, so there is no row plan; the Arc clone keeps the raw compare at ptr_eq.
+            let raw_frame = self.terminal_raw_frame.clone();
+            self.set_terminal_frame(raw_frame, None, cx);
+            return true;
+        }
+        // Reimpose always forces the raw resize, even when the crop is unchanged:
+        // the shared session may hold any grid after Remote/Mobile resizes, and a
+        // same-size TIOCSWINSZ is a cheap no-op for the child.
+        self.reimpose_tui_grid(visible, None, cx);
+        true
+    }
+
+    /// Force the shared Herdr TUI session back to this desktop's compensated grid even
+    /// when the visible grid is unchanged: after a Remote/Mobile resize the session may
+    /// hold any grid, and a same-size TIOCSWINSZ is a cheap no-op for the child. Shared
+    /// by both re-imposition paths (audit B13): invalidates the cached visible size so
+    /// the forced resize cannot early-return, then triggers it — `Some(pane_id)` keeps
+    /// the activation path's fresh `pane.layout` probe (chrome margins are measured
+    /// against the grid the model holds at probe time, never a synchronous resize with a
+    /// possibly-stale area), `None` resizes to `visible` immediately.
+    fn reimpose_tui_grid(
+        &mut self,
+        visible: TerminalSize,
+        probe_pane_id: Option<String>,
+        cx: &mut Context<Self>,
+    ) {
+        self.terminal_size = None;
+        if self.is_herdr_binding() {
+            if let Some(pane_id) = probe_pane_id {
+                self.schedule_tui_chrome_probe(Some(pane_id), true, cx);
+                return;
+            }
+        }
+        self.resize_main_terminal_to_size(visible, cx);
+    }
+
+    /// Short-lived geometry probe used after host attach/focus. Layout updates remain the
+    /// normal event-driven source; this is only a startup/focus race fallback and never polls.
+    /// `reimpose` forwards to `apply_tui_chrome_area`.
+    pub(super) fn schedule_tui_chrome_probe(
+        &mut self,
+        pane_id: Option<String>,
+        reimpose: bool,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.is_herdr_binding() {
+            return;
+        }
+        let Some(pane_id) = pane_id.or_else(|| self.state.focused_pane_id.clone()) else {
+            return;
+        };
+        let Some(client) = self.client.clone() else {
+            return;
+        };
+        let token = self.terminal_token;
+        self._tui_projection_task = cx.spawn(async move |this, cx| {
+            cx.background_executor()
+                .timer(Duration::from_millis(60))
+                .await;
+            let result = cx
+                .background_executor()
+                .spawn(async move { client.pane_layout(&pane_id) })
+                .await;
+            let Ok(layout) = result else {
+                return;
+            };
+            let _ = this.update(cx, |view, cx| {
+                if view.terminal_token == token {
+                    view.apply_tui_chrome_area(layout.area, reimpose, cx);
+                }
+            });
+        });
+    }
+
     pub(super) fn is_herdr_binding(&self) -> bool {
         self.binding.as_ref().is_none_or(|b| b.backend == "herdr")
     }
@@ -154,6 +338,7 @@ impl ShardlaneApp {
         let size = self
             .terminal_surface_size
             .unwrap_or_else(|| self.terminal_size(window));
+        let raw_size = self.tui_raw_terminal_size(size);
         // Shardlane is the hosted terminal emulator: resolve the theme-derived dynamic
         // colors on the UI thread (window appearance aware) and hold the pane fill so
         // bootstrap paint never flashes the vendored dark fallback.
@@ -172,6 +357,10 @@ impl ShardlaneApp {
         self.terminal_attach_target = Some(herdr_tui::TUI_TARGET.to_string());
         self.terminal_size = Some(size);
         self.tui_adopted_grid = None;
+        // A re-attach (restart path) must not compute the compensated grid from the
+        // previous session's crop: the fresh probe re-measures from an empty projection.
+        self.tui_chrome_projection = crate::herdr_tui::TuiChromeProjection::default();
+        self.tui_chrome_last_probe = None;
         self.tui_host.begin_restart();
         self.set_terminal_frame(Arc::new(TerminalFrame::default()), None, cx);
 
@@ -210,7 +399,7 @@ impl ShardlaneApp {
                             // adapter resolves the server's first/most-recent
                             // session when no key is given.
                             client
-                                .open_shared_session(None, size.0, size.1)
+                                .open_shared_session(None, raw_size.0, raw_size.1)
                                 .map_err(|error| {
                                     lag_log(format_args!(
                                         "tui.attach open_shared_session err {error}"
@@ -219,26 +408,26 @@ impl ShardlaneApp {
                                 })?
                         } else if restart {
                             let session = shared_tui
-                                .restart(size.0, size.1, socket_override)
+                                .restart(raw_size.0, raw_size.1, socket_override)
                                 .map_err(|error| format!("open shared Herdr TUI: {error}"))?;
                             session
                         } else {
                             let session = shared_tui
-                                .open(size.0, size.1, socket_override)
+                                .open(raw_size.0, raw_size.1, socket_override)
                                 .map_err(|error| format!("open shared Herdr TUI: {error}"))?;
                             session
                         };
                     let mut managed = ManagedTerminal::attach_shared(
                         &session,
-                        size.0,
-                        size.1,
+                        raw_size.0,
+                        raw_size.1,
                         crate::ghostty::LOCAL_SCROLLBACK_LINES as usize,
                     )?;
                     // Adopt this viewer's geometry as the authoritative shared
                     // size (SIGWINCH repaint) and force a full repaint for the
                     // fresh local model even when the size already matched.
                     session
-                        .resize(size.0, size.1)
+                        .resize(raw_size.0, raw_size.1)
                         .map_err(|error| format!("shared TUI resize: {error}"))?;
                     session
                         .force_redraw()
@@ -270,9 +459,10 @@ impl ShardlaneApp {
                         view.terminal_input = Some(input);
                         view.terminal_target = Some(herdr_tui::TUI_TARGET.to_string());
                         view.terminal_size = Some(size);
-                        // The viewer model was created at this grid and the session was
-                        // resized to it below; record it as the adopted grid.
-                        view.tui_adopted_grid = Some((size.0, size.1));
+                        // The viewer model was created at the compensated attach grid and
+                        // the session was resized to it above; record it as the adopted
+                        // grid so crop-only probes compute margins against reality.
+                        view.tui_adopted_grid = Some((raw_size.0, raw_size.1));
                         view.tui_host.set_running();
                         view.tui_respawn_blocked_until = None;
                         // B20: pended copy-on-select can wake this poll loop directly.
@@ -280,6 +470,13 @@ impl ShardlaneApp {
                         // Attach bootstrap frame: no row plan (signatures were just seeded).
                         view.set_terminal_frame(Arc::new(frame), None, cx);
                         view.sync_terminal_application_focus(cx);
+                        if view.is_herdr_binding() {
+                            view.schedule_tui_chrome_probe(
+                                view.state.focused_pane_id.clone(),
+                                true,
+                                cx,
+                            );
+                        }
                         poll_managed_terminal(token, herdr_tui::TUI_TARGET.to_string(), wake, cx);
                     }
                     Err(err) => {
@@ -312,6 +509,7 @@ impl ShardlaneApp {
         let Some(client) = self.client.clone() else {
             return;
         };
+        let projection_pane_id = pane_id.clone();
         self._tui_focus_task = cx.spawn(async move |this, cx| {
             let outcome = cx
                 .background_executor()
@@ -325,18 +523,28 @@ impl ShardlaneApp {
                     )
                 })
                 .await;
-            if let Err(error) = outcome {
-                lag_log(format_args!("tui.focus chain: {error}"));
-                // B22: a failed navigation chain used to be lag-log-only; surface a
-                // non-blocking toast so the user knows the click had no effect.
-                let window_handle = this.update(cx, |view, _| view.window_handle).ok().flatten();
-                if let Some(window_handle) = window_handle {
-                    let _ = cx.update_window(window_handle, |_, window, cx| {
-                        window.push_notification(
-                            format!("Herdr focus navigation failed: {error}"),
-                            cx,
-                        );
+            match outcome {
+                Ok(()) => {
+                    let _ = this.update(cx, |view, cx| {
+                        // Tab/Pane navigation is view switching, not client activation:
+                        // refresh only the crop, never re-impose the shared grid width.
+                        view.schedule_tui_chrome_probe(projection_pane_id, false, cx);
                     });
+                }
+                Err(error) => {
+                    lag_log(format_args!("tui.focus chain: {error}"));
+                    // B22: a failed navigation chain used to be lag-log-only; surface a
+                    // non-blocking toast so the user knows the click had no effect.
+                    let window_handle =
+                        this.update(cx, |view, _| view.window_handle).ok().flatten();
+                    if let Some(window_handle) = window_handle {
+                        let _ = cx.update_window(window_handle, |_, window, cx| {
+                            window.push_notification(
+                                format!("Herdr focus navigation failed: {error}"),
+                                cx,
+                            );
+                        });
+                    }
                 }
             }
         });
@@ -353,7 +561,8 @@ impl ShardlaneApp {
         let Some(visible) = self.terminal_surface_size.or(self.terminal_size) else {
             return false;
         };
-        self.tui_adopted_grid != Some((visible.0, visible.1))
+        let (cols, rows, _, _) = self.tui_raw_terminal_size(visible);
+        self.tui_adopted_grid != Some((cols, rows))
     }
 
     /// Window activation and the header "Restore Width" button are the width-ownership
@@ -361,6 +570,11 @@ impl ShardlaneApp {
     /// own grid ("last activated client wins"), so returning to Shardlane after a Remote
     /// viewer resized the session re-imposes the desktop's grid. Mere
     /// navigation never calls this.
+    ///
+    /// The re-imposition deliberately runs through a fresh `pane.layout` probe instead of
+    /// a synchronous resize: chrome margins measured against the grid the model holds at
+    /// probe time are invariant under the imposition, while a synchronous impose with a
+    /// possibly-stale area can land on the un-compensated grid and get stuck there.
     pub(super) fn restore_tui_grid_on_activation(&mut self, cx: &mut Context<Self>) {
         if !self.tui_width_restore_needed() {
             return;
@@ -372,11 +586,7 @@ impl ShardlaneApp {
             "tui.activation restore requested adopted={:?}",
             self.tui_adopted_grid,
         ));
-        // With the TUI's own chrome always shown, the desktop's target grid IS the raw
-        // transport grid: invalidate the cached size so the forced resize cannot
-        // early-return, then resize straight to the visible grid.
-        self.terminal_size = None;
-        self.resize_main_terminal_to_size(visible, cx);
+        self.reimpose_tui_grid(visible, self.state.focused_pane_id.clone(), cx);
     }
 
     /// When a pane hosts an Agent, return the direct agent.focus target (terminal_id).
@@ -771,5 +981,20 @@ mod tests {
         assert!((residual + 2.0).abs() < 1e-9);
         // No dead zone: continued slow scrolling keeps emitting rows without ever resetting.
         assert_eq!(consume(&mut residual, -30.0), -1);
+    }
+
+    #[test]
+    fn non_herdr_backends_never_apply_tui_chrome_crop() {
+        // Verifies the invariant that non-herdr backends (uuyc, tmux) must never crop
+        // terminal frames via TuiChromeProjection, preventing empty/blank terminal regressions.
+        let uuyc_binding = crate::ProjectBinding {
+            project_id: "uuyc:session1".to_string(),
+            project_name: "UU Remote Terminal".to_string(),
+            socket_override: None,
+            backend: "uuyc",
+        };
+        assert_ne!(uuyc_binding.backend, "herdr");
+        assert_eq!(crate::herdr_tui::TuiChromeProjection::default().top, 0);
+        assert_eq!(crate::herdr_tui::TuiChromeProjection::default().right, 0);
     }
 }

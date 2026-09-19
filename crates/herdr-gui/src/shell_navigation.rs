@@ -1482,6 +1482,7 @@ impl ShardlaneApp {
         cx: &mut Context<Self>,
     ) {
         let previous_workspace = self.state.focused_workspace_id.clone();
+        let tui_area = surface.layouts.first().map(|layout| layout.area);
         // TUI-only: the sidebar faithfully mirrors the host TUI's runtime focus (Tab/Pane switches
         // inside the TUI also reverse-sync to the left-side highlight via events).
         let focused_pane_id = surface.focused_pane_id.clone();
@@ -1499,6 +1500,9 @@ impl ShardlaneApp {
         }
         self.state.panes = surface.panes;
         self.state.layouts = surface.layouts;
+        if let Some(area) = tui_area {
+            self.apply_tui_chrome_area(area, false, cx);
+        }
         // Applying a surface prunes drafts immediately: closing a pane inside the focused tab doesn't wait for reconcile.
         self.prune_steering_drafts();
         derive_selection_flags(&mut self.state);
@@ -1520,10 +1524,12 @@ impl ShardlaneApp {
     /// is preserved when it still exists, falling back to Herdr's focused_pane_id only when the local
     /// selection is no longer in the new layout.
     pub(super) fn apply_current_layout(&mut self, layout: PaneLayout, cx: &mut Context<Self>) {
+        let tui_area = layout.area;
         // TUI-only: the host TUI's runtime focus IS the sidebar selection.
         self.state.focused_pane_id = layout.focused_pane_id.clone();
         self.state.layouts.clear();
         self.state.layouts.push(layout);
+        self.apply_tui_chrome_area(tui_area, false, cx);
         derive_selection_flags(&mut self.state);
         self.sync_terminal_application_focus(cx);
         self.notify_sidebar(cx);

@@ -182,6 +182,128 @@ impl TerminalFrame {
         }
         true
     }
+
+    /// Project a rectangular terminal viewport by removing chrome cells from each edge.
+    /// Used only by the hosted Herdr TUI presentation: Ghostty keeps the complete Herdr
+    /// screen as its semantic model while Shardlane paints the authoritative Pane area.
+    pub(crate) fn project_rect(&self, left: u16, top: u16, right: u16, bottom: u16) -> Self {
+        if left == 0 && top == 0 && right == 0 && bottom == 0 {
+            return self.clone();
+        }
+        let start_row = usize::from(top).min(self.lines.len());
+        let end_row = self
+            .lines
+            .len()
+            .saturating_sub(usize::from(bottom))
+            .max(start_row);
+        let lines = self.lines[start_row..end_row]
+            .iter()
+            .map(|line| project_terminal_line(line, left, right))
+            .collect::<Vec<_>>();
+        let surface_background = dominant_surface_background(&lines);
+        let cursor = self.cursor.and_then(|(col, row)| {
+            let row = row.checked_sub(top)?;
+            let col = col.checked_sub(left)?;
+            let height = u16::try_from(lines.len()).unwrap_or(u16::MAX);
+            let width = lines
+                .get(usize::from(row))
+                .map(|line| u16::try_from(line.cells.len()).unwrap_or(u16::MAX))
+                .unwrap_or(0);
+            (row < height && col < width).then_some((col, row))
+        });
+        Self {
+            lines,
+            default_foreground: self.default_foreground,
+            default_background: self.default_background,
+            surface_background,
+            cursor,
+            cursor_style: self.cursor_style,
+            cursor_blinking: self.cursor_blinking,
+            cursor_color: self.cursor_color,
+            selection_color: self.default_foreground.and_then(|foreground| {
+                surface_background
+                    .or(self.default_background)
+                    .map(|background| default_selection_color(foreground, background))
+            }),
+        }
+    }
+}
+
+fn project_terminal_line(line: &TerminalLine, left: u16, right: u16) -> TerminalLine {
+    let start = usize::from(left).min(line.cells.len());
+    let end = line
+        .cells
+        .len()
+        .saturating_sub(usize::from(right))
+        .max(start);
+    if start == 0 && end == line.cells.len() {
+        return line.clone();
+    }
+
+    let mut projected = TerminalLine {
+        cells: line.cells[start..end].to_vec(),
+        ..TerminalLine::default()
+    };
+    let mut run_index = 0usize;
+    for original_col in start..end {
+        while line.runs.get(run_index).is_some_and(|run| {
+            usize::from(run.start_col.saturating_add(run.cell_count)) <= original_col
+        }) {
+            run_index += 1;
+        }
+        let Some(source_run) = line.runs.get(run_index).filter(|run| {
+            usize::from(run.start_col) <= original_col
+                && original_col < usize::from(run.start_col.saturating_add(run.cell_count))
+        }) else {
+            continue;
+        };
+        let projected_col = u16::try_from(original_col.saturating_sub(start)).unwrap_or(u16::MAX);
+        let text = line.cells.get(original_col).cloned().unwrap_or_default();
+        if text.is_empty() {
+            if let Some(last) = projected.runs.last_mut().filter(|last| {
+                last.fg == source_run.fg
+                    && last.bg == source_run.bg
+                    && last.start_col.saturating_add(last.cell_count) == projected_col
+            }) {
+                last.cell_count = last.cell_count.saturating_add(1);
+                last.mergeable_after = false;
+            } else {
+                projected.runs.push(TerminalRun {
+                    start_col: projected_col,
+                    cell_count: 1,
+                    mergeable_after: false,
+                    text: String::new(),
+                    fg: source_run.fg,
+                    bg: source_run.bg,
+                });
+            }
+        } else {
+            push_run(
+                &mut projected.runs,
+                projected_col,
+                text,
+                source_run.fg,
+                source_run.bg,
+            );
+        }
+    }
+
+    let crop_start = u16::try_from(start).unwrap_or(u16::MAX);
+    let crop_last = u16::try_from(end.saturating_sub(1)).unwrap_or(u16::MAX);
+    projected.hyperlinks = line
+        .hyperlinks
+        .iter()
+        .filter_map(|link| {
+            let start_col = link.start_col.max(crop_start);
+            let end_col = link.end_col.min(crop_last);
+            (start_col <= end_col).then(|| TerminalHyperlink {
+                start_col: start_col.saturating_sub(crop_start),
+                end_col: end_col.saturating_sub(crop_start),
+                uri: link.uri.clone(),
+            })
+        })
+        .collect();
+    projected
 }
 
 /// Incremental terminal projection produced from Ghostty render state changes.

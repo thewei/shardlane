@@ -150,6 +150,45 @@ fn newly_confirmed_surface_background_replaces_previous_theme() {
 }
 
 #[test]
+fn projected_frame_recomputes_surface_background_for_visible_pane() {
+    let mut line = TerminalLine {
+        cells: vec![" ".to_string(); 10],
+        ..TerminalLine::default()
+    };
+    for col in 0..2 {
+        push_run(
+            &mut line.runs,
+            col,
+            " ".to_string(),
+            0xffffff,
+            Some(0x5f1f2a),
+        );
+    }
+    for col in 2..10 {
+        push_run(
+            &mut line.runs,
+            col,
+            " ".to_string(),
+            0xffffff,
+            Some(0x282a36),
+        );
+    }
+    let frame = TerminalFrame {
+        lines: vec![line],
+        default_foreground: Some(0xffffff),
+        default_background: Some(0x000000),
+        surface_background: Some(0x282a36),
+        ..TerminalFrame::default()
+    };
+    let projected = frame.project_rect(0, 0, 8, 0);
+    assert_eq!(projected.surface_background, Some(0x5f1f2a));
+    assert_eq!(
+        projected.selection_color,
+        Some(default_selection_color(0xffffff, 0x5f1f2a))
+    );
+}
+
+#[test]
 fn herdr_osc_default_colors_flow_into_terminal_frame() {
     let runtime = GhosttyRuntime::detect().unwrap_or_else(|error| panic!("{error}"));
     let api = runtime.load_api().unwrap_or_else(|error| panic!("{error}"));

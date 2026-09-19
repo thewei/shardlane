@@ -40,13 +40,15 @@ Implemented and covered by automated tests/code-level validation:
 
 - singleton hosted child/PTY lifecycle with restart cooldown, token-scoped
   polling, synchronous-kill teardown (no orphans on quit/Crepus restart);
-- Tab presentation (revised 2026-09-19): Tab actions are Sidebar/breadcrumb-owned
+- Tab presentation (second 2026-09-19 revision): Tab actions are Sidebar/breadcrumb-owned
   (per-Project Tab subtree plus an explicit "新增 Tab" row; the Tab crumb carries a
-  hover-revealed "…" menu with Rename/Close), and the hosted TUI hides its own Tab
-  bar with a single Tab via Herdr's `ui.hide_tab_bar_when_single_tab` normalized
-  to `true` at startup; with ≥2 Tabs Herdr still draws its own Tab bar (Herdr
-  0.9.1 has no always-hide key — upstream gap). The visible grid IS the raw TUI
-  grid — there is no chrome crop, compensated grid, or coordinate translation;
+  hover-revealed "…" menu with Rename/Close), and the hosted TUI's own chrome is cropped
+  away in every window via the resurrected `TuiChromeProjection` (pane.layout probes +
+  compensated PTY grid; painted frames, SGR mouse cells, selections, semantic copy, and
+  resize all compensate through the projection). Belt-and-suspenders: Herdr's
+  `ui.hide_tab_bar_when_single_tab` is still normalized to `true` at startup, so a
+  single-Tab window needs no crop. The RAW Ghostty grid stays the semantic model and the
+  signature-reuse baseline; the painted frame is the projected Pane rectangle;
 - GPUI-font-metric-derived terminal geometry shared by grid sizing, paint,
   cursor, selection, mouse, links and IME placement;
 - Ghostty-grid-anchored styled-run paint with wide-cell spacer boundaries;
