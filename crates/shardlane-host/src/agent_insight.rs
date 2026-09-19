@@ -1,14 +1,18 @@
 //! Host Agent Session Insight projection (M8).
 //!
-//! [INPUT]: exact session facts — `LiveSnapshot` (reusing the live decoder)
-//! or a History `SessionMeta` — plus optional Provider allowance facts.
-//! [OUTPUT]: `AgentSessionInsight` — the bounded fact projection shared by
-//! the Chat HUD / Sidebar pressure signals / Activity thresholds: model,
-//! context/tokens, message/turn/tool counts, session duration, and
-//! freshness/compact state. Unknown fields stay `None`; never guessed.
+//! [INPUT]: exact session facts — LiveSnapshot (reusing the live decoder)
+//! or a History SessionMeta — plus optional Provider allowance facts and
+//! agent_usage 的 AccountUsage/UsageWindow 窗口事实.
+//! [OUTPUT]: AgentSessionInsight — the bounded fact projection shared by
+//! the Chat HUD / Sidebar pressure signals: model, context/tokens,
+//! message/turn/tool counts, session duration, freshness/compact state,
+//! and provider usage windows; allowance_from_usage + with_usage 是
+//! with_allowance 的唯一调用路径（provider 可证窗口事实 → allowance）。
+//! Unknown fields stay None; never guessed.
 //! [POS]: plan M8 / audit AF-25. No second full provider parser is added;
 //! the rendering layer does zero I/O; there is no token dashboard page.
 
+use crate::agent_usage::{AccountUsage, UsageWindow};
 use shardlane_history::models::{MessageKind, SessionMeta, TranscriptMessage};
 use shardlane_history::LiveSnapshot;
 
@@ -40,6 +44,8 @@ pub struct AgentSessionInsight {
     pub stale: bool,
     /// Provider allowance facts when authoritative (e.g. limit windows).
     pub allowance: Option<ProviderAllowance>,
+    /// Provider 用量窗口事实（agent_usage 聚合器供数）；空 = 未暴露。
+    pub usage_windows: Vec<UsageWindow>,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -136,6 +142,7 @@ impl AgentSessionInsight {
                 .ok()
                 .is_some_and(|updated| now_ms.saturating_sub(updated) > stale_after_ms),
             allowance: None,
+            usage_windows: Vec::new(),
         }
     }
 
@@ -145,6 +152,30 @@ impl AgentSessionInsight {
         self.allowance = Some(allowance);
         self
     }
+
+    /// with_allowance 的调用路径：从 agent_usage 聚合行填充窗口事实与
+    /// allowance。仅 provider 可证窗口参与；无窗口时 allowance 保持
+    /// None（Unknown stays None; never guessed）。
+    pub fn with_usage(mut self, usage: &AccountUsage) -> Self {
+        self.usage_windows = usage.windows.clone();
+        if let Some(allowance) = allowance_from_usage(&usage.windows) {
+            self.allowance = Some(allowance);
+        }
+        self
+    }
+}
+
+/// provider 窗口事实 → 有界 allowance：取用量最高的窗口作为单一
+/// 压力信号（used = used_percentage, limit = 100, window = provider 原文）。
+pub fn allowance_from_usage(windows: &[UsageWindow]) -> Option<ProviderAllowance> {
+    windows
+        .iter()
+        .max_by_key(|window| window.used_percentage)
+        .map(|window| ProviderAllowance {
+            used: i64::from(window.used_percentage),
+            limit: 100,
+            window: Some(window.label.clone()),
+        })
 }
 
 fn count_messages(messages: &[TranscriptMessage]) -> AgentSessionInsight {
@@ -188,6 +219,7 @@ fn count_messages(messages: &[TranscriptMessage]) -> AgentSessionInsight {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
     use shardlane_history::models::Role;
@@ -303,6 +335,56 @@ mod tests {
             window: None,
         };
         assert!(!unlimited.critical());
+    }
+
+    #[test]
+    fn allowance_from_usage_picks_the_highest_window() {
+        let windows = vec![
+            UsageWindow {
+                label: "7d".into(),
+                used_percentage: 8,
+                resets_at: None,
+            },
+            UsageWindow {
+                label: "5h".into(),
+                used_percentage: 51,
+                resets_at: Some(1_758_240_000),
+            },
+        ];
+        let allowance = allowance_from_usage(&windows).expect("windows exist");
+        assert_eq!(allowance.used, 51);
+        assert_eq!(allowance.limit, 100);
+        assert_eq!(allowance.window.as_deref(), Some("5h"));
+        assert!(!allowance.critical());
+        assert!(allowance_from_usage(&[]).is_none());
+    }
+
+    #[test]
+    fn with_usage_fills_windows_and_allowance_only_from_provable_windows() {
+        let day = chrono::NaiveDate::from_ymd_opt(2026, 9, 19).expect("valid date");
+        let usage = AccountUsage {
+            provider: shardlane_history::AgentId::Codex,
+            account_id: None,
+            label_masked: "codex:1111…".into(),
+            day,
+            tokens_used: 3_800_000,
+            windows: vec![UsageWindow {
+                label: "5h".into(),
+                used_percentage: 51,
+                resets_at: None,
+            }],
+        };
+        let insight = AgentSessionInsight::default().with_usage(&usage);
+        assert_eq!(insight.usage_windows.len(), 1);
+        assert_eq!(insight.allowance.map(|a| a.used), Some(51));
+        // 窗口缺省路径：无窗口 → usage_windows 空且 allowance 保持 None。
+        let tokens_only = AccountUsage {
+            windows: Vec::new(),
+            ..usage
+        };
+        let insight = AgentSessionInsight::default().with_usage(&tokens_only);
+        assert!(insight.usage_windows.is_empty());
+        assert!(insight.allowance.is_none());
     }
 
     #[test]
