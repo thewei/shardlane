@@ -107,6 +107,9 @@ impl From<HerdrError> for MuxError {
             HerdrError::AgentPromptStalled(detail) => Self::PromptStalled(detail),
             HerdrError::ApiTimeout(detail) => Self::Timeout(detail),
             HerdrError::DeliveryUncertain(detail) => Self::Uncertain(detail),
+            // Config writes stay HerdrClient-concrete today; the mux seam has no
+            // config-shaped consumer, so the CLI diagnosis degrades to Api.
+            HerdrError::ConfigInvalid(detail) => Self::Api(detail),
             HerdrError::IncompatibleProtocol { min, actual } => {
                 Self::IncompatibleProtocol { min, actual }
             }

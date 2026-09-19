@@ -1573,6 +1573,10 @@ struct ShardlaneApp {
     /// Notice for the most recent Settings -> Agent Hooks install/uninstall
     /// failure; a successful operation clears it naturally.
     pub(crate) agent_hook_notice: Option<String>,
+    /// Notice for the most recent Herdr user-config apply/reload failure
+    /// (spec #1, 2026-09-19): rendered as an inline red note under the
+    /// Herdr TUI settings card; the next successful apply clears it naturally.
+    herdr_config_notice: Option<String>,
     /// Active project git status snapshot (consumed by the header's +/- pill and Info popover; 12s freshness).
     git_status: Option<git_status::GitStatusSnapshot>,
     /// Per-project git snapshots for the visible Sidebar Projects (bounded by
@@ -2506,6 +2510,7 @@ impl ShardlaneApp {
             settings_provider_detail: None,
             skill_notice: None,
             agent_hook_notice: None,
+            herdr_config_notice: None,
             mobile_port_input: None,
             mobile_port_subscription: None,
             browser_confirm: None,

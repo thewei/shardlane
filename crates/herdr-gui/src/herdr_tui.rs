@@ -10,8 +10,12 @@
 //! Shardlane does not reimplement the Herdr TUI and keeps driving focus through the API.
 //!
 //! [INPUT]: `crate::herdr::HerdrClient` focus wrappers (workspace_focus/tab_focus/
-//!          pane_focus/agent_focus), the user's Herdr config.toml
-//! [OUTPUT]: `TUI_TARGET` (host surface identifier), user Herdr config read/write/validation,
+//!          pane_focus/agent_focus), the user's Herdr config.toml, and the
+//!          shardlane-host user-config seam (herdr_user_config_path/
+//!          herdr_cli_path/write_user_config_atomic)
+//! [OUTPUT]: `TUI_TARGET` (host surface identifier), user Herdr config read + edit-candidate
+//!           assembly (candidate installation delegates to the host seam's validate +
+//!           atomic-rename, never a second writer),
 //!           atomic `ThemeScheme` theme writes (`ThemeAppearanceMode`/`theme_appearance_mode`/
 //!           `effective_theme_selections`/`theme_scheme_update`, the Theme page's only theme path),
 //!           `ensure_tui_tab_bar_hidden` (startup tab-bar normalization),
@@ -24,7 +28,6 @@ use crate::ghostty::TerminalFrame;
 use crate::herdr::LayoutRect;
 use shardlane_host::diagnostics::lag_log;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use toml_edit::{value, DocumentMut};
 
 #[derive(Clone, Debug, PartialEq)]
@@ -474,21 +477,21 @@ pub fn update_herdr_user_config(
     let path = herdr_user_config_path();
     let mut document = load_system_config_document(&path)?;
     apply_herdr_user_config_update(&mut document, &update)?;
-    let parent = path
-        .parent()
-        .ok_or_else(|| "Herdr config has no parent directory".to_string())?;
-    std::fs::create_dir_all(parent)
-        .map_err(|error| format!("create {}: {error}", parent.display()))?;
-    let temporary = path.with_extension(format!("tmp-shardlane-{}", std::process::id()));
-    std::fs::write(&temporary, document.to_string())
-        .map_err(|error| format!("write {}: {error}", temporary.display()))?;
-    if let Ok(metadata) = std::fs::metadata(&path) {
-        let _ = std::fs::set_permissions(&temporary, metadata.permissions());
-    }
-    validate_herdr_tui_config(&temporary)?;
-    std::fs::rename(&temporary, &path)
-        .map_err(|error| format!("install {}: {error}", path.display()))?;
+    install_herdr_config_candidate(&document)?;
     load_herdr_user_config()
+}
+
+/// #1 (2026-09-19): the one install path for Herdr config edit-candidates.
+/// The shardlane-host seam writes a same-directory temp file, validates the
+/// exact candidate bytes with `herdr config check`, then renames over the
+/// live config; every failure path removes the temp file and leaves the
+/// existing config untouched (the caller decides how to present the
+/// rejection — the GUI must never roll back or second-guess it).
+fn install_herdr_config_candidate(document: &DocumentMut) -> Result<(), String> {
+    let cli = crate::herdr::herdr_cli_path()
+        .ok_or_else(|| "herdr CLI not found; cannot validate Herdr config".to_string())?;
+    crate::herdr::write_user_config_atomic(&cli, &document.to_string())
+        .map_err(|error| error.to_string())
 }
 
 /// 产品裁决（2026-09-19，反转 2026-09-18 的"常显"裁决）：宿主 TUI 的 Tab 栏在
@@ -504,20 +507,7 @@ pub fn ensure_tui_tab_bar_hidden() -> Result<bool, String> {
     if !normalize_tab_bar_hidden(&mut document) {
         return Ok(false);
     }
-    let parent = path
-        .parent()
-        .ok_or_else(|| "Herdr config has no parent directory".to_string())?;
-    std::fs::create_dir_all(parent)
-        .map_err(|error| format!("create {}: {error}", parent.display()))?;
-    let temporary = path.with_extension(format!("tmp-shardlane-{}", std::process::id()));
-    std::fs::write(&temporary, document.to_string())
-        .map_err(|error| format!("write {}: {error}", temporary.display()))?;
-    if let Ok(metadata) = std::fs::metadata(&path) {
-        let _ = std::fs::set_permissions(&temporary, metadata.permissions());
-    }
-    validate_herdr_tui_config(&temporary)?;
-    std::fs::rename(&temporary, &path)
-        .map_err(|error| format!("install {}: {error}", path.display()))?;
+    install_herdr_config_candidate(&document)?;
     Ok(true)
 }
 
@@ -532,31 +522,6 @@ fn normalize_tab_bar_hidden(document: &mut DocumentMut) -> bool {
         document["ui"]["hide_tab_bar_when_single_tab"] = value(true);
     }
     needs_write
-}
-
-fn validate_herdr_tui_config(path: &Path) -> Result<(), String> {
-    let herdr_cli = crate::herdr::herdr_cli_path()
-        .ok_or_else(|| "herdr CLI not found; cannot validate hosted TUI config".to_string())?;
-    let output = Command::new(herdr_cli)
-        .args(["config", "check"])
-        .env("HERDR_CONFIG_PATH", path)
-        .output()
-        .map_err(|error| format!("run herdr config check: {error}"))?;
-    if output.status.success() {
-        return Ok(());
-    }
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    Err(format!(
-        "Herdr config rejected: {}{}{}",
-        stdout.trim(),
-        if stdout.trim().is_empty() || stderr.trim().is_empty() {
-            ""
-        } else {
-            "; "
-        },
-        stderr.trim()
-    ))
 }
 
 /// TUI mode navigation chain: drive the hosted TUI to follow Shardlane sidebar navigation.
@@ -1045,6 +1010,33 @@ dark_name = "one-dark"
         if crate::herdr::herdr_cli_path().is_none() {
             return;
         }
+        // Test-local ground-truth probe: same CLI contract as the host seam's
+        // `herdr config check`, but pointed at an isolated tempdir file so the
+        // test never touches the user's real config directory.
+        fn probe(path: &Path) -> Result<(), String> {
+            let cli =
+                crate::herdr::herdr_cli_path().ok_or_else(|| "herdr CLI not found".to_string())?;
+            let output = std::process::Command::new(cli)
+                .args(["config", "check"])
+                .env("HERDR_CONFIG_PATH", path)
+                .output()
+                .map_err(|error| format!("run herdr config check: {error}"))?;
+            if output.status.success() {
+                return Ok(());
+            }
+            Err(format!(
+                "rejected: {}{}{}",
+                String::from_utf8_lossy(&output.stdout).trim(),
+                if !String::from_utf8_lossy(&output.stdout).trim().is_empty()
+                    && !String::from_utf8_lossy(&output.stderr).trim().is_empty()
+                {
+                    "; "
+                } else {
+                    ""
+                },
+                String::from_utf8_lossy(&output.stderr).trim()
+            ))
+        }
         let temp = tempfile::tempdir().unwrap();
         for preset in crate::theme::THEME_PRESETS {
             let mut document = DocumentMut::new();
@@ -1055,7 +1047,7 @@ dark_name = "one-dark"
             .unwrap();
             let path = temp.path().join(format!("{}.toml", preset.id));
             std::fs::write(&path, document.to_string()).unwrap();
-            if let Err(error) = validate_herdr_tui_config(&path) {
+            if let Err(error) = probe(&path) {
                 panic!(
                     "Settings theme {} / Herdr {} was rejected: {error}",
                     preset.id, preset.herdr_theme
