@@ -17,6 +17,36 @@ use std::time::Duration;
 
 pub const TOKEN: &str = "integration-test-token-0123456789abcdef";
 
+/// 跨二进制真进程互斥（2026-09-20）：本测试与 shardlane-host 的 shared_tui
+/// 测试都会拉起真实 herdr 进程，cargo 并行调度时互相拖慢 stop/reap 的
+/// barrier。flock 串行化；随进程死亡自动释放，无残留锁风险。
+pub struct RealProcessFlock(std::fs::File);
+
+impl RealProcessFlock {
+    pub fn acquire() -> Self {
+        let path = std::env::temp_dir().join("shardlane-realprocess-tests.lock");
+        let file = std::fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .write(true)
+            .open(&path)
+            .unwrap_or_else(|error| panic!("real-process lock open: {error}"));
+        use std::os::unix::io::AsRawFd;
+        let locked = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX) };
+        assert_eq!(locked, 0, "real-process lock flock failed");
+        Self(file)
+    }
+}
+
+impl Drop for RealProcessFlock {
+    fn drop(&mut self) {
+        use std::os::unix::io::AsRawFd;
+        unsafe {
+            libc::flock(self.0.as_raw_fd(), libc::LOCK_UN);
+        }
+    }
+}
+
 const HERDR_IDENTITY_ENV_KEYS: &[&str] = &[
     "HERDR_BIN_PATH",
     "HERDR_CONFIG_PATH",
@@ -164,7 +194,9 @@ impl IsolatedHerdr {
     }
 
     fn wait_for_socket(&self) {
-        for _ in 0..100 {
+        // 400×50ms=20s：满载下 herdr server 冷启动（进程 spawn + config 加载
+        // + socket 监听）实测可超旧上限 5s（W9 2026-09-19 满载复现）。
+        for _ in 0..400 {
             if self.socket.exists() {
                 return;
             }

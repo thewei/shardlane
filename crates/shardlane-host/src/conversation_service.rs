@@ -1003,12 +1003,20 @@ mod tests {
             .keep()
             .join("conv-service.sock");
         let bind_path = socket_path.clone();
+        // W9（2026-09-19）：显式 bind 握手替代"2s 轮询文件 + bind 静默失败"。
+        // 满载下线程可饿死超 2s，且 bind() 创建文件与 listen() 之间的窗口会让
+        // 客户端 connect 撞上 ECONNREFUSED（live_summary 类测试实测失败）。
+        let (bind_tx, bind_rx) = std::sync::mpsc::channel::<Result<(), String>>();
         std::thread::spawn(move || {
             use std::io::{BufRead, BufReader, Write};
             let listener = match std::os::unix::net::UnixListener::bind(&bind_path) {
                 Ok(listener) => listener,
-                Err(_) => return,
+                Err(error) => {
+                    let _ = bind_tx.send(Err(error.to_string()));
+                    return;
+                }
             };
+            let _ = bind_tx.send(Ok(()));
             for response in responses {
                 let Ok((mut stream, _)) = listener.accept() else {
                     break;
@@ -1022,9 +1030,10 @@ mod tests {
                 let _ = stream.flush();
             }
         });
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
-        while !socket_path.exists() && std::time::Instant::now() < deadline {
-            std::thread::sleep(std::time::Duration::from_millis(5));
+        match bind_rx.recv_timeout(std::time::Duration::from_secs(15)) {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => panic!("fake herdr socket bind failed: {error}"),
+            Err(_) => panic!("fake herdr socket did not bind within 15s"),
         }
         socket_path
     }
