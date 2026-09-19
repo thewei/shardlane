@@ -243,9 +243,10 @@ pub struct UpdatesConfig {
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize)]
 #[serde(default)]
 pub struct MigrationConfig {
-    /// 已把 Herdr `ui.hide_tab_bar_when_single_tab` 归位为 `false`
-    /// （2026-09-18 固定 Tab 呈现裁决的一次性迁移）。
-    pub tui_tab_bar_always_visible: bool,
+    /// 已把 Herdr `ui.hide_tab_bar_when_single_tab` 归位为 `true`
+    /// （2026-09-19 反转 2026-09-18 的常显裁决：宿主 TUI 单 Tab 时隐藏
+    /// 自己的 Tab 栏）。
+    pub tui_tab_bar_hidden: bool,
 }
 
 impl Default for UpdatesConfig {
@@ -1269,13 +1270,13 @@ mod tests {
         // 置位后随 canonical save 持久化，之后不再重复覆写运行时配置。
         let legacy: ApplicationConfig =
             serde_json::from_str(r#"{}"#).unwrap_or_else(|error| panic!("{error}"));
-        assert!(!legacy.migrations.tui_tab_bar_always_visible);
+        assert!(!legacy.migrations.tui_tab_bar_hidden);
 
         let mut config = legacy;
-        config.migrations.tui_tab_bar_always_visible = true;
+        config.migrations.tui_tab_bar_hidden = true;
         let saved = serde_json::to_value(&config).unwrap_or_else(|error| panic!("{error}"));
         assert_eq!(
-            saved["migrations"]["tui_tab_bar_always_visible"],
+            saved["migrations"]["tui_tab_bar_hidden"],
             serde_json::json!(true)
         );
     }

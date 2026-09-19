@@ -14,7 +14,7 @@
 //! [OUTPUT]: `TUI_TARGET` (host surface identifier), user Herdr config read/write/validation,
 //!           atomic `ThemeScheme` theme writes (`ThemeAppearanceMode`/`theme_appearance_mode`/
 //!           `effective_theme_selections`/`theme_scheme_update`, the Theme page's only theme path),
-//!           `ensure_tui_tab_bar_always_visible` (startup tab-bar normalization),
+//!           `ensure_tui_tab_bar_hidden` (startup tab-bar normalization),
 //!           `execute_focus_plan` (navigation chain), the `HerdrTuiHostState`
 //!           lifecycle model, `protocol_supported` (cached metadata check, no RPC)
 //! [POS]: The strategy layer for the TUI presentation mode (spawn environment/navigation chain); PTY transport belongs to
@@ -388,14 +388,17 @@ pub fn update_herdr_user_config(
     load_herdr_user_config()
 }
 
-/// 产品裁决（2026-09-18）：TUI 自身的 Tab 栏永远显示（即使只有一个 Tab）。
-/// Settings 不再暴露 `ui.hide_tab_bar_when_single_tab`；启动时把历史遗留的
-/// `true` 归位为 `false`（同一套校验+原子改名写入路径）。键缺失或已是
-/// `false` 时是纯读，不写文件。返回 `true` 表示发生了写入。
-pub fn ensure_tui_tab_bar_always_visible() -> Result<bool, String> {
+/// 产品裁决（2026-09-19，反转 2026-09-18 的"常显"裁决）：宿主 TUI 的 Tab 栏在
+/// 单 Tab 时隐藏。这是 Herdr 0.9.1 提供的唯一开关——它没有"总是隐藏"键
+/// （`show_tab_bar = rows > 1 && !(hide && tab_count == 1)`），多 Tab 时
+/// Herdr 仍绘制自己的 Tab 栏，该上游能力缺口记录在
+/// docs/client-product-architecture.md。Settings 不暴露该键；启动时把缺失或
+/// `false` 归位为 `true`（同一套校验+原子改名写入路径），键已是 `true`
+/// 时是纯读，不写文件。返回 `true` 表示发生了写入。
+pub fn ensure_tui_tab_bar_hidden() -> Result<bool, String> {
     let path = herdr_user_config_path();
     let mut document = load_system_config_document(&path)?;
-    if !normalize_tab_bar_always_visible(&mut document) {
+    if !normalize_tab_bar_hidden(&mut document) {
         return Ok(false);
     }
     let parent = path
@@ -415,14 +418,15 @@ pub fn ensure_tui_tab_bar_always_visible() -> Result<bool, String> {
     Ok(true)
 }
 
-/// 纯函数核心：仅当 `ui.hide_tab_bar_when_single_tab` 当前为 `true` 时改写为
-/// `false` 并返回 `true`（发生了变更）；缺失/已合规则原样返回 `false`。
-fn normalize_tab_bar_always_visible(document: &mut DocumentMut) -> bool {
-    let needs_write = config_item(document, "ui", "hide_tab_bar_when_single_tab")
+/// 纯函数核心：仅当 `ui.hide_tab_bar_when_single_tab` 当前缺失或为 `false`
+/// 时改写为 `true` 并返回 `true`（发生了变更）；已是 `true` 时原样返回
+/// `false`。
+fn normalize_tab_bar_hidden(document: &mut DocumentMut) -> bool {
+    let needs_write = !config_item(document, "ui", "hide_tab_bar_when_single_tab")
         .and_then(|item| item.as_bool())
         .unwrap_or(false);
     if needs_write {
-        document["ui"]["hide_tab_bar_when_single_tab"] = value(false);
+        document["ui"]["hide_tab_bar_when_single_tab"] = value(true);
     }
     needs_write
 }
@@ -615,31 +619,36 @@ mouse_capture = false
     }
 
     #[test]
-    fn tab_bar_always_visible_migration_only_rewrites_a_true_flag() {
-        let mut legacy = r#"
+    fn tab_bar_hidden_migration_rewrites_false_and_missing_flags() {
+        let mut off = r#"
 [ui]
-hide_tab_bar_when_single_tab = true
+hide_tab_bar_when_single_tab = false
 mouse_capture = false
 "#
         .parse::<DocumentMut>()
         .unwrap();
-        assert!(normalize_tab_bar_always_visible(&mut legacy));
+        assert!(normalize_tab_bar_hidden(&mut off));
         assert_eq!(
-            legacy["ui"]["hide_tab_bar_when_single_tab"].as_bool(),
-            Some(false)
+            off["ui"]["hide_tab_bar_when_single_tab"].as_bool(),
+            Some(true)
         );
         // Unrelated keys survive the normalization write.
-        assert_eq!(legacy["ui"]["mouse_capture"].as_bool(), Some(false));
-        // Already-compliant documents (key missing or false) stay untouched.
+        assert_eq!(off["ui"]["mouse_capture"].as_bool(), Some(false));
+        // A missing key is Herdr's visible-by-default state and gets normalized.
         let mut missing = DocumentMut::new();
-        assert!(!normalize_tab_bar_always_visible(&mut missing));
+        assert!(normalize_tab_bar_hidden(&mut missing));
+        assert_eq!(
+            missing["ui"]["hide_tab_bar_when_single_tab"].as_bool(),
+            Some(true)
+        );
+        // Already-hidden documents stay untouched (pure read, no write).
         let mut compliant = r#"
 [ui]
-hide_tab_bar_when_single_tab = false
+hide_tab_bar_when_single_tab = true
 "#
         .parse::<DocumentMut>()
         .unwrap();
-        assert!(!normalize_tab_bar_always_visible(&mut compliant));
+        assert!(!normalize_tab_bar_hidden(&mut compliant));
     }
 
     #[test]
