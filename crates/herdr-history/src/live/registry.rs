@@ -157,9 +157,10 @@ pub const PROVIDERS: &[ProviderCapabilities] = &[
     },
     ProviderCapabilities {
         agent: AgentId::Antigravity,
-        // Antigravity bodies are encrypted .pb and not file-decodable; live
-        // semantics come from the native CLI hooks (PreInvocation/Stop)
-        // normalized into the Shardlane Hook Journal.
+        // Antigravity live semantics come from the Shardlane Hook Journal:
+        // native CLI hooks (PreInvocation/Stop) plus assistant-reply
+        // enrichment read from the per-session stores by
+        // adapters::antigravity_live.
         aliases: &["antigravity", "agy"],
         live: LiveCapability::HookJournal,
         exposure: ProviderExposure::Preview,
@@ -259,7 +260,7 @@ mod tests {
         // Unregistered aliases and unknown agents must miss.
         assert_eq!(resolve_agent_alias("unknown-agent", Some("shell")), None);
         // Antigravity now resolves through the Hook Journal live transport
-        // (native CLI hooks; the encrypted .pb bodies stay unread).
+        // (native CLI hooks plus the antigravity_live body enrichment).
         assert_eq!(resolve_agent_alias("agy", None), Some(AgentId::Antigravity));
         assert_eq!(
             resolve_agent_alias("antigravity", Some("agy")),

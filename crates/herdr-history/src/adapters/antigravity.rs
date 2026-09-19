@@ -9,14 +9,16 @@ use anyhow::{anyhow, Result};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-/// Antigravity CLI (Google, binary `agy`): session bodies are encrypted .pb;
-/// the only plaintext is `~/.gemini/antigravity-cli/conversation_summaries.db`
-/// (WAL) — only metadata-level session cards are possible: title lives in the
-/// preview column (the title column is mostly empty), plus time and
-/// workspace. The detail page is carried by a single System message holding
-/// the preview and an "encrypted body" note, which is the only thing FTS can
-/// find. There are no per-session files, so SessionFileRef uses virtual
-/// paths; opening always goes through the sqlite_ro three-tier ladder.
+/// Antigravity CLI (Google, binary `agy`): the catalog carries metadata-level
+/// session cards from `~/.gemini/antigravity-cli/conversation_summaries.db`
+/// (WAL): title lives in the preview column (the title column is mostly
+/// empty), plus time and workspace. The detail page is carried by a single
+/// System message holding the preview, which is the only thing FTS can find
+/// here. Full assistant replies live in per-session
+/// `conversations/<uuid>.db` stores and reach Chat through `antigravity_live`
+/// journal enrichment (see that module), not through this adapter. Catalog
+/// SessionFileRefs use virtual paths; opening always goes through the
+/// sqlite_ro three-tier ladder.
 pub struct AntigravityAdapter {
     db: PathBuf,
     /// The whole table is tiny (metadata rows); cache by db mtime for
@@ -124,15 +126,16 @@ impl AntigravityAdapter {
                 )
             })?;
 
-        // Encrypted body is unreadable: one System message carries the
-        // preview, giving both the detail page and FTS something to show.
+        // One System message carries the preview, giving both the detail
+        // page and FTS something to show; full replies reach Chat through
+        // the antigravity_live journal enrichment instead.
         let mut text = String::new();
         if !row.preview.trim().is_empty() {
             text.push_str(row.preview.trim());
             text.push_str("\n\n");
         }
         text.push_str(
-            "Antigravity stores conversation content encrypted — only this summary is available in Shardlane.",
+            "Assistant replies are read live from Antigravity's own per-conversation store for Chat; this History page carries only the summary.",
         );
         let mut messages = vec![text_msg(Role::System, &text, row.modified_ms)];
         assign_seq(&mut messages);

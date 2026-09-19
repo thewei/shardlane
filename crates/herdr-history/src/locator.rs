@@ -29,9 +29,9 @@ pub enum SessionSourceLocator {
     /// the exact source.
     FilePath { agent: AgentId, path: String },
     /// Session identity exists but no semantic live source is currently
-    /// available: a metadata-only provider with an encrypted body (e.g.
-    /// Antigravity), or an unknown kind reported by Herdr. Consumers must
-    /// explicitly show unavailability and must not guess.
+    /// available: a metadata-only provider (live facts exist only in the
+    /// Shardlane-owned journal), or an unknown kind reported by Herdr.
+    /// Consumers must explicitly show unavailability and must not guess.
     MetadataOnly { agent: AgentId, native_id: String },
 }
 

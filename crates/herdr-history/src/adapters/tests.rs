@@ -965,7 +965,7 @@ fn kimi_adapter_reads_state_sidecar_and_index_cwd() -> Result<()> {
 // ---------------------------------------------------------------- antigravity
 
 #[test]
-fn antigravity_adapter_projects_encrypted_summaries() -> Result<()> {
+fn antigravity_adapter_projects_summary_cards() -> Result<()> {
     let temp = tempfile::tempdir()?;
     let db = temp.path().join("conversation_summaries.db");
     let conn = Connection::open(&db)?;
@@ -1009,12 +1009,14 @@ fn antigravity_adapter_projects_encrypted_summaries() -> Result<()> {
     assert_eq!(parsed.meta.project_name, "sample fx");
     assert_eq!(parsed.meta.message_count, 12);
 
-    // Encrypted body: a single System message carries the preview and the
-    // note; FTS finds the preview.
+    // Summary card: a single System message carries the preview and the
+    // live-Chat note; FTS finds the preview.
     assert_eq!(transcript.mainline.len(), 1);
     assert_eq!(transcript.mainline[0].role, Role::System);
     assert!(transcript.mainline[0].text.contains("QR overlay polish"));
-    assert!(transcript.mainline[0].text.contains("encrypted"));
+    assert!(transcript.mainline[0]
+        .text
+        .contains("Assistant replies are read live"));
     assert_eq!(parsed.units.len(), 1);
     assert!(parsed.units[0].text.contains("QR overlay polish"));
 

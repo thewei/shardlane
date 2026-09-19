@@ -9,6 +9,7 @@
 //!        only, owns neither catalog nor runtime.
 
 pub mod antigravity;
+pub mod antigravity_live;
 pub mod claude;
 pub mod codex;
 pub mod command_code;

@@ -3,6 +3,7 @@
 
 use rusqlite::{Connection, OpenFlags};
 use std::fs;
+use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -63,7 +64,18 @@ pub fn open_sqlite_ro(db: &Path, tag: &str) -> Option<SqliteRo> {
     fs::create_dir_all(&temp_dir).ok()?;
     let guard = TempDirGuard(temp_dir.clone());
     let db_copy = temp_dir.join("db.sqlite");
-    fs::copy(db, &db_copy).ok()?;
+    // 多用户主机加固：目录收紧 0700，目标文件 create_new(0600)——
+    // create_new 天然拒绝符号链接与预置文件，拷贝不会被引向
+    // 攻击者可读的位置（目录名含 pid/seq，本可被预测抢注）。
+    let _ = fs::set_permissions(&temp_dir, fs::Permissions::from_mode(0o700));
+    let mut output = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(&db_copy)
+        .ok()?;
+    let mut input = fs::File::open(db).ok()?;
+    std::io::copy(&mut input, &mut output).ok()?;
     for suffix in ["-wal", "-shm"] {
         let source = PathBuf::from(format!("{}{suffix}", db.display()));
         if source.is_file() {
