@@ -3,6 +3,10 @@
 //! the History secondary surface's Search/Refresh/Copy Markdown consolidation (to the left of the
 //! right-panel toggle) with compact-layout fallback, and operation indicators.
 //!
+//! The whole content row is hover-revealed (2026-09-19): chrome (buttons, breadcrumbs, indicators)
+//! renders at opacity 0 until the pointer enters the titlebar strip; the strip itself stays a drag
+//! surface. Opacity — not unmounting — keeps anchored switcher popovers alive across hover edges.
+//!
 //! [INPUT]: Depends on `super` (main.rs)'s ShardlaneApp navigation state, OperationalSummary, picker actions, and gpui-component controls
 //! [OUTPUT]: Exposes `ShardlaneApp::window_header`
 //! [POS]: One of main.rs's presentation-layer splits; the ui.crepus root template calls it via `{self.window_header(...)}`
@@ -196,10 +200,8 @@ impl ShardlaneApp {
         let script_launcher_script_id = last_run_script.map(|script| script.id.clone());
         let herdr = cx.entity();
         let sidebar_herdr = herdr.clone();
-        let nav_back_herdr = herdr.clone();
-        let nav_forward_herdr = herdr.clone();
-        let can_nav_back = !self.nav_back_stack.is_empty();
-        let can_nav_forward = !self.nav_forward_stack.is_empty();
+        // Hover reveal: chrome hides until the pointer enters the titlebar.
+        let header_opacity = if self.header_hovered { 1.0 } else { 0.0 };
         let search_header_herdr = herdr.clone();
         let workspace_picker_herdr = herdr.clone();
         let project_picker_herdr = herdr.clone();
@@ -259,10 +261,10 @@ impl ShardlaneApp {
         // content box starts at window x=80. An absolutely positioned breadcrumb whose
         // left is (sidebar_width - APP_TITLEBAR_LEFT_INSET) + CONTENT_INSET therefore lands
         // exactly on the content page's left inset — the same CONTENT_INSET constant the
-        // content pages use. No flow arithmetic over nav-button widths can drift this anchor
+        // content pages use. No flow arithmetic over toggle widths can drift this anchor
         // again; the 08-29 three-round alignment bug came from under-counting exactly such
         // chrome. When the sidebar is collapsed, the breadcrumb stays in flow after the
-        // nav cluster.
+        // toggle cluster.
         let breadcrumb_content_left = if sidebar_visible {
             (sidebar_width - APP_TITLEBAR_LEFT_INSET).max(0.0)
                 + f32::from(crate::ui_metrics::CONTENT_INSET)
@@ -590,6 +592,7 @@ impl ShardlaneApp {
 
         let header = {
             div()
+                .id("titlebar-root")
                 .relative()
                 .w_full()
                 .h_full()
@@ -598,6 +601,10 @@ impl ShardlaneApp {
                 .items_center()
                 .justify_between()
                 .gap_3()
+                .on_hover(cx.listener(|this, hovered: &bool, _window, cx| {
+                    this.header_hovered = *hovered;
+                    cx.notify();
+                }))
                 .child(
                     // The header content segment's background is always painted: starting from the
                     // sidebar's right edge when the sidebar is visible (the traffic lights/sidebar
@@ -617,9 +624,10 @@ impl ShardlaneApp {
                         .bg(terminal_header_bg),
                 )
                 .child(
-                    // sidebar toggle + navigation back/forward buttons, arranged horizontally
+                    // Sidebar toggle, hover-revealed with the rest of the header chrome.
                     h_flex()
                         .id("titlebar-nav-cluster")
+                        .opacity(header_opacity)
                         .flex_none()
                         .items_center()
                         .gap(px(2.0))
@@ -657,82 +665,12 @@ impl ShardlaneApp {
                                         });
                                     }
                                 }),
-                        )
-                        // Back button
-                        .child({
-                            let nav_color = if can_nav_back { muted } else { muted.opacity(0.35) };
-                            div()
-                                .id("titlebar-nav-back")
-                                .w(px(22.0))
-                                .h(px(22.0))
-                                .flex_none()
-                                .rounded(px(5.0))
-                                .flex()
-                                .items_center()
-                                .justify_center()
-                                .cursor_default()
-                                .when(can_nav_back, |el| {
-                                    el.hover(move |style| style.bg(toggle_hover))
-                                        .active(move |style| style.bg(toggle_active))
-                                        .on_click({
-                                            let back_herdr = nav_back_herdr.clone();
-                                            move |_, window, app| {
-                                                app.stop_propagation();
-                                                back_herdr.update(app, |this, cx| {
-                                                    this.navigate_back(&NavigateBack, window, cx)
-                                                });
-                                            }
-                                        })
-                                })
-                                .tooltip(crate::ui::tooltip::tooltip_fn("Go Back"))
-                                .child(
-                                    Icon::new(ComponentIconName::ChevronLeft)
-                                        .with_size(px(13.0))
-                                        .text_color(nav_color),
-                                )
-                        })
-                        // Forward button
-                        .child({
-                            let fwd_color =
-                                if can_nav_forward { muted } else { muted.opacity(0.35) };
-                            div()
-                                .id("titlebar-nav-forward")
-                                .w(px(22.0))
-                                .h(px(22.0))
-                                .flex_none()
-                                .rounded(px(5.0))
-                                .flex()
-                                .items_center()
-                                .justify_center()
-                                .cursor_default()
-                                .when(can_nav_forward, |el| {
-                                    el.hover(move |style| style.bg(toggle_hover))
-                                        .active(move |style| style.bg(toggle_active))
-                                        .on_click({
-                                            let fwd_herdr = nav_forward_herdr.clone();
-                                            move |_, window, app| {
-                                                app.stop_propagation();
-                                                fwd_herdr.update(app, |this, cx| {
-                                                    this.navigate_forward(
-                                                        &NavigateForward,
-                                                        window,
-                                                        cx,
-                                                    )
-                                                });
-                                            }
-                                        })
-                                })
-                                .tooltip(crate::ui::tooltip::tooltip_fn("Go Forward"))
-                                .child(
-                                    Icon::new(ComponentIconName::ChevronRight)
-                                        .with_size(px(13.0))
-                                        .text_color(fwd_color),
-                                )
-                        }),
+                        ),
                 )
                 .child(
                     div()
                         .id("titlebar-breadcrumbs")
+                        .opacity(header_opacity)
                         .min_w_0()
                         .flex()
                         .items_center()
@@ -1159,6 +1097,7 @@ impl ShardlaneApp {
                 .child(
                     div()
                         .id("titlebar-actions")
+                        .opacity(header_opacity)
                         .flex_none()
                         .flex()
                         .items_center()

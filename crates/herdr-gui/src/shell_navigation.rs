@@ -567,8 +567,8 @@ impl ShardlaneApp {
     }
 
     /// The FocusIntent seam's sole executor: all cross-domain navigation entries (Sidebar/Search/History/
-    /// New Agent/Activity/notification/status) construct an intent and land focus here uniformly. It records
-    /// history, then dispatches on the target's most specific id to the existing focus family implementations
+    /// New Agent/Activity/notification/status) construct an intent and land focus here uniformly. It
+    /// dispatches on the target's most specific id to the existing focus family implementations
     /// (local ShellSelection update + TUI host focus chain); entries no longer carry their own chains.
     pub(super) fn apply_focus_intent(
         &mut self,
@@ -576,10 +576,9 @@ impl ShardlaneApp {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        // Re-selecting the already-active target is not navigation: pushing the current position
-        // onto the back stack and clearing the forward stack would corrupt history for a no-op
-        // (audit A14). The secondary-surface exits still apply, mirroring focus_workspace_id's
-        // F24 ordering — clicking the selected object while Settings/Help is open must exit it.
+        // Re-selecting the already-active target short-circuits (audit A14). The secondary-surface
+        // exits still apply, mirroring focus_workspace_id's F24 ordering — clicking the selected
+        // object while Settings/Help is open must exit it.
         if self.focus_intent_is_current_selection(&intent) {
             self.new_agent_open = false;
             self.pending_close_tab = None;
@@ -588,19 +587,7 @@ impl ShardlaneApp {
             window.focus(&self.focus_handle);
             return;
         }
-        // Record the current position onto the back stack
-        if let Some(current) = self.current_focus_intent() {
-            if self.nav_back_stack.last() != Some(&current) {
-                self.nav_back_stack.push(current);
-                // Bound the history depth to prevent unbounded memory growth
-                if self.nav_back_stack.len() > 64 {
-                    self.nav_back_stack.remove(0);
-                }
-                self.nav_forward_stack.clear();
-            }
-        }
-        // Only direct (forward) agent jumps count as Switcher MRU accesses; history replays
-        // dispatch through the same executor without re-ranking the MRU list.
+        // Agent jumps count as Switcher MRU accesses.
         if let FocusIntent::Agent { terminal_id, .. } = &intent {
             self.agent_switcher.record_access(terminal_id);
         }
@@ -670,62 +657,6 @@ impl ShardlaneApp {
                 pane_id,
             } => self.focus_agent_target(terminal_id, workspace_id, tab_id, pane_id, window, cx),
         }
-    }
-
-    /// Build a FocusIntent snapshot from the current client selection state (for back/forward history).
-    fn current_focus_intent(&self) -> Option<FocusIntent> {
-        if let Some(pane_id) = self.state.focused_pane_id.clone() {
-            return Some(FocusIntent::Pane {
-                workspace_id: self.active_workspace_id().map(String::from),
-                tab_id: self.active_tab().map(|t| t.tab_id.clone()),
-                pane_id,
-            });
-        }
-        if let Some(tab) = self.active_tab() {
-            return Some(FocusIntent::Tab {
-                tab_id: tab.tab_id.clone(),
-            });
-        }
-        if let Some(ws_id) = self.active_workspace_id() {
-            return Some(FocusIntent::Project {
-                workspace_id: ws_id.to_string(),
-            });
-        }
-        None
-    }
-
-    /// Go back to the previous navigation position.
-    pub(super) fn navigate_back(
-        &mut self,
-        _: &NavigateBack,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let Some(prev) = self.nav_back_stack.pop() else {
-            return;
-        };
-        // Push the current position onto the forward stack
-        if let Some(current) = self.current_focus_intent() {
-            self.nav_forward_stack.push(current);
-        }
-        self.execute_focus_intent(prev, window, cx);
-    }
-
-    /// Go forward to the next navigation position.
-    pub(super) fn navigate_forward(
-        &mut self,
-        _: &NavigateForward,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let Some(next) = self.nav_forward_stack.pop() else {
-            return;
-        };
-        // Push the current position onto the back stack
-        if let Some(current) = self.current_focus_intent() {
-            self.nav_back_stack.push(current);
-        }
-        self.execute_focus_intent(next, window, cx);
     }
 
     /// Shared focus chain driver for the TUI host mode: after ensuring the host is alive, drive the
@@ -1838,6 +1769,10 @@ impl ShardlaneApp {
         report: shardlane_host::AgentHookReport,
         cx: &mut Context<Self>,
     ) {
+        // Hook 适配层：journal ingest 的唯一入口在 Host IPC 线程
+        //（agent_hooks::ipc::handle_client -> adapter::ingest_report）。
+        // 这里不再 ingest——socket 上报会同时经 OSC 抵达，双路 ingest
+        // 曾造成 journal 同一事件双写（2026-09-19 修复）。
         let resolved_id = report.resolved_pane_id();
         let matching_pane = self.state.panes.iter().find(|p| {
             if let Some(target) = resolved_id {

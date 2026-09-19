@@ -210,8 +210,6 @@ actions!(
         ToggleAlwaysOnTop,
         ToggleRightPanel,
         OpenLazygit,
-        NavigateBack,
-        NavigateForward,
         SwitchAgentNext,
         SwitchAgentPrev,
         ConfirmAgentSwitch,
@@ -1615,9 +1613,9 @@ struct ShardlaneApp {
     /// Sidebar drag in progress: Shell = edge resize (press x, starting width); Sections = section height resize
     /// (handle index, press y, starting heights of the three segments).
     sidebar_drag: Option<SidebarDrag>,
-    /// Page navigation history stacks (back/forward, like a Cursor/Codex browser history).
-    nav_back_stack: Vec<FocusIntent>,
-    nav_forward_stack: Vec<FocusIntent>,
+    /// Content Header hover reveal: the titlebar chrome (buttons, breadcrumbs, indicators) renders
+    /// transparent until the pointer enters the titlebar strip (2026-09-19 minimalism pass).
+    header_hovered: bool,
     /// Plan 060 Phase 1: Ctrl-Tab Agent Switcher overlay。
     agent_switcher: crate::agent_switcher::AgentSwitcherState,
     /// Sidebar/right panel mid-slide (WidthTween): while Some, render advances each frame
@@ -2430,8 +2428,7 @@ impl ShardlaneApp {
             workspace_tab_selection_memory: HashMap::new(),
             shell_sidebar_width: sidebar_width,
             sidebar_drag: None,
-            nav_back_stack: Vec::new(),
-            nav_forward_stack: Vec::new(),
+            header_hovered: false,
             agent_switcher: crate::agent_switcher::AgentSwitcherState::new(cx.focus_handle()),
             sidebar_slide: None,
             right_panel_slide: None,
@@ -3466,8 +3463,6 @@ impl Render for ShardlaneApp {
             .on_action(cx.listener(Self::toggle_right_panel_action))
             .on_action(cx.listener(Self::open_lazygit_action))
             .on_action(cx.listener(Self::picker_accept_completion))
-            .on_action(cx.listener(Self::navigate_back))
-            .on_action(cx.listener(Self::navigate_forward))
             .on_action(cx.listener(Self::switch_agent_next))
             .on_action(cx.listener(Self::switch_agent_prev))
             .on_action(cx.listener(Self::confirm_agent_switch))

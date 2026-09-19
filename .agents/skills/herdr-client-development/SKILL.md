@@ -121,6 +121,10 @@ A long text leaf's intrinsic width (its full single-line width, regardless of `w
 
 Reproduce/verify UI overflow without touching the user's instance: add temporary colored `border_1` markers on suspect layers, rebuild the bundle, then `open -n <bundle.app> --env HOME=$(mktemp -d) --env HERDR_SOCKET_PATH=/tmp/probe.sock` (isolated HOME + socket so the probe instance never touches real state; LaunchServices keeps it alive where raw background processes die), drive it with Computer Use if needed, and `screencapture -x` to measure the borders. Remove the markers before shipping.
 
+### GPUI opacity vs deferred popovers (verified 2026-09-19, header hover-reveal)
+
+`element_opacity` is a paint-time stack (`window.with_element_opacity`) that multiplies into quads/text but is NOT captured by `DeferredDraw` — deferred popovers repaint at full opacity outside it. Therefore hide chrome with `.opacity(0)`, never by unmounting children: unmounting kills anchored switcher popovers the moment the pointer leaves the trigger (hover-out fires when the mouse enters the popover overlay), while opacity keeps the anchor mounted and the popover alive. Hover-reveal recipe: stateful root (`.id()` + `.on_hover(cx.listener(|this, hovered: &bool, _, cx| …))`) → bool field → `.opacity(if revealed { 1.0 } else { 0.0 })` on each content block; invisible hit targets are unobservable because any click requires hover, which reveals first.
+
 - inspect Cargo's resolved feature graph before enabling platform-looking features; in the current Crepuscularity version, `crepuscularity-gpui/macOS` enables GPUI `macos-blade` rather than generic macOS support;
 - prefer GPUI's default macOS renderer unless a measured product capability requires an alternate renderer;
 - do not manually invoke AppKit lifecycle callbacks such as `viewDidChangeBackingProperties` from GPUI observers to compensate for framework bugs;
