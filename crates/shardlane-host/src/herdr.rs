@@ -3499,12 +3499,21 @@ mod tests {
         let received = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
         let recorded = received.clone();
         let bind_path = socket_path.clone();
+        // W9（2026-09-19）：改为显式 bind 握手。旧实现 2s 轮询 socket 文件
+        // 出现——满载下线程调度 + bind 延迟可超 2s，导致下游 connect 报
+        // SocketUnavailable（workspace_state 类测试的间歇失败根因）；bind
+        // 失败时旧实现静默返回，下游只会看到莫名其妙的连接错误。
+        let (bind_tx, bind_rx) = std::sync::mpsc::channel::<Result<(), String>>();
         std::thread::spawn(move || {
             use std::io::{BufRead, BufReader, Write};
             let listener = match std::os::unix::net::UnixListener::bind(&bind_path) {
                 Ok(listener) => listener,
-                Err(_) => return,
+                Err(error) => {
+                    let _ = bind_tx.send(Err(error.to_string()));
+                    return;
+                }
             };
+            let _ = bind_tx.send(Ok(()));
             for action in actions {
                 let Ok((mut stream, _)) = listener.accept() else {
                     break;
@@ -3533,9 +3542,10 @@ mod tests {
                 }
             }
         });
-        let deadline = std::time::Instant::now() + Duration::from_secs(2);
-        while !socket_path.exists() && std::time::Instant::now() < deadline {
-            std::thread::sleep(Duration::from_millis(5));
+        match bind_rx.recv_timeout(Duration::from_secs(15)) {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => panic!("fake herdr server bind failed: {error}"),
+            Err(_) => panic!("fake herdr server did not bind within 15s"),
         }
         (socket_path, received)
     }
@@ -3565,12 +3575,19 @@ mod tests {
         let received = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
         let recorded = received.clone();
         let bind_path = socket_path.clone();
+        // 同 scripted_herdr_server_actions：显式 bind 握手 + 15s 死限，
+        // 消除满载下 2s 轮询超时与 bind 静默失败（W9 2026-09-19）。
+        let (bind_tx, bind_rx) = std::sync::mpsc::channel::<Result<(), String>>();
         std::thread::spawn(move || {
             use std::io::{BufRead, BufReader, Write};
             let listener = match std::os::unix::net::UnixListener::bind(&bind_path) {
                 Ok(listener) => listener,
-                Err(_) => return,
+                Err(error) => {
+                    let _ = bind_tx.send(Err(error.to_string()));
+                    return;
+                }
             };
+            let _ = bind_tx.send(Ok(()));
             for response in responses {
                 let Ok((mut stream, _)) = listener.accept() else {
                     break;
@@ -3595,9 +3612,10 @@ mod tests {
                 let _ = stream.flush();
             }
         });
-        let deadline = std::time::Instant::now() + Duration::from_secs(2);
-        while !socket_path.exists() && std::time::Instant::now() < deadline {
-            std::thread::sleep(Duration::from_millis(5));
+        match bind_rx.recv_timeout(Duration::from_secs(15)) {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => panic!("fake herdr server bind failed: {error}"),
+            Err(_) => panic!("fake herdr server did not bind within 15s"),
         }
         (socket_path, received)
     }

@@ -1285,7 +1285,25 @@ impl Drop for UnpublishedTuiChild {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Mutex;
+
+    /// 满载互斥（W9 诊断 2026-09-19）：本模块多个测试各自拉起真实 herdr
+    /// TUI 子进程并连接用户真实 herdr server。二进制内并行时，子进程的
+    /// 启动/终止与 server 往返互相争用，曾稳定复现 restart 的 5000ms
+    /// reap barrier 失败（"previous Herdr TUI child did not exit within
+    /// 5000ms"，见 archive audit-2026-08-30 round-7）。串行化消除进程内
+    /// 争用；纯外部 CPU 压力（8×yes 满核）实测不会单独触发该失败。
+    static REAL_HERDR_CHILD_LOCK: Mutex<()> = Mutex::new(());
+
     use super::*;
+
+    /// 字节序列包含判断：replay 前缀是 Vec<u8>，contains 只接受单字节，
+    /// 这里用滑窗比较表达"子进程字节与合成 marker 交错"下的包含契约。
+    fn bytes_contain(haystack: &[u8], needle: &[u8]) -> bool {
+        haystack
+            .windows(needle.len())
+            .any(|window| window == needle)
+    }
 
     // R7-P0-05: mock child for testing UnpublishedTuiChild RAII behavior
     // without requiring a real PTY spawn.
@@ -1552,6 +1570,9 @@ mod tests {
     /// them). Runs the real `herdr` TUI child when the CLI is installed.
     #[test]
     fn startup_replay_prefix_reaches_late_subscribers_and_freezes() {
+        let _serial = REAL_HERDR_CHILD_LOCK
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner());
         if crate::herdr::herdr_cli_path().is_none() {
             eprintln!("skipping: herdr CLI not installed");
             return;
@@ -1563,8 +1584,11 @@ mod tests {
         let marker = b"\x1b[?1049h\x1b[?1006hreplay-marker".to_vec();
         session.publish_output(marker.clone());
         let (_rx, replay) = session.subscribe_with_startup_replay();
+        // contains 而非 ends_with：真实子进程的 DECSET burst 可能在
+        // publish 与 subscribe 之间被 reader 线程交错写入（线程粒度），
+        // 契约是"前缀包含 marker 且有界"，不是尾部位置。
         assert!(
-            replay.ends_with(&marker),
+            bytes_contain(&replay, &marker),
             "replay must carry bytes published before the first subscription"
         );
         assert!(
@@ -1587,14 +1611,33 @@ mod tests {
 
     #[test]
     fn startup_replay_does_not_freeze_on_empty_initial_subscription() {
-        let registry = Arc::new(TuiManagerRegistry::default());
-        let manager = registry.get_or_create(Some("test-startup-race"));
-        let session = manager
-            .open(80, 24, None)
-            .unwrap_or_else(|error| panic!("open shared session: {error}"));
-
-        // (1) First viewer attaches at spawn time before any PTY output arrives:
-        let (_rx, empty_replay) = session.subscribe_with_startup_replay();
+        let _serial = REAL_HERDR_CHILD_LOCK
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner());
+        // (1) "First viewer attaches at spawn time before any PTY output" 与
+        // 真实子进程存在调度竞态：open() 返回后、首订前，reader 线程可能已
+        // 把 DECSET burst 写入前缀（满载下概率大增，W9 实测失败模式之一）。
+        // 竞态输掉时换一个全新子进程重试；所有后续断言仅在"赢得竞态"的
+        // 会话上执行，保持原契约不变。
+        let mut won: Option<(Arc<HerdrTuiSession>, broadcast::Receiver<TuiEvent>, Vec<u8>)> = None;
+        for _ in 0..5 {
+            let registry = Arc::new(TuiManagerRegistry::default());
+            let manager = registry.get_or_create(Some("test-startup-race"));
+            let session = manager
+                .open(80, 24, None)
+                .unwrap_or_else(|error| panic!("open shared session: {error}"));
+            let (_rx, empty_replay) = session.subscribe_with_startup_replay();
+            if empty_replay.is_empty() {
+                won = Some((session, _rx, empty_replay));
+                break;
+            }
+            manager.stop_all();
+        }
+        let (session, _rx, empty_replay) = won.unwrap_or_else(|| {
+            panic!(
+                "first subscriber never won the spawn-time race against the real TUI burst (5 attempts)"
+            );
+        });
         assert!(
             empty_replay.is_empty(),
             "first subscriber at spawn time sees empty prefix"
@@ -1607,7 +1650,9 @@ mod tests {
         // (3) Second viewer attaches (e.g. after switching sessions and switching back):
         let (_rx2, second_replay) = session.subscribe_with_startup_replay();
         assert!(
-            second_replay.ends_with(&startup_marker),
+            // contains 而非 ends_with：真实子进程字节可与 marker 交错
+            // （线程粒度），契约是"收到捕获的启动序列"，不是尾部位置。
+            bytes_contain(&second_replay, &startup_marker),
             "second subscriber must receive the captured startup sequences"
         );
 
@@ -1618,7 +1663,7 @@ mod tests {
             third_replay, second_replay,
             "post-freeze bytes must not alter the startup prefix"
         );
-        manager.stop_all();
+        session.stop();
     }
 
     /// A01 invariant: repeated opens attach one shared child/session, restart
@@ -1627,6 +1672,9 @@ mod tests {
     /// skips (loopback/CI environments without Herdr).
     #[test]
     fn open_is_idempotent_and_restart_replaces_the_single_child() {
+        let _serial = REAL_HERDR_CHILD_LOCK
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner());
         if crate::herdr::herdr_cli_path().is_none() {
             eprintln!("skipping: herdr CLI not installed");
             return;
@@ -1673,6 +1721,9 @@ mod tests {
     #[test]
     #[ignore = "local native burst diagnostic; launches the real Herdr TUI child"]
     fn shared_tui_burst_input_backpressure_smoke() {
+        let _serial = REAL_HERDR_CHILD_LOCK
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner());
         if crate::herdr::herdr_cli_path().is_none() {
             eprintln!("skipping: herdr CLI not installed");
             return;

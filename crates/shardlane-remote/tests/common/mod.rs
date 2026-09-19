@@ -164,7 +164,9 @@ impl IsolatedHerdr {
     }
 
     fn wait_for_socket(&self) {
-        for _ in 0..100 {
+        // 400×50ms=20s：满载下 herdr server 冷启动（进程 spawn + config 加载
+        // + socket 监听）实测可超旧上限 5s（W9 2026-09-19 满载复现）。
+        for _ in 0..400 {
             if self.socket.exists() {
                 return;
             }
