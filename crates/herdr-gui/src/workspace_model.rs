@@ -8,10 +8,23 @@
 //! Herdr remains authoritative for runtime workspace IDs, tabs, panes, agents, and process
 //! lifecycle. This module only derives stable Project identity/search context from runtime
 //! state plus persisted Shardlane Script metadata.
+//!
+//! [INPUT]: depends on crate::herdr's HerdrState (live runtime snapshot) and
+//! crate::scripts' ScriptRegistry; ProjectIndex/ProjectProjection come from
+//! shardlane_host::project_index.
+//! [OUTPUT]: exposes build_project_index, VisibleSidebarProject +
+//! visible_sidebar_projects(_with_index), sidebar project-path helpers,
+//! history session project-path resolution, and RecentTarget +
+//! recent_targets (live-derived Sidebar Recent rows, never persisted).
+//! [POS]: crates/herdr-gui's Project projection domain — the single list
+//! source of truth for Sidebar Projects/New Agent and (since spec #6) the
+//! Sidebar Recent section; sibling presentation modules consume, never
+//! re-derive, these projections.
+//! [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 
 use crate::herdr::HerdrState;
 use crate::scripts::ScriptRegistry;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 // The Project projection core (ProjectKey/ProjectProjection/ProjectIndex/project_paths_match)
 // moved into shardlane-host::project_index — desktop and remote bootstrap share one implementation.
@@ -37,7 +50,7 @@ mod tests {
     use crate::scripts::{ScriptDefinition, ScriptRecord};
     use shardlane_host::project_index::normalized_project_path;
 
-    fn runtime_workspace(id: &str, cwd: Option<&str>) -> Workspace {
+    pub(super) fn runtime_workspace(id: &str, cwd: Option<&str>) -> Workspace {
         Workspace {
             workspace_id: id.into(),
             label: None,
@@ -51,7 +64,7 @@ mod tests {
         }
     }
 
-    fn pane(id: &str, workspace_id: &str, cwd: Option<&str>) -> Pane {
+    pub(super) fn pane(id: &str, workspace_id: &str, cwd: Option<&str>) -> Pane {
         Pane {
             pane_id: id.into(),
             terminal_id: None,
@@ -368,6 +381,72 @@ pub(crate) fn history_session_project_path_display(
         .unwrap_or_else(|| "Unknown project".to_string())
 }
 
+/// One Sidebar "Recent" row: a Project with observed live Herdr activity.
+/// Everything here is re-derived from the current HerdrState projection on
+/// each render and persisted nowhere (2026-09-01 no-registry red line: the
+/// runtime dies, the list is gone).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct RecentTarget {
+    /// Herdr runtime workspace id — the same id the project FocusIntent consumes.
+    pub runtime_workspace_id: String,
+    pub title: String,
+    pub cwd: PathBuf,
+    /// Live activity ordinal, NOT a wall-clock timestamp: HerdrState carries
+    /// no clock, so recency is ranked by the maximum agent state counter
+    /// (state_change_seq/revision). Larger = more recently active; 0 =
+    /// pane-only (no live agent). The field keeps the spec #6 name
+    /// last_activity_ms; the true semantics are documented here.
+    pub last_activity_ms: u64,
+}
+
+/// Derive the Recent list from live projection facts only: empty runtime in,
+/// empty list out. Script-only Projects (no runtime workspace) and bare
+/// runtime workspaces (no panes/agents) carry no observed activity and never
+/// appear. Ties keep Herdr's workspace.list order via the stable sort, so the
+/// section never jitters between frames.
+pub(crate) fn recent_targets(
+    state: &HerdrState,
+    index: &ProjectIndex,
+    limit: usize,
+) -> Vec<RecentTarget> {
+    let mut rows: Vec<RecentTarget> = index
+        .projects()
+        .iter()
+        .filter_map(|project| {
+            let runtime_workspace_id = project.runtime_workspace_id.as_deref()?;
+            let agent_activity = state
+                .agents
+                .iter()
+                .filter(|agent| agent.workspace_id.as_deref() == Some(runtime_workspace_id))
+                .map(|agent| agent.state_change_seq.max(agent.revision))
+                .max()
+                .unwrap_or(0);
+            let has_pane = state
+                .panes
+                .iter()
+                .any(|pane| pane.workspace_id.as_deref() == Some(runtime_workspace_id));
+            if agent_activity == 0 && !has_pane {
+                return None;
+            }
+            // ProjectIndex already owns the cwd precedence chain (workspace cwd
+            // → pane cwd → agent cwd); reuse it instead of re-deriving here.
+            let cwd = project
+                .project_path
+                .as_deref()
+                .filter(|path| !path.trim().is_empty())?;
+            Some(RecentTarget {
+                runtime_workspace_id: runtime_workspace_id.to_string(),
+                title: project.label.clone(),
+                cwd: PathBuf::from(cwd),
+                last_activity_ms: agent_activity,
+            })
+        })
+        .collect();
+    rows.sort_by(|a, b| b.last_activity_ms.cmp(&a.last_activity_ms));
+    rows.truncate(limit);
+    rows
+}
+
 #[cfg(test)]
 mod visible_sidebar_project_tests {
     use super::*;
@@ -541,5 +620,113 @@ mod visible_sidebar_project_tests {
         ]);
         assert_eq!(before, vec!["w1", "w2"]);
         assert_eq!(after, vec!["w2", "w1"]);
+    }
+}
+
+#[cfg(test)]
+mod recent_targets_tests {
+    use super::tests::{pane, runtime_workspace};
+    use super::*;
+    use crate::herdr::Agent;
+    use crate::scripts::ScriptRegistry;
+
+    fn live_agent(workspace_id: &str, activity: u64) -> Agent {
+        Agent {
+            terminal_id: format!("term-{workspace_id}"),
+            workspace_id: Some(workspace_id.into()),
+            state_change_seq: activity,
+            ..Agent::default()
+        }
+    }
+
+    fn build_index(state: &HerdrState) -> ProjectIndex {
+        build_project_index(state, &ScriptRegistry::default())
+    }
+
+    #[test]
+    fn empty_runtime_yields_empty_recent_list() {
+        let state = HerdrState::default();
+        assert!(recent_targets(&state, &build_index(&state), 5).is_empty());
+    }
+
+    #[test]
+    fn recent_order_follows_activity_not_runtime_list_order() {
+        // Herdr lists w1 before w2, but w2's agent is the more recently active
+        // one: Recent must interleave them by activity, newest first.
+        let state = HerdrState {
+            workspaces: vec![
+                runtime_workspace("w1", Some("/work/alpha")),
+                runtime_workspace("w2", Some("/work/beta")),
+            ],
+            agents: vec![live_agent("w1", 5), live_agent("w2", 9)],
+            ..HerdrState::default()
+        };
+        let rows = recent_targets(&state, &build_index(&state), 5);
+        assert_eq!(
+            rows.iter()
+                .map(|row| row.runtime_workspace_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["w2", "w1"]
+        );
+        assert_eq!(rows[0].last_activity_ms, 9);
+        assert_eq!(rows[1].last_activity_ms, 5);
+        assert_eq!(rows[1].title, "alpha");
+        assert_eq!(rows[1].cwd, PathBuf::from("/work/alpha"));
+    }
+
+    #[test]
+    fn recent_truncates_to_limit() {
+        let state = HerdrState {
+            workspaces: vec![
+                runtime_workspace("w1", Some("/work/one")),
+                runtime_workspace("w2", Some("/work/two")),
+                runtime_workspace("w3", Some("/work/three")),
+            ],
+            agents: vec![
+                live_agent("w1", 1),
+                live_agent("w2", 2),
+                live_agent("w3", 3),
+            ],
+            ..HerdrState::default()
+        };
+        let rows = recent_targets(&state, &build_index(&state), 2);
+        assert_eq!(
+            rows.iter()
+                .map(|row| row.runtime_workspace_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["w3", "w2"]
+        );
+    }
+
+    #[test]
+    fn projects_without_observed_activity_never_appear() {
+        // A script-only Project (no runtime workspace) and a bare runtime
+        // workspace (cwd but no panes/agents) carry no live activity; only the
+        // pane-bearing workspace qualifies, pane-only → activity ordinal 0.
+        let state = HerdrState {
+            workspaces: vec![
+                runtime_workspace("w-bare", Some("/work/bare")),
+                runtime_workspace("w-pane", Some("/work/pane")),
+            ],
+            panes: vec![pane("p1", "w-pane", None)],
+            ..HerdrState::default()
+        };
+        let scripts = ScriptRegistry {
+            scripts: vec![crate::scripts::ScriptRecord {
+                definition: crate::scripts::ScriptDefinition {
+                    id: "script-orphan".into(),
+                    project_path: "/work/orphan".into(),
+                    name: "orphan".into(),
+                    ..crate::scripts::ScriptDefinition::default()
+                },
+                workspace_id: "no-such-runtime".into(),
+                ..crate::scripts::ScriptRecord::default()
+            }],
+        };
+        let index = build_project_index(&state, &scripts);
+        let rows = recent_targets(&state, &index, 5);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].runtime_workspace_id, "w-pane");
+        assert_eq!(rows[0].last_activity_ms, 0);
     }
 }
