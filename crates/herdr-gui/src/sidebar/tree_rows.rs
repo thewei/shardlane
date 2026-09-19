@@ -2,7 +2,7 @@
 //! [OUTPUT]: Provides ShardlaneApp's history rows, workspace agent status aggregation, and project/tab row rendering (including drag initiation and drop targets: tabs map through the authoritative order, projects reorder via Herdr, load more). Project rows project a git identity trailing (branch + working-tree +/- counts) from the per-project snapshot map; Tab leads use the square-terminal glyph with a success service badge when an observed service runs inside the Tab.
 //! [POS]: Tree-row rendering layer of `crates/herdr-gui::sidebar`; consumed by shell; calls the rows primitives and the projection; mechanically split out of sidebar.rs and sharing the module-root namespace with its sibling submodules.
 use super::*;
-use crate::ui::menus::{menu_action, menu_action_cx};
+use crate::ui::menus::menu_action;
 
 impl ShardlaneApp {
     pub(super) fn workspace_agent_status(
@@ -393,7 +393,6 @@ impl ShardlaneApp {
         let focus_herdr = herdr.clone();
         let hover_close_herdr = herdr.clone();
         let hover_close_id = tab.tab_id.clone();
-        let is_pinned = self.config.ui.sidebar.pinned_tabs.contains(&tab.tab_id);
         let component_theme_tab = cx.theme().clone();
         let close_confirming = self.pending_close_tab.as_deref() == Some(tab.tab_id.as_str());
 
@@ -554,15 +553,8 @@ impl ShardlaneApp {
             .context_menu(move |menu, _, _| {
                 let herdr = herdr.clone();
                 let rename_label = rename_title.clone();
-                let pin_label = if is_pinned { "Unpin Tab" } else { "Pin Tab" };
 
                 menu.item({
-                    let tab_id = tab_id.clone();
-                    menu_action_cx(pin_label, &herdr, move |this, cx| {
-                        this.toggle_pin_tab(tab_id.clone(), cx);
-                    })
-                })
-                .item({
                     let tab_id = rename_id.clone();
                     let label = rename_label.clone();
                     menu_action("Rename Tab…", &herdr, move |this, window, cx| {

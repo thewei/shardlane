@@ -294,11 +294,10 @@ Shardlane local application data lives under `~/.shardlane/`. Code refers to thi
 - window opacity;
 - Projects/Agents/Services section heights;
 - always-on-top state;
-- pinned Sidebar tab IDs (`ui.sidebar.pinned_tabs`) — session-scoped UI
-  preference storing Herdr runtime tab IDs; a stale sweep on every
-  navigation reconcile drops IDs absent from the live Herdr snapshot so
-  restarts cannot accumulate dead IDs (IDs absent from the live Herdr snapshot
-  are swept on every navigation reconcile).
+- client pinned-tab preferences do not exist (the 2026-09-19 cleanup deleted
+  `ui.sidebar.pinned_tabs`, a client-only pin flag with no behavioral effect —
+  pin semantics belong to Tab owner Herdr; stale keys in old configs are
+  ignored by serde and disappear on the next canonical save).
 
 **File-first durable-data rule.** Shardlane-owned user data should remain reconstructible from human-inspectable files. The existing Workspace/Sidebar state already satisfies this rule because it lives in `config.json`; do not split it into extra files without a concrete ownership/write-conflict reason. Larger independent domains use separate files/directories where ownership demands it: Browser Profile metadata may use `browser-profiles.json`, and Shortcut overrides may use `shortcuts.json`. (The former Notes/Bookmarks/Annotation file stores were removed with those product branches on 2026-08-27.) All aggregate writes are revision-guarded and atomic; external edits are validated before replacing the last-known-good in-memory projection. Runtime/search indexes may be in-memory or disposable caches and must always rebuild from the user files. A database may still exist for a domain-specific **derived index/cache** such as the existing History search/page index, but it must not become the source of truth for Workspace/Sidebar assets.
 

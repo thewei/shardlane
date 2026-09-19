@@ -2560,7 +2560,6 @@ impl ShardlaneApp {
             _config_watcher: config_watcher,
             _config_subscriptions: config_subscriptions,
         };
-        view.prune_stale_pinned_tabs(cx);
         view._script_monitor = view.start_script_monitor(script_monitor_wake_rx, cx);
         if let Some(config_changed_rx) = config_changed_rx {
             view._config_reload_script = view.start_config_reload(config_changed_rx, cx);
@@ -3199,7 +3198,6 @@ impl ShardlaneApp {
                         derive_selection_flags(&mut view.state);
                         view.prune_steering_drafts();
                         view.status = ConnectionStatus::Connected;
-                        view.prune_stale_pinned_tabs(cx);
                         view.notify_sidebar(cx);
                         if let Some(events) = events {
                             Self::start_event_subscription(client, events, generation, cx);

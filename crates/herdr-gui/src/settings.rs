@@ -467,8 +467,8 @@ pub struct SidebarConfig {
     pub service_section_height: f64,
     pub projects_collapsed: bool,
     pub agents_collapsed: bool,
-    #[serde(default)]
-    pub pinned_tabs: Vec<String>,
+    // pinned_tabs（客户端私有置顶标记，2026-09-19 删除）：置顶语义属于 Tab 的
+    // 所有者 Herdr；旧配置里的 stale 键由 serde 忽略并在下次 canonical save 消失。
 }
 
 impl Default for SidebarConfig {
@@ -481,7 +481,6 @@ impl Default for SidebarConfig {
             service_section_height: 0.0,
             projects_collapsed: false,
             agents_collapsed: false,
-            pinned_tabs: Vec::new(),
         }
     }
 }
@@ -1243,6 +1242,19 @@ mod tests {
         assert!(saved["terminal"]
             .as_object()
             .is_none_or(|terminal| !terminal.contains_key("tab-bar-placement")));
+    }
+
+    #[test]
+    fn sidebar_config_ignores_legacy_pinned_tabs_key() {
+        // 客户端置顶标记已删（2026-09-19）；旧配置里的 stale 键被忽略并在
+        // 下次 canonical save 消失。
+        let legacy: ApplicationConfig =
+            serde_json::from_str(r#"{"ui": {"sidebar": {"pinned_tabs": ["t1"]}}}"#)
+                .unwrap_or_else(|error| panic!("{error}"));
+        let saved = serde_json::to_value(&legacy).unwrap_or_else(|error| panic!("{error}"));
+        assert!(saved["ui"]["sidebar"]
+            .as_object()
+            .is_none_or(|sidebar| !sidebar.contains_key("pinned_tabs")));
     }
 
     #[test]

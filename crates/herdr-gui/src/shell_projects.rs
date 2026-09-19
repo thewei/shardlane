@@ -679,45 +679,6 @@ impl ShardlaneApp {
         }
     }
 
-    pub(super) fn toggle_pin_tab(&mut self, tab_id: String, cx: &mut Context<Self>) {
-        if let Some(pos) = self
-            .config
-            .ui
-            .sidebar
-            .pinned_tabs
-            .iter()
-            .position(|id| id == &tab_id)
-        {
-            self.config.ui.sidebar.pinned_tabs.remove(pos);
-        } else {
-            self.config.ui.sidebar.pinned_tabs.push(tab_id);
-        }
-        self.config.save();
-        cx.notify();
-    }
-
-    /// Stale pinned_tabs sweep (alongside navigation reconciliation): removes
-    /// runtime tab IDs absent from the current Herdr snapshot; persists only when
-    /// something was removed (no-op contract). Pinned persistence stores runtime
-    /// tab IDs (which change on Herdr restart), so they must converge through
-    /// navigation reconciliation to avoid the config accumulating dead IDs forever.
-    pub(crate) fn prune_stale_pinned_tabs(&mut self, cx: &mut Context<Self>) -> usize {
-        if !self.status.is_connected() {
-            return 0;
-        }
-        let pinned = &mut self.config.ui.sidebar.pinned_tabs;
-        let before = pinned.len();
-        pinned.retain(|tab_id| self.state.tabs.iter().any(|tab| &tab.tab_id == tab_id));
-        let removed = before.saturating_sub(pinned.len());
-        if removed > 0 {
-            lag_log(format_args!("sidebar.pinned_tabs pruned removed={removed}"));
-            self.save_config();
-            self.notify_sidebar(cx);
-            cx.notify();
-        }
-        removed
-    }
-
     pub(super) fn close_tab_by_id(
         &mut self,
         tab_id: String,

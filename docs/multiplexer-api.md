@@ -279,8 +279,8 @@ non-Herdr backends via capability flags.
 
 ### Domain 10 — Client-local presentation state (D; never in the API)
 
-Workspace display-name overrides and settings cosmetics, pinned sidebar tab
-IDs, sidebar width/collapse, language/theme preferences, `FocusIntent` local
+Workspace display-name overrides and settings cosmetics, sidebar
+width/collapse, language/theme preferences, `FocusIntent` local
 navigation, windows/shortcuts, right-click menu composition, Files panel local file
 operations, the Lazygit auxiliary PTY, the web preview, and the device list / SSH
 bridges (connection infrastructure that feeds `InstanceRef` targets; mobile clients
