@@ -194,6 +194,31 @@ impl ShardlaneApp {
         }
     }
 
+    /// Recent sessions of one Project for the New Agent headline list: exact
+    /// project-path match (the same semantics as the History page's project
+    /// filter), newest update first, bounded to `limit`. A pure projection of
+    /// the shared catalog — no second data source.
+    pub(crate) fn recent_history_sessions_for_project(
+        &self,
+        project_path: &str,
+        limit: usize,
+    ) -> Vec<ConversationMeta> {
+        let mut matches: Vec<ConversationMeta> = self
+            .history
+            .sessions
+            .iter()
+            .filter(|session| session.project_path == project_path)
+            .cloned()
+            .collect();
+        matches.sort_by(|a, b| {
+            crate::history::history_epoch_secs(b.updated_at)
+                .cmp(&crate::history::history_epoch_secs(a.updated_at))
+                .then_with(|| a.key.cmp(&b.key))
+        });
+        matches.truncate(limit);
+        matches
+    }
+
     /// Replace the source snapshot after ApplicationConfig reload. The watcher
     /// is tied to the old roots, so drop it before starting the new generation.
     pub(crate) fn rebuild_history_roster(

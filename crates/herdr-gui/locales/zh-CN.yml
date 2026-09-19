@@ -342,6 +342,7 @@ shortcuts:
     app_search: 搜索
     app_find: 在会话中查找
     app_new_window: 新建窗口
+    app_hide_window: 隐藏窗口
     app_new_task: 新建任务
     app_refresh: 重新连接
     app_help: 帮助
@@ -381,3 +382,6 @@ shortcuts:
 sidebar:
   back_to_app: 返回应用
   new_tab: 新增 Tab
+
+new_agent:
+  recent_history_more: 更多历史记录

@@ -343,6 +343,7 @@ shortcuts:
     app_search: 検索
     app_find: 会話内を検索
     app_new_window: 新規ウィンドウ
+    app_hide_window: ウィンドウを隠す
     app_new_task: 新規タスク
     app_refresh: 再接続
     app_help: ヘルプ
@@ -382,3 +383,6 @@ shortcuts:
 sidebar:
   back_to_app: アプリに戻る
   new_tab: タブを追加
+
+new_agent:
+  recent_history_more: 履歴をもっと見る

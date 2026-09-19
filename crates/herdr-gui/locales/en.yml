@@ -347,6 +347,7 @@ shortcuts:
     app_search: Search
     app_find: Find in Conversation
     app_new_window: New Window
+    app_hide_window: Hide Window
     app_new_task: New Task
     app_refresh: Reconnect
     app_help: Help
@@ -386,3 +387,6 @@ shortcuts:
 sidebar:
   back_to_app: Back to app
   new_tab: New Tab
+
+new_agent:
+  recent_history_more: More history records

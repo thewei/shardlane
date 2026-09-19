@@ -15,7 +15,8 @@
 //! and on gpui-component's Input/SelectState/DropdownButton/PopupMenuItem.
 //! [OUTPUT]: Exposes the new_agent_page render entry and open/attach/submit coordination methods (pub(super)),
 //! plus @ file / slash-command completion (three layers: reference/reference_index/reference_provider:
-//! pure functions → read-only catalog scanning → gpui-component CompletionMenu mounting).
+//! pure functions → read-only catalog scanning → gpui-component CompletionMenu mounting)
+//! and the headline recent-session preview (recent_history).
 //! [POS]: herdr-gui's New Agent landing page, consumed via main.rs's secondary surface dispatch.
 
 use super::*;
@@ -41,6 +42,7 @@ mod branch;
 mod launch;
 mod model;
 mod page;
+mod recent_history;
 mod reference;
 pub(crate) mod reference_index;
 pub(crate) mod reference_provider;

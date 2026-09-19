@@ -262,6 +262,13 @@ impl ShardlaneApp {
         let command_run_herdr = attach_herdr.clone();
         let command_add_herdr = attach_herdr.clone();
         let selected_for_menu = context_project_id.or(selected_project_id);
+        // Recent-session preview under the headline (Agent tab only): the same
+        // exact-path project semantics as the History page filter, and both of
+        // its entries (open a session / "More history records") reuse the
+        // History surface's own navigation — one behavior path, no second
+        // opener.
+        let recent_history_block =
+            self.new_agent_recent_history_block(project_path_for_commands.clone(), dark, cx);
         // The ProjectNameSelector language: the in-sentence picker has no solid
         // border or padding,
         // a dotted underline (canvas dash [1,2], 1px) marks the replaceable
@@ -644,6 +651,9 @@ impl ShardlaneApp {
                         )
                     }),
             )
+            .when(tab_kind == NewTabKind::Agent, |page| {
+                page.children(recent_history_block)
+            })
             .when(tab_kind != NewTabKind::Command, |page| {
                 page.child(div().flex_1())
             })

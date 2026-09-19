@@ -342,6 +342,7 @@ shortcuts:
     app_search: 搜尋
     app_find: 在對話中尋找
     app_new_window: 新增視窗
+    app_hide_window: 隱藏視窗
     app_new_task: 新增任務
     app_refresh: 重新連線
     app_help: 輔助說明
@@ -381,3 +382,6 @@ shortcuts:
 sidebar:
   back_to_app: 返回應用
   new_tab: 新增 Tab
+
+new_agent:
+  recent_history_more: 更多歷史記錄

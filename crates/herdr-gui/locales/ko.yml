@@ -343,6 +343,7 @@ shortcuts:
     app_search: 검색
     app_find: 대화 내 찾기
     app_new_window: 새 창
+    app_hide_window: 윈도우 가리기
     app_new_task: 새 작업
     app_refresh: 다시 연결
     app_help: 도움말
@@ -382,3 +383,6 @@ shortcuts:
 sidebar:
   back_to_app: 앱으로 돌아가기
   new_tab: 새 탭
+
+new_agent:
+  recent_history_more: 더 많은 기록 보기
