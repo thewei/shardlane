@@ -18,7 +18,7 @@
 
 mod common;
 
-use common::{spawn_against, IsolatedHerdr, TOKEN};
+use common::{spawn_against, IsolatedHerdr, RealProcessFlock, TOKEN};
 use futures_util::{SinkExt, StreamExt};
 use std::time::Duration;
 
@@ -52,6 +52,7 @@ fn text_of(message: tokio_tungstenite::tungstenite::Message) -> String {
 
 #[tokio::test]
 async fn events_socket_ready_ping_pong_and_structural_event() {
+    let _real_process = RealProcessFlock::acquire();
     if !common::herdr_available() {
         eprintln!(
             "skipping: herdr binary not found; set HERDR_BIN or install Herdr with wax to run loopback tests"

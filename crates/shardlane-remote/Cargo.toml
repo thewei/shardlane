@@ -25,5 +25,6 @@ uuid = { workspace = true }
 workspace = true
 
 [dev-dependencies]
+libc = "0.2"
 tempfile = { workspace = true }
 tokio-tungstenite = { version = "=0.30.0", default-features = false, features = ["connect"] }

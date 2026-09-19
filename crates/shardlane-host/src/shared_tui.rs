@@ -1295,6 +1295,48 @@ mod tests {
     /// 争用；纯外部 CPU 压力（8×yes 满核）实测不会单独触发该失败。
     static REAL_HERDR_CHILD_LOCK: Mutex<()> = Mutex::new(());
 
+    /// 跨二进制真进程互斥（W9/审计 2026-09-20）：shardlane-host 的 lib 测试与
+    /// shardlane-remote 的 loopback_events 会被 cargo 并行调度，各自拉起真实
+    /// herdr 子进程；满载下 stop_with_reap 的 5000ms barrier 可能不足，
+    /// Terminating 槽位要等后台 reaper 确认 OS 回收后才翻回 Empty。flock 把
+    /// 两个站点的真进程段串行化；随进程死亡自动释放，无残留锁风险。
+    struct RealProcessFlock(std::fs::File);
+
+    impl RealProcessFlock {
+        fn acquire() -> Self {
+            let path = std::env::temp_dir().join("shardlane-realprocess-tests.lock");
+            let file = std::fs::OpenOptions::new()
+                .create(true)
+                .truncate(false)
+                .write(true)
+                .open(&path)
+                .unwrap_or_else(|error| panic!("real-process lock open: {error}"));
+            use std::os::unix::io::AsRawFd;
+            // 阻塞式 LOCK_EX：等价于把跨二进制的真进程段排队。
+            let locked = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX) };
+            assert_eq!(locked, 0, "real-process lock flock failed");
+            Self(file)
+        }
+    }
+
+    impl Drop for RealProcessFlock {
+        fn drop(&mut self) {
+            use std::os::unix::io::AsRawFd;
+            unsafe {
+                libc::flock(self.0.as_raw_fd(), libc::LOCK_UN);
+            }
+        }
+    }
+
+    /// 测试入口统一取：跨二进制 flock → 进程内真子进程互斥。
+    fn real_process_guard() -> (RealProcessFlock, std::sync::MutexGuard<'static, ()>) {
+        let flock = RealProcessFlock::acquire();
+        let serial = REAL_HERDR_CHILD_LOCK
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner());
+        (flock, serial)
+    }
+
     use super::*;
 
     /// 字节序列包含判断：replay 前缀是 Vec<u8>，contains 只接受单字节，
@@ -1303,6 +1345,78 @@ mod tests {
         haystack
             .windows(needle.len())
             .any(|window| window == needle)
+    }
+
+    /// 隔离 herdr server 守卫：拉起一个仅本测试可见的 herdr server（独立
+    /// HOME/socket），Drop 时 kill + reap。真实子进程测试经由
+    /// socket_override 挂到它上面，不再连接用户真实 herdr 实例——这同时
+    /// 消除 restart barrier 下 SIGHUP graceful detach 与真实 server 的
+    /// 争用（满载下曾超 5000ms，W9 实测失败模式之一）。
+    struct IsolatedHerdrServer {
+        _home: tempfile::TempDir,
+        socket: std::path::PathBuf,
+        server: std::process::Child,
+    }
+
+    impl IsolatedHerdrServer {
+        fn spawn() -> Self {
+            let home = tempfile::tempdir()
+                .unwrap_or_else(|error| panic!("isolated herdr tempdir: {error}"));
+            let socket = home.path().join("herdr-test.sock");
+            // clippy::expect-used 在本 crate 连测试一起禁用：与相邻 spawn
+            // 保持同一 panic 语义，避免 Option 直接 expect。
+            let herdr_cli = crate::herdr::herdr_cli_path()
+                .unwrap_or_else(|| panic!("herdr CLI checked by caller"));
+            let server = std::process::Command::new(herdr_cli)
+                .arg("server")
+                .env("HOME", home.path())
+                .env("HERDR_SOCKET_PATH", &socket)
+                .env("HERDR_SESSION", "shardlane-shared-tui-test")
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn()
+                .unwrap_or_else(|error| panic!("spawn isolated herdr server: {error}"));
+            let guard = Self {
+                _home: home,
+                socket: socket.clone(),
+                server,
+            };
+            for _ in 0..400 {
+                if guard.socket.exists() {
+                    return guard;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+            panic!(
+                "isolated herdr socket never appeared at {}",
+                guard.socket.display()
+            );
+        }
+
+        /// 建一个最小 workspace，让 herdr tui 子进程有可附加的会话内容。
+        fn seed_workspace(&self) {
+            let herdr_cli = crate::herdr::herdr_cli_path()
+                .unwrap_or_else(|| panic!("herdr CLI checked by caller"));
+            let output = std::process::Command::new(herdr_cli)
+                .args(["workspace", "create"])
+                .env("HOME", self._home.path())
+                .env("HERDR_SOCKET_PATH", &self.socket)
+                .env("HERDR_SESSION", "shardlane-shared-tui-test")
+                .output()
+                .unwrap_or_else(|error| panic!("isolated herdr workspace create: {error}"));
+            assert!(
+                output.status.success(),
+                "isolated herdr workspace create failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+    }
+
+    impl Drop for IsolatedHerdrServer {
+        fn drop(&mut self) {
+            let _ = self.server.kill();
+            let _ = self.server.wait();
+        }
     }
 
     // R7-P0-05: mock child for testing UnpublishedTuiChild RAII behavior
@@ -1570,16 +1684,16 @@ mod tests {
     /// them). Runs the real `herdr` TUI child when the CLI is installed.
     #[test]
     fn startup_replay_prefix_reaches_late_subscribers_and_freezes() {
-        let _serial = REAL_HERDR_CHILD_LOCK
-            .lock()
-            .unwrap_or_else(|poison| poison.into_inner());
+        let (_flock, _serial) = real_process_guard();
         if crate::herdr::herdr_cli_path().is_none() {
             eprintln!("skipping: herdr CLI not installed");
             return;
         }
+        let server = IsolatedHerdrServer::spawn();
+        server.seed_workspace();
         let manager = Arc::new(TuiManager::default());
         let session = manager
-            .open(80, 24, None)
+            .open(80, 24, Some(&server.socket))
             .unwrap_or_else(|error| panic!("open shared session: {error}"));
         let marker = b"\x1b[?1049h\x1b[?1006hreplay-marker".to_vec();
         session.publish_output(marker.clone());
@@ -1611,9 +1725,9 @@ mod tests {
 
     #[test]
     fn startup_replay_does_not_freeze_on_empty_initial_subscription() {
-        let _serial = REAL_HERDR_CHILD_LOCK
-            .lock()
-            .unwrap_or_else(|poison| poison.into_inner());
+        let (_flock, _serial) = real_process_guard();
+        let server = IsolatedHerdrServer::spawn();
+        server.seed_workspace();
         // (1) "First viewer attaches at spawn time before any PTY output" 与
         // 真实子进程存在调度竞态：open() 返回后、首订前，reader 线程可能已
         // 把 DECSET burst 写入前缀（满载下概率大增，W9 实测失败模式之一）。
@@ -1624,7 +1738,7 @@ mod tests {
             let registry = Arc::new(TuiManagerRegistry::default());
             let manager = registry.get_or_create(Some("test-startup-race"));
             let session = manager
-                .open(80, 24, None)
+                .open(80, 24, Some(&server.socket))
                 .unwrap_or_else(|error| panic!("open shared session: {error}"));
             let (_rx, empty_replay) = session.subscribe_with_startup_replay();
             if empty_replay.is_empty() {
@@ -1672,19 +1786,19 @@ mod tests {
     /// skips (loopback/CI environments without Herdr).
     #[test]
     fn open_is_idempotent_and_restart_replaces_the_single_child() {
-        let _serial = REAL_HERDR_CHILD_LOCK
-            .lock()
-            .unwrap_or_else(|poison| poison.into_inner());
+        let (_flock, _serial) = real_process_guard();
         if crate::herdr::herdr_cli_path().is_none() {
             eprintln!("skipping: herdr CLI not installed");
             return;
         }
+        let server = IsolatedHerdrServer::spawn();
+        server.seed_workspace();
         let manager = Arc::new(TuiManager::default());
         let first = manager
-            .open(90, 28, None)
+            .open(90, 28, Some(&server.socket))
             .unwrap_or_else(|error| panic!("first open: {error}"));
         let second = manager
-            .open(120, 40, None)
+            .open(120, 40, Some(&server.socket))
             .unwrap_or_else(|error| panic!("second open: {error}"));
         assert_eq!(
             first.id(),
@@ -1696,9 +1810,33 @@ mod tests {
         let _viewer_b = first.subscribe();
         assert_eq!(first.viewer_count(), 2);
 
-        let next = manager
-            .restart(90, 28, None)
-            .unwrap_or_else(|error| panic!("restart: {error}"));
+        // W9/审计（2026-09-20）：满载下 5000ms reap barrier 偶发不足，
+        // 生产错误语义本身即"retry shortly"——按契约在测试层宽限重试，
+        // 重试仍败才失败（保留全部错误链）。
+        let next = {
+            let mut attempt_errors = Vec::new();
+            let mut next = None;
+            // barrier 超时后槽位进入 Terminating，由后台 reaper 在 OS 确认
+            // 回收后翻回 Empty（is_running 观测不到槽位状态，勿用作信号）。
+            // 以 restart 尝试本身为探针，预算 20 次 × 5s 间隔（满载最坏
+            // ~100s）：实测 reaper 饥饿时长随宿主负载波动，预算不足会
+            // 把可重试失败升级成测试失败。
+            for _ in 0..20 {
+                match manager.restart(90, 28, Some(&server.socket)) {
+                    Ok(session) => {
+                        next = Some(session);
+                        break;
+                    }
+                    Err(error) => {
+                        attempt_errors.push(error.to_string());
+                        std::thread::sleep(std::time::Duration::from_secs(5));
+                    }
+                }
+            }
+            next.unwrap_or_else(|| {
+                panic!("restart did not succeed after retry grace: {attempt_errors:?}")
+            })
+        };
         assert_ne!(
             first.id(),
             next.id(),
@@ -1721,9 +1859,7 @@ mod tests {
     #[test]
     #[ignore = "local native burst diagnostic; launches the real Herdr TUI child"]
     fn shared_tui_burst_input_backpressure_smoke() {
-        let _serial = REAL_HERDR_CHILD_LOCK
-            .lock()
-            .unwrap_or_else(|poison| poison.into_inner());
+        let (_flock, _serial) = real_process_guard();
         if crate::herdr::herdr_cli_path().is_none() {
             eprintln!("skipping: herdr CLI not installed");
             return;
