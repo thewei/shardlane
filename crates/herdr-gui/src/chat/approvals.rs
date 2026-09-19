@@ -1,8 +1,8 @@
 //! Chat approval pure model: request lifecycle state machine, grid-text
 //! signature hashing, and the never-blind-send guard (zero GPUI, zero I/O).
 //!
-//! [INPUT]: Depends only on std (hashing) and the provider-neutral approval
-//! facts shape mirrored from shardlane-history's LiveFacts.
+//! [INPUT]: Depends only on std (hashing) and shardlane-history's
+//! provider-neutral LiveApproval facts (a data type; no I/O).
 //! [OUTPUT]: ApprovalKind / ApprovalState / ApprovalOption / ApprovalRequest,
 //! grid_text_hash, guard_matches, and the transition helpers consumed by
 //! chat::surface and chat::model.
@@ -150,8 +150,57 @@ pub(crate) fn grid_text_hash(rows: &[String]) -> u64 {
 /// The guard: replay is allowed only against the exact grid state the request
 /// was bound to. An uncaptured signature never matches (fail-closed).
 pub(crate) fn guard_matches(current_grid_text_hash: u64, req: &ApprovalRequest) -> bool {
-    req.signature_captured && req.signature == current_grid_text_hash
+    req.signature_captured
+        && req.signature == current_grid_text_hash
         && req.state == ApprovalState::Waiting
+}
+
+/// Reconcile the local approval projection with the facts carried by one live
+/// sync. A new provider id replaces the local request (fresh Waiting, guard
+/// not yet captured); the same id keeps the local lifecycle (the facts layer
+/// has no notion of Sent/Stale); facts going quiet resolves a still-Waiting
+/// request externally (the user answered in the Terminal). Unknown kinds are
+/// dropped fail-closed — the chip never guesses.
+pub(crate) fn reconcile_approval(
+    incoming: Option<&shardlane_history::LiveApproval>,
+    current: &mut Option<ApprovalRequest>,
+) {
+    match incoming {
+        None => {
+            if let Some(req) = current {
+                req.resolve_externally();
+            }
+        }
+        Some(incoming) => {
+            if let Some(req) = current {
+                if req.id == incoming.id {
+                    return;
+                }
+            }
+            let kind = match incoming.kind.as_str() {
+                "tool" => ApprovalKind::Tool,
+                "permission" => ApprovalKind::Permission,
+                "plan" => ApprovalKind::Plan,
+                _ => {
+                    *current = None;
+                    return;
+                }
+            };
+            *current = Some(ApprovalRequest::new_waiting(
+                incoming.id.clone(),
+                kind,
+                incoming.prompt.clone(),
+                incoming
+                    .options
+                    .iter()
+                    .map(|option| ApprovalOption {
+                        label: option.label.clone(),
+                        keys: option.keys.clone(),
+                    })
+                    .collect(),
+            ));
+        }
+    }
 }
 
 // ============================================================================
@@ -182,7 +231,10 @@ mod tests {
         // Same grid → guard passes.
         assert!(guard_matches(grid_text_hash(&["menu".to_string()]), &req));
         // Any other grid → rejected.
-        assert!(!guard_matches(grid_text_hash(&["menu v2".to_string()]), &req));
+        assert!(!guard_matches(
+            grid_text_hash(&["menu v2".to_string()]),
+            &req
+        ));
     }
 
     #[test]

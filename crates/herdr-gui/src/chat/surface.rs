@@ -1,10 +1,13 @@
 //! Chat work surface: binding resolution, live sync, rendering, and Herdr prompt submission.
 //!
-//! [INPUT]: Depends on chat::model's pure model, agent_ui's conversation/activity/
-//! markdown primitives and AgentComposer, herdr::HerdrClient (agent.prompt / agent
-//! projection), and shardlane-history's HistoryCatalog/LiveSession/LiveSync.
-//! [OUTPUT]: Provides ChatUi (GUI-domain state) and ShardlaneApp's chat method group
-//! (toggle_chat_surface / chat_surface_view / submit_chat_prompt, etc.) to the crate.
+//! [INPUT]: Depends on chat::model's pure model, chat::approvals' lifecycle +
+//! guard, agent_ui's conversation/activity/markdown primitives and
+//! AgentComposer, herdr::HerdrClient (agent.prompt / agent projection), the
+//! RAW TerminalFrame grid snapshot (the guard's fact source), and
+//! shardlane-history's HistoryCatalog/LiveSession/LiveSync.
+//! [OUTPUT]: Provides ChatUi (GUI-domain state) and ShardlaneApp's chat
+//! method group (toggle_chat_surface / chat_surface_view / submit_chat_prompt
+//! / approval chip + guard-verified key replay, etc.) to the crate.
 //! toggle_chat_surface writes the Chat/Terminal choice through to the per-instance
 //! persisted workspace state (config.json workspace_state).
 //! [POS]: The surface domain of herdr-gui `chat`. The TUI always stays alive; Chat is
@@ -20,7 +23,7 @@
 //! identity+status title has moved up into the centered window Header
 //! (notate 2026-08-29); the content area has no separate status bar.
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use gpui::AppContext as _;
 use gpui::{
@@ -31,13 +34,14 @@ use gpui_component::{
     button::{Button, ButtonVariants as _},
     h_flex,
     input::{InputEvent, InputState},
-    v_flex, Icon, IconName as ComponentIconName, Sizable as _, WindowExt as _,
+    v_flex, Disableable as _, Icon, IconName as ComponentIconName, Sizable as _, WindowExt as _,
 };
 use shardlane_history::{
     resolve_session_source_locator, AgentId, ConversationRef, HistoryCatalog, LiveChange, LiveSync,
     SessionSourceLocator,
 };
 
+use super::approvals::{grid_text_hash, guard_matches, ApprovalState};
 use super::model::{
     chat_send_capability, normalize_provider, ChatBinding, ChatModel, ChatSendCapability,
     PendingSubmission, QueuedFollowUpPhase, QueuedFollowUpView, WorkSurfaceMode,
@@ -159,6 +163,9 @@ pub(crate) struct ChatUi {
     pub(crate) custom_interaction_input: Option<String>,
     /// Interaction response submission in-flight flag (prevents double submits).
     pub(crate) interaction_in_flight: bool,
+    /// Approval key-replay confirmation job generation (a newer send
+    /// invalidates an older confirmation loop).
+    pub(crate) approval_confirm_generation: u64,
 }
 
 /// Logical Prompt identity is bound to the exact Conversation as well as its
@@ -1721,6 +1728,22 @@ impl ShardlaneApp {
         }
         let palette = Palette::from_source(palette_source_from_active(cx));
         let connecting = self.chat.model.snapshot.is_none();
+        // Bind the approval guard signature to the current RAW TUI grid the
+        // first time this request is seen (fail-closed: an empty grid hash
+        // simply never matches a real menu).
+        if self
+            .chat
+            .model
+            .approval
+            .as_ref()
+            .is_some_and(|request| !request.signature_captured)
+        {
+            let rows = self.raw_tui_grid_rows();
+            if let Some(request) = self.chat.model.approval.as_mut() {
+                request.capture_signature(grid_text_hash(&rows));
+            }
+            cx.notify();
+        }
 
         // The agent identity+status bar (40px header) has moved up into the
         // centered window Header as the title; the content area no longer
@@ -1774,6 +1797,19 @@ impl ShardlaneApp {
             }
             None => composer,
         };
+        // Approval chip rides directly above the composer (same overlay
+        // pattern as interaction cards; the terminal transcript keeps the
+        // authoritative history).
+        let composer_with_overlays = if let Some(chip) = self.approval_chip_view(theme, cx) {
+            v_flex()
+                .w_full()
+                .gap(px(10.0))
+                .child(chip)
+                .child(composer_with_interaction)
+                .into_any_element()
+        } else {
+            composer_with_interaction
+        };
         let render_row = Box::new(move |ix: usize, window: &mut Window, app: &mut App| {
             let Some(view) = weak.upgrade() else {
                 return div().into_any_element();
@@ -1796,9 +1832,212 @@ impl ShardlaneApp {
             render_row,
             overlay: connecting_view,
             find_bar,
-            composer: Some(composer_with_interaction),
+            composer: Some(composer_with_overlays),
             pager: None,
         })
+    }
+
+    /// RAW (chrome-crop-free) hosted TUI grid text, one entry per visible
+    /// row — the guard's single fact source. Reuses the existing
+    /// TerminalFrame snapshot (the same grid the ⌘F search builds on); no
+    /// second snapshot implementation.
+    fn raw_tui_grid_rows(&self) -> Vec<String> {
+        self.terminal_raw_frame
+            .lines
+            .iter()
+            .map(|line| line.cells.concat())
+            .collect()
+    }
+
+    /// Approval chip row (None hides it entirely — Done requests vanish; the
+    /// terminal transcript is the authoritative record). Waiting renders
+    /// enabled option buttons; Stale/Unknown render disabled with the
+    /// handle-it-in-Terminal hint; Sent renders the frame-confirmation wait.
+    fn approval_chip_view(
+        &mut self,
+        theme: &ContentSurfaceTheme,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
+        let request = self.chat.model.approval.as_ref()?;
+        if request.state == ApprovalState::Done {
+            return None;
+        }
+        let entity = cx.entity();
+        let state = request.state;
+        let kind = request.kind.label();
+        let prompt = request.prompt.clone();
+        let options = request.options.clone();
+        let hint = match state {
+            ApprovalState::Waiting => {
+                Some("按钮会把该选项的 Codex 审批键发到托管终端；菜单变化时自动拦截")
+            }
+            ApprovalState::Sent => Some("已发送，正在等待终端帧确认…"),
+            ApprovalState::Stale => Some("菜单已变化，请在 Terminal 处理"),
+            ApprovalState::Unknown => Some("无法确认结果，请检查 Terminal"),
+            ApprovalState::Done => None,
+        };
+        let hint_color = if matches!(state, ApprovalState::Stale | ApprovalState::Unknown) {
+            theme.danger
+        } else {
+            theme.muted
+        };
+        let mut row = h_flex().w_full().gap(px(8.0)).items_center();
+        for (index, option) in options.iter().enumerate() {
+            let click_entity = entity.clone();
+            let label = option.label.clone();
+            row = row.child(
+                Button::new(("chat-approval-option", index))
+                    .small()
+                    .label(label)
+                    .disabled(state != ApprovalState::Waiting)
+                    .on_click(move |_, window, app| {
+                        click_entity.update(app, |view, cx| {
+                            view.click_approval_option(index, window, cx);
+                        });
+                    }),
+            );
+        }
+        let mut chip = v_flex()
+            .w_full()
+            .gap(px(4.0))
+            .p(px(10.0))
+            .child(
+                h_flex()
+                    .w_full()
+                    .gap(px(8.0))
+                    .items_center()
+                    .text_size(crate::theme::FONT_META)
+                    .text_color(theme.muted)
+                    .child(Icon::new(ComponentIconName::TriangleAlert).with_size(px(12.0)))
+                    .child(div().child(format!("需要批准 · {kind}"))),
+            )
+            .child(
+                div()
+                    .w_full()
+                    .min_w_0()
+                    .truncate()
+                    .text_size(crate::theme::FONT_BODY)
+                    .child(prompt),
+            )
+            .child(row);
+        if let Some(hint) = hint {
+            chip = chip.child(
+                div()
+                    .w_full()
+                    .text_size(crate::theme::FONT_META)
+                    .text_color(hint_color)
+                    .child(hint),
+            );
+        }
+        Some(chip.into_any_element())
+    }
+
+    /// Chip option click: the never-blind-send gate. A guard mismatch marks
+    /// the request Stale and sends NOTHING; a pass sends the option's exact
+    /// key bytes through the hosted PTY input seam and starts the frame
+    /// confirmation loop.
+    fn click_approval_option(
+        &mut self,
+        index: usize,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let current_hash = grid_text_hash(&self.raw_tui_grid_rows());
+        let keys = {
+            let Some(request) = self.chat.model.approval.as_mut() else {
+                return;
+            };
+            if request.state != ApprovalState::Waiting {
+                return;
+            }
+            let Some(option) = request.options.get(index) else {
+                return;
+            };
+            if !guard_matches(current_hash, request) {
+                // 永不盲发：menu state changed since bind — not one key leaves.
+                request.state = ApprovalState::Stale;
+                shardlane_host::op_log(
+                    "WARN",
+                    format_args!(
+                        "chat approval guard mismatch: request {} NOT sent (menu changed)",
+                        request.id
+                    ),
+                );
+                cx.notify();
+                return;
+            }
+            match std::str::from_utf8(&option.keys) {
+                Ok(keys) => keys.to_string(),
+                Err(_) => {
+                    request.state = ApprovalState::Stale;
+                    cx.notify();
+                    return;
+                }
+            }
+        };
+        let pane_key = self
+            .chat
+            .model
+            .binding
+            .as_ref()
+            .map(|binding| binding.pane_key.clone())
+            .unwrap_or_default();
+        self.queue_terminal_text(
+            pane_key,
+            crate::herdr_tui::TUI_TARGET.to_string(),
+            keys.to_string(),
+            cx,
+        );
+        if let Some(request) = self.chat.model.approval.as_mut() {
+            request.state = ApprovalState::Sent;
+        }
+        self.start_approval_confirm_job(cx);
+        cx.notify();
+    }
+
+    /// Frame confirmation loop: poll the RAW grid hash; a change after Sent
+    /// proves the menu disappeared → Done; no change within the window →
+    /// Unknown (explicit uncertainty, Terminal fallback). Pure presentation
+    /// side effect: it only ever flips the local lifecycle state.
+    fn start_approval_confirm_job(&mut self, cx: &mut Context<Self>) {
+        self.chat.approval_confirm_generation =
+            self.chat.approval_confirm_generation.wrapping_add(1);
+        let generation = self.chat.approval_confirm_generation;
+        cx.spawn(async move |this, cx| {
+            let deadline = Instant::now() + Duration::from_secs(3);
+            loop {
+                cx.background_executor()
+                    .timer(Duration::from_millis(150))
+                    .await;
+                let outcome = this.update(cx, |view, cx| {
+                    if view.chat.approval_confirm_generation != generation {
+                        return None;
+                    }
+                    let current_hash = grid_text_hash(&view.raw_tui_grid_rows());
+                    let Some(request) = view.chat.model.approval.as_mut() else {
+                        return None;
+                    };
+                    if request.state != ApprovalState::Sent {
+                        return None;
+                    }
+                    if current_hash != request.signature {
+                        request.state = ApprovalState::Done;
+                        cx.notify();
+                        return None;
+                    }
+                    if Instant::now() >= deadline {
+                        request.state = ApprovalState::Unknown;
+                        cx.notify();
+                        return None;
+                    }
+                    Some(())
+                });
+                if outcome.is_err() || outcome.ok().flatten().is_none() {
+                    break;
+                }
+            }
+        })
+        .detach();
     }
 
     /// Row signature diff → minimal splice/reset. A signature = the row

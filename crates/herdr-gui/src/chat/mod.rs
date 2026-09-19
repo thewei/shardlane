@@ -11,10 +11,9 @@
 //! live-source I/O lives only in background tasks, and the render path performs
 //! zero file access.
 
-pub(crate) mod model;
 pub(crate) mod approvals;
+pub(crate) mod model;
 pub(crate) mod surface;
 
 pub(crate) use model::{plan_row_splice, RowSplice, WorkSurfaceMode};
-pub(crate) use approvals::ApprovalState;
 pub(crate) use surface::ChatUi;
