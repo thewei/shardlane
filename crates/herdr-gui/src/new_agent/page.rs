@@ -877,13 +877,7 @@ impl ShardlaneApp {
                                     |(index, script)| {
                                         let script_id = script.definition.id.clone();
                                         let script_name = script.definition.name.clone();
-                                        let summary = if script.definition.description.is_empty()
-                                        {
-                                            script.definition.command_summary()
-                                        } else {
-                                            script.definition.description.clone()
-                                        };
-                                        let item_tags = script.definition.tags.clone();
+                                        let summary = script.definition.command_summary();
                                         let run_herdr = command_run_herdr.clone();
                                         let edit_herdr = command_run_herdr.clone();
                                         let delete_herdr = command_run_herdr.clone();
@@ -1036,26 +1030,7 @@ impl ShardlaneApp {
                                                             )
                                                             .truncate()
                                                             .child(summary),
-                                                    )
-                                                    .when(!item_tags.is_empty(), |col| {
-                                                        col.child(
-                                                            h_flex()
-                                                                .mt(px(3.0))
-                                                                .gap(px(4.0))
-                                                                .children(
-                                                                    item_tags.iter().map(|tag| {
-                                                                        div()
-                                                                            .px(px(6.0))
-                                                                            .py(px(1.0))
-                                                                            .rounded(px(4.0))
-                                                                            .bg(cx.theme().accent.opacity(0.1))
-                                                                            .text_size(crate::theme::FONT_DECORATIVE)
-                                                                            .text_color(cx.theme().accent)
-                                                                            .child(tag.clone())
-                                                                    }),
-                                                                ),
-                                                        )
-                                                    }),
+                                                    ),
                                             )
                                             .child(
                                                 h_flex()

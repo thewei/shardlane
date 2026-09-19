@@ -234,6 +234,12 @@ refresh (see §7).
 variants), `rename_tab`, `move_tab` (capability `cross_workspace_tab_move` — already a
 Herdr protocol gap), `close_tab`, `tab_focus`.
 
+Known protocol gaps (recorded, not invented around): `CreateTab` carries no label, so a
+labelled tab is a sanctioned create + `rename_tab` two-step (same family as the
+best-effort `rename_pane`); Herdr has no protocol-native Script resource, so Script
+semantics stay a client-side bridge (see the canonical architecture document) until the
+runtime grows one.
+
 ### Domain 5 — Panes (A)
 
 `split(direction)`, `close_pane`, `swap_pane`, `move_pane` (to Tab / new Tab),

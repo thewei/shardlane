@@ -1,12 +1,12 @@
 //! [INPUT]: The import surface and types of the right_panel module root (`use super::*`);
-//! crate::scripts service types (ScriptKind/ScriptRecord/ScriptStatus/ObservedService);
+//! crate::scripts service types (ScriptRecord/ScriptStatus/ObservedService);
 //! shell_navigation's FocusIntent seam.
 //! [OUTPUT]: render_right_panel_services — the Services surface listing resident
 //! service scripts and observed listening processes, with terminal jump and
 //! localhost external links.
 //! [POS]: The services_view responsibility slice of the right_panel directory.
 use super::*;
-use crate::scripts::{ObservedService, ScriptKind, ScriptRecord, ScriptStatus};
+use crate::scripts::{ObservedService, ScriptRecord, ScriptStatus};
 
 impl ShardlaneApp {
     pub(super) fn render_right_panel_services(
@@ -15,13 +15,14 @@ impl ShardlaneApp {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let herdr = cx.entity();
-        // Same resident-service semantics the former Sidebar section used:
-        // only long-running (Service kind, non-one-shot) scripts are services.
+        // Membership is behavioral, not a declared kind: every non-one-shot
+        // Script is a startable/stoppable long-running service surface here,
+        // and one-shot commands stay on their launch surfaces.
         let scripts: Vec<&ScriptRecord> = self
             .scripts
             .scripts
             .iter()
-            .filter(|script| script.kind == ScriptKind::Service && !script.one_shot)
+            .filter(|script| !script.one_shot)
             .collect();
         let observed: Vec<&ObservedService> = self.observed_services.iter().collect();
 
@@ -68,6 +69,7 @@ impl ShardlaneApp {
             let name = script.name.clone();
             let status = script.runtime.status;
             let ports = script.runtime.ports.clone();
+            let last_error = script.runtime.last_error.clone();
             let color = status_color(status);
             let status_text = status.label();
             let row_herdr = herdr.clone();
@@ -122,12 +124,16 @@ impl ShardlaneApp {
                                 .text_size(crate::theme::FONT_META)
                                 .text_color(theme.muted)
                                 .child(SharedString::from(format!(
-                                    "{status_text}{}",
+                                    "{status_text}{}{}",
                                     match ports.as_slice() {
                                         [] => String::new(),
                                         [port] => format!(" · :{port}"),
                                         [first, rest @ ..] =>
                                             format!(" · :{first} +{}", rest.len()),
+                                    },
+                                    match last_error.as_deref() {
+                                        None => String::new(),
+                                        Some(error) => format!(" · {error}"),
                                     }
                                 ))),
                         ),

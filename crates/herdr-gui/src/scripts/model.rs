@@ -1,35 +1,7 @@
 //! [INPUT]: Main-crate imports and sibling-module shared items passed through the scripts module root (super) via the `use super::*` chain
-//! [OUTPUT]: Provides the script data model and persistence (ScriptKind/ScriptStatus/ScriptDefinition/ScriptRecord/ScriptRegistry, registry persistence, id/icon/keybinding normalization)
+//! [OUTPUT]: Provides the script data model and persistence (ScriptStatus/ScriptDefinition/ScriptRecord/ScriptRegistry, registry persistence, id/icon/keybinding normalization)
 //! [POS]: The data-model slice of the scripts module, mechanically split out of scripts.rs
 use super::*;
-
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub(crate) enum ScriptKind {
-    Command,
-    #[default]
-    Service,
-    Debugger,
-}
-
-impl ScriptKind {
-    pub(super) fn parse(value: &str) -> Option<Self> {
-        match value.trim().to_ascii_lowercase().as_str() {
-            "command" | "cmd" | "once" => Some(Self::Command),
-            "service" | "server" | "long" => Some(Self::Service),
-            "debugger" | "debug" | "gdb" | "lldb" => Some(Self::Debugger),
-            _ => None,
-        }
-    }
-
-    pub(crate) fn label(self) -> &'static str {
-        match self {
-            Self::Command => "Command",
-            Self::Service => "Service",
-            Self::Debugger => "Debugger",
-        }
-    }
-}
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -62,20 +34,19 @@ pub(crate) struct ScriptDefinition {
     pub id: String,
     pub project_path: String,
     pub name: String,
-    #[serde(default)]
-    pub description: String,
     #[serde(default = "default_script_icon")]
     pub icon: String,
     pub keybinding: Option<String>,
     /// User-authored command script. The native editor keeps one command per line; execution
     /// compiles non-empty lines into one fail-fast shell chain.
     pub command: String,
-    pub kind: ScriptKind,
     pub one_shot: bool,
     pub close_on_complete: bool,
     pub last_run_at_ms: Option<u64>,
+    /// Pinned Tab anchor: the Tab label this Script runs in (resolved live at
+    /// run time; a missing label materializes the Tab). None = Auto placement.
     #[serde(default)]
-    pub tags: Vec<String>,
+    pub pinned_tab_label: Option<String>,
 }
 
 impl Default for ScriptDefinition {
@@ -84,15 +55,13 @@ impl Default for ScriptDefinition {
             id: String::new(),
             project_path: String::new(),
             name: String::new(),
-            description: String::new(),
             icon: default_script_icon(),
             keybinding: None,
             command: String::new(),
-            kind: ScriptKind::default(),
             one_shot: false,
             close_on_complete: false,
             last_run_at_ms: None,
-            tags: Vec::new(),
+            pinned_tab_label: None,
         }
     }
 }
@@ -389,18 +358,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn script_kind_accepts_product_vocabulary() {
-        assert_eq!(ScriptKind::parse("service"), Some(ScriptKind::Service));
-        assert_eq!(ScriptKind::parse("command"), Some(ScriptKind::Command));
-        assert_eq!(ScriptKind::parse("gdb"), Some(ScriptKind::Debugger));
-        assert_eq!(ScriptKind::parse("other"), None);
-    }
-
-    #[test]
     fn script_multiline_commands_compile_to_one_fail_fast_shell_chain() {
         let script = ScriptDefinition {
             command: " pnpm install \n\n pnpm build\n cargo test ".into(),
-            kind: ScriptKind::Command,
             one_shot: true,
             ..ScriptDefinition::default()
         };
@@ -472,7 +432,7 @@ mod tests {
                     project_path: "/tmp/project".into(),
                     name: "API".into(),
                     command: "cargo run".into(),
-                    kind: ScriptKind::Service,
+                    pinned_tab_label: Some("dev".into()),
                     ..ScriptDefinition::default()
                 },
                 workspace_id: "workspace-1".into(),
@@ -490,6 +450,7 @@ mod tests {
         let json = serde_json::to_string(&registry).unwrap_or_else(|error| panic!("{error}"));
         assert!(json.contains("\"project_path\""));
         assert!(json.contains("\"tab_id\""));
+        assert!(json.contains("\"pinned_tab_label\""));
         for transient in ["status", "pid", "ports", "started_at_ms", "last_error"] {
             assert!(!json.contains(&format!("\"{transient}\"")));
         }
@@ -517,7 +478,6 @@ mod tests {
                     id: "script-edit-1".into(),
                     name: "Old Name".into(),
                     command: "cargo check".into(),
-                    kind: ScriptKind::Command,
                     one_shot: true,
                     close_on_complete: true,
                     ..ScriptDefinition::default()
@@ -532,14 +492,12 @@ mod tests {
         if let Some(record) = registry.get_mut("script-edit-1") {
             record.name = "New Name".into();
             record.command = "cargo test".into();
-            record.kind = ScriptKind::Service;
             record.one_shot = false;
         }
 
         let updated = &registry.scripts[0];
         assert_eq!(updated.name, "New Name");
         assert_eq!(updated.command, "cargo test");
-        assert_eq!(updated.kind, ScriptKind::Service);
         assert!(!updated.one_shot);
         assert_eq!(updated.workspace_id, "w1");
         assert_eq!(updated.tab_id.as_deref(), Some("t1"));

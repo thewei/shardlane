@@ -7,7 +7,7 @@ Member list
 - `browser.rs`: local browser address resolution, navigation, and safe-URL judgment.
 - `browser_view.rs`: the Browser surface's address bar and native WebView projection.
 - `chooser.rs`: the surface chooser for the empty right panel.
-- `services_view.rs`: the Services surface — resident service scripts (jump/start/stop/restart via the Script pane seam) and observed listening services (jump via FocusIntent), each port linkable to the localhost Browser surface.
+- `services_view.rs`: the Services surface — resident service scripts (jump/start/stop/restart via the Script pane seam; membership is behavioral — every non-one-shot Script — with the row meta line surfacing the runtime's last error) and observed listening services (jump via FocusIntent), each port linkable to the localhost Browser surface.
 - `files.rs`: working-tree collection, file icons, and the bounded preview loader (size cap + binary sniff + image detection) shared with the content-area preview.
 - `files_view.rs`: the Files surface's tree and file-selection interactions; clicking a file opens the full-content preview (file_preview.rs).
 - `header.rs`: surface tabs, the creation menu, and close/switch actions.

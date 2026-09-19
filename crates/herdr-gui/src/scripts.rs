@@ -5,7 +5,7 @@
 //! [POS]: Shardlane script and background-service abstraction layer; provides Script/Service state and interaction panels to the Sidebar/Header
 
 use super::*;
-use crate::ui::controls::{ControlSurface, Toggle};
+use crate::ui::controls::{ControlSurface, Segmented, Toggle};
 use crate::ui_metrics::DIALOG_CONTENT_GAP;
 use crate::workspace_model::{build_project_index, project_paths_match, ProjectIndex};
 use gpui_component::{
@@ -31,6 +31,6 @@ mod observe;
 mod ports;
 
 pub(crate) use model::{
-    script_icon_name, ObservedService, ScriptDefinition, ScriptKind, ScriptRecord, ScriptRegistry,
+    script_icon_name, ObservedService, ScriptDefinition, ScriptRecord, ScriptRegistry,
     ScriptRuntimeProjection, ScriptStatus,
 };

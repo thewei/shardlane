@@ -1,7 +1,9 @@
 //! [INPUT]: Main-crate imports and sibling-module shared items passed through the scripts module root (super) via the `use super::*` chain
-//! [OUTPUT]: Provides script lifecycle control (start/stop/restart/delete/move/focus) and the menu-entry delete confirmation dialog (confirm_delete_script); delete also clears new_agent-domain inline-arming leftovers (P12-1 hardening)
+//! [OUTPUT]: Provides script lifecycle control (start/stop/restart/delete/move/focus), the typed launch-error mapping (Occupied = Stopped + last_error refusal, never the global connection status), and the menu-entry delete confirmation dialog (confirm_delete_script); delete also clears new_agent-domain inline-arming leftovers (P12-1 hardening)
 //! [POS]: The lifecycle-control slice of the scripts module, mechanically split out of scripts.rs; deleting no longer kills the pane along with it (P12-1)
-use super::launch::{launch_script_runtime, resolve_script_project_launch_target};
+use super::launch::{
+    launch_script_runtime, resolve_script_project_launch_target, ScriptLaunchError,
+};
 use super::observe::now_ms;
 use super::*;
 
@@ -25,10 +27,10 @@ impl ShardlaneApp {
             Err(error) => {
                 if let Some(record) = self.scripts.get_mut(&script_id) {
                     record.runtime.status = ScriptStatus::Failed;
-                    record.runtime.last_error = Some(error.clone());
+                    record.runtime.last_error = Some(error);
                 }
-                self.status = ConnectionStatus::Offline(error);
                 self.notify_sidebar(cx);
+                cx.notify();
                 return;
             }
         };
@@ -70,11 +72,19 @@ impl ShardlaneApp {
                             record.runtime.last_error = None;
                             runtime_materialized = true;
                         }
-                        Err(error) => {
-                            record.runtime.status = ScriptStatus::Failed;
-                            record.runtime.last_error = Some(error.clone());
-                            view.status = ConnectionStatus::Offline(error);
-                        }
+                        Err(result_error) => match result_error {
+                            ScriptLaunchError::Occupied(message) => {
+                                // A refusal, not a failure: nothing was created, so
+                                // the Script reports Stopped + reason. The global
+                                // connection status is not a script error channel.
+                                record.runtime = ScriptRuntimeProjection::default();
+                                record.runtime.last_error = Some(message);
+                            }
+                            ScriptLaunchError::Failed(error) => {
+                                record.runtime.status = ScriptStatus::Failed;
+                                record.runtime.last_error = Some(error);
+                            }
+                        },
                     }
                 }
                 if runtime_materialized {
@@ -159,10 +169,10 @@ impl ShardlaneApp {
             Err(error) => {
                 if let Some(record) = self.scripts.get_mut(&script_id) {
                     record.runtime.status = ScriptStatus::Failed;
-                    record.runtime.last_error = Some(error.clone());
+                    record.runtime.last_error = Some(error);
                 }
-                self.status = ConnectionStatus::Offline(error);
                 self.notify_sidebar(cx);
+                cx.notify();
                 return;
             }
         };
@@ -206,14 +216,24 @@ impl ShardlaneApp {
                             record.runtime.last_error = None;
                             runtime_materialized = true;
                         }
-                        Err(error) => {
+                        Err(result_error) => {
                             persistence_changed =
                                 record.tab_id.is_some() || record.pane_id.is_some();
                             record.tab_id = None;
                             record.pane_id = None;
-                            record.runtime.status = ScriptStatus::Failed;
-                            record.runtime.last_error = Some(error.clone());
-                            view.status = ConnectionStatus::Offline(error);
+                            // The old pane was closed before the relaunch attempt;
+                            // an occupied pin means another task now owns the Tab.
+                            // Same refusal semantics as start: never Offline.
+                            record.runtime = ScriptRuntimeProjection::default();
+                            match result_error {
+                                ScriptLaunchError::Occupied(message) => {
+                                    record.runtime.last_error = Some(message);
+                                }
+                                ScriptLaunchError::Failed(error) => {
+                                    record.runtime.status = ScriptStatus::Failed;
+                                    record.runtime.last_error = Some(error);
+                                }
+                            }
                         }
                     }
                 }

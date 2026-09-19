@@ -303,7 +303,6 @@ mod tests {
     fn one_shot_script_requests_runtime_pane_close_after_foreground_completion() {
         let mut script = ScriptRecord {
             definition: ScriptDefinition {
-                kind: ScriptKind::Service,
                 one_shot: true,
                 close_on_complete: true,
                 ..ScriptDefinition::default()

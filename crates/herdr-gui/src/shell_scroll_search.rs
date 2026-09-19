@@ -139,16 +139,14 @@ impl ShardlaneApp {
                 .join(", ");
             let detail = if ports.is_empty() {
                 format!(
-                    "BackgroundJob · {} · {} · {} · {}",
-                    script.kind.label(),
+                    "BackgroundJob · {} · {} · {}",
                     script.runtime.status.label(),
                     project_label,
                     script.command_summary()
                 )
             } else {
                 format!(
-                    "BackgroundJob · {} · {} · {} · {} · {}",
-                    script.kind.label(),
+                    "BackgroundJob · {} · {} · {} · {}",
                     script.runtime.status.label(),
                     ports,
                     project_label,

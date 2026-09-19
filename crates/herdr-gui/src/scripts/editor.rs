@@ -1,10 +1,18 @@
 //! [INPUT]: Main-crate imports and sibling-module shared items passed through the scripts module root (super) via the `use super::*` chain
-//! [OUTPUT]: Provides the script editor and surface entries (Script dialog, keybinding parsing, run/open entries, duplicate-name soft warning)
+//! [OUTPUT]: Provides the script editor and surface entries (Script dialog with run-location targeting, keybinding parsing, run/open entries, duplicate-name soft warning)
 //! [POS]: The editor-surface slice of the scripts module, mechanically split out of scripts.rs
 use super::model::{
     default_script_icon, next_script_id, normalize_script_keybinding, script_icon_slug,
 };
 use super::*;
+
+/// Dialog-local segmented choice: Auto placement (current behavior) vs a
+/// pinned Tab label resolved at run time.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ScriptRunLocation {
+    Auto,
+    Pinned,
+}
 
 fn script_dialog_field(label: &'static str, control: impl IntoElement, cx: &App) -> AnyElement {
     v_flex()
@@ -144,12 +152,38 @@ impl ShardlaneApp {
             .as_ref()
             .map(|t| t.icon.clone())
             .unwrap_or_else(default_script_icon);
-        let initial_kind = existing_script.as_ref().map(|t| t.kind).unwrap_or_default();
         let initial_one_shot = existing_script.as_ref().map(|t| t.one_shot).unwrap_or(true);
         let initial_close_on_complete = existing_script
             .as_ref()
             .map(|t| t.close_on_complete)
             .unwrap_or(true);
+        let (initial_location, initial_pinned_label) = existing_script
+            .as_ref()
+            .and_then(|script| script.pinned_tab_label.clone())
+            .map(|label| (ScriptRunLocation::Pinned, label))
+            .unwrap_or((ScriptRunLocation::Auto, String::new()));
+
+        // The pinned-label picker hint: live Tab labels of the target workspace,
+        // captured once at dialog open (a missing label is legal — create-on-run).
+        let existing_tab_labels = {
+            let mut labels: Vec<String> = self
+                .state
+                .tabs
+                .iter()
+                .filter(|tab| tab.workspace_id.as_deref() == Some(workspace_id.as_str()))
+                .filter_map(|tab| {
+                    tab.label
+                        .as_deref()
+                        .or(tab.title.as_deref())
+                        .map(str::trim)
+                        .filter(|value| !value.is_empty())
+                        .map(str::to_string)
+                })
+                .collect();
+            labels.sort_by_key(|label| label.to_lowercase());
+            labels.dedup_by(|a, b| a.eq_ignore_ascii_case(b));
+            labels
+        };
 
         let name = cx.new(|cx| InputState::new(window, cx).placeholder("Script name"));
         let keybinding =
@@ -197,46 +231,29 @@ impl ShardlaneApp {
             )
         });
 
-        let kind_row = match initial_kind {
-            ScriptKind::Command => 0,
-            ScriptKind::Service => 1,
-            ScriptKind::Debugger => 2,
-        };
-        let kind = cx.new(|cx| {
-            SelectState::new(
-                SearchableVec::new(vec![
-                    "Command".to_string(),
-                    "Service".to_string(),
-                    "Debugger".to_string(),
-                ]),
-                Some(IndexPath::default().row(kind_row)),
-                window,
-                cx,
-            )
+        let pinned_label = cx.new(|cx| {
+            InputState::new(window, cx)
+                .placeholder("Tab label, e.g. dev — created on run if missing")
         });
-
-        let initial_tags = existing_script
-            .as_ref()
-            .map(|t| t.tags.join(", "))
-            .unwrap_or_default();
-        let tags = cx.new(|cx| InputState::new(window, cx).placeholder("e.g. dev, build, deploy"));
-        if !initial_tags.is_empty() {
-            tags.update(cx, |state, input_cx| {
-                state.set_value(initial_tags, window, input_cx);
+        if !initial_pinned_label.is_empty() {
+            pinned_label.update(cx, |state, input_cx| {
+                state.set_value(initial_pinned_label, window, input_cx);
             });
         }
 
         let one_shot = Rc::new(Cell::new(initial_one_shot));
         let close_on_complete = Rc::new(Cell::new(initial_close_on_complete));
+        let run_location = Rc::new(Cell::new(initial_location));
 
         let app = cx.entity();
         let close_app = app.clone();
         let name_input = name.clone();
         let keybinding_input = keybinding.clone();
-        let tags_input = tags.clone();
         let command_input = command.clone();
         let icon_input = icon.clone();
-        let kind_input = kind.clone();
+        let pinned_input = pinned_label.clone();
+        let location_cell = run_location.clone();
+        let pinned_input_render = pinned_label.clone();
         let editing_id = editing_script_id.clone();
         let dialog_title = if editing_script_id.is_some() {
             "Edit Script"
@@ -256,16 +273,18 @@ impl ShardlaneApp {
             let submit_app = app.clone();
             let submit_name = name_input.clone();
             let submit_keybinding = keybinding_input.clone();
-            let submit_tags = tags_input.clone();
             let submit_command = command_input.clone();
             let submit_icon = icon_input.clone();
-            let submit_kind = kind_input.clone();
+            let submit_pinned_label = pinned_input.clone();
+            let submit_location = run_location.clone();
+            let location_on_change = run_location.clone();
             let submit_workspace = workspace_id.clone();
             let submit_project_path = project_path.clone();
             let submit_one_shot = one_shot.clone();
             let submit_close_on_complete = close_on_complete.clone();
             let submit_editing_id = editing_id.clone();
             let one_shot_toggle = one_shot.clone();
+            let oneshot_close_link = close_on_complete.clone();
             let close_toggle = close_on_complete.clone();
             let close_app = close_app.clone();
             dialog
@@ -291,11 +310,6 @@ impl ShardlaneApp {
                                     cx,
                                 ))
                                 .child(script_dialog_field(
-                                    "Type",
-                                    Select::new(&kind_input).w(px(150.0)),
-                                    cx,
-                                ))
-                                .child(script_dialog_field(
                                     "Name",
                                     Input::new(&name_input).w_full(),
                                     cx,
@@ -306,11 +320,55 @@ impl ShardlaneApp {
                             Input::new(&keybinding_input).w_full(),
                             cx,
                         ))
-                        .child(script_dialog_field(
-                            "Tags · comma-separated",
-                            Input::new(&tags_input).w_full(),
-                            cx,
-                        ))
+                        .child(
+                            v_flex()
+                                .w_full()
+                                .gap(SPACE_ICON)
+                                .child(
+                                    div()
+                                        .text_size(theme::FONT_META)
+                                        .font_weight(FontWeight::MEDIUM)
+                                        .text_color(cx.theme().muted_foreground)
+                                        .child("Run location"),
+                                )
+                                .child(
+                                    Segmented::new(
+                                        "script-run-location",
+                                        ControlSurface::from_app_theme(cx),
+                                    )
+                                    .option(ScriptRunLocation::Auto, "Auto")
+                                    .option(ScriptRunLocation::Pinned, "Pinned Tab")
+                                    .value(location_cell.get())
+                                    .on_change(move |value, _, app| {
+                                        location_on_change.set(*value);
+                                        app.refresh_windows();
+                                    }),
+                                )
+                                .children(
+                                    (location_cell.get() == ScriptRunLocation::Pinned).then(|| {
+                                            v_flex()
+                                                .w_full()
+                                                .gap(SPACE_ICON)
+                                                .child(
+                                                    Input::new(&pinned_input_render).w_full(),
+                                                )
+                                                .child(
+                                                    div()
+                                                        .text_size(theme::FONT_META)
+                                                        .text_color(cx.theme().muted_foreground)
+                                                        .child(if existing_tab_labels.is_empty() {
+                                                            "No tabs yet — the pinned tab is created when the script runs.".to_string()
+                                                        } else {
+                                                            format!(
+                                                                "Existing tabs: {}",
+                                                                existing_tab_labels.join(", ")
+                                                            )
+                                                        }),
+                                                )
+                                                .into_any_element()
+                                        }),
+                                ),
+                        )
                         .child(script_dialog_field(
                             "Commands · one command per line",
                             Input::new(&command_input).w_full().h(px(132.0)),
@@ -339,7 +397,10 @@ impl ShardlaneApp {
                                     )
                                     .checked(one_shot_toggle.get())
                                     .on_change(move |checked, _, _| {
-                                        one_shot_toggle.set(checked)
+                                        one_shot_toggle.set(checked);
+                                        if !checked {
+                                            oneshot_close_link.set(false);
+                                        }
                                     }),
                                 ),
                         )
@@ -374,6 +435,18 @@ impl ShardlaneApp {
                 .on_ok(move |_, window, app| {
                     let name = submit_name.read(app).value().trim().to_string();
                     let command = submit_command.read(app).value().trim().to_string();
+                    let pinned_tab_label = (submit_location.get() == ScriptRunLocation::Pinned)
+                        .then(|| submit_pinned_label.read(app).value().trim().to_string())
+                        .filter(|label| !label.is_empty());
+                    if submit_location.get() == ScriptRunLocation::Pinned
+                        && pinned_tab_label.is_none()
+                    {
+                        window.push_notification("Pinned Tab label is required", app);
+                        return false;
+                    }
+                    // close_on_complete only means something for one-time runs.
+                    let close_on_complete =
+                        submit_one_shot.get() && submit_close_on_complete.get();
                     let raw_keybinding = submit_keybinding.read(app).value().trim().to_string();
                     let keybinding = match normalize_script_keybinding(&raw_keybinding) {
                         Ok(value) => value,
@@ -388,14 +461,6 @@ impl ShardlaneApp {
                         .cloned()
                         .map(|value| script_icon_slug(&value))
                         .unwrap_or_else(default_script_icon);
-                    let Some(kind) = submit_kind
-                        .read(app)
-                        .selected_value()
-                        .and_then(|value| ScriptKind::parse(value))
-                    else {
-                        window.push_notification("Select a Script type", app);
-                        return false;
-                    };
                     if name.is_empty() || command.lines().all(|line| line.trim().is_empty()) {
                         window.push_notification("Script name and at least one command are required", app);
                         return false;
@@ -414,13 +479,6 @@ impl ShardlaneApp {
                             return false;
                         }
                     }
-                    let tags: Vec<String> = submit_tags
-                        .read(app)
-                        .value()
-                        .split(',')
-                        .map(|s| s.trim().to_string())
-                        .filter(|s| !s.is_empty())
-                        .collect();
                     // P12-5: duplicate-name soft warning within the same Project
                     // (does not block saving; duplicates only hurt visual
                     // distinction).
@@ -445,10 +503,9 @@ impl ShardlaneApp {
                                 record.icon = icon;
                                 record.keybinding = keybinding;
                                 record.command = command;
-                                record.kind = kind;
                                 record.one_shot = submit_one_shot.get();
-                                record.close_on_complete = submit_close_on_complete.get();
-                                record.tags = tags;
+                                record.close_on_complete = close_on_complete;
+                                record.pinned_tab_label = pinned_tab_label;
                             }
                         } else {
                             let record = ScriptRecord {
@@ -456,15 +513,13 @@ impl ShardlaneApp {
                                     id: next_script_id(),
                                     project_path: submit_project_path.clone(),
                                     name,
-                                    description: String::new(),
                                     icon,
                                     keybinding,
                                     command,
-                                    kind,
                                     one_shot: submit_one_shot.get(),
-                                    close_on_complete: submit_close_on_complete.get(),
+                                    close_on_complete,
                                     last_run_at_ms: None,
-                                    tags,
+                                    pinned_tab_label,
                                 },
                                 workspace_id: submit_workspace.clone(),
                                 ..ScriptRecord::default()
