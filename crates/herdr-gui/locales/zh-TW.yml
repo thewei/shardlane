@@ -43,6 +43,8 @@ settings:
     subtitle: 託管 Herdr 終端機 UI 的偏好設定。它們存放在真實的 Herdr 設定中，對所有 Herdr 用戶端生效。修改後會重新啟動託管終端機工作階段。
     config_file: 設定檔
     reload: 重新載入
+    notice_apply_failed: 'Herdr 設定寫入失敗，檔案保持原樣。%{detail}'
+    notice_reload_failed: 'Herdr 設定已儲存，但執行中的 Herdr 尚未重新載入。請點擊重新載入。%{detail}'
     copy_on_select: 選取即複製
     copy_on_select_detail: Herdr ui.copy_on_select。影響所有 Herdr 用戶端的原生滑鼠選取行為。
     mouse_capture: 滑鼠擷取

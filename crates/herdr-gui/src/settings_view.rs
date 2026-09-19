@@ -13,7 +13,9 @@
 //! theme presets, font_catalog (monospace font enumeration), gpui-component controls,
 //! and the ui::controls form control family
 //! [OUTPUT]: Exposes `ShardlaneApp::settings_page` (with the private settings_card/settings_card_row/
-//! settings_section_title helpers)
+//! settings_section_title helpers) and the Herdr TUI card's inline red apply-failure
+//! notice (`herdr_config_notice`; the card's controls keep their disk-truth values so
+//! a rejected write never strands user input)
 //! [POS]: One of main.rs's presentation-layer splits (sibling of search_view.rs/header_view.rs);
 //! config read/write paths and actions remain owned by main.rs
 
@@ -53,6 +55,7 @@ impl ShardlaneApp {
         let selected_provider = self.settings_provider_detail;
         let current_language = self.config.ui.language;
         let content_button = content_theme.button_variant(cx);
+        let danger = cx.theme().danger;
 
         // Theme page semantics: pick light/dark first (appearance mode), then the theme. Manual mode
         // shows only that appearance's official theme cards; Auto gives both Light/Dark groups (both need a choice).
@@ -690,6 +693,17 @@ impl ShardlaneApp {
                 ),
             ],
         );
+        // Spec #1 (2026-09-19): the most recent Herdr config apply/reload failure,
+        // inline and red under the card. The controls above always render the
+        // on-disk truth (`herdr_user_config` only changes on success), so a
+        // rejected write leaves the user's original settings editable in place.
+        let herdr_config_notice = self.herdr_config_notice.clone().map(|message| {
+            div()
+                .mt(px(10.0))
+                .text_size(crate::theme::FONT_META)
+                .text_color(danger)
+                .child(format!("⚠ {message}"))
+        });
 
         // TUI-only cutover: the normal work surface is always the single hosted Herdr TUI, with no
         // Embedded/TUI mode selection; the Terminal card keeps appearance preferences + host restore
@@ -1391,6 +1405,11 @@ impl ShardlaneApp {
                                 card.hidden()
                             }),
                     )
+                    .children(herdr_config_notice.map(|notice| {
+                        notice.when(selected_section != SettingsSection::Terminal, |note| {
+                            note.hidden()
+                        })
+                    }))
                     .child(
                         terminal_card.when(selected_section != SettingsSection::Terminal, |card| {
                             card.hidden()

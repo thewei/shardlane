@@ -48,6 +48,8 @@ settings:
     subtitle: Preferences of the hosted Herdr terminal UI. They live in the real Herdr config and apply to every Herdr client. Changing them restarts the hosted terminal session.
     config_file: Config file
     reload: Reload
+    notice_apply_failed: 'Herdr config update failed; the file was left unchanged. %{detail}'
+    notice_reload_failed: 'Herdr config saved, but the running Herdr server has not reloaded it. Use Reload. %{detail}'
     copy_on_select: Copy on select
     copy_on_select_detail: Herdr ui.copy_on_select. This affects native Herdr mouse selection behavior in every Herdr client.
     mouse_capture: Mouse capture
