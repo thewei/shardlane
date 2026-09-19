@@ -10,6 +10,7 @@ Members:
 - `service_rows.rs`: the Agents section's cards — live agents (title over project · model · context meta, insight meta only from the live subscribed session) and history backfill rows plus the "view more" trailing row.
 - `pane_rows.rs`: per-Pane rows under an expanded Project.
 - `projection.rs`: pure helpers deriving sidebar row inputs from the runtime projection.
+- `recent_rows.rs`: the Recent section (spec #6) — `RECENT_TARGET_LIMIT` + `sidebar_recent_section`, rendering the top N live-derived `RecentTarget` jump rows (Agents→Recent→Projects slot order); rows navigate only through the FocusIntent project seam, the section vanishes on an empty runtime, and it owns no collapse/persistence state by design.
 - `section_layout.rs`: section stacking constants/helpers.
 
 Rules: keep one Sidebar path; services live in the right panel (2026-09-03), so no Services section may reappear here; project git info and service badges are read-only projections of existing collectors, never new collectors per row.
