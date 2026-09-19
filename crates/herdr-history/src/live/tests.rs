@@ -6,6 +6,7 @@
 //! arbitrary byte boundaries)`. The full side uses the adapter public API
 //! (`parse_transcript`) as an independent reference; the incremental side
 //! starts from an empty file, appends chunk by chunk at split points + `sync`,
+//! [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 //! finally `settle`s, and compares the message sequence and parsed facts.
 
 use super::LiveChange;

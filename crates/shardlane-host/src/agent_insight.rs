@@ -10,6 +10,7 @@
 //! with_allowance 的唯一调用路径（provider 可证窗口事实 → allowance）。
 //! Unknown fields stay None; never guessed.
 //! [POS]: plan M8 / audit AF-25. No second full provider parser is added;
+//! [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 //! the rendering layer does zero I/O; there is no token dashboard page.
 
 use crate::agent_usage::{AccountUsage, UsageWindow};

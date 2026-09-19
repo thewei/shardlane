@@ -1,3 +1,8 @@
+//! [INPUT]: crate-root shell/agent surface items under test (projection patching, notification kinds, terminal input coalescing) re-exported through the parent module.
+//! [OUTPUT]: Test-only; exposes no runtime API.
+//! [POS]: Unit tests for main.rs-level shell composition and Agent projection logic.
+//! [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+
 use super::{
     agent_notification_kind, agent_reconcile_ready, apply_agent_projection_patch,
     apply_pane_agent_projection_patch, clamped_terminal_font_size, coalesce_terminal_input,

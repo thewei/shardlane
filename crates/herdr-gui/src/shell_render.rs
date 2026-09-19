@@ -1,5 +1,6 @@
 //! [INPUT]: Depends on the ShardlaneApp type from the crate root (super) and existing types/imports (use super::*); no independent external dependencies.
 //! [OUTPUT]: Exposes ShardlaneApp's shell chrome render tree: client_shell/sidebar/search bar/overlay assembly (including the full-content file_preview_page branch and the M07 #7 protocol upgrade-gate card as a window-body branch); mouse down/up wiring covers the full lifecycle of drag-selection and protocol mouse — every button, Right included, is encoded to the hosted PTY so the Herdr TUI's own context menu is the only right-click menu.
+//! [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 //! [POS]: The `crates/herdr-gui` shell render responsibility domain, mechanically split out of main.rs; together with sibling shell_* modules it forms ShardlaneApp's method surface.
 use super::*;
 impl ShardlaneApp {

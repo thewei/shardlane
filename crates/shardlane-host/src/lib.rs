@@ -4,6 +4,7 @@
 //! remote clients (loopback Remote API). It contains no GPUI, gpui-component, AppKit,
 //! network listener, or Relay ownership. Herdr remains the runtime authority behind the
 //! `herdr` module's typed RPC wrappers and the `AgentRuntime` SPI implementation.
+//! [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 //!
 
 pub mod agent_hooks;

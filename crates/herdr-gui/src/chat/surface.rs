@@ -21,6 +21,7 @@
 //! viewport flips to Top-aligned, with append tail-following compensated via
 //! following_tail), so render work grows only with visible rows. The agent
 //! identity+status title has moved up into the centered window Header
+//! [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 //! (notate 2026-08-29); the content area has no separate status bar.
 
 use std::time::{Duration, Instant};

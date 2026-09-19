@@ -10,6 +10,7 @@
 //! [POS]: The state domain of herdr-gui `chat`. Herdr remains the runtime/status
 //! authority; this module holds only a disposable presentation projection and
 //! binding identity. Live file I/O happens only in surface-layer background
+//! [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 //! tasks, via LiveSession (herdr-history).
 
 use std::collections::HashSet;

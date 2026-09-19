@@ -13,6 +13,7 @@
 //! a same-directory atomic install)
 //! [POS]: shardlane-host's runtime adapter implementing the SPI defined in
 //! runtime.rs; consumed by both herdr-gui (desktop) and shardlane-remote
+//! [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 //! (remote API)
 
 use crate::diagnostics::lag_log;

@@ -9,6 +9,7 @@
 //! inference; ordinary prompts go only through the Herdr agent.prompt; blocked/
 //! unsupported explicitly falls back to Terminal. Lifecycle: ChatUi is disposable,
 //! live-source I/O lives only in background tasks, and the render path performs
+//! [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 //! zero file access.
 
 pub(crate) mod approvals;

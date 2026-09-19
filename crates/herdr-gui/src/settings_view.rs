@@ -17,6 +17,7 @@
 //! notice (`herdr_config_notice`; the card's controls keep their disk-truth values so
 //! a rejected write never strands user input)
 //! [POS]: One of main.rs's presentation-layer splits (sibling of search_view.rs/header_view.rs);
+//! [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 //! config read/write paths and actions remain owned by main.rs
 
 use super::*;

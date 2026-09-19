@@ -1,5 +1,6 @@
 //! [INPUT]: Constants, types, and root-level imports from the sidebar module root (`super`); full inheritance via `use super::*`; plus the Mobile product gate `crate::mobile_view::mobile_surface_enabled` (footer phone icon visibility).
 //! [OUTPUT]: Provides ShardlaneApp::sidebar() — the full assembly of the Sidebar's single navigation surface (Agents/Recent/Projects sections — live agents only, Recent purely derived via recent_rows, history lives in the History surface; collapsing, drag and drop, projection consumption).
+//! [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 //! [POS]: Main assembly layer of `crates/herdr-gui::sidebar`; consumes the output of rows/tree_rows/pane_rows/service_rows/projection/section_layout; mechanically split out of sidebar.rs and sharing the module-root namespace with its sibling submodules.
 use super::*;
 use crate::composer_chip::ComposerChip;

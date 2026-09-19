@@ -22,6 +22,7 @@
 //!           `execute_focus_plan` (navigation chain), `TuiChromeProjection`, the `HerdrTuiHostState`
 //!           lifecycle model, `protocol_supported` (cached metadata check, no RPC)
 //! [POS]: The strategy layer for the TUI presentation mode (spawn environment/navigation chain/chrome projection); PTY transport belongs to
+//! [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 //!          `terminal_stream.rs`, rendering to the existing Ghostty/GPUI stack, and all terminal semantics to Herdr
 
 use crate::ghostty::TerminalFrame;

@@ -1,5 +1,6 @@
 //! [INPUT]: Constants, types, and root-level imports from the sidebar module root (`super`); crate::workspace_model's recent_targets (pure live HerdrState derivation) and shardlane_host's ProjectIndex; the shell_navigation FocusIntent project seam.
 //! [OUTPUT]: Provides RECENT_TARGET_LIMIT and ShardlaneApp::sidebar_recent_section — the Sidebar "Recent" section (plain header + at most N jump rows), rendered only when live targets exist.
+//! [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 //! [POS]: Sidebar section layer of crates/herdr-gui::sidebar, slotted between Agents and Projects by shell.rs; rows navigate strictly through the existing FocusIntent seam (same channel as Search/switcher project targets) and add no action, persistence, settings, or collapse state.
 use super::*;
 

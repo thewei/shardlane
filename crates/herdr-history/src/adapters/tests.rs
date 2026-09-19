@@ -1,3 +1,8 @@
+//! [INPUT]: provider adapters under test via the parent adapters module (Claude/Codex/Antigravity and peers) plus their rollout and approval fixtures.
+//! [OUTPUT]: Test-only; exposes no runtime API.
+//! [POS]: herdr-history adapter-layer unit tests covering transcript interpretation rules and Codex approval keymap parsing.
+//! [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+
 use super::antigravity::AntigravityAdapter;
 use super::claude::ClaudeAdapter;
 use super::codex::{parse_approval_keymap_overrides, CodexAdapter, CodexApprovalKeys};

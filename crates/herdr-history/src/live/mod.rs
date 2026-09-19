@@ -14,6 +14,7 @@
 //!        (`parse_full(fixture) == incremental feed(settle)` holds by
 //!        construction); no GUI, no process lifecycle, no TUI/ANSI
 //!        inference. Render paths must not call this module's I/O entries
+//! [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 //!        (open/sync); they may only consume fetched snapshots.
 
 use crate::adapters::claude::ClaudeSession;

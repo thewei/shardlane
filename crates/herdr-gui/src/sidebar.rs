@@ -1,6 +1,7 @@
 // Shardlane native sidebar: one canonical navigation surface for Workspace-scoped Projects, Tabs, Agents, Scripts, and History.
 //! [INPUT]: Depends on the full ShardlaneApp/Pane/theme namespace from the crate root (super) and on the rows/shell/tree_rows/pane_rows/service_rows/recent_rows/projection/section_layout submodules.
 //! [OUTPUT]: Exposes (crate-internally) SidebarProjection, agent_identity, secondary_sidebar_back_row, SIDEBAR_DEFAULT_WIDTH, plus shared constants and imports supplied to submodules via the module root namespace.
+//! [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 //! [POS]: The sole Sidebar module root for `crates/herdr-gui` — declares submodules, owns the root-level public surface and shared constants; all rendering/projection implementations live in the sidebar/ submodules.
 use super::*;
 use crate::assets::agent_brand_icon;

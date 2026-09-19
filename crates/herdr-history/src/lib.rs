@@ -4,6 +4,7 @@
 //!           watching, the live decoder, locator, and Herdr continuation intent;
 //!           provides no runtime.
 //! [POS]: shardlane-history crate root, bridging provider semantic parsing and
+//! [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 //!        the read-only projection in herdr-gui.
 
 pub mod adapters;

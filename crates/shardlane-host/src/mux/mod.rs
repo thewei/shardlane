@@ -11,6 +11,7 @@
 //!
 //! The projection types re-exported here (`Workspace`, `Tab`, `Pane`, …) are
 //! the product-domain model; their shape is shared with the Herdr adapter
+//! [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 //! implementation so the migration stays behavior-identical.
 
 pub mod herdr;

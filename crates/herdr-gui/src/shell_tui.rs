@@ -21,6 +21,7 @@
 //!           content area never receive key down; wheel/mouse go through hit-test and are unaffected).
 //!           Printable text is still owned by AppKit NSTextInputClient/GPUI InputHandler (IME composition
 //!           comes first); on the InputHandler side, text_is_terminal_control_payload drops "\n"/"\t"
+//! [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 //!           control payloads to prevent double sends.
 use super::*;
 

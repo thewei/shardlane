@@ -1,5 +1,6 @@
 //! [INPUT]: Depends on the `herdr` runtime, the `ghostty` terminal engine, the `gpui`/`gpui_component` component libraries, the `rust_i18n` i18n backend (crate-root `i18n!`), and the submodules
 //! [OUTPUT]: Exposes the Shardlane macOS client entry point (with the headless `shardlane <command>` CLI dispatch handled before GUI init), the `ShardlaneApp` root view model, and action dispatch
+//! [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 //! [POS]: crates/herdr-gui's core assembly and application entry, coordinating global state, menus, and panel routing
 
 // i18n backend embedding: this must stay at the crate root because
