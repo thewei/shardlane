@@ -450,6 +450,10 @@ pub(super) fn sidebar_card_row(
     title: impl Into<SharedString>,
     subtitle: Option<AnyElement>,
     status: Option<crate::status::AttentionLevel>,
+    // Client-owned markers: unread dot + "Review" pill. The Agent section is
+    // the only caller that sets them today; other card rows pass false.
+    unread: bool,
+    review: bool,
     active: bool,
     on_activate: impl Fn(&mut Window, &mut App) + 'static,
     cx: &Context<ShardlaneApp>,
@@ -507,9 +511,46 @@ pub(super) fn sidebar_card_row(
             title.into(),
             None,
             subtitle,
-            status.map(|level| {
-                crate::status::status_glyph_container("sidebar-card-status", level, cx)
-            }),
+            {
+                // Trailing cluster order: unread → review → status glyph, so
+                // the state glyph stays the row's rightmost anchor.
+                let trailing = h_flex().flex_shrink_0().gap(px(4.0)).items_center();
+                let trailing = if unread {
+                    trailing.child(
+                        div()
+                            .size(px(6.0))
+                            .rounded_full()
+                            .flex_shrink_0()
+                            .bg(theme.primary),
+                    )
+                } else {
+                    trailing
+                };
+                let trailing = if review {
+                    trailing.child(
+                        div()
+                            .flex_shrink_0()
+                            .px(px(4.0))
+                            .rounded(px(4.0))
+                            .bg(theme.success.opacity(0.16))
+                            .text_size(theme::FONT_META)
+                            .text_color(theme.success)
+                            .child("Review"),
+                    )
+                } else {
+                    trailing
+                };
+                let trailing = if let Some(level) = status {
+                    trailing.child(crate::status::status_glyph_container(
+                        "sidebar-card-status",
+                        level,
+                        cx,
+                    ))
+                } else {
+                    trailing
+                };
+                Some(trailing.into_any_element())
+            },
             None,
         ))
         .shardlane_roving_row(

@@ -20,6 +20,8 @@ impl ShardlaneApp {
             focused_pane_id: self.state.focused_pane_id.clone(),
             expanded_projects,
             chat_mode: self.chat.model.mode == crate::chat::WorkSurfaceMode::Chat,
+            new_agent_open: self.new_agent_open,
+            history_open: self.history.open,
             right_panel: Some(settings::RightPanelStateRecord {
                 open: self.right_panel.open,
                 width: self.right_panel.width,
@@ -121,6 +123,21 @@ impl ShardlaneApp {
             self.chat.model.mode = crate::chat::WorkSurfaceMode::Chat;
             self.ensure_chat_source(cx);
             self.start_chat_sync_worker(cx);
+        }
+        // (g) Full-page surfaces the user left open (New Agent / History). The
+        // two are mutually exclusive; each opener already closes the other.
+        // New Agent additionally mirrors the bind flow landing guard: a
+        // backend without agent capability cannot act on that page.
+        if record.new_agent_open && !record.history_open {
+            if self
+                .client
+                .as_ref()
+                .is_some_and(|client| client.capabilities().agents)
+            {
+                self.open_new_agent_surface(window, cx);
+            }
+        } else if record.history_open && !self.history.open {
+            self.toggle_history(&OpenHistory, window, cx);
         }
         // (f) Right panel chrome/content. Register the snapshot under the
         // current runtime id too, so the first project-context sync is a

@@ -118,6 +118,13 @@ pub struct WorkspaceStateRecord {
     /// Was the Chat presentation active when this instance was last visible?
     #[serde(default)]
     pub chat_mode: bool,
+    /// Was the full-page New Agent surface open when this instance was last
+    /// visible? Restored only when the bound backend has agent capability.
+    #[serde(default)]
+    pub new_agent_open: bool,
+    /// Was the History surface open when this instance was last visible?
+    #[serde(default)]
+    pub history_open: bool,
     /// Right-panel chrome/content snapshot (surfaces, active surface, widths,
     /// tree-expanded paths, selected file).
     #[serde(default, skip_serializing_if = "Option::is_none")]

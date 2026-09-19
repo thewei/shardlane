@@ -9,6 +9,7 @@ rust_i18n::i18n!("crates/herdr-gui/locales", fallback = "en");
 
 mod agent_cli;
 mod agent_hook_settings;
+mod agent_panel;
 mod agent_switcher;
 mod agent_ui;
 mod assets;
@@ -214,6 +215,7 @@ actions!(
         SwitchAgentPrev,
         ConfirmAgentSwitch,
         CancelAgentSwitch,
+        HideWindow,
         Quit
     ]
 );
@@ -976,7 +978,9 @@ fn agent_notification_copy(agent: &Agent, kind: AgentNotificationKind) -> (Strin
     // Audit A17: same identity fallback chain as the sidebar/status bar — one chain, not two.
     let identity = sidebar::agent_identity(agent).unwrap_or("Agent");
     let title = match kind {
-        AgentNotificationKind::Finished => format!("{identity} finished"),
+        // Review flow: a finished Agent waits for the user's review before it
+        // counts as finally done — the copy says so explicitly.
+        AgentNotificationKind::Finished => format!("{identity} finished — ready for review"),
         AgentNotificationKind::NeedsAttention => format!("{identity} needs your attention"),
         AgentNotificationKind::Ready => format!("{identity} is ready"),
     };
@@ -1152,6 +1156,42 @@ fn slide_width(slide: &mut Option<WidthTween>, target: f64) -> f64 {
     }
 }
 
+/// Header chrome hover-reveal fade duration (same 150ms baseline as the toggle animation).
+const HEADER_FADE: Duration = Duration::from_millis(150);
+
+/// Minimal opacity tween for the header hover-reveal: like WidthTween, a one-shot fade anchored at
+/// the current rendered opacity, so a mid-fade reversal continues instead of jumping.
+struct HeaderFade {
+    from: f32,
+    started: Instant,
+}
+
+impl HeaderFade {
+    fn new(from: f32) -> Self {
+        Self {
+            from,
+            started: Instant::now(),
+        }
+    }
+
+    fn opacity_toward(&self, target: f32) -> Option<f32> {
+        let progress = self.started.elapsed().as_secs_f32() / HEADER_FADE.as_secs_f32();
+        (progress < 1.0)
+            .then(|| self.from + (target - self.from) * gpui::ease_in_out(progress.max(0.0)))
+    }
+}
+
+/// Advance one fade step: returns this frame's chrome opacity; when finished, retires the tween and settles on the target.
+fn fade_opacity(fade: &mut Option<HeaderFade>, target: f32) -> f32 {
+    match fade.as_ref().and_then(|t| t.opacity_toward(target)) {
+        Some(opacity) => opacity,
+        None => {
+            *fade = None;
+            target
+        }
+    }
+}
+
 /// What the full-page picker surface currently shows. `Creating` is the
 /// New-Workspace naming page; the settings pages open from the workspace
 /// switcher's hover gears and render as standalone full pages.
@@ -1272,6 +1312,11 @@ pub(crate) struct ShellSharedRuntime {
     /// Process-wide Agent Hook IPC Server listening for local hook status reports.
     pub(crate) agent_hook_server:
         std::sync::Mutex<Option<std::sync::Arc<shardlane_host::AgentHookIpcServer>>>,
+    /// Process-wide Agent directory: every window pushes its bound instance's
+    /// live Agents here (keyed by pane_id) so the Header overview panel can
+    /// aggregate across instances without cross-entity borrows. Presentation
+    /// projection only — Herdr stays the lifecycle authority.
+    pub(crate) agent_directory: std::sync::Mutex<HashMap<String, agent_panel::AgentDirectoryEntry>>,
 }
 
 /// `StatusBarController` owns a `Retained<NSStatusItem>` (main-thread AppKit),
@@ -1338,6 +1383,7 @@ impl ShellSharedRuntime {
             project_windows: std::sync::Mutex::new(std::collections::HashMap::new()),
             windows: std::sync::Mutex::new(Vec::new()),
             agent_hook_server: std::sync::Mutex::new(agent_hook_server),
+            agent_directory: std::sync::Mutex::new(HashMap::new()),
         });
         runtime.refresh_instances();
         (runtime, status_bar_rx, notification_rx, agent_hook_rx)
@@ -1632,14 +1678,28 @@ struct ShardlaneApp {
     /// Sidebar drag in progress: Shell = edge resize (press x, starting width); Sections = section height resize
     /// (handle index, press y, starting heights of the three segments).
     sidebar_drag: Option<SidebarDrag>,
-    /// Content Header hover reveal: the titlebar chrome (buttons, breadcrumbs, indicators) renders
-    /// transparent until the pointer enters the titlebar strip (2026-09-19 minimalism pass).
-    header_hovered: bool,
+    /// Content Header movement-driven reveal (2026-09-19 minimalism pass): a pointer move inside
+    /// the titlebar strip targets the chrome visible, the first move elsewhere hides it; flips
+    /// fade over HEADER_FADE instead of snapping.
+    header_target_shown: bool,
+    /// Header chrome fade tween while a hover flip is animating; None = settled.
+    header_fade: Option<HeaderFade>,
+    /// This frame's rendered header chrome opacity (advanced by Render::render each frame).
+    header_rendered_opacity: f32,
     /// Tab breadcrumb hover reveal: the Tab crumb's "…" action menu button is transparent
     /// until the pointer enters the Tab crumb itself (nested inside the titlebar reveal).
     header_tab_more_hovered: bool,
     /// Plan 060 Phase 1: Ctrl-Tab Agent Switcher overlay。
     agent_switcher: crate::agent_switcher::AgentSwitcherState,
+    /// Client-owned per-Agent unread markers (pane_id set): an attention-worthy
+    /// transition (done/blocked/failed) happened while the Agent was not the
+    /// focused pane. In-memory by design — a restart re-derives everything from
+    /// live Herdr state.
+    pub(crate) agent_unread: HashSet<String>,
+    /// Client-owned review-pending markers (terminal_id set): the Agent entered
+    /// `done` and the user has not reviewed it yet. Cleared only by an explicit
+    /// user review action, a new working turn, or the Agent's release.
+    pub(crate) agent_review_pending: HashSet<String>,
     /// Sidebar/right panel mid-slide (WidthTween): while Some, render advances each frame
     /// and requests the next; *_rendered_width is this frame's actual rendered width (the target width
     /// after dragging/settling).
@@ -1784,6 +1844,9 @@ struct ShardlaneApp {
     about_open: bool,
     rename_open: bool,
     script_dialog_open: bool,
+    /// Two-click arming for the Services surface's "Stop all" (P12-1 family:
+    /// batch destructive-ish actions confirm inside the surface, no dialog).
+    services_stop_all_armed: bool,
     navigation_loading: bool,
     navigation_token: u64,
     navigation_reconcile_pending: bool,
@@ -2463,7 +2526,9 @@ impl ShardlaneApp {
             workspace_tab_selection_memory: HashMap::new(),
             shell_sidebar_width: sidebar_width,
             sidebar_drag: None,
-            header_hovered: false,
+            header_target_shown: false,
+            header_fade: None,
+            header_rendered_opacity: 0.0,
             header_tab_more_hovered: false,
             agent_switcher: crate::agent_switcher::AgentSwitcherState::new(cx.focus_handle()),
             sidebar_slide: None,
@@ -2545,6 +2610,7 @@ impl ShardlaneApp {
             about_open: false,
             rename_open: false,
             script_dialog_open: false,
+            services_stop_all_armed: false,
             navigation_loading: false,
             navigation_token: 0,
             navigation_reconcile_pending: false,
@@ -2574,6 +2640,8 @@ impl ShardlaneApp {
             pending_close_tab: None,
             sidebar_roving_workspaces: Rc::new(interaction::RovingList::default()),
             sidebar_roving_agents: Rc::new(interaction::RovingList::default()),
+            agent_unread: HashSet::new(),
+            agent_review_pending: HashSet::new(),
             window_bounds_dirty: false,
             window_handle: None,
             reported_terminal_focus: None,
@@ -3168,6 +3236,14 @@ impl ShardlaneApp {
     ) {
     }
 
+    /// app.hide-window (Cmd+W): the macOS close contract for this app — hide
+    /// the window (orderOut) instead of destroying it. The GPUI window entity,
+    /// its Herdr session binding, and every shell surface stay alive; Dock
+    /// activation (on_reopen) brings the same window back untouched.
+    fn hide_window(&mut self, _: &HideWindow, window: &mut Window, _cx: &mut Context<Self>) {
+        let _ = macos_window::set_visible(window, false);
+    }
+
     fn quit(&mut self, _: &Quit, _window: &mut Window, cx: &mut Context<Self>) {
         self.shared.tui_registry.stop_all_managers();
         cx.quit();
@@ -3356,12 +3432,15 @@ impl Render for ShardlaneApp {
         };
         self.right_panel_rendered_width =
             slide_width(&mut self.right_panel_slide, right_panel_target);
+        let header_fade_target = if self.header_target_shown { 1.0 } else { 0.0 };
+        self.header_rendered_opacity = fade_opacity(&mut self.header_fade, header_fade_target);
         if self.terminal_fade_start.is_some() && self.terminal_fade_opacity() >= 1.0 {
             self.terminal_fade_start = None;
         }
         if self.sidebar_slide.is_some()
             || self.right_panel_slide.is_some()
             || self.terminal_fade_start.is_some()
+            || self.header_fade.is_some()
         {
             window.request_animation_frame();
         }
@@ -3466,6 +3545,7 @@ impl Render for ShardlaneApp {
             .on_action(cx.listener(Self::new_project))
             .on_action(cx.listener(Self::new_window))
             .on_action(cx.listener(Self::merge_all_windows))
+            .on_action(cx.listener(Self::hide_window))
             .on_action(cx.listener(Self::new_script))
             .on_action(cx.listener(Self::rename_active_project))
             .on_action(cx.listener(Self::close_project))
@@ -3669,6 +3749,7 @@ fn theme_preset_card(
 fn registry_key_binding(id: &str, chord: &str, context: Option<&str>) -> Option<KeyBinding> {
     match id {
         "app.quit" => Some(KeyBinding::new(chord, Quit, context)),
+        "app.hide-window" => Some(KeyBinding::new(chord, HideWindow, context)),
         "app.settings" => Some(KeyBinding::new(chord, ToggleSettings, context)),
         "app.search" => Some(KeyBinding::new(chord, OpenSearch, context)),
         "app.find" => Some(KeyBinding::new(chord, FindInConversation, context)),
@@ -3872,7 +3953,16 @@ fn main() {
 
     let app = Application::new().with_assets(assets::Assets);
     app.on_reopen(move |cx: &mut App| {
-        if cx.windows().is_empty() {
+        if let Some(existing) = cx.windows().first().copied() {
+            // The window was hidden (Cmd+W / traffic light), not destroyed:
+            // reveal the SAME window so every shell surface is exactly as it
+            // was left. applicationShouldHandleReopen fires here with
+            // hasVisibleWindows=false while the window entity is still alive.
+            let _ = existing.update(cx, |_, window, _| {
+                let _ = macos_window::set_visible(window, true);
+                window.activate_window();
+            });
+        } else {
             let Some(shared) = reopen_shared_capture
                 .lock()
                 .ok()
@@ -4050,6 +4140,17 @@ fn main() {
         if let Ok(mut guard) = reopen_shared.lock() {
             *guard = Some(shared.clone());
         }
+        // Menu Quit must be a FULL quit in every window state. With the single
+        // window hidden (Cmd+W / traffic light), NSApp has no mainWindow, so
+        // GPUI routes menu actions to global listeners only — the window-tree
+        // Self::quit handler is unreachable there. This global listener is the
+        // hidden-state twin of that handler (no double-fire: with a visible
+        // window the window handler stops bubble propagation first).
+        let quit_shared = shared.clone();
+        cx.on_action::<Quit>(move |_, cx| {
+            quit_shared.tui_registry.stop_all_managers();
+            cx.quit();
+        });
         spawn_global_action_consumer(
             cx,
             shared.clone(),
@@ -4317,6 +4418,15 @@ fn open_shell_window(
                 ) {
                     lag_log(format_args!("window.native_preferences error={error}"));
                 }
+                // macOS close contract: the red traffic light must hide
+                // (orderOut), never destroy. Returning false vetoes the
+                // NSWindow close; the GPUI window entity, its Herdr session
+                // binding, and every shell surface stay alive for Dock
+                // reactivation (see the on_reopen handler).
+                window.on_window_should_close(view_cx, |window, _cx| {
+                    let _ = macos_window::set_visible(window, false);
+                    false
+                });
                 window.focus(&view.focus_handle);
                 view_cx
                     .observe_window_activation(window, |view, window, cx| {

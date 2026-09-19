@@ -31,6 +31,6 @@ mod observe;
 mod ports;
 
 pub(crate) use model::{
-    script_icon_name, ObservedService, ScriptDefinition, ScriptRecord, ScriptRegistry,
-    ScriptRuntimeProjection, ScriptStatus,
+    running_service_count, script_icon_name, ObservedService, ScriptDefinition, ScriptRecord,
+    ScriptRegistry, ScriptRuntimeProjection, ScriptStatus,
 };

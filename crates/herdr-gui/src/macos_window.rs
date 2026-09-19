@@ -1,3 +1,12 @@
+//! Native AppKit window preference/visibility seam for the macOS shell.
+//!
+//! [INPUT]: gpui Window (raw_window_handle AppKit), objc2_app_kit NSWindow/NSView/NSAppearance
+//! [OUTPUT]: apply() (opacity/level/appearance), set_visible() (orderOut/makeKeyAndOrderFront
+//!           behind the hide-don't-destroy close contract)
+//! [POS]: the crate's only native AppKit window seam; called from main.rs window creation,
+//!        the traffic-light close interception, and the Dock reopen path
+//! [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+
 #[cfg(target_os = "macos")]
 use gpui::Window;
 
@@ -42,6 +51,30 @@ pub fn apply(
     } else {
         NSNormalWindowLevel
     });
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+/// Native window visibility behind the macOS close contract: orderOut hides
+/// without destroying the NSWindow (and with it the GPUI window entity, the
+/// bound Herdr session, and every shell surface); makeKeyAndOrderFront reveals
+/// the SAME window. Used by app.hide-window, the traffic-light close
+/// interception, and the Dock reopen path.
+pub fn set_visible(window: &Window, visible: bool) -> Result<(), String> {
+    let handle = <Window as HasWindowHandle>::window_handle(window)
+        .map_err(|error| format!("window handle unavailable: {error}"))?;
+    let RawWindowHandle::AppKit(handle) = handle.as_raw() else {
+        return Err("Shardlane expected an AppKit window handle on macOS".to_string());
+    };
+    let view = unsafe { &*(handle.ns_view.as_ptr().cast::<NSView>()) };
+    let native_window = view
+        .window()
+        .ok_or_else(|| "AppKit view is not attached to an NSWindow".to_string())?;
+    if visible {
+        native_window.makeKeyAndOrderFront(None);
+    } else {
+        native_window.orderOut(None);
+    }
     Ok(())
 }
 

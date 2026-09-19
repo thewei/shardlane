@@ -212,6 +212,12 @@ impl ShardlaneApp {
             .as_deref()
             .or(agent.custom_status.as_deref())
             .map(crate::status::attention_for_raw_status);
+        // Client-owned markers: unread (attention-worthy transition nobody
+        // saw) and review-pending (finished, awaiting the user's review).
+        let unread = pane_id
+            .as_deref()
+            .is_some_and(|pane_id| self.agent_unread.contains(pane_id));
+        let review = self.agent_review_pending.contains(&agent.terminal_id);
         // Agent row highlight follows the client-local selection (focused_pane_id);
         // it does not switch on Herdr runtime focus events.
         let active = agent
@@ -226,6 +232,8 @@ impl ShardlaneApp {
             label,
             subtitle,
             status,
+            unread,
+            review,
             active,
             move |window, app| {
                 herdr.update(app, |this, cx| {

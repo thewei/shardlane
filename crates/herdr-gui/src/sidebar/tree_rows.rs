@@ -49,6 +49,8 @@ impl ShardlaneApp {
                 .active_workspace_id()
                 .is_some_and(|focused| focused == workspace.workspace_id);
         let herdr = cx.entity();
+        let services_herdr = herdr.clone();
+        let services_hover_herdr = herdr.clone();
         let history_action_herdr = herdr.clone();
         let rename_title = title.clone();
         let project_cwd = resolved_project_path
@@ -114,6 +116,16 @@ impl ShardlaneApp {
         let history_action_project = project_cwd.clone();
         let history_action_group = format!("shardlane-project-history-{workspace_id}");
         let component_theme = cx.theme().clone();
+        // Running-services badge (single count source: scripts::running_service_count).
+        // >0: an always-visible count pill; 0: the same spot carries a hover-revealed
+        // Services entry so the panel stays reachable from every project row.
+        let running_services =
+            crate::scripts::running_service_count(&self.scripts, Some(&workspace_id));
+        let services_tooltip = if running_services == 1 {
+            "1 running service".to_string()
+        } else {
+            format!("{running_services} running services")
+        };
 
         let git_snapshot = self
             .find_sidebar_git_status(&project_cwd)
@@ -265,6 +277,33 @@ impl ShardlaneApp {
         .into_any_element();
 
         let status_element: Option<AnyElement> = status.map(|level| {
+            // Unread: any Agent under this Project has an attention-worthy
+            // transition nobody saw — a primary dot rides next to the
+            // aggregated state glyph.
+            let has_unread = self.state.agents.iter().any(|agent| {
+                agent.workspace_id.as_deref() == Some(workspace_id.as_str())
+                    && agent
+                        .pane_id
+                        .as_deref()
+                        .is_some_and(|pane_id| self.agent_unread.contains(pane_id))
+            });
+            let cluster = h_flex().gap(px(4.0)).items_center();
+            let cluster = if has_unread {
+                cluster.child(
+                    div()
+                        .size(px(6.0))
+                        .rounded_full()
+                        .flex_shrink_0()
+                        .bg(component_theme.primary),
+                )
+            } else {
+                cluster
+            };
+            let cluster = cluster.child(crate::status::status_glyph_container(
+                SharedString::from(format!("project-status-{workspace_id}")),
+                level,
+                cx,
+            ));
             div()
                 .absolute()
                 .right(SIDEBAR_EDGE)
@@ -273,19 +312,78 @@ impl ShardlaneApp {
                 .flex()
                 .items_center()
                 .group_hover(history_action_group.clone(), |s| s.opacity(0.0))
-                .child(crate::status::status_glyph_container(
-                    SharedString::from(format!("project-status-{workspace_id}")),
-                    level,
-                    cx,
-                ))
+                .child(cluster)
                 .into_any_element()
         });
+        let services_element: AnyElement = if running_services > 0 {
+            div()
+                .id(SharedString::from(format!(
+                    "shardlane-project-services-{workspace_id}"
+                )))
+                .absolute()
+                .right(SIDEBAR_EDGE + px(26.0))
+                .top_0()
+                .bottom_0()
+                .flex()
+                .items_center()
+                .cursor_pointer()
+                .tooltip(crate::ui::tooltip::tooltip_fn(services_tooltip))
+                .child(
+                    div()
+                        .h(px(16.0))
+                        .min_w(px(16.0))
+                        .px(px(5.0))
+                        .rounded(px(8.0))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .bg(component_theme.success.opacity(0.16))
+                        .text_size(crate::theme::FONT_META)
+                        .text_color(component_theme.success)
+                        .child(format!("{running_services}")),
+                )
+                .on_click(move |_, _, app| {
+                    app.stop_propagation();
+                    services_herdr.update(app, |this, cx| this.open_services_panel(cx));
+                })
+                .into_any_element()
+        } else {
+            div()
+                .id(SharedString::from(format!(
+                    "shardlane-project-services-{workspace_id}"
+                )))
+                .group_hover(history_action_group.clone(), |s| s.opacity(1.0))
+                .opacity(0.0)
+                .absolute()
+                .right(SIDEBAR_EDGE + px(26.0))
+                .top_0()
+                .bottom_0()
+                .flex()
+                .items_center()
+                .justify_center()
+                .w(px(22.0))
+                .rounded(px(4.0))
+                .cursor_pointer()
+                .hover(|s| s.bg(component_theme.foreground.opacity(0.08)))
+                .tooltip(crate::ui::tooltip::tooltip_fn("Show Services"))
+                .child(
+                    icon("icons/square-terminal.svg")
+                        .with_size(px(13.0))
+                        .text_color(component_theme.muted_foreground),
+                )
+                .on_click(move |_, _, app| {
+                    app.stop_propagation();
+                    services_hover_herdr.update(app, |this, cx| this.open_services_panel(cx));
+                })
+                .into_any_element()
+        };
         div()
             .relative()
             .w_full()
             .group(history_action_group.clone())
             .child(row_element)
             .when_some(status_element, |wrapper, el| wrapper.child(el))
+            .child(services_element)
             .child(
                 div()
                     .id(SharedString::from(format!(
@@ -393,6 +491,11 @@ impl ShardlaneApp {
             })
             .filter(|s| *s != "unknown")
             .map(crate::status::attention_for_raw_status);
+        // Unread marker for the Tab's Agent: an attention-worthy transition
+        // (done/blocked/failed) happened while this Tab was not on screen.
+        let tab_agent_unread = tab_agent
+            .and_then(|agent| agent.pane_id.as_deref())
+            .is_some_and(|pane_id| self.agent_unread.contains(pane_id));
         let herdr = cx.entity();
         let focus_herdr = herdr.clone();
         let hover_close_herdr = herdr.clone();
@@ -402,6 +505,16 @@ impl ShardlaneApp {
 
         let tab_trailing_elements: Vec<AnyElement> = {
             let mut els = Vec::new();
+            if tab_agent_unread {
+                els.push(
+                    div()
+                        .size(px(6.0))
+                        .rounded_full()
+                        .flex_shrink_0()
+                        .bg(component_theme_tab.primary)
+                        .into_any_element(),
+                );
+            }
             if pane_count > 1 {
                 els.push(
                     div()

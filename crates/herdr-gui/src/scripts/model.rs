@@ -24,6 +24,28 @@ impl ScriptStatus {
     }
 }
 
+/// Single source of truth for "running services": non-one-shot scripts whose
+/// runtime is alive, optionally scoped to one workspace. The sidebar Project
+/// badge, the Header indicator, and the Services surface summary all read this
+/// so no second count derivation can drift.
+pub(crate) fn running_service_count(
+    registry: &ScriptRegistry,
+    workspace_id: Option<&str>,
+) -> usize {
+    registry
+        .scripts
+        .iter()
+        .filter(|script| {
+            !script.one_shot
+                && workspace_id.is_none_or(|id| script.workspace_id == id)
+                && matches!(
+                    script.runtime.status,
+                    ScriptStatus::Starting | ScriptStatus::Running
+                )
+        })
+        .count()
+}
+
 pub(super) fn default_script_icon() -> String {
     "terminal".to_string()
 }
@@ -502,5 +524,31 @@ mod tests {
         assert_eq!(updated.workspace_id, "w1");
         assert_eq!(updated.tab_id.as_deref(), Some("t1"));
         assert_eq!(updated.pane_id.as_deref(), Some("p1"));
+    }
+
+    #[test]
+    fn running_service_count_is_live_non_one_shot_only_and_scopeable() {
+        let mut live = script_record("live");
+        live.one_shot = false;
+        live.workspace_id = "w1".into();
+        live.runtime.status = ScriptStatus::Running;
+        let mut starting_other = script_record("starting");
+        starting_other.one_shot = false;
+        starting_other.workspace_id = "w2".into();
+        starting_other.runtime.status = ScriptStatus::Starting;
+        let mut one_shot_running = script_record("oneshot");
+        one_shot_running.one_shot = true;
+        one_shot_running.workspace_id = "w1".into();
+        one_shot_running.runtime.status = ScriptStatus::Running;
+        let mut stopped = script_record("stopped");
+        stopped.one_shot = false;
+        stopped.workspace_id = "w1".into();
+        stopped.runtime.status = ScriptStatus::Stopped;
+        let registry = ScriptRegistry {
+            scripts: vec![live, starting_other, one_shot_running, stopped],
+        };
+        assert_eq!(running_service_count(&registry, None), 2);
+        assert_eq!(running_service_count(&registry, Some("w1")), 1);
+        assert_eq!(running_service_count(&registry, Some("w9")), 0);
     }
 }

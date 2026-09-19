@@ -5,9 +5,10 @@
 //! Search/Refresh/Copy Markdown consolidation (to the left of the right-panel toggle) with
 //! compact-layout fallback, and operation indicators.
 //!
-//! The whole content row is hover-revealed (2026-09-19): chrome (buttons, breadcrumbs, indicators)
-//! renders at opacity 0 until the pointer enters the titlebar strip; the strip itself stays a drag
-//! surface. Opacity — not unmounting — keeps anchored switcher popovers alive across hover edges.
+//! The whole content row is movement-revealed (2026-09-19): chrome (buttons, breadcrumbs,
+//! indicators) fades between 0 and 1 (150ms ease-in-out) as pointer moves land inside vs. outside
+//! the titlebar strip; the strip itself stays a drag surface. Opacity — not unmounting — keeps
+//! anchored switcher popovers alive across reveal transitions.
 //!
 //! [INPUT]: Depends on `super` (main.rs)'s ShardlaneApp navigation state, OperationalSummary, picker actions, and gpui-component controls
 //! [OUTPUT]: Exposes `ShardlaneApp::window_header`
@@ -151,33 +152,6 @@ impl ShardlaneApp {
         // This frame's rendered width (follows the slide animation; same semantics as a sidebar_rendered_width).
         let sidebar_width = self.sidebar_rendered_width as f32;
         let summary = operational_summary(&self.state.agents, &self.scripts);
-        // M8: jump targets are chosen by sorting on shared typed attention (NeedsAttention before
-        // Working); no second raw-string comparison is maintained.
-        let mut attention_targets = self.state.agents.iter().filter_map(|agent| {
-            let attention = crate::status::agent_effective_status(agent)
-                .map(crate::status::attention_for_raw_status)
-                .unwrap_or(crate::status::AttentionLevel::Idle);
-            matches!(
-                attention,
-                crate::status::AttentionLevel::NeedsAttention
-                    | crate::status::AttentionLevel::Working
-            )
-            .then(|| {
-                (
-                    attention,
-                    (
-                        agent.workspace_id.clone(),
-                        agent.tab_id.clone(),
-                        agent.pane_id.clone(),
-                    ),
-                )
-            })
-        });
-        let needs_attention_target = attention_targets
-            .find(|(attention, _)| *attention == crate::status::AttentionLevel::NeedsAttention);
-        let summary_agent_target = needs_attention_target
-            .or_else(|| attention_targets.next())
-            .map(|(_, target)| target);
         let summary_script_id = self
             .scripts
             .scripts
@@ -204,8 +178,9 @@ impl ShardlaneApp {
         let script_launcher_script_id = last_run_script.map(|script| script.id.clone());
         let herdr = cx.entity();
         let sidebar_herdr = herdr.clone();
-        // Hover reveal: chrome hides until the pointer enters the titlebar.
-        let header_opacity = if self.header_hovered { 1.0 } else { 0.0 };
+        // Movement-driven reveal: this frame's rendered chrome opacity — the fade tween's current value
+        // (advanced by Render::render each frame; settled at 0.0 hidden / 1.0 revealed).
+        let header_opacity = self.header_rendered_opacity;
         let search_header_herdr = herdr.clone();
         let workspace_picker_herdr = herdr.clone();
         let project_picker_herdr = herdr.clone();
@@ -382,21 +357,53 @@ impl ShardlaneApp {
                 })
         });
 
+        // Process-wide Agent overview snapshot (every bound instance): the
+        // chip counts and the overview panel read this one snapshot, so the
+        // Header sees Agents in other Projects/Workspaces too.
+        let agent_overview_rows =
+            crate::agent_panel::build_agent_overview_rows(self, content_theme.is_dark);
+        let overview_blocked = agent_overview_rows
+            .iter()
+            .filter(|row| row.attention == crate::status::AttentionLevel::NeedsAttention)
+            .count();
+        let overview_working = agent_overview_rows
+            .iter()
+            .filter(|row| row.attention == crate::status::AttentionLevel::Working)
+            .count();
+        let overview_review = agent_overview_rows
+            .iter()
+            .filter(|row| row.attention == crate::status::AttentionLevel::ReadyForReview)
+            .count();
+        let overview_total = agent_overview_rows.len();
         let agent_indicator = if secondary_surface {
             None
-        } else if summary.blocked_agents > 0 {
-            Some((
-                terminal_header_danger,
-                format!("{} blocked", summary.blocked_agents),
-            ))
-        } else if !compact_header && !sidebar_visible && summary.working_agents > 0 {
-            Some((
-                terminal_header_activity,
-                format!("{} working", summary.working_agents),
-            ))
         } else {
-            None
+            let mut parts: Vec<String> = Vec::new();
+            if overview_blocked > 0 {
+                parts.push(format!("{} blocked", overview_blocked));
+            }
+            if overview_working > 0 {
+                parts.push(format!("{} working", overview_working));
+            }
+            if overview_review > 0 {
+                parts.push(format!("{} review", overview_review));
+            }
+            if parts.is_empty() {
+                // Idle-only fleet: show the bare count so the panel stays reachable.
+                parts.push(format!("{}", overview_total));
+            }
+            let color = if overview_blocked > 0 {
+                terminal_header_danger
+            } else if overview_review > 0 {
+                terminal_header_success
+            } else {
+                terminal_header_activity
+            };
+            Some((color, parts.join(" · ")))
         };
+        // Services indicator: failure attention first, then the running-services
+        // count read from the same scripts counter the sidebar badges use.
+        let script_indicator_attention = summary.failed_scripts > 0;
         let script_indicator = if secondary_surface {
             None
         } else if summary.failed_scripts > 0 {
@@ -404,13 +411,14 @@ impl ShardlaneApp {
                 terminal_header_danger,
                 format!("{} failed", summary.failed_scripts),
             ))
-        } else if !compact_header && !sidebar_visible && summary.active_scripts > 0 {
-            Some((
-                terminal_header_success,
-                format!("{} active", summary.active_scripts),
-            ))
         } else {
-            None
+            let running_services = crate::scripts::running_service_count(&self.scripts, None);
+            (running_services > 0).then(|| {
+                (
+                    terminal_header_success,
+                    format!("{running_services} services"),
+                )
+            })
         };
         let border_color = foreground.opacity(0.12);
         let script_launcher = {
@@ -524,6 +532,21 @@ impl ShardlaneApp {
         // In Chat presentation mode (WorkSurfaceMode::Chat), the Agent identity + authoritative status
         // is shown centered in the Header as the title (notate 2026-08-29: the Pi Idle chip moved into the Header).
         // AnyElement isn't cloneable: only data is carried here; the element is built inside the when_some closure.
+        // Review flow: the focused Agent finished and has not been reviewed yet —
+        // the title label says so explicitly and the inline ack button next to it
+        // clears the marker (the panel rows carry the same action).
+        let chat_review_terminal = self
+            .state
+            .focused_pane_id
+            .as_deref()
+            .and_then(|pane_id| {
+                self.state
+                    .agents
+                    .iter()
+                    .find(|agent| agent.pane_id.as_deref() == Some(pane_id))
+            })
+            .filter(|agent| self.agent_review_pending.contains(&agent.terminal_id))
+            .map(|agent| agent.terminal_id.clone());
         let chat_title = if self.chat.model.mode == crate::chat::WorkSurfaceMode::Chat {
             let dark = content_theme.is_dark;
             let hud_open = self.chat.hud_open;
@@ -567,6 +590,12 @@ impl ShardlaneApp {
                 };
                 (text, color)
             };
+            let (status_text, status_color) =
+                if pending_interaction.is_none() && chat_review_terminal.is_some() {
+                    ("Review ready", terminal_header_success)
+                } else {
+                    (status_text, status_color)
+                };
             let context_badge = self
                 .chat
                 .model
@@ -597,7 +626,6 @@ impl ShardlaneApp {
 
         let header = {
             div()
-                .id("titlebar-root")
                 .relative()
                 .w_full()
                 .h_full()
@@ -606,10 +634,6 @@ impl ShardlaneApp {
                 .items_center()
                 .justify_between()
                 .gap_3()
-                .on_hover(cx.listener(|this, hovered: &bool, _window, cx| {
-                    this.header_hovered = *hovered;
-                    cx.notify();
-                }))
                 .child(
                     // The header content segment's background is always painted: starting from the
                     // sidebar's right edge when the sidebar is visible (the traffic lights/sidebar
@@ -755,6 +779,28 @@ impl ShardlaneApp {
                             };
                             row.child(div().flex_1().min_w_0())
                                 .child(chip)
+                                .when_some(chat_review_terminal.clone(), |row, terminal| {
+                                    let ack_herdr = chat_header_herdr.clone();
+                                    row.child(
+                                        Button::new("titlebar-agent-review-ack")
+                                            .custom(terminal_header_button)
+                                            .xsmall()
+                                            .icon(
+                                                Icon::new(ComponentIconName::CircleCheck)
+                                                    .xsmall(),
+                                            )
+                                            .label("Mark reviewed")
+                                            .tooltip(
+                                                "This Agent finished — confirm you reviewed it",
+                                            )
+                                            .on_click(move |_, _, app| {
+                                                app.stop_propagation();
+                                                ack_herdr.update(app, |this, cx| {
+                                                    this.mark_agent_reviewed(&terminal, cx)
+                                                });
+                                            }),
+                                    )
+                                })
                                 .child(div().flex_1().min_w_0())
                         })
                         .when(chat_title.is_none(), |row| {
@@ -935,6 +981,50 @@ impl ShardlaneApp {
                                                         .collect()
                                                 })
                                                 .unwrap_or_default();
+                                            // Tab crumb status dot: the crumb reflects
+                                            // its Agent's live state — a colored dot only
+                                            // while the Agent is not Idle, switching to
+                                            // the primary unread dot when an
+                                            // attention-worthy transition went unseen.
+                                            let tab_crumb_agent =
+                                                active_tab_id.as_ref().and_then(|tab_id| {
+                                                    self.state.agents.iter().find(|agent| {
+                                                        agent.tab_id.as_deref()
+                                                            == Some(tab_id.as_str())
+                                                    })
+                                                });
+                                            let tab_crumb_unread = tab_crumb_agent
+                                                .and_then(|agent| agent.pane_id.as_deref())
+                                                .is_some_and(|pane_id| {
+                                                    self.agent_unread.contains(pane_id)
+                                                });
+                                            let tab_crumb_attention = tab_crumb_agent
+                                                .and_then(crate::status::agent_effective_status)
+                                                .map(crate::status::attention_for_raw_status)
+                                                .filter(|attention| {
+                                                    *attention
+                                                        != crate::status::AttentionLevel::Idle
+                                                });
+                                            let tab_crumb_dot_color = if tab_crumb_unread {
+                                                Some(terminal_header_activity)
+                                            } else {
+                                                tab_crumb_attention.map(|attention| {
+                                                    match attention {
+                                                        crate::status::AttentionLevel::NeedsAttention => {
+                                                            terminal_header_danger
+                                                        }
+                                                        crate::status::AttentionLevel::ReadyForReview => {
+                                                            terminal_header_success
+                                                        }
+                                                        crate::status::AttentionLevel::Working => {
+                                                            terminal_header_activity
+                                                        }
+                                                        crate::status::AttentionLevel::Idle => {
+                                                            terminal_header_muted
+                                                        }
+                                                    }
+                                                })
+                                            };
                                             let tab_button = Button::new("titlebar-tab-picker")
                                                 .custom(terminal_header_button)
                                                 .xsmall()
@@ -942,7 +1032,31 @@ impl ShardlaneApp {
                                                 .flex_shrink()
                                                 .overflow_hidden()
                                                 .text_color(terminal_header_muted)
-                                                .child(div().min_w_0().max_w(px(200.0)).truncate().child(title.clone()))
+                                                .child(
+                                                    h_flex()
+                                                        .min_w_0()
+                                                        .gap(px(4.0))
+                                                        .items_center()
+                                                        .when_some(
+                                                            tab_crumb_dot_color,
+                                                            |el, color| {
+                                                                el.child(
+                                                                    div()
+                                                                        .size(px(6.0))
+                                                                        .rounded_full()
+                                                                        .flex_shrink_0()
+                                                                        .bg(color),
+                                                                )
+                                                            },
+                                                        )
+                                                        .child(
+                                                            div()
+                                                                .min_w_0()
+                                                                .max_w(px(200.0))
+                                                                .truncate()
+                                                                .child(title.clone()),
+                                                        ),
+                                                )
                                                 .tooltip(format!("Switch Tab · {title}"));
                                             let tab_switcher = crate::switcher_panel::tab_switcher_panel(
                                                 tab_picker_herdr.clone(),
@@ -1088,47 +1202,31 @@ impl ShardlaneApp {
                             .child(div().flex_1().min_w_0())
                         })
                         .when_some(agent_indicator, |row, (color, label)| {
-                            row.child(
-                                Button::new("titlebar-agent-summary")
-                                    .custom(terminal_header_button)
-                                    .xsmall()
-                                    .text_color(terminal_header_muted)
-                                    .icon(
-                                        Icon::new(ComponentIconName::Bot)
-                                            .xsmall()
-                                            .text_color(color),
-                                    )
-                                    .label(label)
-                                    .tooltip(if sidebar_auto_collapsed {
-                                        "Open highest-priority Agent"
-                                    } else {
-                                        "Show Agents"
-                                    })
-                                    .on_click(move |_, window, app| {
-                                        app.stop_propagation();
-                                        let target = summary_agent_target.clone();
-                                        agent_summary_herdr.update(app, |this, cx| {
-                                            if sidebar_auto_collapsed {
-                                                if let Some((workspace_id, tab_id, pane_id)) =
-                                                    target
-                                                {
-                                                    // FocusIntent seam: the Header summary jump shares
-                                                    // the Sidebar's landing; partial attribution degrades
-                                                    // to the most specific target.
-                                                    if let Some(intent) = FocusIntent::from_targets(
-                                                        workspace_id,
-                                                        tab_id,
-                                                        pane_id,
-                                                    ) {
-                                                        this.apply_focus_intent(intent, window, cx);
-                                                    }
-                                                }
-                                            } else {
-                                                this.reveal_agents_section(cx);
-                                            }
-                                        });
-                                    }),
-                            )
+                            // Header Agents overview: the chip is the Popover
+                            // trigger. Rows list every instance's Agents with
+                            // filter tabs (default Working); a row click jumps
+                            // through the FocusIntent seam (cross-window rows
+                            // route to the owning window), and review-pending
+                            // rows carry an inline "Mark reviewed" ack.
+                            let agent_button = Button::new("titlebar-agent-summary")
+                                .custom(terminal_header_button)
+                                .xsmall()
+                                .text_color(terminal_header_muted)
+                                .icon(
+                                    Icon::new(ComponentIconName::Bot)
+                                        .xsmall()
+                                        .text_color(color),
+                                )
+                                .label(label)
+                                .tooltip("Agents overview");
+                            row.child(crate::agent_panel::agent_overview_panel(
+                                agent_summary_herdr.clone(),
+                                agent_overview_rows,
+                                gpui::Corner::TopRight,
+                                "shardlane-header-agent-overview",
+                                "shardlane-header-agent-filter",
+                                agent_button,
+                            ))
                         })
                         .when_some(script_indicator, |row, (color, label)| {
                             row.child(
@@ -1142,7 +1240,7 @@ impl ShardlaneApp {
                                             .text_color(color),
                                     )
                                     .label(label)
-                                    .tooltip(if sidebar_auto_collapsed {
+                                    .tooltip(if script_indicator_attention && sidebar_auto_collapsed {
                                         "Open highest-priority BackgroundJob"
                                     } else {
                                         "Show Services"
@@ -1151,12 +1249,16 @@ impl ShardlaneApp {
                                         app.stop_propagation();
                                         let script_id = summary_script_id.clone();
                                         script_summary_herdr.update(app, |this, cx| {
-                                            if sidebar_auto_collapsed {
-                                                if let Some(script_id) = script_id {
-                                                    this.focus_script_id(script_id, window, cx);
+                                            if script_indicator_attention {
+                                                if sidebar_auto_collapsed {
+                                                    if let Some(script_id) = script_id {
+                                                        this.focus_script_id(script_id, window, cx);
+                                                    }
+                                                } else {
+                                                    this.reveal_services_section(cx);
                                                 }
                                             } else {
-                                                this.reveal_services_section(cx);
+                                                this.open_services_panel(cx);
                                             }
                                         });
                                     }),
@@ -1195,6 +1297,50 @@ impl ShardlaneApp {
                             )
                         })
                         .when_some(info_button, |row, button| row.child(button)),
+                )
+                .child(
+                    // Movement-driven reveal driver: a zero-size canvas re-arms the window-level
+                    // mouse-move listener from its paint-phase callback on every frame
+                    // (on_mouse_event asserts the Paint phase, while view render runs in
+                    // Prepaint). Capture phase keeps the hosted TUI's mouse handling from
+                    // swallowing the hide transition when the pointer leaves the strip for the
+                    // TUI: a pointer move inside the strip reveals the chrome, the first move
+                    // anywhere else hides it.
+                    div()
+                        .absolute()
+                        .size_full()
+                        .child({
+                            let reveal_entity = herdr.clone();
+                            gpui::canvas(
+                                |_, _, _| {},
+                                move |_, _, window, _cx| {
+                                    window.on_mouse_event(
+                                        move |event: &gpui::MouseMoveEvent,
+                                              phase: gpui::DispatchPhase,
+                                              _: &mut gpui::Window,
+                                              cx: &mut gpui::App| {
+                                            if phase != gpui::DispatchPhase::Capture {
+                                                return;
+                                            }
+                                            reveal_entity.update(cx, |this, cx| {
+                                                let in_header = event.position.y
+                                                    < gpui_component::TITLE_BAR_HEIGHT;
+                                                if this.header_target_shown != in_header {
+                                                    this.header_target_shown = in_header;
+                                                    // Re-anchor the fade at the last rendered
+                                                    // opacity so a mid-fade reversal continues
+                                                    // from where the chrome actually is.
+                                                    this.header_fade = Some(HeaderFade::new(
+                                                        this.header_rendered_opacity,
+                                                    ));
+                                                    cx.notify();
+                                                }
+                                            });
+                                        },
+                                    );
+                                },
+                            )
+                        }),
                 )
                 .child(
                     div()

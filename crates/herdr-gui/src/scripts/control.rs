@@ -144,6 +144,34 @@ impl ShardlaneApp {
         }
     }
 
+    /// Services surface "Stop all": first click arms (the button re-labels),
+    /// second click stops every live non-one-shot Script. Recoverable by
+    /// re-running; still gated so one stray click cannot stop a fleet.
+    pub(crate) fn stop_all_services(&mut self, cx: &mut Context<Self>) {
+        if !self.services_stop_all_armed {
+            self.services_stop_all_armed = true;
+            cx.notify();
+            return;
+        }
+        self.services_stop_all_armed = false;
+        let ids: Vec<String> = self
+            .scripts
+            .scripts
+            .iter()
+            .filter(|script| {
+                !script.one_shot
+                    && matches!(
+                        script.runtime.status,
+                        ScriptStatus::Starting | ScriptStatus::Running
+                    )
+            })
+            .map(|script| script.id.clone())
+            .collect();
+        for id in ids {
+            self.stop_script_id(id, cx);
+        }
+    }
+
     pub(crate) fn restart_script_id(&mut self, script_id: String, cx: &mut Context<Self>) {
         let old_pane = self
             .scripts

@@ -1,5 +1,5 @@
 //! [INPUT]: Depends on the ShardlaneApp type from the crate root (super) and existing types/imports (use super::*); no independent external dependencies.
-//! [OUTPUT]: Exposes ShardlaneApp's navigation and event projection: workspace/tab/pane focus RPCs (`run_navigation_rpc` scaffold), Herdr event subscription, and status patch application (inherent impl shard).
+//! [OUTPUT]: Exposes ShardlaneApp's navigation and event projection: workspace/tab/pane focus RPCs (`run_navigation_rpc` scaffold), Herdr event subscription, status patch application (which also derives the client unread/review markers), the process-wide agent directory refresh, cross-window agent jumps, and the review ack (inherent impl shard).
 //! [POS]: The `crates/herdr-gui` shell navigation responsibility domain, mechanically split out of main.rs; together with sibling shell_* modules it forms ShardlaneApp's method surface.
 use super::*;
 
@@ -576,6 +576,19 @@ impl ShardlaneApp {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        // Landing on a pane/Agent counts as seeing it: clear the unread marker
+        // for that exact target (Project/Tab intents do not imply seeing an
+        // Agent, so they never clear).
+        let target_pane_id = match &intent {
+            FocusIntent::Pane { pane_id, .. } => Some(pane_id.clone()),
+            FocusIntent::Agent { pane_id, .. } => pane_id.clone(),
+            _ => None,
+        };
+        if let Some(pane_id) = target_pane_id {
+            if self.agent_unread.remove(&pane_id) {
+                self.sync_agent_markers();
+            }
+        }
         // Re-selecting the already-active target short-circuits (audit A14). The secondary-surface
         // exits still apply, mirroring focus_workspace_id's F24 ordering — clicking the selected
         // object while Settings/Help is open must exit it.
@@ -1381,6 +1394,29 @@ impl ShardlaneApp {
             let agent = &mut self.state.agents[idx];
             let previous_status = agent.agent_status.clone();
             changed |= apply_agent_projection_patch(agent, patch);
+            // Client-owned presentation markers (unread / review-pending) are
+            // derived from the exact same transition the notification classifier
+            // consumes — one classification, three consumers (markers, sidebar,
+            // notifications).
+            let transition = crate::status::classify_agent_transition(
+                previous_status.as_deref(),
+                agent.agent_status.as_deref(),
+            );
+            let pane_id_for_flags = agent.pane_id.clone();
+            let terminal_id_for_flags = agent.terminal_id.clone();
+            if transition.attention_started
+                && self.state.focused_pane_id.as_deref() != pane_id_for_flags.as_deref()
+            {
+                if let Some(pane_id) = pane_id_for_flags.as_deref() {
+                    self.agent_unread.insert(pane_id.to_string());
+                }
+            }
+            if transition.review_started {
+                self.agent_review_pending
+                    .insert(terminal_id_for_flags.clone());
+            } else if transition.review_cleared {
+                self.agent_review_pending.remove(&terminal_id_for_flags);
+            }
             if notifications_enabled {
                 if let Some(kind) = agent_notification_kind(
                     previous_status.as_deref(),
@@ -1392,6 +1428,11 @@ impl ShardlaneApp {
                 }
             }
             if agent.agent.is_none() && agent.display_agent.is_none() && agent.name.is_none() {
+                let removed_terminal = agent.terminal_id.clone();
+                if let Some(pane_id) = agent.pane_id.as_deref() {
+                    self.agent_unread.remove(pane_id);
+                }
+                self.agent_review_pending.remove(&removed_terminal);
                 self.state.agents.remove(idx);
                 changed = true;
             }
@@ -1429,6 +1470,125 @@ impl ShardlaneApp {
             }
         }
         Some(changed)
+    }
+
+    /// Push this window's live Agents into the process-wide directory (and
+    /// drop this instance's vanished panes). Called from notify_status_bar —
+    /// the choke point that already fires on every navigation/status change —
+    /// so the Header overview panel always reads a fresh aggregate.
+    fn refresh_agent_directory(&self) {
+        let Some(binding) = self.bound_project() else {
+            return;
+        };
+        let mut directory = self
+            .shared
+            .agent_directory
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        crate::agent_panel::sync_agent_directory_into(
+            &mut directory,
+            &binding.project_id,
+            &binding.project_name,
+            &self.state.agents,
+            &self.agent_unread,
+            &self.agent_review_pending,
+        );
+    }
+
+    /// Drop unread/review markers whose Agent vanished from this window's
+    /// projection (pane closed / released while flagged).
+    fn sync_agent_markers(&mut self) {
+        self.agent_unread.retain(|pane_id| {
+            self.state
+                .agents
+                .iter()
+                .any(|agent| agent.pane_id.as_deref() == Some(pane_id.as_str()))
+        });
+        self.agent_review_pending.retain(|terminal_id| {
+            self.state
+                .agents
+                .iter()
+                .any(|agent| agent.terminal_id == *terminal_id)
+        });
+    }
+
+    /// Explicit user review of a finished Agent: the only path (besides a new
+    /// working turn or release) that clears the review-pending marker.
+    pub(crate) fn mark_agent_reviewed(&mut self, terminal_id: &str, cx: &mut Context<Self>) {
+        self.agent_review_pending.remove(terminal_id);
+        if let Some(agent) = self
+            .state
+            .agents
+            .iter()
+            .find(|agent| agent.terminal_id == terminal_id)
+        {
+            if let Some(pane_id) = agent.pane_id.as_deref() {
+                self.agent_unread.remove(pane_id);
+            }
+        }
+        self.sync_agent_markers();
+        self.notify_sidebar(cx);
+        // The Header (chat-title ack button + overview chip) reads the same
+        // markers: refresh the root view too, not just the sidebar pane.
+        cx.notify();
+    }
+
+    /// Jump to an Agent from the Header overview panel. Same-instance targets
+    /// focus locally; other instances route through the window registry to the
+    /// window whose binding owns the entry (the same owner discipline as
+    /// notification clicks).
+    pub(crate) fn jump_to_directory_agent(
+        &mut self,
+        entry: &crate::agent_panel::AgentDirectoryEntry,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let intent = FocusIntent::agent(
+            entry.terminal_id.clone(),
+            None,
+            None,
+            Some(entry.pane_id.clone()),
+        );
+        let own_key = self
+            .bound_project()
+            .map(|binding| binding.project_id.clone());
+        if own_key.as_deref() == Some(entry.instance_key.as_str()) {
+            window.activate_window();
+            cx.activate(true);
+            self.apply_focus_intent(intent, window, cx);
+            return;
+        }
+        // Cross-window: find the window bound to the entry's instance.
+        let candidates = {
+            let windows = self
+                .shared
+                .windows
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            windows
+                .iter()
+                .rev()
+                .filter_map(|record| record.view.upgrade().map(|view| (record.handle, view)))
+                .collect::<Vec<_>>()
+        };
+        for (handle, view) in candidates {
+            let owns = view
+                .read(cx)
+                .bound_project()
+                .map(|binding| binding.project_id.as_str())
+                == Some(entry.instance_key.as_str());
+            if !owns {
+                continue;
+            }
+            let _ = cx.update_window(handle, |_, window, cx| {
+                window.activate_window();
+                cx.activate(true);
+                view.update(cx, |view, cx| {
+                    view.apply_focus_intent(intent.clone(), window, cx);
+                });
+            });
+            return;
+        }
     }
 
     pub(super) fn apply_navigation_state(&mut self, mut navigation: NavigationState) -> bool {
@@ -1667,6 +1827,7 @@ impl ShardlaneApp {
     }
 
     pub(super) fn notify_status_bar(&self) {
+        self.refresh_agent_directory();
         if let Some(status_bar) = self.shared.status_bar.0.as_ref() {
             status_bar.update(&self.status_bar_snapshot());
         }

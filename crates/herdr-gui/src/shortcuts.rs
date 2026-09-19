@@ -148,6 +148,16 @@ pub(crate) static REGISTRY: &[ShortcutEntry] = &[
         category: ShortcutCategory::App,
     },
     ShortcutEntry {
+        id: "app.hide-window",
+        label: "Hide Window",
+        // macOS-native close semantics: the red traffic light and Cmd+W hide
+        // the window (orderOut) instead of destroying it; Dock activation
+        // brings the SAME window back with all shell state intact.
+        default_chord: "cmd-w",
+        scope: ShortcutScope::App,
+        category: ShortcutCategory::App,
+    },
+    ShortcutEntry {
         id: "lazygit.open",
         label: "Open Lazygit",
         // Deliberately unbound: users can opt into a chord in Settings without
@@ -340,7 +350,12 @@ pub(crate) static REGISTRY: &[ShortcutEntry] = &[
     ShortcutEntry {
         id: "tab.close",
         label: "Close Tab",
-        default_chord: "cmd-w",
+        // Deliberately unbound (2026-09-19): Cmd+W was reassigned to
+        // app.hide-window. Tab close stays a Sidebar/Header "…" action and a
+        // Terminal-menu item; users can rebind a chord in Settings. A
+        // destructive Herdr tab close should not share the most reflexive
+        // application chord in the keymap.
+        default_chord: "",
         scope: ShortcutScope::App,
         category: ShortcutCategory::Tab,
     },

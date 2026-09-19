@@ -362,10 +362,6 @@ impl ShardlaneApp {
         self.set_section_collapsed(SidebarSection::Agents, collapsed, false, false, cx);
     }
 
-    pub(super) fn reveal_agents_section(&mut self, cx: &mut Context<Self>) {
-        self.set_section_collapsed(SidebarSection::Agents, false, true, true, cx);
-    }
-
     pub(super) fn reveal_services_section(&mut self, cx: &mut Context<Self>) {
         // The Sidebar Services section moved into the right panel (2026-09-03);
         // "reveal" now means open/activate the Services surface there.

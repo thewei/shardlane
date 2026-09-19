@@ -2,7 +2,8 @@
 //! crate::scripts service types (ScriptRecord/ScriptStatus/ObservedService);
 //! shell_navigation's FocusIntent seam.
 //! [OUTPUT]: render_right_panel_services — the Services surface listing resident
-//! service scripts and observed listening processes, with terminal jump and
+//! service scripts and observed listening processes, with a running count +
+//! armed "Stop all" toolbar, command/pid detail lines, terminal jump and
 //! localhost external links.
 //! [POS]: The services_view responsibility slice of the right_panel directory.
 use super::*;
@@ -70,6 +71,8 @@ impl ShardlaneApp {
             let status = script.runtime.status;
             let ports = script.runtime.ports.clone();
             let last_error = script.runtime.last_error.clone();
+            let command = script.command_summary();
+            let pid = script.runtime.pid;
             let color = status_color(status);
             let status_text = status.label();
             let row_herdr = herdr.clone();
@@ -79,7 +82,7 @@ impl ShardlaneApp {
                 matches!(status, ScriptStatus::Running | ScriptStatus::Starting);
             let row = div()
                 .id(SharedString::from(format!("rp-service-script-{script_id}")))
-                .h(px(52.0))
+                .h(px(64.0))
                 .px(px(10.0))
                 .rounded(px(8.0))
                 .border_1()
@@ -136,6 +139,20 @@ impl ShardlaneApp {
                                         Some(error) => format!(" · {error}"),
                                     }
                                 ))),
+                        )
+                        .child(
+                            div()
+                                .min_w_0()
+                                .truncate()
+                                .text_size(crate::theme::FONT_META)
+                                .text_color(theme.muted.opacity(0.8))
+                                .child(SharedString::from({
+                                    let mut detail = command;
+                                    if let Some(pid) = pid {
+                                        detail.push_str(&format!(" · pid {pid}"));
+                                    }
+                                    detail
+                                })),
                         ),
                 )
                 .children(
@@ -168,6 +185,8 @@ impl ShardlaneApp {
             } else {
                 service.pane_name.clone()
             };
+            let command = crate::ui_metrics::single_line_label(&service.command);
+            let pid = service.pid;
             let ports = service.ports.clone();
             let row_herdr = herdr.clone();
             let ports_for_row = ports.clone();
@@ -182,7 +201,7 @@ impl ShardlaneApp {
                         "rp-service-observed-{}-{}",
                         service.workspace_id, service.pane_id
                     )))
-                    .h(px(52.0))
+                    .h(px(64.0))
                     .px(px(10.0))
                     .rounded(px(8.0))
                     .border_1()
@@ -235,6 +254,14 @@ impl ShardlaneApp {
                                             format!(" · {label}")
                                         }
                                     }))),
+                            )
+                            .child(
+                                div()
+                                    .min_w_0()
+                                    .truncate()
+                                    .text_size(crate::theme::FONT_META)
+                                    .text_color(theme.muted.opacity(0.8))
+                                    .child(SharedString::from(format!("{command} · pid {pid}"))),
                             ),
                     )
                     .children(ports_for_row.iter().map(|port| {
@@ -245,9 +272,68 @@ impl ShardlaneApp {
         }
 
         if groups.is_empty() {
-            return crate::ui::empty_state::empty_state("No running services", theme.muted)
+            return crate::ui::empty_state::empty_state("No services", theme.muted)
                 .into_any_element();
         }
+
+        // Toolbar: live count (same shared counter the sidebar/header badges
+        // read) + an armed "Stop all" for the live non-one-shot population.
+        let running_now = crate::scripts::running_service_count(&self.scripts, None);
+        let toolbar: Option<AnyElement> = (running_now > 0).then(|| {
+            let herdr = cx.entity();
+            let armed = self.services_stop_all_armed;
+            h_flex()
+                .w_full()
+                .items_center()
+                .justify_between()
+                .px(px(4.0))
+                .pt(px(2.0))
+                .child(
+                    div()
+                        .text_size(crate::theme::FONT_META)
+                        .text_color(theme.muted)
+                        .child(format!("{running_now} running")),
+                )
+                .child(
+                    div()
+                        .id("rp-services-stop-all")
+                        .h(px(22.0))
+                        .px(px(8.0))
+                        .rounded(px(6.0))
+                        .flex()
+                        .items_center()
+                        .cursor_pointer()
+                        .border_1()
+                        .border_color(if armed { theme.danger } else { theme.border })
+                        .bg(if armed {
+                            theme.danger.opacity(0.12)
+                        } else {
+                            theme.foreground.opacity(0.03)
+                        })
+                        .text_size(crate::theme::FONT_META)
+                        .text_color(if armed {
+                            theme.danger
+                        } else {
+                            theme.foreground.opacity(0.8)
+                        })
+                        .hover(|s| {
+                            s.bg(if armed {
+                                theme.danger.opacity(0.2)
+                            } else {
+                                theme.foreground.opacity(0.07)
+                            })
+                        })
+                        .child(if armed {
+                            "Confirm stop all"
+                        } else {
+                            "Stop all"
+                        })
+                        .on_click(move |_, _, app| {
+                            herdr.update(app, |this, cx| this.stop_all_services(cx));
+                        }),
+                )
+                .into_any_element()
+        });
 
         let mut list = div().flex().flex_col().gap(px(6.0)).py(px(4.0));
         for (label, rows) in groups {
@@ -269,6 +355,7 @@ impl ShardlaneApp {
             .size_full()
             .overflow_y_scroll()
             .px(px(8.0))
+            .children(toolbar)
             .child(list)
             .into_any_element()
     }

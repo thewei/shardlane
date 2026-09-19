@@ -5,10 +5,12 @@
 //! separate presentation layer.
 //!
 //! [INPUT]: Agent/Script/Service runtime state projections from herdr.rs and scripts/model.rs
-//! [OUTPUT]: AttentionLevel — shared status primitives consumed by Sidebar,
-//!           Header, and notifications (ActivityTransition/classify_agent_transition
-//!           and AttentionSummary/aggregate_attention were removed along with the
-//!           Activity panel, notate 2026-08-29)
+//! [OUTPUT]: AttentionLevel + classify_agent_transition — shared status
+//!           primitives consumed by Sidebar, Header, notifications, and the
+//!           client unread/review markers (AttentionSummary/aggregate_attention
+//!           were removed along with the Activity panel, notate 2026-08-29;
+//!           classify_agent_transition returned 2026-09-19 for the Agent
+//!           unread/review flow)
 //! [POS]: Shared domain layer below UI; no GPUI dependency
 
 use crate::herdr::Agent;
@@ -44,6 +46,46 @@ pub(crate) fn attention_for_raw_status(status: &str) -> AttentionLevel {
         "launch_pending" | "working" | "starting" | "running" => AttentionLevel::Working,
         "done" => AttentionLevel::ReadyForReview,
         _ => AttentionLevel::Idle,
+    }
+}
+
+/// Result of classifying one Agent status transition. Client-owned presentation
+/// semantics only: nothing here drives runtime behavior, and every flag is
+/// derived from the same (previous, next) pair so all consumers stay consistent.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(crate) struct AgentTransition {
+    /// The Agent entered a state that wants the user to look at it
+    /// (done / blocked / failed) — drives the unread marker when the
+    /// Agent was not on screen at that moment.
+    pub(crate) attention_started: bool,
+    /// The Agent entered `done` — starts the review-pending window
+    /// ("finished, waiting for the user's review").
+    pub(crate) review_started: bool,
+    /// The Agent left `done` for anything other than another terminal state
+    /// (typically a new `working` turn) — the previous review is moot.
+    pub(crate) review_cleared: bool,
+}
+
+const ATTENTION_RAW_STATUSES: [&str; 3] = ["done", "blocked", "failed"];
+
+/// Classify one Agent status transition into client presentation events.
+/// A transition only exists when both sides are known and different.
+pub(crate) fn classify_agent_transition(
+    previous: Option<&str>,
+    next: Option<&str>,
+) -> AgentTransition {
+    let (Some(previous), Some(next)) = (previous, next) else {
+        return AgentTransition::default();
+    };
+    if previous == next {
+        return AgentTransition::default();
+    }
+    let was_done = previous == "done";
+    let next_done = next == "done";
+    AgentTransition {
+        attention_started: ATTENTION_RAW_STATUSES.contains(&next),
+        review_started: next_done,
+        review_cleared: was_done && !next_done,
     }
 }
 
@@ -132,4 +174,58 @@ pub(crate) fn status_glyph_container(
         .justify_center()
         .child(status_glyph(id, level, cx))
         .into_any_element()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn classify_transition_requires_known_previous_and_change() {
+        // No previous status (new agent): nothing to mark.
+        assert_eq!(
+            classify_agent_transition(None, Some("done")),
+            AgentTransition::default()
+        );
+        // Same-status echo events are not transitions.
+        assert_eq!(
+            classify_agent_transition(Some("working"), Some("working")),
+            AgentTransition::default()
+        );
+    }
+
+    #[test]
+    fn classify_transition_marks_review_and_attention_starts() {
+        let t = classify_agent_transition(Some("working"), Some("done"));
+        assert!(t.attention_started);
+        assert!(t.review_started);
+        assert!(!t.review_cleared);
+
+        let t = classify_agent_transition(Some("working"), Some("blocked"));
+        assert!(t.attention_started);
+        assert!(!t.review_started);
+        assert!(!t.review_cleared);
+    }
+
+    #[test]
+    fn classify_transition_clears_review_on_new_turn() {
+        let t = classify_agent_transition(Some("done"), Some("working"));
+        assert!(!t.attention_started);
+        assert!(!t.review_started);
+        assert!(t.review_cleared);
+    }
+
+    #[test]
+    fn attention_for_raw_status_maps_hook_vocabulary() {
+        assert_eq!(
+            attention_for_raw_status("blocked"),
+            AttentionLevel::NeedsAttention
+        );
+        assert_eq!(
+            attention_for_raw_status("done"),
+            AttentionLevel::ReadyForReview
+        );
+        assert_eq!(attention_for_raw_status("working"), AttentionLevel::Working);
+        assert_eq!(attention_for_raw_status("idle"), AttentionLevel::Idle);
+    }
 }
