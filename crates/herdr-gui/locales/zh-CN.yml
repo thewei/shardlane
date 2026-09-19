@@ -205,6 +205,8 @@ settings:
     builtin: 内置浏览器
     enabled_detail: 已启用——可从右侧面板与界面选择器使用。
     disabled_detail: 已禁用——浏览器界面将保持隐藏，直到重新启用。
+    preview_discovery: 预览服务发现
+    preview_discovery_detail: 扫描本机回环地址上的本地开发服务器，作为浏览器预君建议。默认关闭；仅限本机回环地址（localhost/127.0.0.1）。更改在下一次扫描时生效。
     new_profile: 新建配置档案
     new_profile_detail: 创建一个拥有独立网站数据存储的隔离开浏览器配置档案。
     new_profile_action: + 新建配置档案
