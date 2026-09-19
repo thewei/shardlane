@@ -1,11 +1,13 @@
 //! Hook Adapter Layer: strict identity normalization + Shardlane Hook Journal.
 //!
 //! [INPUT]: AgentHookReport from the Tier-1 IPC/OSC paths, AgentId alias
-//! authority from shardlane-history resolve_agent_alias, and the
+//! authority from shardlane-history resolve_agent_alias, Antigravity live
+//! turns from shardlane-history adapters::antigravity_live, and the
 //! Shardlane-owned hook journal directory.
-//! [OUTPUT]: NormalizedHookEvent, classify_hook_event,
-//! normalize_agent_identity (fail-closed), HookEventJournal (bounded JSONL
-//! append + rotation), journal_path_for/journal_root helpers.
+//! [OUTPUT]: NormalizedHookEvent, classify_hook_event, journal enrichment
+//! (Antigravity live turns backfill), HookEventJournal (bounded JSONL
+//! append + rotation), normalize_agent_identity (fail-closed),
+//! journal_path_for/journal_root helpers.
 //! [POS]: agent_hooks 的语义适配层：把各 CLI 原生 hook 的原始事件归一为
 //! provider 中立事件并写入 Shardlane 自有 journal；身份判定只信
 //! capability registry 的别名表（单一权威），未知来源一律拒绝——这同时
@@ -15,8 +17,11 @@
 //! [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 
 use crate::agent_hooks::ipc::AgentHookReport;
+use shardlane_history::adapters::antigravity_live::{antigravity_live_turns, AgLiveTurn};
 use shardlane_history::{resolve_agent_alias, AgentId};
+use std::collections::HashSet;
 use std::fs::{self, OpenOptions};
+use std::hash::{DefaultHasher, Hash, Hasher};
 use std::io::Write;
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
@@ -195,6 +200,31 @@ pub fn ingest_report(report: &AgentHookReport) {
                 },
             ),
         );
+        // Antigravity 正文 enrichment（AntigravityAdapter v2）：agy 的钩子
+        // 载荷不带任何文本，journal 里只有生命周期骨架；回合正文权威在
+        // agy 自己的会话库。会话事件到达时做一次增量回填，journal 仍是
+        // Chat 的唯一 live 源（解码器不变，第二运行时边界不破）。
+        if outcome.is_ok()
+            && event.agent == AgentId::Antigravity
+            && matches!(
+                event.kind,
+                HookEventKind::SessionStart | HookEventKind::TurnComplete
+            )
+        {
+            let turns = antigravity_live_turns(&event.session_id);
+            if !turns.is_empty() {
+                let appended = enrich_append_missing(&root, &event, &turns);
+                crate::op_log(
+                    "INFO",
+                    format_args!(
+                        "hook enrich: agent=antigravity session={} source_turns={} appended={}",
+                        event.session_id,
+                        turns.len(),
+                        appended,
+                    ),
+                );
+            }
+        }
     } else {
         crate::op_log(
             "INFO",
@@ -206,6 +236,80 @@ pub fn ingest_report(report: &AgentHookReport) {
             ),
         );
     }
+}
+
+/// Enrichment 写入核：只追加 journal 里还没有的回合（按 ts + 文本指纹
+/// 去重），锚定事件携带 pane/cwd 上下文。测试可直接喂合成 turns。
+fn enrich_append_missing(root: &Path, anchor: &NormalizedHookEvent, turns: &[AgLiveTurn]) -> usize {
+    // 进程内串行化："读 journal 去重集 -> 追加"的窗口不允许并发交错
+    //（IPC 线程与 OSC 管道都可能到达 ingest）。跨进程无锁与 journal
+    // 写入器的既有记录在案限制一致。
+    static ENRICH_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _serial = ENRICH_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut seen = journaled_assistant_keys(root, anchor.agent, &anchor.session_id);
+    let mut appended = 0usize;
+    for turn in turns {
+        // 截断在写入点收口：journal 的 append 不截断，enrichment 是
+        // 绕过 normalize_report 的第二个写入者；指纹必须对截断后的
+        // 落盘文本计算，否则下个事件的去重集永远对不上（全量重追加）。
+        let text = truncate_chars(&turn.text, JOURNAL_TEXT_MAX_CHARS);
+        let key = (turn.ts_ms, text_fingerprint(&text));
+        if seen.contains(&key) {
+            continue;
+        }
+        let event = NormalizedHookEvent {
+            agent: anchor.agent,
+            kind: HookEventKind::AssistantMessage,
+            session_id: anchor.session_id.clone(),
+            text,
+            ts_ms: u64::try_from(turn.ts_ms.max(0)).unwrap_or(0),
+            pane: anchor.pane.clone(),
+            cwd: anchor.cwd.clone(),
+            model: None,
+        };
+        if HookEventJournal::append(root, &event).is_err() {
+            break;
+        }
+        // 单批次内的重复行同样要互相去重（同 ts 同文本只落一条）。
+        seen.insert(key);
+        appended += 1;
+    }
+    appended
+}
+
+/// 读取 journal 现有 assistant_message 记录的去重键集
+///（(ts_ms, 文本指纹)）。journal 是有界小文件，整读可接受。
+fn journaled_assistant_keys(root: &Path, agent: AgentId, session_id: &str) -> HashSet<(i64, u64)> {
+    let mut keys = HashSet::new();
+    // 字节读取 + lossy 解码：非 UTF-8（跨进程写入撕裂的残留）只降级
+    // 单行，不能让整个去重集丢失——那会导致窗口内全量重追加。
+    let Ok(bytes) = fs::read(HookEventJournal::journal_path_for(root, agent, session_id)) else {
+        return keys;
+    };
+    let content = String::from_utf8_lossy(&bytes);
+    for line in content.lines() {
+        let Ok(record) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        if record.get("kind").and_then(|kind| kind.as_str()) != Some("assistant_message") {
+            continue;
+        }
+        let ts = record.get("ts").and_then(|ts| ts.as_i64()).unwrap_or(0);
+        let text = record
+            .get("text")
+            .and_then(|text| text.as_str())
+            .unwrap_or("");
+        keys.insert((ts, text_fingerprint(text)));
+    }
+    keys
+}
+
+fn text_fingerprint(text: &str) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    text.hash(&mut hasher);
+    hasher.finish()
 }
 
 impl HookEventJournal {
@@ -479,5 +583,77 @@ mod tests {
         );
         assert!(path.ends_with(".._.._etc_passwd.jsonl"));
         assert_eq!(path.parent().unwrap(), Path::new("/tmp/j/antigravity"));
+    }
+
+    fn anchor(session: &str) -> NormalizedHookEvent {
+        NormalizedHookEvent {
+            agent: AgentId::Antigravity,
+            kind: HookEventKind::TurnComplete,
+            session_id: session.to_string(),
+            text: String::new(),
+            ts_ms: 1_700_000_000_000,
+            pane: Some("%3".to_string()),
+            cwd: Some("/tmp/proj".to_string()),
+            model: None,
+        }
+    }
+
+    #[test]
+    fn enrichment_appends_missing_turns_then_dedupes() {
+        let dir = tempfile::tempdir().unwrap();
+        let anchor = anchor("conv-enrich");
+        let turns = vec![
+            AgLiveTurn {
+                ts_ms: 1_700_000_010_000,
+                text: "第一条回复".to_string(),
+            },
+            AgLiveTurn {
+                ts_ms: 1_700_000_020_000,
+                text: "第二条回复".to_string(),
+            },
+        ];
+        assert_eq!(enrich_append_missing(dir.path(), &anchor, &turns), 2);
+        // 同一批 turns 重放：全被去重，零追加。
+        assert_eq!(enrich_append_missing(dir.path(), &anchor, &turns), 0);
+        // 增量：只追加新的一条。
+        let turns_new = vec![
+            turns[0].clone(),
+            AgLiveTurn {
+                ts_ms: 1_700_000_030_000,
+                text: "第三条回复".to_string(),
+            },
+        ];
+        assert_eq!(enrich_append_missing(dir.path(), &anchor, &turns_new), 1);
+
+        let path =
+            HookEventJournal::journal_path_for(dir.path(), AgentId::Antigravity, "conv-enrich");
+        let content = fs::read_to_string(path).unwrap();
+        let assistant_lines = content
+            .lines()
+            .filter(|line| line.contains("\"assistant_message\""))
+            .count();
+        assert_eq!(assistant_lines, 3);
+        // 追加顺序 = ts 顺序（Chat 的消息序即文件序）。
+        assert!(content.find("第一条回复").unwrap() < content.find("第三条回复").unwrap());
+    }
+
+    #[test]
+    fn enrichment_dedupe_ignores_lifecycle_records() {
+        // 生命周期事件与回填记录同 ts 同文本也不互相去重：
+        // kind 域不同，语义上就不是同一条消息。
+        let dir = tempfile::tempdir().unwrap();
+        let anchor = anchor("conv-kind");
+        let lifecycle = NormalizedHookEvent {
+            kind: HookEventKind::TurnComplete,
+            text: "老杨，ok".to_string(),
+            ts_ms: 1_700_000_010_000,
+            ..anchor.clone()
+        };
+        HookEventJournal::append(dir.path(), &lifecycle).unwrap();
+        let turns = vec![AgLiveTurn {
+            ts_ms: 1_700_000_010_000,
+            text: "老杨，ok".to_string(),
+        }];
+        assert_eq!(enrich_append_missing(dir.path(), &anchor, &turns), 1);
     }
 }

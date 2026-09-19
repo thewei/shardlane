@@ -4,12 +4,12 @@
 //! [INPUT]: 依赖 shardlane-history 的 adapter roster（list_session_files /
 //!          quick_meta / parse_session —— 唯一解析来源，禁止第二套解析）、
 //!          chrono 的本地日换算、serde_json 的 JSON 快照缓存。
-//! [OUTPUT]: 对外提供 UsageWindow、AccountUsage、UsageSnapshot（徽标事实段）、
-//!           UsageAggregator（JSON 快照缓存 + mtime 失效 + 1 分钟节流）、
-//!           mask_account_label、format_tokens_compact；agent_insight 的
+//! [OUTPUT]: 对外提供 UsageWindow、AccountUsage、UsageSnapshot（含当日
+//!           tokens_today 聚合访问器）、UsageAggregator（JSON 快照缓存 +
+//!           mtime 失效 + 1 分钟节流）、mask_account_label；agent_insight 的
 //!           with_allowance 填充路径由此供数。
 //! [POS]: shardlane-host 事实层的聚合器，与 attention 同层；展示层只读
-//!        快照文本、零 I/O。单账号维度是 provider 本地可证的账号身份，
+//!        事实（agent_insight），零 I/O。单账号维度是 provider 本地可证的账号身份，
 //!        取不到即 None——Unknown stays None; never guessed。
 //! [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 
@@ -55,7 +55,7 @@ pub struct AccountUsage {
     pub windows: Vec<UsageWindow>,
 }
 
-/// 一次聚合的完整快照：徽标文本的唯一事实源。
+/// 一次聚合的完整快照：用量窗口与当日聚合的唯一事实源。
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct UsageSnapshot {
     pub day: NaiveDate,
@@ -74,21 +74,6 @@ impl UsageSnapshot {
             .map(|account| account.tokens_used)
             .sum()
     }
-
-    /// 窗口徽标事实：首个带窗口的账号行（v1 单账号现实）。
-    pub fn badge_windows(&self) -> Vec<UsageWindow> {
-        self.accounts
-            .iter()
-            .find(|account| !account.windows.is_empty())
-            .map(|account| account.windows.clone())
-            .unwrap_or_default()
-    }
-
-    /// 仅聚合时的徽标事实："3.8M" 形态的当日 token 压缩串。
-    pub fn badge_tokens_compact(&self) -> Option<String> {
-        let tokens = self.tokens_today();
-        (tokens > 0).then(|| format_tokens_compact(tokens))
-    }
 }
 
 // ----------------------------------------------------------------------------
@@ -104,22 +89,6 @@ pub fn mask_account_label(provider: AgentId, account_id: Option<&str>) -> String
             format!("{}:{}…", provider.as_str(), keep)
         }
         None => provider.display_name().to_string(),
-    }
-}
-
-/// token 数压缩展示：999 → "999"，850_000 → "850K"，3_800_000 → "3.8M"。
-pub fn format_tokens_compact(tokens: i64) -> String {
-    if tokens < 1_000 {
-        return tokens.to_string();
-    }
-    if tokens < 1_000_000 {
-        return format!("{}K", tokens / 1_000);
-    }
-    let millions = tokens as f64 / 1_000_000.0;
-    if millions >= 100.0 {
-        format!("{:.0}M", millions)
-    } else {
-        format!("{:.1}M", millions)
     }
 }
 
@@ -577,57 +546,6 @@ mod tests {
         assert_eq!(mask_account_label(AgentId::Codex, Some("  ")), "Codex");
         // 短 id 不越界。
         assert_eq!(mask_account_label(AgentId::Pi, Some("ab")), "pi:ab…");
-    }
-
-    #[test]
-    fn format_tokens_compact_table() {
-        assert_eq!(format_tokens_compact(0), "0");
-        assert_eq!(format_tokens_compact(999), "999");
-        assert_eq!(format_tokens_compact(1_000), "1K");
-        assert_eq!(format_tokens_compact(850_000), "850K");
-        assert_eq!(format_tokens_compact(999_999), "999K");
-        assert_eq!(format_tokens_compact(3_800_000), "3.8M");
-        assert_eq!(format_tokens_compact(123_000_000), "123M");
-    }
-
-    #[test]
-    fn badge_prefers_windows_then_falls_back_to_tokens() {
-        let day = NaiveDate::from_ymd_opt(2026, 9, 19).unwrap();
-        let window = UsageWindow {
-            label: "5h".into(),
-            used_percentage: 51,
-            resets_at: None,
-        };
-        let with_windows = UsageSnapshot {
-            day,
-            accounts: vec![AccountUsage {
-                provider: AgentId::Codex,
-                account_id: None,
-                label_masked: "codex:1111…".into(),
-                day,
-                tokens_used: 3_800_000,
-                windows: vec![window.clone()],
-            }],
-            ..UsageSnapshot::default()
-        };
-        assert_eq!(with_windows.badge_windows(), vec![window]);
-        let tokens_only = UsageSnapshot {
-            day,
-            accounts: vec![AccountUsage {
-                provider: AgentId::Codex,
-                account_id: None,
-                label_masked: "codex:1111…".into(),
-                day,
-                tokens_used: 3_800_000,
-                windows: Vec::new(),
-            }],
-            ..UsageSnapshot::default()
-        };
-        // 窗口缺省路径：回退 token 聚合，不报错、不编窗口。
-        assert!(tokens_only.badge_windows().is_empty());
-        assert_eq!(tokens_only.badge_tokens_compact().as_deref(), Some("3.8M"));
-        let empty = UsageSnapshot::default();
-        assert!(empty.badge_tokens_compact().is_none());
     }
 
     #[test]
