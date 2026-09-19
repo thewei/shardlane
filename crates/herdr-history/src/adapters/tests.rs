@@ -1,6 +1,6 @@
 use super::antigravity::AntigravityAdapter;
 use super::claude::ClaudeAdapter;
-use super::codex::CodexAdapter;
+use super::codex::{parse_approval_keymap_overrides, CodexAdapter, CodexApprovalKeys};
 use super::command_code::CommandCodeAdapter;
 use super::copilot::CopilotAdapter;
 use super::cursor::CursorAdapter;
@@ -1304,4 +1304,46 @@ fn adapter_ix_for_uses_longest_matching_root() {
         adapter_ix_for(&adapters, AgentId::Codex, "/tmp/codex-other/file.jsonl"),
         Some(0)
     );
+}
+
+// ============================================================================
+// Codex 审批键位覆盖解析（vendor 默认 + [tui.keymap.approval] 用户改绑）
+// ============================================================================
+
+#[test]
+fn approval_keymap_overrides_parse_both_section_forms() {
+    let config = concat!(
+        "model = \"gpt-5.2\"\n",
+        "\n",
+        "[tui]\n",
+        "something_else = \"x\"\n",
+        "\n",
+        "[tui.keymap.approval]\n",
+        "approve = \"o\"\n",
+        "deny = \"k\"\n",
+        "\n",
+        "[tui.keymap]\n",
+        "approval.approve_for_session = \"s\"\n",
+        "composer.submit = \"enter\"\n",
+    );
+    let keys =
+        CodexApprovalKeys::built_in().with_overrides(&parse_approval_keymap_overrides(config));
+    assert_eq!(keys.approve, b"o");
+    assert_eq!(keys.deny, b"k");
+    assert_eq!(keys.approve_for_session, b"s");
+}
+
+#[test]
+fn approval_keymap_without_overrides_keeps_vendor_defaults() {
+    let config = concat!(
+        "model = \"gpt-5.2\"\n",
+        "\n",
+        "[tui.keymap.approval]\n",
+        // Non-string / unknown actions are ignored, defaults survive.
+        "approve = 5\n",
+        "open_fullscreen = \"ctrl+a\"\n",
+    );
+    let keys =
+        CodexApprovalKeys::built_in().with_overrides(&parse_approval_keymap_overrides(config));
+    assert_eq!(keys, CodexApprovalKeys::built_in());
 }

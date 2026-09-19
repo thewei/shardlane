@@ -243,6 +243,26 @@ enum TerminalSelectionMode {
 enum ConnectionStatus {
     Connected,
     Offline(String),
+    /// M07 #7: the handshake returned IncompatibleProtocol — the structured upgrade-gate
+    /// state (the window body renders the upgrade card instead of the hosted TUI).
+    UpgradeBlocked(UpgradeGate),
+}
+
+/// The protocol-boundary fact behind the upgrade gate (M07 #7): a pure value so the
+/// blocked/pass decision stays testable without a client or a server.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct UpgradeGate {
+    min: u32,
+    actual: u32,
+}
+
+impl UpgradeGate {
+    /// The single 19/20-style boundary decision: the gate blocks only when the
+    /// server's protocol is older than the client's minimum (19/18 blocks;
+    /// 19/19 and 20/19 pass).
+    fn blocks(min: u32, actual: u32) -> Option<Self> {
+        (actual < min).then_some(Self { min, actual })
+    }
 }
 
 impl ConnectionStatus {
@@ -255,6 +275,23 @@ impl ConnectionStatus {
         match self {
             Self::Connected => "connected",
             Self::Offline(reason) => reason,
+            Self::UpgradeBlocked(_) => "protocol upgrade required",
+        }
+    }
+
+    /// The single connection-error → state mapping (M07 #7): a structured
+    /// IncompatibleProtocol lifts into the upgrade-gate state (through the same
+    /// UpgradeGate::blocks boundary the host enforces); every other failure
+    /// stays a plain Offline copy. Bind and refresh both route through here.
+    fn from_connection_error(error: &shardlane_host::mux::MuxError) -> Self {
+        match error {
+            shardlane_host::mux::MuxError::IncompatibleProtocol { min, actual } => {
+                match UpgradeGate::blocks(*min, *actual) {
+                    Some(gate) => Self::UpgradeBlocked(gate),
+                    None => Self::Offline(error.to_string()),
+                }
+            }
+            _ => Self::Offline(error.to_string()),
         }
     }
 }
@@ -1619,6 +1656,10 @@ struct ShardlaneApp {
     /// Notice for the most recent Settings -> Agent Hooks install/uninstall
     /// failure; a successful operation clears it naturally.
     pub(crate) agent_hook_notice: Option<String>,
+    /// Notice for the most recent Herdr user-config apply/reload failure
+    /// (spec #1, 2026-09-19): rendered as an inline red note under the
+    /// Herdr TUI settings card; the next successful apply clears it naturally.
+    herdr_config_notice: Option<String>,
     /// Active project git status snapshot (consumed by the header's +/- pill and Info popover; 12s freshness).
     git_status: Option<git_status::GitStatusSnapshot>,
     /// Per-project git snapshots for the visible Sidebar Projects (bounded by
@@ -2571,6 +2612,7 @@ impl ShardlaneApp {
             settings_provider_detail: None,
             skill_notice: None,
             agent_hook_notice: None,
+            herdr_config_notice: None,
             mobile_port_input: None,
             mobile_port_subscription: None,
             browser_confirm: None,
@@ -3051,7 +3093,7 @@ impl ShardlaneApp {
                         }
                         Err(error) => {
                             shardlane_host::diagnostics::lag_log(format_args!("bind.err {error}"));
-                            view.status = ConnectionStatus::Offline(error.to_string());
+                            view.status = ConnectionStatus::from_connection_error(&error);
                             view.notify_sidebar(cx);
                             view.notify_status_bar();
                             // The instance may still be coming up (first launch races
@@ -3340,7 +3382,7 @@ impl ShardlaneApp {
                         }
                     }
                     Err(err) => {
-                        view.status = ConnectionStatus::Offline(err.to_string());
+                        view.status = ConnectionStatus::from_connection_error(&err);
                         view.notify_sidebar(cx);
                         message = format!("Refresh failed: {err}");
                     }

@@ -1,5 +1,5 @@
 //! [INPUT]: Constants, types, and root-level imports from the sidebar module root (`super`); full inheritance via `use super::*`; plus the Mobile product gate `crate::mobile_view::mobile_surface_enabled` (footer phone icon visibility).
-//! [OUTPUT]: Provides ShardlaneApp::sidebar() — the full assembly of the Sidebar's single navigation surface (Agents/Projects sections — live agents only, history lives in the History surface; collapsing, drag and drop, projection consumption).
+//! [OUTPUT]: Provides ShardlaneApp::sidebar() — the full assembly of the Sidebar's single navigation surface (Agents/Recent/Projects sections — live agents only, Recent purely derived via recent_rows, history lives in the History surface; collapsing, drag and drop, projection consumption).
 //! [POS]: Main assembly layer of `crates/herdr-gui::sidebar`; consumes the output of rows/tree_rows/pane_rows/service_rows/projection/section_layout; mechanically split out of sidebar.rs and sharing the module-root namespace with its sibling submodules.
 use super::*;
 use crate::composer_chip::ComposerChip;
@@ -460,6 +460,10 @@ impl ShardlaneApp {
             .iter()
             .filter(|agent| agent.agent_status.as_deref() == Some("working"))
             .count();
+        // Recent section (spec #6): live-derived quick-jump rows over Projects.
+        // Purely projected from the current HerdrState — no persistence, no
+        // settings, nothing rendered at all when the runtime is empty.
+        let recent_section = self.sidebar_recent_section(&project_index, cx);
         // SBX-07: collapsed summaries use the shared glyph (status_glyph_container),
         // same state language as the Activity/bell rows.
         let agent_header_summary = if self.agents_collapsed && blocked_agents > 0 {
@@ -588,6 +592,9 @@ impl ShardlaneApp {
                                 section.child(agent_scrolling)
                             }),
                     )
+                    // Slot: Recent (between Agents and Projects; absent when
+                    // the runtime carries no observed activity).
+                    .when_some(recent_section, |stack, section| stack.child(section))
                     // Slot 1: Projects.
                     .child(
                         v_flex()

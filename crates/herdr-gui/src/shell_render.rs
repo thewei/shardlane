@@ -1,5 +1,5 @@
 //! [INPUT]: Depends on the ShardlaneApp type from the crate root (super) and existing types/imports (use super::*); no independent external dependencies.
-//! [OUTPUT]: Exposes ShardlaneApp's shell chrome render tree: client_shell/sidebar/search bar/overlay assembly (including the full-content file_preview_page branch); mouse down/up wiring covers the full lifecycle of drag-selection and protocol mouse — every button, Right included, is encoded to the hosted PTY so the Herdr TUI's own context menu is the only right-click menu.
+//! [OUTPUT]: Exposes ShardlaneApp's shell chrome render tree: client_shell/sidebar/search bar/overlay assembly (including the full-content file_preview_page branch and the M07 #7 protocol upgrade-gate card as a window-body branch); mouse down/up wiring covers the full lifecycle of drag-selection and protocol mouse — every button, Right included, is encoded to the hosted PTY so the Herdr TUI's own context menu is the only right-click menu.
 //! [POS]: The `crates/herdr-gui` shell render responsibility domain, mechanically split out of main.rs; together with sibling shell_* modules it forms ShardlaneApp's method surface.
 use super::*;
 impl ShardlaneApp {
@@ -28,6 +28,13 @@ impl ShardlaneApp {
         } else {
             self.cached_sidebar().into_any_element()
         };
+        // M07 #7: the protocol gate lifts into its own window-body branch — placed
+        // after Settings/History so those escape hatches stay reachable, but before
+        // every work surface (the hosted TUI cannot mount on an incompatible peer).
+        let upgrade_gate = match &self.status {
+            ConnectionStatus::UpgradeBlocked(gate) => Some(*gate),
+            _ => None,
+        };
         let terminal = if self.show_settings {
             // render_settings_content: keep a titlebar-height drag strip at the top of the content
             // column (armed-move; without a Header the content no longer touches the window top).
@@ -48,6 +55,8 @@ impl ShardlaneApp {
                 .into_any_element()
         } else if self.history.open {
             self.history_page(theme, window, cx)
+        } else if let Some(gate) = upgrade_gate {
+            self.upgrade_gate_view(gate, cx)
         } else if self.new_agent_open {
             self.new_agent_page(window, cx)
         } else if self.file_preview.is_some() {
@@ -969,6 +978,57 @@ impl ShardlaneApp {
                         .on_click(move |_, window, app| {
                             herdr.update(app, |this, cx| {
                                 this.restart_tui_surface(window, cx);
+                            });
+                        }),
+                ),
+            )
+            .into_any_element()
+    }
+
+    /// Upgrade-gate card (M07 #7): the bind handshake returned IncompatibleProtocol, so the
+    /// hosted TUI cannot mount and the window body shows the structured upgrade card instead.
+    /// Same inline-recovery-surface skeleton as tui_failure_view; the retry button rides the
+    /// existing Refresh/reconnect flow (the same action the sidebar's Reconnect button uses),
+    /// so success lands back on the normal work surface through the unchanged path.
+    fn upgrade_gate_view(&mut self, gate: UpgradeGate, cx: &mut Context<Self>) -> AnyElement {
+        let theme = cx.theme();
+        let herdr = cx.entity();
+        v_flex()
+            .flex_1()
+            .h_full()
+            .items_center()
+            .justify_center()
+            .gap(px(10.0))
+            .text_color(theme.muted_foreground)
+            .child(
+                div()
+                    .text_size(px(15.0))
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_color(theme.foreground)
+                    .child(i18n::t("herdr.upgrade.title")),
+            )
+            .child(
+                div()
+                    .text_size(theme::FONT_META)
+                    .max_w(px(460.0))
+                    .text_align(crepuscularity_gpui::TextAlign::Center)
+                    .child(i18n::t_with(
+                        "herdr.upgrade.detail",
+                        &[
+                            ("actual", gate.actual.to_string()),
+                            ("min", gate.min.to_string()),
+                        ],
+                    )),
+            )
+            .child(
+                h_flex().gap(px(8.0)).pt(px(6.0)).child(
+                    Button::new("upgrade-gate-retry")
+                        .primary()
+                        .small()
+                        .label(i18n::t("herdr.upgrade.retry"))
+                        .on_click(move |_, window, app| {
+                            herdr.update(app, |this, cx| {
+                                this.refresh(&Refresh, window, cx);
                             });
                         }),
                 ),

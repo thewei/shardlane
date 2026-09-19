@@ -39,5 +39,14 @@ Omp fork) session files running inside the Herdr TUI.
   shrinking always rebuilds wholesale as a truncate/replace (generation +1)
   and never splices across generations.
 - `settle()` interprets a trailing partial line as a complete line,
-  equivalent to full parsing; never settles while the file keeps growing
+ equivalent to full parsing; never settles while the file keeps growing
   (waits for the next newline).
+- Facts ride along on every content-carrying sync (`LiveSync.facts`, #2
+  2026-09-19) so ephemeral projections (pending approvals) reach consumers
+  in incremental mode too: `facts.pending_approval` (`LiveApproval`) is
+  decoded by the codex adapter from rollout `exec_approval_request` /
+  `apply_patch_approval_request` event_msg rows and cleared by the next
+  turn-progress evidence. Option keys come only from the verified Codex TUI
+  keymap contract (vendor defaults plus CODEX_HOME config.toml overrides);
+  adapters that cannot derive options/keys stably must not emit an approval
+  at all — never-blind-send, no menu guessing.

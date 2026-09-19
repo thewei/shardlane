@@ -599,10 +599,14 @@ impl ShardlaneApp {
             .map(|agent| agent.terminal_id.clone())
     }
 
-    /// User-triggered Herdr Settings change: edit the real Herdr config, validate it with the
-    /// installed Herdr CLI, reload the running server, then restart the thin hosted client.
-    /// Shardlane owns no second Herdr config; Settings is only a visual editor for the user's
-    /// normal `config.toml` (or `HERDR_CONFIG_PATH` override).
+    /// User-triggered Herdr Settings change: edit the real Herdr config through the
+    /// host seam's validate + atomic-install path (`herdr config check` on the
+    /// candidate; a rejection leaves the file untouched), reload the running server,
+    /// then restart the thin hosted client. A failed reload is a degraded success —
+    /// the file is already the new truth, so the inline card notice tells the user
+    /// to Reload instead of pretending nothing happened. Shardlane owns no second
+    /// Herdr config; Settings is only a visual editor for the user's normal
+    /// `config.toml` (or `HERDR_CONFIG_PATH` override).
     pub(super) fn apply_herdr_user_config_update_and_restart(
         &mut self,
         update: herdr_tui::HerdrUserConfigUpdate,
@@ -618,12 +622,11 @@ impl ShardlaneApp {
                 .background_executor()
                 .spawn(async move {
                     let snapshot = herdr_tui::update_herdr_user_config(update)?;
-                    if let Some(client) = client {
-                        client
-                            .reload_config()
-                            .map_err(|error| format!("reload Herdr config: {error}"))?;
-                    }
-                    Ok::<_, String>(snapshot)
+                    let reload_failure = client
+                        .as_ref()
+                        .and_then(|client| client.reload_config().err())
+                        .map(|error| error.to_string());
+                    Ok::<_, String>((snapshot, reload_failure))
                 })
                 .await;
             if theme_change && result.is_ok() {
@@ -633,15 +636,29 @@ impl ShardlaneApp {
             }
             let _ = cx.update_window(window_handle, |_, window, cx| {
                 let _ = this.update(cx, |view, cx| match result {
-                    Ok(snapshot) => {
+                    Ok((snapshot, reload_failure)) => {
                         view.herdr_user_config = snapshot;
                         view.sync_app_theme_from_herdr(cx);
                         view.apply_hosted_terminal_theme_background(window, cx);
                         view.save_config();
                         view.restart_tui_surface(window, cx);
+                        view.herdr_config_notice = reload_failure.map(|error| {
+                            i18n::t_with(
+                                "settings.herdr_tui.notice_reload_failed",
+                                &[("detail", error)],
+                            )
+                            .to_string()
+                        });
                     }
                     Err(error) => {
                         lag_log(format_args!("herdr.config apply failed: {error}"));
+                        view.herdr_config_notice = Some(
+                            i18n::t_with(
+                                "settings.herdr_tui.notice_apply_failed",
+                                &[("detail", error.clone())],
+                            )
+                            .to_string(),
+                        );
                         window
                             .push_notification(format!("Herdr config update failed: {error}"), cx);
                     }

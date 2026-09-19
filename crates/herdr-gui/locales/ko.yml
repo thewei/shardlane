@@ -44,6 +44,8 @@ settings:
     subtitle: 호스팅된 Herdr 터미널 UI 환경설정. 실제 Herdr 설정에 저장되며 모든 Herdr 클라이언트에 적용됩니다. 변경 시 호스팅된 터미널 세션을 재시작합니다.
     config_file: 설정 파일
     reload: 다시 불러오기
+    notice_apply_failed: 'Herdr 설정 업데이트가 실패했습니다. 파일은 변경되지 않았습니다. %{detail}'
+    notice_reload_failed: 'Herdr 설정이 저장되었지만 실행 중인 Herdr에 아직 반영되지 않았습니다. 다시 불러오기를 실행하세요. %{detail}'
     copy_on_select: 선택 시 복사
     copy_on_select_detail: Herdr ui.copy_on_select. 모든 Herdr 클라이언트의 네이티브 마우스 선택 동작에 영향을 줍니다.
     mouse_capture: 마우스 캡처
@@ -296,6 +298,11 @@ host:
   status_starting: 시작 중…
   status_running: 실행 중
   status_failed: 실패
+herdr:
+  upgrade:
+    title: Herdr 서버 프로토콜이 너무 오래되었습니다
+    detail: '현재 프로토콜 %{actual} · Shardlane에는 %{min}+이 필요합니다. Herdr를 업그레이드한 후(Homebrew 설치: brew upgrade herdr) 다시 시도하세요.'
+    retry: 연결 재시도
 workspace:
   local: (로컬)
   new: 새 워크스페이스…
@@ -386,3 +393,5 @@ sidebar:
 
 new_agent:
   recent_history_more: 더 많은 기록 보기
+statusbar:
+  usage_today: "오늘 %{tokens} tok"

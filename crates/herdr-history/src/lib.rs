@@ -30,7 +30,10 @@ pub use live::registry::{
     capabilities as provider_capabilities, exposed_agents, live_capable_agents, provider_exposed,
     resolve_agent_alias, LiveCapability, ProviderCapabilities, ProviderExposure, PROVIDERS,
 };
-pub use live::{LiveChange, LiveDecoder, LiveFacts, LiveSession, LiveSnapshot, LiveSync};
+pub use live::{
+    LiveApproval, LiveApprovalOption, LiveChange, LiveDecoder, LiveFacts, LiveSession,
+    LiveSnapshot, LiveSync,
+};
 pub use locator::{resolve_session_source_locator, SessionSourceLocator};
 pub use models::{
     AgentId, ConversationMeta, ConversationRef, IndexUnit, MessageKind, ParsedConversation,

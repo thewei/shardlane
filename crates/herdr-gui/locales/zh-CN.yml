@@ -43,6 +43,8 @@ settings:
     subtitle: 托管 Herdr 终端 UI 的偏好设置。它们保存在真实的 Herdr 配置中，对所有 Herdr 客户端生效。修改后会重启托管终端会话。
     config_file: 配置文件
     reload: 重新加载
+    notice_apply_failed: 'Herdr 配置写入失败，文件保持原样。%{detail}'
+    notice_reload_failed: 'Herdr 配置已保存，但运行中的 Herdr 尚未重载。请点击重新加载。%{detail}'
     copy_on_select: 选中即复制
     copy_on_select_detail: Herdr ui.copy_on_select。影响所有 Herdr 客户端的原生鼠标选中行为。
     mouse_capture: 鼠标捕获
@@ -295,6 +297,11 @@ host:
   status_starting: 启动中…
   status_running: 运行中
   status_failed: 已失败
+herdr:
+  upgrade:
+    title: Herdr 服务器协议过旧
+    detail: 当前协议 %{actual} · Shardlane 需要 %{min}+。请升级 Herdr（Homebrew 安装：brew upgrade herdr），然后重试。
+    retry: 重试连接
 workspace:
   local: （本地）
   new: 新建工作区…
@@ -385,3 +392,5 @@ sidebar:
 
 new_agent:
   recent_history_more: 更多历史记录
+statusbar:
+  usage_today: "今日 %{tokens} tok"

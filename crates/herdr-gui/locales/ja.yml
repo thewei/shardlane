@@ -44,6 +44,8 @@ settings:
     subtitle: ホストされた Herdr ターミナル UI の設定。実際の Herdr 設定に保存され、すべての Herdr クライアントに適用されます。変更するとホストされたターミナルセッションを再起動します。
     config_file: 設定ファイル
     reload: 再読み込み
+    notice_apply_failed: 'Herdr 設定の更新に失敗しました。ファイルは変更されていません。%{detail}'
+    notice_reload_failed: 'Herdr 設定は保存されましたが、実行中の Herdr に未反映です。再読み込みを実行してください。%{detail}'
     copy_on_select: 選択でコピー
     copy_on_select_detail: Herdr ui.copy_on_select。すべての Herdr クライアントのネイティブなマウス選択動作に影響します。
     mouse_capture: マウスキャプチャ
@@ -296,6 +298,11 @@ host:
   status_starting: 起動中…
   status_running: 実行中
   status_failed: 失敗
+herdr:
+  upgrade:
+    title: Herdr サーバーのプロトコルが古すぎます
+    detail: '現在のプロトコルは %{actual} · Shardlane は %{min}+ を必要とします。Herdr をアップグレードし（Homebrew インストール: brew upgrade herdr）、再試行してください。'
+    retry: 接続を再試行
 workspace:
   local: （ローカル）
   new: 新規ワークスペース…
@@ -386,3 +393,5 @@ sidebar:
 
 new_agent:
   recent_history_more: 履歴をもっと見る
+statusbar:
+  usage_today: "今日 %{tokens} tok"
