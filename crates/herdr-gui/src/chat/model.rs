@@ -5,7 +5,8 @@
 //! crate root's herdr::Agent projection types; zero rendering dependencies.
 //! [OUTPUT]: WorkSurfaceMode, ChatBinding, ChatModel (a testable core),
 //! provider normalization, the send state machine, pending submission
-//! reconciliation, and the rows projection.
+//! reconciliation, the approval request projection (facts → chat::approvals
+//! lifecycle), and the rows projection.
 //! [POS]: The state domain of herdr-gui `chat`. Herdr remains the runtime/status
 //! authority; this module holds only a disposable presentation projection and
 //! binding identity. Live file I/O happens only in surface-layer background
@@ -16,6 +17,8 @@ use std::collections::HashSet;
 use shardlane_history::{
     AgentId, ConversationRef, LiveChange, LiveFacts, LiveSnapshot, LiveSync, TranscriptMessage,
 };
+
+use super::approvals::{reconcile_approval, ApprovalRequest};
 
 use crate::agent_ui::conversation::{self, ConversationRow, ConversationTurn, EMPTY_FINGERPRINT};
 
@@ -262,6 +265,9 @@ pub(crate) struct ChatModel {
     /// M8: session insight projection (HUD data source; derived from the
     /// snapshot, rendering does zero I/O).
     pub insight: Option<shardlane_host::AgentSessionInsight>,
+    /// Pending approval request projection (decoded by the live facts
+    /// channel; lifecycle + never-blind-send guard live in chat::approvals).
+    pub approval: Option<ApprovalRequest>,
     pub submitting: bool,
     pub last_error: Option<String>,
     /// Projection cache (the frame path does not re-project).
@@ -288,6 +294,7 @@ impl Default for ChatModel {
             pending: None,
             queued_follow_up: None,
             insight: None,
+            approval: None,
             submitting: false,
             last_error: None,
             rows: Vec::new(),
@@ -304,6 +311,7 @@ impl ChatModel {
         let (pending, _consumed) = reconcile_pending(&snapshot.messages, &self.pending);
         self.pending = pending;
         self.refresh_insight(&snapshot);
+        reconcile_approval(snapshot.facts.pending_approval.as_ref(), &mut self.approval);
         self.snapshot = Some(snapshot);
         self.live_error = None;
         self.unavailable = None;
@@ -381,6 +389,15 @@ impl ChatModel {
                 self.unavailable = None;
                 self.reproject();
             }
+        }
+        // Delta syncs carry fresh facts since the approval channel was added:
+        // refresh the stored facts projection and reconcile the approval
+        // request (ephemeral state must not wait for a full snapshot).
+        if let Some(facts) = sync.facts.as_ref() {
+            if let Some(snapshot) = self.snapshot.as_mut() {
+                snapshot.facts = facts.clone();
+            }
+            reconcile_approval(facts.pending_approval.as_ref(), &mut self.approval);
         }
         // M8: counts/freshness evolve with the snapshot (pure counting;
         // clone-free borrow splitting).
@@ -717,6 +734,7 @@ mod tests {
             appended_messages: appended.into_iter().map(|(_, message)| message).collect(),
             changed_messages: changed.into_iter().map(|(_, message)| message).collect(),
             snapshot: None,
+            facts: None,
             lines_fed: 0,
         }
     }

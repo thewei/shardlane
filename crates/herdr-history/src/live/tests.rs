@@ -273,6 +273,7 @@ fn facts_from(transcript: &crate::models::ParsedTranscript, agent: AgentId) -> s
         updated_at: meta.updated_at,
         unknown_lines: transcript.unknown_line_count,
         session_id: matches!(agent, AgentId::Pi | AgentId::Omp).then(|| meta.id.clone()),
+        pending_approval: None,
     }
 }
 
@@ -1047,5 +1048,87 @@ fn command_code_lineage_rewind_replaces_projection() -> Result<()> {
     append_chunk(&path, b"{\"type\":\"torn\"}\n")?;
     session.sync()?;
     assert_eq!(session.snapshot().facts.unknown_lines, 1);
+    Ok(())
+}
+
+// ============================================================================
+// Codex 审批请求 live 解码（never-blind-send 的 provider 事实源）
+// ============================================================================
+
+#[test]
+fn codex_exec_approval_request_live_decode_and_clear() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let path = temp.path().join("codex-approval.jsonl");
+    std::fs::write(&path, "")?;
+    let mut session = LiveSession::open(session_ref(&path, AgentId::Codex))?;
+    let request = r#"{"timestamp":"2026-08-02T09:20:00Z","type":"event_msg","payload":{"type":"exec_approval_request","call_id":"exec-77","command":["/bin/zsh","-lc","cargo test"],"cwd":"/work/demo","reason":"network access"}}"#;
+    append_chunk(&path, format!("{request}\n").as_bytes())?;
+    session.sync()?;
+    let Some(approval) = session.snapshot().facts.pending_approval else {
+        panic!("exec approval request must surface as pending approval facts");
+    };
+    assert_eq!(approval.id, "exec-77");
+    assert_eq!(approval.kind, "tool");
+    assert!(
+        approval.prompt.contains("cargo test") && approval.prompt.contains("network access"),
+        "prompt must carry the provider's own text, got: {}",
+        approval.prompt
+    );
+    assert_eq!(approval.options.len(), 3);
+    assert_eq!(approval.options[0].label, "Approve");
+    assert_eq!(approval.options[0].keys, b"y");
+    assert_eq!(approval.options[1].label, "Approve for session");
+    assert_eq!(approval.options[2].label, "Deny");
+
+    // Any turn-progress evidence clears the pending approval (the menu is
+    // gone; e.g. the user answered in the TUI).
+    let progressed = r#"{"timestamp":"2026-08-02T09:20:05Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"done"}]}}"#;
+    append_chunk(&path, format!("{progressed}\n").as_bytes())?;
+    session.sync()?;
+    session.settle();
+    assert!(session.snapshot().facts.pending_approval.is_none());
+    Ok(())
+}
+
+#[test]
+fn codex_apply_patch_approval_uses_summary_text() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let path = temp.path().join("codex-patch-approval.jsonl");
+    std::fs::write(&path, "")?;
+    let mut session = LiveSession::open(session_ref(&path, AgentId::Codex))?;
+    let request = r#"{"timestamp":"2026-08-02T09:21:00Z","type":"event_msg","payload":{"type":"apply_patch_approval_request","call_id":"patch-9","summary":"Add parser module","grant_root":"/work/demo"}}"#;
+    append_chunk(&path, format!("{request}\n").as_bytes())?;
+    session.sync()?;
+    let Some(approval) = session.snapshot().facts.pending_approval else {
+        panic!("apply patch approval must surface");
+    };
+    assert_eq!(approval.id, "patch-9");
+    assert_eq!(approval.kind, "tool");
+    assert!(approval.prompt.contains("Add parser module"));
+    Ok(())
+}
+
+#[test]
+fn codex_approval_persists_through_non_progress_events() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let path = temp.path().join("codex-approval-hold.jsonl");
+    std::fs::write(&path, "")?;
+    let mut session = LiveSession::open(session_ref(&path, AgentId::Codex))?;
+    let request = r#"{"timestamp":"2026-08-02T09:22:00Z","type":"event_msg","payload":{"type":"exec_approval_request","call_id":"exec-80","command":["ls"]}}"#;
+    append_chunk(&path, format!("{request}\n").as_bytes())?;
+    // token_count / session_meta style rows are NOT turn progress.
+    let token = r#"{"timestamp":"2026-08-02T09:22:01Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"total_tokens":10}}}}"#;
+    append_chunk(&path, format!("{token}\n").as_bytes())?;
+    session.sync()?;
+    let Some(approval) = session.snapshot().facts.pending_approval else {
+        panic!("non-progress rows must not clear the pending approval");
+    };
+    assert_eq!(approval.id, "exec-80");
+    // A request without a call_id is not decodable → fail-closed: no facts.
+    let anon = r#"{"timestamp":"2026-08-02T09:22:02Z","type":"event_msg","payload":{"type":"exec_approval_request","command":["ls"]}}"#;
+    append_chunk(&path, format!("{anon}\n").as_bytes())?;
+    session.sync()?;
+    session.settle();
+    assert!(session.snapshot().facts.pending_approval.is_none());
     Ok(())
 }

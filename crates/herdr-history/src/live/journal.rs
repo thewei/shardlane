@@ -176,6 +176,7 @@ impl LiveDecoderState for JournalSession {
             updated_at: self.updated_at,
             unknown_lines: self.unknown_lines,
             session_id: self.session_id.clone(),
+            pending_approval: None,
         }
     }
 
