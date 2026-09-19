@@ -386,3 +386,5 @@ sidebar:
 
 new_agent:
   recent_history_more: 履歴をもっと見る
+statusbar:
+  usage_today: "今日 %{tokens} tok"

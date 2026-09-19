@@ -5806,6 +5806,7 @@ dependencies = [
  "async-channel 2.5.0",
  "base64",
  "block2",
+ "chrono",
  "core-text",
  "crepuscularity-gpui",
  "futures",
