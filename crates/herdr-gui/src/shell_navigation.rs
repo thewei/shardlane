@@ -1785,6 +1785,7 @@ impl ShardlaneApp {
                     status: attention.label().to_string(),
                     is_blocked: attention == crate::status::AttentionLevel::NeedsAttention,
                     is_working: attention == crate::status::AttentionLevel::Working,
+                    is_review: self.agent_review_pending.contains(&agent.terminal_id),
                     terminal_id: agent.terminal_id.clone(),
                     workspace_id: agent.workspace_id.clone(),
                     tab_id: agent.tab_id.clone(),
@@ -1818,6 +1819,16 @@ impl ShardlaneApp {
         status_bar::StatusBarSnapshot {
             connected,
             working_agents_count: summary.working_agents,
+            review_agents_count: self
+                .agent_review_pending
+                .iter()
+                .filter(|terminal_id| {
+                    self.state
+                        .agents
+                        .iter()
+                        .any(|agent| &agent.terminal_id == *terminal_id)
+                })
+                .count(),
             blocked_agents_count: summary.blocked_agents,
             active_scripts_count: summary.active_scripts,
             failed_scripts_count: summary.failed_scripts,

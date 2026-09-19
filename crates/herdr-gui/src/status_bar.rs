@@ -1,166 +1,15 @@
-//! [INPUT]: Depends on objc2, objc2-app-kit, objc2-foundation, status data from
-//!          main.rs, shardlane_host::UsageAggregator（当日 token 聚合 + 窗口事实）,
-//!          and crate::i18n for the usage badge text
+//! [INPUT]: Depends on objc2, objc2-app-kit, objc2-foundation, and the status
+//!          snapshot built in shell_navigation.rs（attention 分级 + 客户端
+//!          review-pending 标记）
 //! [OUTPUT]: Exposes StatusBarController, StatusBarSnapshot, StatusBarProjectItem, StatusBarAgentItem, StatusBarAction
 //! [POS]: crates/herdr-gui/src/status_bar.rs — native integration layer for the macOS
-//!        status bar (Menu Bar Extra)；usage_badge 是 #3 用量徽标的唯一展示位：
-//!        有 provider 可证窗口时显示 "5h 51% · 7d 8%"，仅聚合时显示本地化
-//!        "今日 3.8M tok"；刷新走后台单飞线程（host 侧 60s 节流 + mtime 失效），
-//!        展示线程零 I/O，不重复实现任何聚合逻辑
+//!        status bar (Menu Bar Extra)。图标标题只承载 Agent 计数——待处理
+//!        (⚠️) / 待 review (✅) / 工作中 (⚡)——绝不显示 token/用量事实
+//!        （2026-09-19 移除 #3 用量徽标；provider 用量窗口仍由 host 侧
+//!        agent_usage 供 agent_insight 消费，与本文件无关）。菜单按
+//!        Needs Attention / Ready for Review / Working 分组，逐项通过共享的
+//!        FocusAgent 通道跳转。
 //! [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
-
-#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
-mod usage_badge {
-    use crate::i18n;
-    use shardlane_host::{UsageAggregator, UsageSnapshot};
-    use std::sync::Mutex;
-
-    // ------------------------------------------------------------------
-    // 后台刷新状态：徽标文本 + 聚合器 + 单飞标记。展示路径只读 badge。
-    // ------------------------------------------------------------------
-    struct State {
-        aggregator: Option<UsageAggregator>,
-        badge: Option<String>,
-        attempt_ms: u64,
-        running: bool,
-    }
-
-    static STATE: Mutex<Option<State>> = Mutex::new(None);
-    /// 线程 spawn 频率上限；真正的重算节流（60s）在 host 聚合器里。
-    const RETRY_MS: u64 = 5_000;
-
-    fn system_now_ms() -> u64 {
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|elapsed| elapsed.as_millis() as u64)
-            .unwrap_or(0)
-    }
-
-    /// 徽标文本（规格 #3）：有窗口 → provider 原文标签 "5h 51% · 7d 8%"；
-    /// 仅聚合 → 本地化 "今日 3.8M tok"；无事实 → None（不显示）。
-    fn badge_text(snapshot: &UsageSnapshot) -> Option<String> {
-        let windows = snapshot.badge_windows();
-        if !windows.is_empty() {
-            return Some(
-                windows
-                    .iter()
-                    .map(|window| format!("{} {}%", window.label, window.used_percentage))
-                    .collect::<Vec<_>>()
-                    .join(" · "),
-            );
-        }
-        snapshot
-            .badge_tokens_compact()
-            .map(|tokens| i18n::t_with("statusbar.usage_today", &[("tokens", tokens)]).to_string())
-    }
-
-    /// 当前已就绪的徽标文本；刷新在后台线程完成，由下一次 update() 取用。
-    pub fn current() -> Option<String> {
-        STATE
-            .lock()
-            .ok()
-            .and_then(|guard| guard.as_ref().and_then(|state| state.badge.clone()))
-    }
-
-    /// 节流触发的后台单飞刷新：绝不阻塞调用线程（菜单栏更新走主线程，
-    /// Hosted TUI 对主线程停顿敏感）。
-    pub fn request_refresh_if_due() {
-        let now_ms = system_now_ms();
-        let mut guard = match STATE.lock() {
-            Ok(guard) => guard,
-            Err(_) => return,
-        };
-        let state = guard.get_or_insert_with(|| State {
-            aggregator: Some(UsageAggregator::new(shardlane_host::default_cache_path())),
-            badge: None,
-            attempt_ms: 0,
-            running: false,
-        });
-        if state.running || now_ms.saturating_sub(state.attempt_ms) < RETRY_MS {
-            return;
-        }
-        state.attempt_ms = now_ms;
-        state.running = true;
-        let Some(aggregator) = state.aggregator.take() else {
-            state.running = false;
-            return;
-        };
-        let spawned = std::thread::Builder::new()
-            .name("usage-badge".into())
-            .spawn(move || {
-                let mut aggregator = aggregator;
-                let snapshot = aggregator.refresh_if_due();
-                let badge = snapshot.as_ref().and_then(badge_text);
-                if let Ok(mut guard) = STATE.lock() {
-                    if let Some(state) = guard.as_mut() {
-                        state.aggregator = Some(aggregator);
-                        state.badge = badge;
-                        state.running = false;
-                    }
-                }
-            });
-        if spawned.is_err() {
-            // 聚合器随闭包丢弃；下次调用经 get_or_insert_with 重建（磁盘缓存仍在）。
-            if let Some(state) = guard.as_mut() {
-                state.running = false;
-            }
-        }
-    }
-
-    #[cfg(test)]
-    #[allow(clippy::unwrap_used, clippy::expect_used)]
-    mod tests {
-        use super::*;
-        use chrono::NaiveDate;
-        use shardlane_host::{AccountUsage, UsageWindow};
-
-        fn snapshot_with(windows: Vec<UsageWindow>, tokens: i64) -> UsageSnapshot {
-            UsageSnapshot {
-                accounts: vec![AccountUsage {
-                    provider: shardlane_history::AgentId::Codex,
-                    account_id: None,
-                    label_masked: "codex:1111…".into(),
-                    day: NaiveDate::from_ymd_opt(2026, 9, 19).unwrap(),
-                    tokens_used: tokens,
-                    windows,
-                }],
-                ..UsageSnapshot::default()
-            }
-        }
-
-        #[test]
-        fn badge_text_prefers_provider_windows() {
-            let snapshot = snapshot_with(
-                vec![
-                    UsageWindow {
-                        label: "5h".into(),
-                        used_percentage: 51,
-                        resets_at: None,
-                    },
-                    UsageWindow {
-                        label: "7d".into(),
-                        used_percentage: 8,
-                        resets_at: None,
-                    },
-                ],
-                3_800_000,
-            );
-            assert_eq!(badge_text(&snapshot).as_deref(), Some("5h 51% · 7d 8%"));
-        }
-
-        #[test]
-        fn badge_text_falls_back_to_localized_today_tokens() {
-            let snapshot = snapshot_with(Vec::new(), 3_800_000);
-            let text = badge_text(&snapshot).expect("tokens badge");
-            assert!(text.contains("3.8M"), "unexpected badge: {text}");
-        }
-
-        #[test]
-        fn badge_text_is_none_without_facts() {
-            assert_eq!(badge_text(&UsageSnapshot::default()), None);
-        }
-    }
-}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct StatusBarProjectItem {
@@ -176,6 +25,10 @@ pub struct StatusBarAgentItem {
     pub status: String,
     pub is_blocked: bool,
     pub is_working: bool,
+    /// Client-owned review-pending marker: the Agent finished and the user has
+    /// not reviewed yet. Cleared by an explicit review, a new working turn, or
+    /// release — so the menu-bar count always reflects "still needs your eyes".
+    pub is_review: bool,
     /// The stable agent identity (audit A12): menu jumps degrade to the agent-focused
     /// FocusIntent when the pane id is absent instead of no-oping.
     pub terminal_id: String,
@@ -188,6 +41,7 @@ pub struct StatusBarAgentItem {
 pub struct StatusBarSnapshot {
     pub connected: bool,
     pub working_agents_count: usize,
+    pub review_agents_count: usize,
     pub blocked_agents_count: usize,
     pub active_scripts_count: usize,
     pub failed_scripts_count: usize,
@@ -197,17 +51,20 @@ pub struct StatusBarSnapshot {
 
 impl StatusBarSnapshot {
     pub fn status_title(&self) -> String {
-        if self.blocked_agents_count > 0 && self.working_agents_count > 0 {
-            format!(
-                " ⚠️ {} ⚡ {}",
-                self.blocked_agents_count, self.working_agents_count
-            )
-        } else if self.blocked_agents_count > 0 {
-            format!(" ⚠️ {}", self.blocked_agents_count)
-        } else if self.working_agents_count > 0 {
-            format!(" ⚡ {}", self.working_agents_count)
-        } else {
+        let mut parts: Vec<String> = Vec::new();
+        if self.blocked_agents_count > 0 {
+            parts.push(format!("⚠️ {}", self.blocked_agents_count));
+        }
+        if self.review_agents_count > 0 {
+            parts.push(format!("✅ {}", self.review_agents_count));
+        }
+        if self.working_agents_count > 0 {
+            parts.push(format!("⚡ {}", self.working_agents_count));
+        }
+        if parts.is_empty() {
             String::new()
+        } else {
+            format!(" {}", parts.join(" "))
         }
     }
 
@@ -227,11 +84,14 @@ impl StatusBarSnapshot {
     /// tooltip and the menu header, so the wording cannot drift apart.
     fn summary_parts(&self) -> Vec<String> {
         let mut parts = Vec::new();
-        if self.working_agents_count > 0 {
-            parts.push(format!("{} working", self.working_agents_count));
-        }
         if self.blocked_agents_count > 0 {
             parts.push(format!("{} blocked", self.blocked_agents_count));
+        }
+        if self.review_agents_count > 0 {
+            parts.push(format!("{} for review", self.review_agents_count));
+        }
+        if self.working_agents_count > 0 {
+            parts.push(format!("{} working", self.working_agents_count));
         }
         if self.active_scripts_count > 0 {
             parts.push(format!("{} scripts active", self.active_scripts_count));
@@ -386,9 +246,8 @@ mod macos {
         /// Audit A10: the last snapshot rendered into the NSMenu. `notify_status_bar` fires on
         /// every navigation/status/theme/drag event; when the snapshot is unchanged (it derives
         /// PartialEq) the whole teardown/rebuild of dozens of ObjC menu objects is skipped.
-        /// 元组第二位是用量徽标文本：徽标由后台线程异步就绪，快照未变但徽标
-        /// 变化时也要触发一次重建，否则徽标永远停留在旧值。
-        last_snapshot: Mutex<Option<(StatusBarSnapshot, Option<String>)>>,
+        /// 快照未变即整段跳过（derive PartialEq），避免重建几十个 ObjC 菜单对象。
+        last_snapshot: Mutex<Option<StatusBarSnapshot>>,
     }
 
     impl StatusBarController {
@@ -418,17 +277,11 @@ mod macos {
             let Some(mtm) = MainThreadMarker::new() else {
                 return;
             };
-            // #3 用量徽标：节流触发后台刷新（永不阻塞主线程），本次渲染取用
-            // 已就绪的徽标文本；后台完成后由下一次 update() 自然拾取。
-            usage_badge::request_refresh_if_due();
-            let usage_badge = usage_badge::current();
             if let Ok(mut guard) = self.last_snapshot.lock() {
-                if guard.as_ref().is_some_and(|(last, last_badge)| {
-                    last == snapshot && *last_badge == usage_badge
-                }) {
+                if guard.as_ref().is_some_and(|last| last == snapshot) {
                     return;
                 }
-                *guard = Some((snapshot.clone(), usage_badge.clone()));
+                *guard = Some(snapshot.clone());
             }
             if let Ok(mut guard) = CURRENT_SNAPSHOT.lock() {
                 *guard = Some(snapshot.clone());
@@ -436,14 +289,7 @@ mod macos {
 
             // Update status bar button title, icon, and tooltip
             if let Some(button) = self.status_item.button(mtm) {
-                let mut title = snapshot.status_title();
-                if let Some(badge_text) = &usage_badge {
-                    if !title.is_empty() {
-                        title.push_str("  ");
-                    }
-                    title.push_str(badge_text);
-                }
-                let ns_title = NSString::from_str(&title);
+                let ns_title = NSString::from_str(&snapshot.status_title());
                 button.setTitle(&ns_title);
 
                 let tooltip = snapshot.tooltip();
@@ -522,13 +368,18 @@ mod macos {
 
             // 4. Submenu: Agents (agent submenu)
             let agent_parent = NSMenuItem::new(mtm);
-            let agent_parent_title = if snapshot.blocked_agents_count > 0 {
-                format!(
-                    "🤖 Agents (⚠️ {}, ⚡ {})",
-                    snapshot.blocked_agents_count, snapshot.working_agents_count
-                )
-            } else if snapshot.working_agents_count > 0 {
-                format!("🤖 Agents (⚡ {})", snapshot.working_agents_count)
+            let mut agent_count_parts: Vec<String> = Vec::new();
+            if snapshot.blocked_agents_count > 0 {
+                agent_count_parts.push(format!("⚠️ {}", snapshot.blocked_agents_count));
+            }
+            if snapshot.review_agents_count > 0 {
+                agent_count_parts.push(format!("✅ {}", snapshot.review_agents_count));
+            }
+            if snapshot.working_agents_count > 0 {
+                agent_count_parts.push(format!("⚡ {}", snapshot.working_agents_count));
+            }
+            let agent_parent_title = if !agent_count_parts.is_empty() {
+                format!("🤖 Agents ({})", agent_count_parts.join(", "))
             } else if !snapshot.agents.is_empty() {
                 format!("🤖 Agents ({})", snapshot.agents.len())
             } else {
@@ -554,6 +405,29 @@ mod macos {
                     for (idx, agent) in blocked_agents {
                         let title =
                             format!("  ⚠️ {} · {} (Needs Input)", agent.name, agent.project_name);
+                        let item = create_clickable_menu_item(
+                            &title,
+                            TAG_AGENT_BASE + idx as isize,
+                            None,
+                            &self.target,
+                            mtm,
+                        );
+                        agent_submenu.addItem(&item);
+                    }
+                    agent_submenu.addItem(&NSMenuItem::separatorItem(mtm));
+                }
+
+                let review_agents: Vec<(usize, &StatusBarAgentItem)> = snapshot
+                    .agents
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, a)| a.is_review)
+                    .collect();
+
+                if !review_agents.is_empty() {
+                    agent_submenu.addItem(&create_header_menu_item("Ready for Review", mtm));
+                    for (idx, agent) in review_agents {
+                        let title = format!("  ✅ {} · {}", agent.name, agent.project_name);
                         let item = create_clickable_menu_item(
                             &title,
                             TAG_AGENT_BASE + idx as isize,
@@ -593,7 +467,7 @@ mod macos {
                     .agents
                     .iter()
                     .enumerate()
-                    .filter(|(_, a)| !a.is_working && !a.is_blocked)
+                    .filter(|(_, a)| !a.is_working && !a.is_blocked && !a.is_review)
                     .collect();
 
                 if !other_agents.is_empty() {
@@ -710,11 +584,19 @@ mod tests {
         assert_eq!(snapshot.status_title(), " ⚡ 2");
         assert_eq!(snapshot.tooltip(), "Shardlane — 2 working");
 
+        snapshot.review_agents_count = 3;
+        assert_eq!(snapshot.status_title(), " ✅ 3 ⚡ 2");
+        assert_eq!(snapshot.tooltip(), "Shardlane — 3 for review, 2 working");
+
         snapshot.blocked_agents_count = 1;
-        assert_eq!(snapshot.status_title(), " ⚠️ 1 ⚡ 2");
-        assert_eq!(snapshot.tooltip(), "Shardlane — 2 working, 1 blocked");
+        assert_eq!(snapshot.status_title(), " ⚠️ 1 ✅ 3 ⚡ 2");
+        assert_eq!(
+            snapshot.tooltip(),
+            "Shardlane — 1 blocked, 3 for review, 2 working"
+        );
 
         snapshot.working_agents_count = 0;
+        snapshot.review_agents_count = 0;
         assert_eq!(snapshot.status_title(), " ⚠️ 1");
         assert_eq!(snapshot.tooltip(), "Shardlane — 1 blocked");
     }
@@ -727,6 +609,7 @@ mod tests {
             status: "Needs Attention".to_string(),
             is_blocked: true,
             is_working: false,
+            is_review: false,
             terminal_id: "t1".to_string(),
             workspace_id: Some("w1".to_string()),
             tab_id: Some("t1".to_string()),

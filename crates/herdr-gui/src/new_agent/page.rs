@@ -652,7 +652,12 @@ impl ShardlaneApp {
                     }),
             )
             .when(tab_kind == NewTabKind::Agent, |page| {
-                page.children(recent_history_block)
+                page.child(
+                    h_flex()
+                        .w_full()
+                        .justify_center()
+                        .children(recent_history_block),
+                )
             })
             .when(tab_kind != NewTabKind::Command, |page| {
                 page.child(div().flex_1())

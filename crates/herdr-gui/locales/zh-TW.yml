@@ -394,5 +394,3 @@ sidebar:
 
 new_agent:
   recent_history_more: 更多歷史記錄
-statusbar:
-  usage_today: "今日 %{tokens} tok"
