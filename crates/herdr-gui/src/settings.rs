@@ -199,6 +199,10 @@ pub struct ApplicationConfig {
     /// the GitHub release workflow, never from a mux backend).
     #[serde(default)]
     pub updates: UpdatesConfig,
+    /// 一次性启动迁移标记（执行过即置位并持久化；之后同类迁移不再运行，
+    /// 运行时配置回到其所有者的完全控制之下）。
+    #[serde(default)]
+    pub migrations: MigrationConfig,
 }
 
 impl Default for ApplicationConfig {
@@ -218,6 +222,7 @@ impl Default for ApplicationConfig {
             providers: ProvidersConfig::default(),
             history_sources: shardlane_history::HistorySourcePolicy::default(),
             updates: UpdatesConfig::default(),
+            migrations: MigrationConfig::default(),
         }
     }
 }
@@ -231,6 +236,16 @@ pub struct UpdatesConfig {
     pub check_enabled: bool,
     pub auto_download: bool,
     pub interval_hours: u32,
+}
+
+/// 一次性启动迁移的完成标记。旧配置缺该节 → 全部为 false，迁移按需执行一次；
+/// 标记随 canonical save 持久化，之后不再重复覆写运行时配置。
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize)]
+#[serde(default)]
+pub struct MigrationConfig {
+    /// 已把 Herdr `ui.hide_tab_bar_when_single_tab` 归位为 `false`
+    /// （2026-09-18 固定 Tab 呈现裁决的一次性迁移）。
+    pub tui_tab_bar_always_visible: bool,
 }
 
 impl Default for UpdatesConfig {
@@ -1242,6 +1257,23 @@ mod tests {
         assert!(saved["terminal"]
             .as_object()
             .is_none_or(|terminal| !terminal.contains_key("tab-bar-placement")));
+    }
+
+    #[test]
+    fn migration_flags_default_false_and_round_trip() {
+        // 旧配置没有 migrations 节 → 标记全 false，一次性迁移会执行；
+        // 置位后随 canonical save 持久化，之后不再重复覆写运行时配置。
+        let legacy: ApplicationConfig =
+            serde_json::from_str(r#"{}"#).unwrap_or_else(|error| panic!("{error}"));
+        assert!(!legacy.migrations.tui_tab_bar_always_visible);
+
+        let mut config = legacy;
+        config.migrations.tui_tab_bar_always_visible = true;
+        let saved = serde_json::to_value(&config).unwrap_or_else(|error| panic!("{error}"));
+        assert_eq!(
+            saved["migrations"]["tui_tab_bar_always_visible"],
+            serde_json::json!(true)
+        );
     }
 
     #[test]

@@ -2261,12 +2261,23 @@ impl ShardlaneApp {
             herdr_tui::HerdrUserConfigSnapshot::default()
         });
         // 产品裁决（2026-09-18）：TUI 自身的 Tab 栏永远显示（即使只有一个 Tab）。
-        // 历史版本可能把 ui.hide_tab_bar_when_single_tab 写成 true，启动时归位为 false；
-        // 失败只降级为日志，不阻塞启动。
-        if let Err(error) = herdr_tui::ensure_tui_tab_bar_always_visible() {
-            lag_log(format_args!(
-                "herdr.config tab-bar-always-visible migration skipped: {error}"
-            ));
+        // 历史版本可能把 ui.hide_tab_bar_when_single_tab 写成 true —— 一次性归位为
+        // false 并落标记；之后不再每启动覆写，运行时配置归还其所有者。失败只降级
+        // 为日志（标记保持 false，下次启动重试），不阻塞启动。
+        if !config.migrations.tui_tab_bar_always_visible {
+            match herdr_tui::ensure_tui_tab_bar_always_visible() {
+                Ok(_) => {
+                    config.migrations.tui_tab_bar_always_visible = true;
+                    if let Err(error) = config.save_result() {
+                        lag_log(format_args!(
+                            "shardlane.config persist migration flag failed: {error}"
+                        ));
+                    }
+                }
+                Err(error) => lag_log(format_args!(
+                    "herdr.config tab-bar-always-visible migration skipped: {error}"
+                )),
+            }
         }
         // Audit A18: the same auto-switch-aware resolution as sync_app_theme_from_herdr/theme()
         // (the bootstrap variant previously only looked at theme_name).
