@@ -528,6 +528,12 @@ pub struct LiveSync {
     /// The complete new snapshot on Reset; always None for
     /// Appended/Unchanged.
     pub snapshot: Option<LiveSnapshot>,
+    /// Fresh decoder facts for this round (Appended/Reset; None for
+    /// Unchanged). Facts ride along on every content-carrying sync so that
+    /// ephemeral projections like pending approvals reach the consumer in
+    /// incremental mode too (they would otherwise starve until a full
+    /// snapshot).
+    pub facts: Option<LiveFacts>,
     pub lines_fed: usize,
 }
 
@@ -553,6 +559,7 @@ impl LiveSync {
             appended_messages: Vec::new(),
             changed_messages: Vec::new(),
             snapshot: None,
+            facts: None,
             lines_fed: 0,
         }
     }
@@ -727,6 +734,7 @@ impl LiveSession {
             appended_messages,
             changed_messages: Vec::new(),
             snapshot: None,
+            facts: Some(self.decoder.facts()),
             lines_fed: 0,
         }
     }
@@ -768,6 +776,7 @@ impl LiveSession {
                 appended_messages: Vec::new(),
                 changed_messages: Vec::new(),
                 snapshot: Some(self.snapshot()),
+                facts: Some(self.decoder.facts()),
                 lines_fed,
             };
         }
@@ -813,6 +822,7 @@ impl LiveSession {
             appended_messages,
             changed_messages,
             snapshot,
+            facts: Some(self.decoder.facts()),
             lines_fed,
         }
     }
