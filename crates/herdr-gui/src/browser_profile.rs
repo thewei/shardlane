@@ -3,6 +3,7 @@
 //! [INPUT]: ApplicationConfig (browser section)
 //! [OUTPUT]: BrowserProfile, BrowserProfileId, BrowserSessionId, BrowserConfig
 //! [POS]: Domain module for browser session identity; consumed by right_panel/webview
+//! [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 
 /// Unique identifier for a persistent browser profile (UUID-based).
 pub(crate) type BrowserProfileId = String;
@@ -57,6 +58,12 @@ pub(crate) struct BrowserConfig {
     pub default_profile_id: Option<BrowserProfileId>,
     #[serde(default)]
     pub profiles: Vec<BrowserProfileConfig>,
+    /// Opt-in loopback service discovery for the Browser omnibox suggestions
+    /// (#4, 2026-09-19). Default OFF: with the flag absent the client never
+    /// emits a single probe packet; enabling it only arms the manual scan
+    /// action in the omnibox (right_panel/loopback_probe.rs).
+    #[serde(default)]
+    pub preview_discovery_enabled: bool,
 }
 
 fn default_enabled() -> bool {
@@ -69,13 +76,17 @@ impl Default for BrowserConfig {
             enabled: true,
             default_profile_id: None,
             profiles: Vec::new(),
+            preview_discovery_enabled: false,
         }
     }
 }
 
 impl BrowserConfig {
     pub(crate) fn is_empty(&self) -> bool {
-        self.enabled && self.default_profile_id.is_none() && self.profiles.is_empty()
+        self.enabled
+            && self.default_profile_id.is_none()
+            && self.profiles.is_empty()
+            && !self.preview_discovery_enabled
     }
 
     /// Get the default profile, or create a synthesized one if none configured.
@@ -123,10 +134,28 @@ mod tests {
                 name: "Work".to_string(),
                 ephemeral: false,
             }],
+            ..BrowserConfig::default()
         };
         let profile = config.default_profile();
         assert_eq!(profile.id, "custom");
         assert_eq!(profile.name, "Work");
+    }
+
+    #[test]
+    fn preview_discovery_defaults_off_and_deserializes_leniently() {
+        // Missing key means false: the default state never scans anything.
+        let absent: BrowserConfig = serde_json::from_str("{}").unwrap();
+        assert!(!absent.preview_discovery_enabled);
+        let enabled: BrowserConfig =
+            serde_json::from_str(r#"{"preview_discovery_enabled": true}"#).unwrap();
+        assert!(enabled.preview_discovery_enabled);
+        // The default config keeps the browser section omitted from disk.
+        assert!(BrowserConfig::default().is_empty());
+        let armed = BrowserConfig {
+            preview_discovery_enabled: true,
+            ..BrowserConfig::default()
+        };
+        assert!(!armed.is_empty());
     }
 
     #[test]

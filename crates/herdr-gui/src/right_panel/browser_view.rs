@@ -1,6 +1,11 @@
 //! [INPUT]: The import surface and types of the right_panel module root (`use super::*`).
-//! [OUTPUT]: render_right_panel_browser_view / ensure_browser_address / navigate_browser
-//! [POS]: The browser_view responsibility slice of the right_panel directory.
+//! [INPUT]: The import surface and types of the right_panel module root (use super::*),
+//!          plus right_panel::loopback_probe for the opt-in omnibox suggestions.
+//! [OUTPUT]: render_right_panel_browser_view / ensure_browser_address / navigate_browser /
+//!           start_loopback_scan / render_loopback_suggestions
+//! [POS]: The browser_view responsibility slice of the right_panel directory; owns the
+//!        omnibox suggestion dropdown and the webview visibility handoff to it.
+//! [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 use super::*;
 use crate::browser_profile::BrowserSessionId;
 
@@ -28,15 +33,20 @@ impl ShardlaneApp {
         let from_url = url.to_string();
         let input_for_submit = input.clone();
         let subscription = cx.subscribe_in(&input, window, move |_, _, event, window, cx| {
-            if let InputEvent::PressEnter { .. } = event {
-                let text = input_for_submit.read(cx).value().to_string();
-                let submit_herdr = submit_herdr.clone();
-                let from_url = from_url.clone();
-                window.defer(cx, move |window, cx| {
-                    submit_herdr.update(cx, |this, cx| {
-                        this.navigate_browser(&from_url, &text, window, cx);
+            match event {
+                InputEvent::PressEnter { .. } => {
+                    let text = input_for_submit.read(cx).value().to_string();
+                    let submit_herdr = submit_herdr.clone();
+                    let from_url = from_url.clone();
+                    window.defer(cx, move |window, cx| {
+                        submit_herdr.update(cx, |this, cx| {
+                            this.navigate_browser(&from_url, &text, window, cx);
+                        });
                     });
-                });
+                }
+                // The suggestion dropdown keys off focus/text state; repaint
+                // so it appears/disappears and the webview visibility follows.
+                InputEvent::Focus | InputEvent::Blur | InputEvent::Change => cx.notify(),
             }
         });
         self.browser_address_subscriptions
@@ -148,6 +158,29 @@ impl ShardlaneApp {
         cx.notify();
     }
 
+    /// Arms the opt-in loopback discovery scan (#4): single-flight, run on the
+    /// background executor, results land in the in-memory ScanState cache.
+    /// The config gate is re-checked here so the only trigger is the scan row
+    /// in the suggestions dropdown — nothing scans when the setting is off.
+    pub(super) fn start_loopback_scan(&mut self, cx: &mut Context<Self>) {
+        if !self.config.browser.preview_discovery_enabled {
+            return;
+        }
+        if !loopback_probe::ScanState::start() {
+            return; // a scan is already running
+        }
+        cx.spawn(async move |this, cx| {
+            let results = cx
+                .background_executor()
+                .spawn(async move { loopback_probe::scan_once() })
+                .await;
+            loopback_probe::ScanState::finish(results);
+            let _ = this.update(cx, |_, cx| cx.notify());
+        })
+        .detach();
+        cx.notify(); // flip the scan row into its Scanning state immediately
+    }
+
     pub(super) fn render_right_panel_browser_view(
         &mut self,
         url: &str,
@@ -223,6 +256,20 @@ impl ShardlaneApp {
             });
             self.right_panel.address_synced_url = Some(target_url.clone());
         }
+
+        // ---- Loopback discovery suggestions (opt-in, default off) ---------
+        // The dropdown shows only while the omnibox holds focus AND empty
+        // text; results come from the in-memory ScanState cache (never disk).
+        let discovery_enabled = self.config.browser.preview_discovery_enabled;
+        let omnibox_focused = address_input.read(cx).focus_handle(cx).is_focused(window);
+        let omnibox_empty = address_input.read(cx).value().is_empty();
+        let show_suggestions = discovery_enabled && omnibox_focused && omnibox_empty;
+        let suggestions = if show_suggestions {
+            loopback_probe::ScanState::results()
+        } else {
+            Vec::new()
+        };
+        let scanning = loopback_probe::ScanState::is_in_flight();
 
         let back_herdr = herdr.clone();
         let forward_herdr = herdr.clone();
@@ -332,6 +379,7 @@ impl ShardlaneApp {
                     .flex()
                     .items_center()
                     .gap(SPACE_ICON)
+                    .relative()
                     .child(
                         Icon::empty()
                             .path(if is_secure_url(&target_url) {
@@ -350,7 +398,16 @@ impl ShardlaneApp {
                                 .p_0()
                                 .text_size(crate::theme::FONT_META),
                         ),
-                    ),
+                    )
+                    .when(show_suggestions, |omnibox| {
+                        omnibox.child(render_loopback_suggestions(
+                            theme,
+                            herdr.clone(),
+                            &target_url,
+                            &suggestions,
+                            scanning,
+                        ))
+                    }),
             )
             .child(
                 div()
@@ -372,7 +429,12 @@ impl ShardlaneApp {
                     }),
             );
 
-        let sync_url = target_url.clone();
+        // Sync the ACTIVE session webview (profile-aware key) and keep the
+        // native view hidden while the suggestion dropdown or the failure card
+        // owns the viewport: native subviews composite ABOVE the GPUI layer,
+        // so either overlay would be painted underneath the webview.
+        let sync_key = active_session.clone();
+        let sync_visible = !show_suggestions && show_failure.is_none();
         let webview_body = div()
             .id("browser-webview-viewport")
             .flex_1()
@@ -382,10 +444,8 @@ impl ShardlaneApp {
                 canvas(
                     move |bounds, window, app| {
                         herdr.update(app, |this, _| {
-                            if let Some(webview) =
-                                this.browser_webviews.get(&session_for_url(&sync_url))
-                            {
-                                webview.sync_frame(bounds, true, window);
+                            if let Some(webview) = this.browser_webviews.get(&sync_key) {
+                                webview.sync_frame(bounds, sync_visible, window);
                             }
                         });
                     },
@@ -477,4 +537,125 @@ impl ShardlaneApp {
             .child(webview_body)
             .into_any_element()
     }
+}
+
+/// The opt-in omnibox dropdown: one manual scan action plus the in-memory
+/// results of the last bounded loopback scan. Nothing here touches disk; a
+/// result click feeds the suggestion text through the SAME navigation seam
+/// as pressing Enter (navigate_browser, which owns resolve_address).
+fn render_loopback_suggestions(
+    theme: ContentSurfaceTheme,
+    herdr: Entity<ShardlaneApp>,
+    from_url: &str,
+    results: &[loopback_probe::DiscoveredServer],
+    scanning: bool,
+) -> AnyElement {
+    const MAX_SUGGESTION_ROWS: usize = 12;
+
+    let mut dropdown = v_flex()
+        .absolute()
+        .left_0()
+        .right_0()
+        .top(px(30.0))
+        .rounded(px(8.0))
+        .border_1()
+        .border_color(theme.border)
+        .bg(theme.background)
+        .py(px(4.0));
+
+    // ---- manual scan trigger: the only place a scan is ever started ------
+    let scan_label = if scanning {
+        "Scanning local dev servers..."
+    } else {
+        "Scan local dev servers"
+    };
+    let scan_herdr = herdr.clone();
+    dropdown = dropdown.child(
+        div()
+            .id("omnibox-suggestion-scan")
+            .flex()
+            .items_center()
+            .gap(px(8.0))
+            .px(px(10.0))
+            .py(px(6.0))
+            .cursor_pointer()
+            .hover(|row| row.bg(theme.foreground.opacity(crate::theme::WASH_HOVER)))
+            .on_mouse_down(MouseButton::Left, move |_, _, app| {
+                app.stop_propagation();
+                scan_herdr.update(app, ShardlaneApp::start_loopback_scan);
+            })
+            .child(
+                Icon::empty()
+                    .path("icons/globe.svg")
+                    .with_size(px(12.0))
+                    .text_color(theme.muted),
+            )
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .truncate()
+                    .text_size(crate::theme::FONT_META)
+                    .text_color(theme.muted)
+                    .child(scan_label),
+            ),
+    );
+
+    if results.is_empty() && !scanning {
+        dropdown = dropdown.child(
+            div()
+                .px(px(10.0))
+                .py(px(6.0))
+                .text_size(crate::theme::FONT_META)
+                .text_color(theme.muted)
+                .child("No results yet — run a scan"),
+        );
+    }
+    for server in results.iter().take(MAX_SUGGESTION_ROWS) {
+        let port = server.port;
+        let name = server.name.clone();
+        let navigate_herdr = herdr.clone();
+        let from = from_url.to_string();
+        let suggestion = format!("localhost:{port}");
+        dropdown = dropdown.child(
+            div()
+                .id(SharedString::from(format!("omnibox-suggestion-{port}")))
+                .flex()
+                .items_center()
+                .gap(px(6.0))
+                .px(px(10.0))
+                .py(px(6.0))
+                .cursor_pointer()
+                .hover(|row| row.bg(theme.foreground.opacity(crate::theme::WASH_HOVER)))
+                .on_mouse_down(MouseButton::Left, move |_, window, app| {
+                    app.stop_propagation();
+                    // Same channel as pressing Enter on typed text.
+                    let navigate_herdr = navigate_herdr.clone();
+                    let from = from.clone();
+                    let suggestion = suggestion.clone();
+                    window.defer(app, move |window, app| {
+                        navigate_herdr.update(app, |this, cx| {
+                            this.navigate_browser(&from, &suggestion, window, cx);
+                        });
+                    });
+                })
+                .child(
+                    div()
+                        .flex_none()
+                        .text_size(crate::theme::FONT_META)
+                        .text_color(theme.foreground)
+                        .child(format!("localhost:{port}")),
+                )
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .truncate()
+                        .text_size(crate::theme::FONT_META)
+                        .text_color(theme.muted)
+                        .child(format!("— {name}")),
+                ),
+        );
+    }
+    dropdown.into_any_element()
 }
