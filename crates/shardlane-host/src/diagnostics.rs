@@ -58,6 +58,73 @@ pub fn lag_log(args: std::fmt::Arguments<'_>) {
     let _ = sender.try_send(line);
 }
 
+static OP_SEQ: AtomicU64 = AtomicU64::new(0);
+static OP_LOGGER: OnceLock<SyncSender<String>> = OnceLock::new();
+static OP_LOG_PATH: OnceLock<PathBuf> = OnceLock::new();
+
+/// 操作日志单文件上限：首次打开超限即轮转到 .1（保留一代）。
+const OP_LOG_MAX_BYTES: u64 = 512 * 1024;
+
+fn op_log_path() -> PathBuf {
+    OP_LOG_PATH
+        .get_or_init(|| {
+            std::env::var_os("SHARDLANE_UI_LOG_PATH")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| {
+                    std::env::var_os("HOME")
+                        .map(|home| {
+                            PathBuf::from(home)
+                                .join(".shardlane")
+                                .join("logs")
+                                .join("ui.log")
+                        })
+                        .unwrap_or_else(|| PathBuf::from("/tmp/shardlane-ui.log"))
+                })
+        })
+        .clone()
+}
+
+/// 用户操作与关键节点日志（2026-09-19）：Chat 入口判定、钩子事件、
+/// journal 写入、钩子安装动作等，供远程协作方读取分析。级别标记
+/// INFO/WARN/ERROR；后台线程落盘，调用方零阻塞。
+pub fn op_log(level: &str, args: std::fmt::Arguments<'_>) {
+    let seq = OP_SEQ.fetch_add(1, Ordering::Relaxed);
+    let ts = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_secs_f64())
+        .unwrap_or(0.0);
+    let pid = std::process::id();
+    let line = format!("[{ts:.3} pid={pid} #{seq}] {level}: {args}");
+    let sender = OP_LOGGER.get_or_init(|| {
+        let (sender, receiver) = sync_channel(2_048);
+        std::thread::spawn(move || {
+            let path = op_log_path();
+            if let Some(parent) = path.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            if let Ok(meta) = std::fs::metadata(&path) {
+                if meta.len() >= OP_LOG_MAX_BYTES {
+                    let mut rotated = path.clone().into_os_string();
+                    rotated.push(".1");
+                    let _ = std::fs::rename(&path, rotated);
+                }
+            }
+            let Ok(mut file) = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&path)
+            else {
+                return;
+            };
+            for line in receiver {
+                let _ = writeln!(file, "{line}");
+            }
+        });
+        sender
+    });
+    let _ = sender.try_send(line);
+}
+
 /// Opt-in verbose RPC diagnostics (same `SHARDLANE_TERMINAL_TRACE` gate as the
 /// shared TUI transport). Off by default because full RPC params carry user
 /// prompt text, terminal text, and argv, which must never land in the

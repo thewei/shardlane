@@ -20,6 +20,7 @@ pub mod conversation_service;
 pub mod conversation_sessions;
 pub mod conversations;
 pub mod diagnostics;
+pub use diagnostics::op_log;
 pub mod dto;
 pub mod herdr;
 pub mod history_continuation;
@@ -39,6 +40,10 @@ pub mod shared_tui;
 pub mod workspace_config;
 
 pub use agent_hooks::{
+    adapter::{
+        ingest_report, normalize_agent_identity, normalize_report, HookEventJournal,
+        NormalizedHookEvent,
+    },
     parse_osc_agent_status, sniff_agent_from_process_and_title, AgentHookIpcServer, AgentHookMeta,
     AgentHookRegistry, AgentHookReport, HookActionOutcome, HookError, HookInstallStatus,
     CURRENT_HOOK_VERSION, DEFAULT_SOCKET_NAME,

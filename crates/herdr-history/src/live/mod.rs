@@ -27,6 +27,7 @@ use anyhow::{bail, Result};
 use std::collections::HashSet;
 
 pub(crate) mod cursor;
+pub(crate) mod journal;
 pub mod registry;
 #[cfg(test)]
 mod tests;
@@ -410,19 +411,25 @@ impl LiveDecoder {
     /// capability; the decoder admits providers based on it and no longer
     /// keeps its own list.
     pub fn supports(agent: AgentId) -> bool {
-        registry::capabilities(agent)
-            .is_some_and(|caps| caps.live == registry::LiveCapability::AppendLog)
+        registry::capabilities(agent).is_some_and(|caps| caps.live.is_live())
     }
 
     pub fn new(agent: AgentId) -> Option<Self> {
-        let state: Box<dyn LiveDecoderState> = match agent {
-            AgentId::ClaudeCode => Box::new(ClaudeSession::fresh()),
-            AgentId::Codex => Box::new(CodexSession::fresh()),
-            AgentId::Pi | AgentId::Omp => Box::new(PiSession::fresh()),
-            AgentId::CommandCode => Box::new(CommandCodeSession::fresh()),
-            AgentId::Cursor => Box::new(CursorSession::fresh()),
-            AgentId::Kimi => Box::new(KimiSession::fresh()),
-            _ => return None,
+        let caps = registry::capabilities(agent)?;
+        let state: Box<dyn LiveDecoderState> = match caps.live {
+            registry::LiveCapability::None => return None,
+            // Hook Journal：provider 中立解码器，journal 由 Host hook
+            // 适配层写入，transport 复用 AppendLog（同为 append-only JSONL）。
+            registry::LiveCapability::HookJournal => Box::new(journal::JournalSession::fresh()),
+            registry::LiveCapability::AppendLog => match agent {
+                AgentId::ClaudeCode => Box::new(ClaudeSession::fresh()),
+                AgentId::Codex => Box::new(CodexSession::fresh()),
+                AgentId::Pi | AgentId::Omp => Box::new(PiSession::fresh()),
+                AgentId::CommandCode => Box::new(CommandCodeSession::fresh()),
+                AgentId::Cursor => Box::new(CursorSession::fresh()),
+                AgentId::Kimi => Box::new(KimiSession::fresh()),
+                _ => return None,
+            },
         };
         Some(Self { agent, state })
     }

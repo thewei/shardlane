@@ -12,7 +12,13 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
-pub const CURRENT_HOOK_VERSION: u32 = 1;
+/// v5 (2026-09-19)：SHELL_HOOK_TEMPLATE 接管会话身份上报——载荷缺
+/// conversationId 时从祖先进程参数（agy -> hook.sh -> python，需上溯
+/// 两级）恢复 agy --conversation <uuid>，并直接向 Herdr socket 发
+/// pane.report_agent_session（source=shardlane，客户端上报语义）；
+/// herdr 官方 hook 降级为兜底。v4 修复 v3 误入 Python 段的注释语法
+/// 错误；v5 修复父进程上溯深度。
+pub const CURRENT_HOOK_VERSION: u32 = 5;
 
 /// Installation status of an Agent Hook.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -67,11 +73,12 @@ pub struct AgentHookMeta {
 pub const SHELL_HOOK_TEMPLATE: &str = r#"#!/bin/sh
 # installed by Shardlane
 # managed by Shardlane; reinstalling or updating the hook overwrites this file.
-# SHARDLANE_HOOK_VERSION=1
+# SHARDLANE_HOOK_VERSION=5
 
 set -eu
 
 AGENT="${1:-unknown}"
+EVENT_ARG="${2:-}"
 PANE_ID="${HERDR_PANE_ID:-${TMUX_PANE:-}}"
 if [ -z "$PANE_ID" ]; then
     exit 0
@@ -79,15 +86,16 @@ fi
 
 HOOK_INPUT=""
 if [ ! -t 0 ]; then
-    HOOK_INPUT="$(cat 2>/dev/null || true)"
+        HOOK_INPUT="$(cat 2>/dev/null || true)"
 fi
 
-python3 - <<'PY' "$AGENT" "$PANE_ID" "$HOOK_INPUT"
-import sys, os, json, socket
+python3 - <<'PY' "$AGENT" "$PANE_ID" "$HOOK_INPUT" "$EVENT_ARG"
+import sys, os, json, socket, time
 
 agent = sys.argv[1] if len(sys.argv) > 1 else "unknown"
 pane_id = sys.argv[2] if len(sys.argv) > 2 else ""
 raw_input = sys.argv[3] if len(sys.argv) > 3 else ""
+event_arg = sys.argv[4] if len(sys.argv) > 4 else ""
 
 hook_data = {}
 if raw_input.strip():
@@ -100,13 +108,56 @@ event_name = (
     hook_data.get("hook_event_name")
     or hook_data.get("event")
     or hook_data.get("type")
+    or event_arg
     or ""
 )
 
-session_id = hook_data.get("session_id") or ""
+# 常见 prompt 载荷字段（Claude UserPromptSubmit.prompt / agy PreInvocation 等）：
+# 作为语义文本随报告下发，journal 侧才可能有正文。
+prompt_text = (
+    hook_data.get("prompt")
+    or hook_data.get("user_query")
+    or hook_data.get("message")
+    or hook_data.get("text")
+    or ""
+)
+
+session_id = (
+    hook_data.get("session_id")
+    or hook_data.get("conversationId")
+    or hook_data.get("conversation_id")
+)
+if not session_id:
+    # agy 1.2.7 的 PreInvocation 载荷实测不带会话 id（herdr 官方 hook
+    # 因此静默失败）。从祖先进程参数恢复：链路是 agy -> hook.sh ->
+    # python，直接父进程是 hook.sh 自身，必须向上走到 agy 那一级
+    # 才能看到 --conversation <uuid>（2026-09-19 实测修复）。
+    try:
+        import re as _re
+        import subprocess as _subprocess
+        _pid = str(os.getppid())
+        for _ in range(4):
+            _args = _subprocess.run(
+                ["ps", "-p", _pid, "-o", "args="],
+                capture_output=True, text=True, timeout=2,
+            ).stdout
+            _match = _re.search(r"--conversation[= ]([0-9a-fA-F-]{8,})", _args)
+            if _match:
+                session_id = _match.group(1)
+                break
+            _pid = _subprocess.run(
+                ["ps", "-p", _pid, "-o", "ppid="],
+                capture_output=True, text=True, timeout=2,
+            ).stdout.strip()
+            if not _pid or _pid == "0":
+                break
+    except Exception:
+        pass
 status = "working"
 
 if event_name in ("SessionStart", "session_start"):
+    status = "idle"
+elif event_name in ("PreInvocation", "pre_invocation"):
     status = "idle"
 elif event_name in ("UserPromptSubmit", "user_prompt_submit", "PreToolUse", "pre_tool_use"):
     status = "working"
@@ -132,9 +183,12 @@ if os.path.exists(sock_path):
             "pane_id": pane_id,
             "tmux_pane": os.environ.get("TMUX_PANE"),
             "herdr_pane": os.environ.get("HERDR_PANE_ID"),
-            "session_id": session_id,
+            # 缺失时发 null（不是空串）：空串曾绕过 ingest 的会话锚定
+            # 校验，把全部会话写进同一个 journal 文件（审计 adv2-F1）。
+            "session_id": session_id or None,
             "cwd": os.getcwd(),
             "event": event_name,
+            "text": prompt_text,
         }
         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
             s.settimeout(0.5)
@@ -143,7 +197,32 @@ if os.path.exists(sock_path):
     except Exception:
         pass
 
-# 2. Emit OSC 1337 escape sequence to /dev/tty for remote/tmux inline sniffing
+# 2. 会话身份接管（v3）：载荷/父进程参数拿到会话 id 后，直接向 Herdr
+# socket 报 pane.report_agent_session（source=shardlane，客户端上报
+# 语义）。Herdr 有了 typed session identity，Chat 入口链路即通；
+# herdr 官方 hook 组只在存在时兜底，不再是前置依赖。
+if session_id and os.environ.get("HERDR_ENV") == "1" and os.environ.get("HERDR_PANE_ID") and os.environ.get("HERDR_SOCKET_PATH"):
+    try:
+        _seq = time.time_ns()
+        _req = json.dumps({
+            "id": f"shardlane:{agent}:{_seq}",
+            "method": "pane.report_agent_session",
+            "params": {
+                "pane_id": os.environ["HERDR_PANE_ID"],
+                "source": "shardlane",
+                "agent": agent,
+                "seq": _seq,
+                "agent_session_id": session_id,
+            },
+        })
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as h:
+            h.settimeout(0.5)
+            h.connect(os.environ["HERDR_SOCKET_PATH"])
+            h.sendall((_req + "\n").encode("utf-8"))
+    except Exception:
+        pass
+
+# 3. Emit OSC 1337 escape sequence to /dev/tty for remote/tmux inline sniffing
 try:
     with open("/dev/tty", "w") as tty:
         tty.write(f"\x1b]1337;AgentStatus={status};agent={agent};pane={pane_id}\x07")
@@ -155,7 +234,7 @@ PY
 
 pub const OPENCODE_PLUGIN_TEMPLATE: &str = r#"// installed by Shardlane
 // managed by Shardlane; reinstalling or updating the hook overwrites this file.
-// SHARDLANE_HOOK_VERSION=1
+// SHARDLANE_HOOK_VERSION=5
 import net from "node:net";
 import fs from "node:fs";
 import path from "node:path";
@@ -230,7 +309,7 @@ export const ShardlaneAgentStatePlugin = async () => {
 
 pub const PI_EXTENSION_TEMPLATE: &str = r#"// installed by Shardlane
 // managed by Shardlane; reinstalling or updating the hook overwrites this file.
-// SHARDLANE_HOOK_VERSION=1
+// SHARDLANE_HOOK_VERSION=5
 // @ts-nocheck
 import net from "node:net";
 import fs from "node:fs";
@@ -282,7 +361,7 @@ export default function (api: any) {
 
 pub const COMMAND_CODE_MOD_TEMPLATE: &str = r#"// installed by Shardlane
 // managed by Shardlane; reinstalling or updating the hook overwrites this file.
-// SHARDLANE_HOOK_VERSION=1
+// SHARDLANE_HOOK_VERSION=5
 // @ts-nocheck
 import net from "node:net";
 import fs from "node:fs";
@@ -374,7 +453,7 @@ pub struct AgentHookRegistry;
 
 impl AgentHookRegistry {
     /// Supported agents in the Hook manager.
-    pub const SUPPORTED_AGENTS: [AgentId; 7] = [
+    pub const SUPPORTED_AGENTS: [AgentId; 8] = [
         AgentId::ClaudeCode,
         AgentId::Codex,
         AgentId::Opencode,
@@ -382,6 +461,7 @@ impl AgentHookRegistry {
         AgentId::CommandCode,
         AgentId::Cursor,
         AgentId::Copilot,
+        AgentId::Antigravity,
     ];
 
     /// Shared directory for shardlane hook scripts: `~/.shardlane/hooks/`
@@ -399,6 +479,7 @@ impl AgentHookRegistry {
             AgentId::CommandCode => Self::command_code_status(home),
             AgentId::Cursor => Self::cursor_status(home),
             AgentId::Copilot => Self::copilot_status(home),
+            AgentId::Antigravity => Self::antigravity_status(home),
             _ => HookInstallStatus::Unsupported,
         }
     }
@@ -431,6 +512,7 @@ impl AgentHookRegistry {
             AgentId::CommandCode => Self::install_command_code(home),
             AgentId::Cursor => Self::install_cursor(home),
             AgentId::Copilot => Self::install_copilot(home),
+            AgentId::Antigravity => Self::install_antigravity(home),
             _ => Err(HookError::Unsupported(agent)),
         }
     }
@@ -445,6 +527,7 @@ impl AgentHookRegistry {
             AgentId::CommandCode => Self::uninstall_command_code(home),
             AgentId::Cursor => Self::uninstall_cursor(home),
             AgentId::Copilot => Self::uninstall_copilot(home),
+            AgentId::Antigravity => Self::uninstall_antigravity(home),
             _ => Err(HookError::Unsupported(agent)),
         }
     }
@@ -497,6 +580,10 @@ impl AgentHookRegistry {
                 ),
                 None,
             ),
+            AgentId::Antigravity => (
+                Some(Self::shardlane_hooks_dir(home).join("shardlane-antigravity-hook.sh")),
+                Some(home.join(".gemini").join("config").join("hooks.json")),
+            ),
             _ => (None, None),
         }
     }
@@ -504,6 +591,106 @@ impl AgentHookRegistry {
     // ---------------------------------------------------------------------
     // Claude Code
     // ---------------------------------------------------------------------
+    // ---------------------------------------------------------------------
+    // Antigravity (agy)：原生 hooks.json，managed group 形态
+    // （~/.gemini/config/hooks.json；事件面 PreInvocation/Stop 是
+    // agy 1.2.7 实际支持的全集，2026-09-19 对照本机安装验证）。
+    // ---------------------------------------------------------------------
+    fn antigravity_hook_script(home: &Path) -> PathBuf {
+        Self::shardlane_hooks_dir(home).join("shardlane-antigravity-hook.sh")
+    }
+
+    fn antigravity_hooks_json_path(home: &Path) -> PathBuf {
+        home.join(".gemini").join("config").join("hooks.json")
+    }
+
+    fn antigravity_status(home: &Path) -> HookInstallStatus {
+        let script = Self::antigravity_hook_script(home);
+        let hooks_json = Self::antigravity_hooks_json_path(home);
+        if script.exists() && hooks_json.exists() {
+            if let Ok(content) = fs::read_to_string(&hooks_json) {
+                if content.contains("shardlane-antigravity-hook.sh") {
+                    if let Ok(script_content) = fs::read_to_string(&script) {
+                        return check_version_in_content(&script_content);
+                    }
+                    return HookInstallStatus::Installed;
+                }
+            }
+        }
+        HookInstallStatus::NotInstalled
+    }
+
+    fn install_antigravity(home: &Path) -> Result<HookActionOutcome, HookError> {
+        if Self::antigravity_status(home) == HookInstallStatus::Installed {
+            return Ok(HookActionOutcome::AlreadyCurrent);
+        }
+        let script = Self::antigravity_hook_script(home);
+        write_executable_file(&script, SHELL_HOOK_TEMPLATE)?;
+
+        let hooks_path = Self::antigravity_hooks_json_path(home);
+        if let Some(parent) = hooks_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        let mut root_json: serde_json::Value = if hooks_path.exists() {
+            let data = fs::read_to_string(&hooks_path)?;
+            // 畸形 JSON fail-closed：静默回退 {} 会把用户既有配置整体
+            // 覆盖丢失（2026-09-19 审计修复；旧安装臂的同类问题单列）。
+            serde_json::from_str(&data).map_err(HookError::Json)?
+        } else {
+            serde_json::json!({})
+        };
+        if !root_json.is_object() {
+            return Err(HookError::Io(io::Error::other("malformed hooks.json")));
+        }
+        let script_str = script.to_string_lossy();
+        let entry = |event: &str| {
+            serde_json::json!([{
+                "command": format!("bash '{script_str}' agy {event}"),
+                "timeout": 5,
+                "type": "command",
+            }])
+        };
+        root_json["shardlane-hook"] = serde_json::json!({
+            "PreInvocation": entry("PreInvocation"),
+            "Stop": entry("Stop"),
+            "enabled": true,
+        });
+        Self::write_json_atomic(&hooks_path, &root_json)?;
+        Ok(HookActionOutcome::Installed)
+    }
+
+    fn uninstall_antigravity(home: &Path) -> Result<HookActionOutcome, HookError> {
+        let hooks_path = Self::antigravity_hooks_json_path(home);
+        if hooks_path.exists() {
+            let data = fs::read_to_string(&hooks_path)?;
+            // 畸形 JSON fail-closed（审计 adv3-F5）：静默跳过组移除却删除
+            // 脚本，会留下指向已删脚本的悬空 hook 引用，agy 每次触发
+            // 都执行失败。宁可报错让用户先修配置。
+            let mut root_json: serde_json::Value = serde_json::from_str(&data)?;
+            let had_group = root_json
+                .as_object_mut()
+                .map(|obj| obj.remove("shardlane-hook").is_some())
+                .unwrap_or(false);
+            if had_group {
+                Self::write_json_atomic(&hooks_path, &root_json)?;
+            }
+        }
+        let script = Self::antigravity_hook_script(home);
+        if script.exists() {
+            fs::remove_file(&script)?;
+        }
+        Ok(HookActionOutcome::Uninstalled)
+    }
+
+    /// tmp+rename 原子写（与 install_claude 同款；直写 fs::write 在崩溃/
+    /// ENOSPC 时会把用户 hooks.json 截断成空文件——审计 sec2）。
+    fn write_json_atomic(path: &Path, json: &serde_json::Value) -> Result<(), HookError> {
+        let tmp = path.with_extension(format!("tmp-{}", std::process::id()));
+        fs::write(&tmp, serde_json::to_string_pretty(json)?)?;
+        fs::rename(&tmp, path)?;
+        Ok(())
+    }
+
     fn claude_hook_script(home: &Path) -> PathBuf {
         Self::shardlane_hooks_dir(home).join("shardlane-claude-hook.sh")
     }
@@ -1126,6 +1313,94 @@ impl AgentHookRegistry {
 mod tests {
     use super::*;
     use tempfile::TempDir;
+
+    /// 回归（2026-09-19）：SHELL_HOOK_TEMPLATE 的 Python 段曾混入非法
+    /// 注释语法，整个钩子脚本静默失效。模板改动必须能通过 python 编译。
+    #[test]
+    fn shell_hook_template_python_block_compiles() {
+        let Some(python3) = which_python3() else {
+            return;
+        };
+        let lines: Vec<&str> = SHELL_HOOK_TEMPLATE.lines().collect();
+        let start = lines
+            .iter()
+            .position(|line| line.contains("python3 - <<'PY'"))
+            .expect("shell template must embed a python heredoc")
+            + 1;
+        let end = lines
+            .iter()
+            .rposition(|line| line.trim() == "PY")
+            .expect("heredoc terminator must exist");
+        let python = lines[start..end].join("\n");
+        let dir = tempfile::tempdir().unwrap();
+        let script = dir.path().join("hook_under_test.py");
+        std::fs::write(&script, python).unwrap();
+        let status = std::process::Command::new(python3)
+            .arg("-m")
+            .arg("py_compile")
+            .arg(&script)
+            .status()
+            .unwrap();
+        assert!(status.success(), "hook template python must compile");
+    }
+
+    fn which_python3() -> Option<String> {
+        let output = std::process::Command::new("sh")
+            .arg("-c")
+            .arg("command -v python3")
+            .output()
+            .ok()?;
+        if !output.status.success() {
+            return None;
+        }
+        let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        path.starts_with('/').then_some(path)
+    }
+
+    #[test]
+    fn test_antigravity_hook_managed_group_install_and_uninstall() {
+        let temp = TempDir::new().unwrap();
+        let home = temp.path();
+
+        assert_eq!(
+            AgentHookRegistry::read_status(AgentId::Antigravity, home),
+            HookInstallStatus::NotInstalled
+        );
+        assert_eq!(
+            AgentHookRegistry::install(AgentId::Antigravity, home).unwrap(),
+            HookActionOutcome::Installed
+        );
+        assert_eq!(
+            AgentHookRegistry::read_status(AgentId::Antigravity, home),
+            HookInstallStatus::Installed
+        );
+
+        // managed group 形态：原生事件面 + 脚本引用。
+        let hooks_json = home.join(".gemini").join("config").join("hooks.json");
+        let content = fs::read_to_string(&hooks_json).unwrap();
+        assert!(content.contains("shardlane-hook"));
+        assert!(content.contains("PreInvocation"));
+        assert!(content.contains("Stop"));
+        assert!(content.contains("shardlane-antigravity-hook.sh"));
+
+        // 幂等
+        assert_eq!(
+            AgentHookRegistry::install(AgentId::Antigravity, home).unwrap(),
+            HookActionOutcome::AlreadyCurrent
+        );
+
+        // 卸载只移除 managed group，保留用户其余配置。
+        assert_eq!(
+            AgentHookRegistry::uninstall(AgentId::Antigravity, home).unwrap(),
+            HookActionOutcome::Uninstalled
+        );
+        let after = fs::read_to_string(&hooks_json).unwrap();
+        assert!(!after.contains("shardlane-hook"));
+        assert!(
+            !AgentHookRegistry::antigravity_hook_script(home).exists(),
+            "script removed"
+        );
+    }
 
     #[test]
     fn test_claude_hook_install_idempotence_and_uninstall() {

@@ -39,6 +39,8 @@ pub struct AgentHookReport {
     #[serde(default)]
     pub event: Option<String>,
     #[serde(default)]
+    pub text: Option<String>,
+    #[serde(default)]
     pub timestamp: u64,
 }
 
@@ -113,6 +115,7 @@ pub fn parse_osc_agent_status(bytes: &[u8]) -> Option<AgentHookReport> {
         session_id,
         cwd: None,
         event: None,
+        text: None,
         timestamp: std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_secs())
@@ -214,11 +217,23 @@ fn handle_client(stream: UnixStream, sender: async_channel::Sender<AgentHookRepo
         if trimmed.is_empty() {
             continue;
         }
+        // 单行长度上限（2026-09-19 审计修复）：超长行直接丢弃，杜绝
+        // 巨型 payload 进入归一化/持久化链路（同用户信任边界内的
+        // 尽力而为防线；text 侧另有 64KiB 截断）。
+        if trimmed.len() > MAX_REPORT_LINE_BYTES {
+            continue;
+        }
         if let Ok(report) = serde_json::from_str::<AgentHookReport>(trimmed) {
+            // Host 侧 ingest：journal 语义源在 IPC 线程生成（审计修复：
+            // 不挂在 GUI 视图控制器上，也不占 UI 线程）。
+            crate::agent_hooks::adapter::ingest_report(&report);
             let _ = sender.send_blocking(report);
         }
     }
 }
+
+/// 单条上报行的字节上限（1 MiB）。
+const MAX_REPORT_LINE_BYTES: usize = 1024 * 1024;
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
@@ -266,6 +281,7 @@ mod tests {
             session_id: Some("session-123".to_string()),
             cwd: Some("/test/dir".to_string()),
             event: Some("UserPromptSubmit".to_string()),
+            text: Some("hello".to_string()),
             timestamp: 123456,
         };
 

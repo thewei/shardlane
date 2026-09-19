@@ -16,7 +16,7 @@
 //! require explicit product approval; ACP is currently frozen and not an
 //! extension direction.
 
-use crate::live::registry::{LiveCapability, PROVIDERS};
+use crate::live::registry::PROVIDERS;
 use crate::models::AgentId;
 
 /// Typed semantic source locator for one Agent session.
@@ -63,9 +63,11 @@ pub fn resolve_session_source_locator(
     // kind vocabulary measured from the Herdr live protocol ("id"/"path");
     // db-session/protocol etc. from plan §9 wait for real Herdr reports
     // before being added — no assumptions.
+    // Hook Journal 档位同样有可解析的会话语义（journal 由 Host 写入），
+    // native id 定位成立；文件源缺失由 Host 的 journal 回退兜底。
     let live_capable = PROVIDERS
         .iter()
-        .any(|entry| entry.agent == agent && entry.live == LiveCapability::AppendLog);
+        .any(|entry| entry.agent == agent && entry.live.is_live());
     match kind {
         "path" => SessionSourceLocator::FilePath {
             agent,
@@ -131,8 +133,8 @@ mod tests {
             resolve_session_source_locator(AgentId::Cursor, "id", "herdr:cursor", "00d021ce"),
             SessionSourceLocator::NativeId { .. }
         ));
-        // Antigravity: kind=id but encrypted body (no decoder) → MetadataOnly,
-        // never faked.
+        // Antigravity: kind=id + HookJournal capability → NativeId（语义源
+        // 是 Host hook journal，文件缺失由 Host 回退兜底；加密正文不读）。
         assert!(matches!(
             resolve_session_source_locator(
                 AgentId::Antigravity,
@@ -140,7 +142,7 @@ mod tests {
                 "herdr:antigravity_cli",
                 "b316307a",
             ),
-            SessionSourceLocator::MetadataOnly { .. }
+            SessionSourceLocator::NativeId { .. }
         ));
         // Unknown kind: never guessed even when the agent is supported.
         assert!(matches!(

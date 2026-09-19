@@ -119,8 +119,20 @@ impl ShardlaneApp {
                         .on_click(move |_, _, cx| {
                             click.update(cx, |this, cx| {
                                 match AgentHookRegistry::uninstall(agent, &home) {
-                                    Ok(_) => this.agent_hook_notice = None,
-                                    Err(e) => this.agent_hook_notice = Some(e.to_string()),
+                                    Ok(outcome) => {
+                                        shardlane_host::op_log(
+                                            "INFO",
+                                            format_args!("hook uninstall {agent:?} -> {outcome:?}"),
+                                        );
+                                        this.agent_hook_notice = None;
+                                    }
+                                    Err(e) => {
+                                        shardlane_host::op_log(
+                                            "ERROR",
+                                            format_args!("hook uninstall {agent:?} failed: {e}"),
+                                        );
+                                        this.agent_hook_notice = Some(e.to_string());
+                                    }
                                 }
                                 cx.notify();
                             });
@@ -137,8 +149,20 @@ impl ShardlaneApp {
                         .on_click(move |_, _, cx| {
                             click.update(cx, |this, cx| {
                                 match AgentHookRegistry::install(agent, &home) {
-                                    Ok(_) => this.agent_hook_notice = None,
-                                    Err(e) => this.agent_hook_notice = Some(e.to_string()),
+                                    Ok(outcome) => {
+                                        shardlane_host::op_log(
+                                            "INFO",
+                                            format_args!("hook refresh {agent:?} -> {outcome:?}"),
+                                        );
+                                        this.agent_hook_notice = None;
+                                    }
+                                    Err(e) => {
+                                        shardlane_host::op_log(
+                                            "ERROR",
+                                            format_args!("hook refresh {agent:?} failed: {e}"),
+                                        );
+                                        this.agent_hook_notice = Some(e.to_string());
+                                    }
                                 }
                                 cx.notify();
                             });
@@ -155,8 +179,20 @@ impl ShardlaneApp {
                         .on_click(move |_, _, cx| {
                             click.update(cx, |this, cx| {
                                 match AgentHookRegistry::install(agent, &home) {
-                                    Ok(_) => this.agent_hook_notice = None,
-                                    Err(e) => this.agent_hook_notice = Some(e.to_string()),
+                                    Ok(outcome) => {
+                                        shardlane_host::op_log(
+                                            "INFO",
+                                            format_args!("hook install {agent:?} -> {outcome:?}"),
+                                        );
+                                        this.agent_hook_notice = None;
+                                    }
+                                    Err(e) => {
+                                        shardlane_host::op_log(
+                                            "ERROR",
+                                            format_args!("hook install {agent:?} failed: {e}"),
+                                        );
+                                        this.agent_hook_notice = Some(e.to_string());
+                                    }
                                 }
                                 cx.notify();
                             });

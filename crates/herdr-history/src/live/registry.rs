@@ -25,9 +25,27 @@ use crate::models::AgentId;
 pub enum LiveCapability {
     /// append-only JSONL tailing (AppendLogTransport; Claude/Codex/Pi/Omp).
     AppendLog,
+    /// Shardlane Hook Journal: provider-neutral normalized events appended by
+    /// the Host hook adapter layer (agent self-reported semantics through
+    /// native CLI hooks; decoded by live::journal). Providers without a
+    /// decodable session-file format get live Chat through this transport.
+    HookJournal,
     /// No live semantic source currently available (History-only /
     /// metadata-only).
     None,
+}
+
+impl LiveCapability {
+    /// 该档位是否构成可用的 live 语义源（唯一权威谓词——所有消费方
+    /// 从这里推导，禁止再手写 `!= None` 比较，2026-09-19 审计收敛）。
+    pub fn is_live(self) -> bool {
+        !matches!(self, Self::None)
+    }
+
+    /// 是否为 Hook Journal 档位（Host hook 适配层供给的语义源）。
+    pub fn is_hook_journal(self) -> bool {
+        matches!(self, Self::HookJournal)
+    }
 }
 
 /// Product exposure tier (R4 / audit CS-08): technical implementation ≠
@@ -139,9 +157,12 @@ pub const PROVIDERS: &[ProviderCapabilities] = &[
     },
     ProviderCapabilities {
         agent: AgentId::Antigravity,
-        aliases: &[],
-        live: LiveCapability::None,
-        exposure: ProviderExposure::Hidden,
+        // Antigravity bodies are encrypted .pb and not file-decodable; live
+        // semantics come from the native CLI hooks (PreInvocation/Stop)
+        // normalized into the Shardlane Hook Journal.
+        aliases: &["antigravity", "agy"],
+        live: LiveCapability::HookJournal,
+        exposure: ProviderExposure::Preview,
     },
     ProviderCapabilities {
         agent: AgentId::Dsh,
@@ -237,8 +258,13 @@ mod tests {
         );
         // Unregistered aliases and unknown agents must miss.
         assert_eq!(resolve_agent_alias("unknown-agent", Some("shell")), None);
-        assert_eq!(resolve_agent_alias("agy", None), None);
-        assert_eq!(resolve_agent_alias("antigravity", Some("agy")), None);
+        // Antigravity now resolves through the Hook Journal live transport
+        // (native CLI hooks; the encrypted .pb bodies stay unread).
+        assert_eq!(resolve_agent_alias("agy", None), Some(AgentId::Antigravity));
+        assert_eq!(
+            resolve_agent_alias("antigravity", Some("agy")),
+            Some(AgentId::Antigravity)
+        );
     }
 
     #[test]
@@ -264,6 +290,7 @@ mod tests {
                 AgentId::Pi,
                 AgentId::Omp,
                 AgentId::Kimi,
+                AgentId::Antigravity,
             ]
         );
         for agent in AgentId::ALL {

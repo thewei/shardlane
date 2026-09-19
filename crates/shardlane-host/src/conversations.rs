@@ -530,10 +530,33 @@ pub fn live_session_source(
     session: &AgentSessionInfo,
 ) -> Result<Option<SessionFileRef>, String> {
     match resolve_agent_session_source(session).map_err(|error| error.to_string())? {
-        SessionSourceLocator::NativeId { agent, native_id } => catalog
-            .session_source_by_native(agent, &native_id)
-            .map_err(|error| error.to_string()),
+        SessionSourceLocator::NativeId { agent, native_id } => {
+            // HookJournal 档位（2026-09-19 修复）：catalog 里该 provider
+            // 的会话是虚拟路径（元数据卡，<db>#<id>），AppendLog transport
+            // 读它必然 ENOENT——journal 是该档位唯一合法 live 源，优先于
+            // catalog；journal 缺席 = 尚未写下第一笔（空会话）。
+            if shardlane_history::provider_capabilities(agent)
+                .is_some_and(|caps| caps.live.is_hook_journal())
+            {
+                return hook_journal_source(agent, &native_id);
+            }
+            if let Some(source) = catalog
+                .session_source_by_native(agent, &native_id)
+                .map_err(|error| error.to_string())?
+            {
+                return Ok(Some(source));
+            }
+            Ok(None)
+        }
         SessionSourceLocator::FilePath { agent, path } => {
+            // HookJournal 档位（审计 adv1-F2）：provider 上报的 path 是
+            // 加密 .db，journal 解码器不能读它；journal 缺席时返回
+            // "尚未写下第一笔"（空会话），绝不把 .db 喂进 JSONL 解码。
+            if shardlane_history::provider_capabilities(agent)
+                .is_some_and(|caps| caps.live.is_hook_journal())
+            {
+                return hook_journal_source(agent, &session.value);
+            }
             let metadata = std::fs::metadata(&path)
                 .map_err(|error| format!("history source unavailable: {error}"))?;
             let modified = metadata
@@ -550,11 +573,62 @@ pub fn live_session_source(
                 size: i64::try_from(metadata.len()).unwrap_or(i64::MAX),
             }))
         }
-        SessionSourceLocator::MetadataOnly { .. } => {
-            Err("provider exposes metadata only; semantic live Chat is unavailable".to_string())
+        SessionSourceLocator::MetadataOnly { agent, native_id } => {
+            hook_journal_source(agent, &native_id)
         }
     }
 }
+
+/// Hook Journal fallback: only for providers whose live capability is
+/// `HookJournal`, and only when the journal file already exists — no journal,
+/// no semantic source (fail closed, never guessed).
+pub fn hook_journal_source(
+    agent: AgentId,
+    native_id: &str,
+) -> Result<Option<SessionFileRef>, String> {
+    let journal_capable = shardlane_history::provider_capabilities(agent)
+        .is_some_and(|caps| caps.live.is_hook_journal());
+    if !journal_capable {
+        return Err(
+            "provider exposes metadata only; semantic live Chat is unavailable".to_string(),
+        );
+    }
+    let Some(root) = crate::agent_hooks::adapter::HookEventJournal::default_root() else {
+        return Err("hook journal root unavailable".to_string());
+    };
+    let path =
+        crate::agent_hooks::adapter::HookEventJournal::journal_path_for(&root, agent, native_id);
+    let Ok(metadata) = std::fs::metadata(&path) else {
+        // Hook 事件还没到（未安装/未触发）：等价于"还没写下第一笔"，
+        // 返回空会话而不是错误，Chat 可以先渲染再等事件。
+        return Ok(None);
+    };
+    // 新鲜度边界（审计 adv3-F3）：陈旧 journal（默认 7 天无事件）按
+    // "尚未写下第一笔" 处理，不给新会话复活旧对话。
+    if let Ok(mtime) = metadata.modified() {
+        if let Ok(age) = std::time::SystemTime::now().duration_since(mtime) {
+            if age > JOURNAL_FRESH_MAX {
+                return Ok(None);
+            }
+        }
+    }
+    let modified = metadata
+        .modified()
+        .ok()
+        .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+        .and_then(|duration| i64::try_from(duration.as_millis()).ok())
+        .unwrap_or(0);
+    Ok(Some(SessionFileRef {
+        agent,
+        native_id: native_id.to_string(),
+        file_path: path.to_string_lossy().into_owned(),
+        mtime_ms: modified,
+        size: i64::try_from(metadata.len()).unwrap_or(i64::MAX),
+    }))
+}
+
+/// Journal 新鲜度上限：超过即视为缺席（fail-closed）。
+const JOURNAL_FRESH_MAX: std::time::Duration = std::time::Duration::from_secs(7 * 24 * 3600);
 
 /// Project one normalized History/Live message into the single Conversation item shape.
 /// The source sequence is retained, making append/replay reconciliation deterministic.
@@ -920,10 +994,12 @@ mod tests {
 
     #[test]
     fn public_identity_rejects_metadata_only_sessions() {
+        // agy 已升为 HookJournal 档位（kind=id → NativeId）；仍然
+        // metadata-only 的 provider（gemini）继续 fail-closed。
         let session = AgentSessionInfo {
-            agent: "agy".into(),
+            agent: "gemini".into(),
             kind: "id".into(),
-            source: "herdr:agy".into(),
+            source: "herdr:gemini".into(),
             value: "opaque-metadata".into(),
         };
         assert_eq!(

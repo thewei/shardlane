@@ -184,8 +184,7 @@ pub(crate) struct PendingHandoffOperation {
 /// authority.
 /// Chat technical capability (live decoding + transport).
 pub(crate) fn chat_supported(agent: AgentId) -> bool {
-    shardlane_history::provider_capabilities(agent)
-        .is_some_and(|caps| caps.live == shardlane_history::LiveCapability::AppendLog)
+    shardlane_history::provider_capabilities(agent).is_some_and(|caps| caps.live.is_live())
 }
 
 /// Chat product-visibility gate (R4): technical capability + exposure not
@@ -249,6 +248,44 @@ impl ShardlaneApp {
         let next = match self.chat.model.mode {
             WorkSurfaceMode::Terminal => {
                 if self.focused_chat_agent().is_none() {
+                    // 入口被挡时的门位诊断（操作日志）：哪一道门、哪一个值。
+                    let focused_pane = self.state.focused_pane_id.clone();
+                    let gate = self
+                        .state
+                        .agents
+                        .iter()
+                        .find(|agent| {
+                            agent
+                                .pane_id
+                                .as_deref()
+                                .is_some_and(|pane_id| Some(pane_id) == focused_pane.as_deref())
+                        })
+                        .or_else(|| self.state.agents.iter().find(|agent| agent.focused))
+                        .map(|agent| {
+                            let Some(session) = agent.agent_session.as_ref() else {
+                                return format!(
+                                    "agent={} has no typed session (hook report missing)",
+                                    agent.agent.as_deref().unwrap_or("?")
+                                );
+                            };
+                            match shardlane_history::resolve_agent_alias(
+                                &session.agent,
+                                agent.agent.as_deref(),
+                            ) {
+                                None => format!("provider '{}' not in registry", session.agent),
+                                Some(provider)
+                                    if !shardlane_history::provider_exposed(provider) =>
+                                {
+                                    format!("{provider:?} hidden")
+                                }
+                                Some(provider) if !self.config.providers.is_enabled(provider) => {
+                                    format!("{provider:?} disabled in Settings/Providers")
+                                }
+                                Some(provider) => format!("{provider:?} gate=unknown"),
+                            }
+                        })
+                        .unwrap_or_else(|| "no agent on focused pane".to_string());
+                    shardlane_host::op_log("WARN", format_args!("chat entry blocked: {gate}"));
                     window.push_notification(
                         format!("Chat needs a supported {} agent", chat_supported_labels()),
                         cx,
@@ -475,13 +512,37 @@ impl ShardlaneApp {
                         }
                         // kind=id: exact lookup through the catalog's (agent, native_id).
                         SessionSourceLocator::NativeId { agent, native_id } => {
-                            let db_path = crate::history::transcript_source::history_db_path();
-                            let catalog = HistoryCatalog::open(&db_path)
-                                .or_else(|_| HistoryCatalog::open_initialized(&db_path))?;
-                            let source = catalog.session_source_by_native(agent, &native_id)?;
-                            anyhow::Ok(source.filter(|source| {
-                                roster.owns_active_path(source.agent, &source.file_path)
-                            }))
+                            // HookJournal 档位（2026-09-19 修复）：catalog
+                            // 的 agy 会话是虚拟路径（<db>#<id>），tail 必然
+                            // ENOENT——journal 是唯一合法 live 源，优先于
+                            // catalog；缺席 = connecting 态。
+                            if shardlane_history::provider_capabilities(agent)
+                                .is_some_and(|caps| caps.live.is_hook_journal())
+                            {
+                                let journal =
+                                    shardlane_host::hook_journal_source(agent, &native_id)
+                                        .ok()
+                                        .flatten();
+                                shardlane_host::op_log(
+                                    "INFO",
+                                    format_args!(
+                                        "chat lookup: provider=antigravity native={native_id} journal={}",
+                                        journal
+                                            .as_ref()
+                                            .map(|source| source.file_path.as_str())
+                                            .unwrap_or("absent (connecting)"),
+                                    ),
+                                );
+                                anyhow::Ok(journal)
+                            } else {
+                                let db_path = crate::history::transcript_source::history_db_path();
+                                let catalog = HistoryCatalog::open(&db_path)
+                                    .or_else(|_| HistoryCatalog::open_initialized(&db_path))?;
+                                let source = catalog.session_source_by_native(agent, &native_id)?;
+                                anyhow::Ok(source.filter(|source| {
+                                    roster.owns_active_path(source.agent, &source.file_path)
+                                }))
+                            }
                         }
                         // Already intercepted above; defensively unreachable.
                         SessionSourceLocator::MetadataOnly { .. } => anyhow::Ok(None),

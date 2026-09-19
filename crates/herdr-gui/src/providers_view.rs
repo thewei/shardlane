@@ -16,7 +16,7 @@ use ::gpui::img;
 use gpui_component::button::ButtonVariants as _;
 use shardlane_history::{
     HistorySourceKey, HistorySourceKind, HistorySourceLocation, HistorySourcePolicy,
-    LiveCapability, ProviderCapabilities, ProviderExposure,
+    ProviderCapabilities, ProviderExposure,
 };
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -121,7 +121,7 @@ fn provider_capability_text(
         installed,
         i18n::t("settings.providers.cap_history").to_string(),
     ];
-    if caps.live == LiveCapability::AppendLog {
+    if caps.live.is_live() {
         parts.push(i18n::t("settings.providers.cap_live").to_string());
     }
     if caps.exposure == ProviderExposure::Preview {
@@ -760,7 +760,7 @@ impl ShardlaneApp {
             .and_then(|available| available.get(&agent))
             .map(|path| display_path(Path::new(path)))
             .unwrap_or_else(|| i18n::t("settings.providers.not_found").to_string());
-        let live_detail = if caps.is_some_and(|caps| caps.live == LiveCapability::AppendLog) {
+        let live_detail = if caps.is_some_and(|caps| caps.live.is_live()) {
             i18n::t("settings.providers.live_available")
         } else {
             i18n::t("settings.providers.live_unavailable")

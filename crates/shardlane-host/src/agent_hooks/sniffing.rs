@@ -1,9 +1,20 @@
 //! Tier 3 Process & Title Agent Status Sniffing.
 //!
-//! Non-invasive detection of coding agents running in tmux / uuyc / terminal panes
-//! without requiring explicit hooks (Tier 3 degradation).
+//! [INPUT]: foreground command basename and pane title from multiplexer
+//! projections.
+//! [OUTPUT]: sniff_agent_from_process_and_title (agent identity + status).
+//! [POS]: Tier 3 兜底识别：Agent 身份只从精确二进制名判定，标题只参与
+//! 状态推断、绝不参与身份判定——substring 标题匹配曾把无关进程/服务器
+//! 误识别成 Agent（2026-09-19 行为修正）。上游权威仍是 Tier 1 hook IPC
+//! （adapter 层的 registry 别名校验）与 Herdr 的 agent_session。
+//! [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 
 /// Infers the agent identifier and basic status from foreground command and pane title.
+///
+/// Identity rule (strict): only an exact foreground-binary match against the
+/// allowlist identifies an agent. Titles never identify agents — they carry
+/// user-controlled text (file names, server names) and previously produced
+/// false Agent projections.
 ///
 /// Returns `(Option<agent_name>, Option<agent_status>)`.
 pub fn sniff_agent_from_process_and_title(
@@ -18,41 +29,28 @@ pub fn sniff_agent_from_process_and_title(
 
     let lower_title = title.map(|t| t.to_lowercase());
 
-    // 1. Identify Agent
+    // 1. Identify Agent: exact binary name only.
     let agent = match clean_cmd.as_deref() {
         Some("claude" | "claude-code") => Some("claude".to_string()),
         Some("codex" | "opencodex") => Some("codex".to_string()),
         Some("opencode") => Some("opencode".to_string()),
         Some("pi" | "pi-agent") => Some("pi".to_string()),
         Some("command-code" | "commandcode") => Some("commandcode".to_string()),
-        Some("cursor") => Some("cursor".to_string()),
+        // Cursor 的终端 CLI 是 cursor-agent；裸 "cursor" 是 IDE 启动器，
+        // 精确匹配它会把编辑器误报成 Agent。
+        Some("cursor-agent") => Some("cursor".to_string()),
         Some("copilot") => Some("copilot".to_string()),
         Some("gemini") => Some("gemini".to_string()),
-        Some("kimi") => Some("kimi".to_string()),
+        Some("kimi" | "kimi-code") => Some("kimi".to_string()),
         Some("qoder") => Some("qoder".to_string()),
+        Some("agy" | "antigravity") => Some("agy".to_string()),
+        Some("omp") => Some("omp".to_string()),
+        Some("grok") => Some("grok".to_string()),
+        Some("kiro-cli" | "kiro") => Some("kiro".to_string()),
+        Some("dsh") => Some("dsh".to_string()),
         _ => {
-            // Check title if command was generic or absent
-            if let Some(t) = &lower_title {
-                if t.contains("claude code") || t.contains("claude") {
-                    Some("claude".to_string())
-                } else if t.contains("codex") || t.contains("opencodex") {
-                    Some("codex".to_string())
-                } else if t.contains("opencode") {
-                    Some("opencode".to_string())
-                } else if t.contains("command code") || t.contains("commandcode") {
-                    Some("commandcode".to_string())
-                } else if t.contains("pi agent") {
-                    Some("pi".to_string())
-                } else if t.contains("gemini") {
-                    Some("gemini".to_string())
-                } else if t.contains("qoder") {
-                    Some("qoder".to_string())
-                } else {
-                    None
-                }
-            } else {
-                None
-            }
+            // 标题不再参与身份判定：无精确命令命中即非 Agent。
+            None
         }
     };
 
@@ -120,12 +118,45 @@ mod tests {
         assert_eq!(status.as_deref(), Some("blocked"));
     }
 
+    /// 误识别回归（2026-09-19）：标题/文件名/服务器名绝不能产生 Agent。
     #[test]
-    fn test_sniff_from_title_fallback() {
-        let (agent, status) =
-            sniff_agent_from_process_and_title(Some("node"), Some("opencode - idle"));
-        assert_eq!(agent.as_deref(), Some("opencode"));
-        assert_eq!(status.as_deref(), Some("idle"));
+    fn test_title_text_never_identifies_an_agent() {
+        let cases: [(Option<&str>, &str); 6] = [
+            (Some("vim"), "claude.md — vim"),
+            (Some("node"), "mcp-server-gemini"),
+            (Some("node"), "codex-proxy-server"),
+            (Some("python3"), "claude-code-server.py"),
+            (Some("zsh"), "wilson@MacBook-Pro: ~/work/antigravity"),
+            (None, "opencode — http server"),
+        ];
+        for (cmd, title) in cases {
+            let (agent, status) = sniff_agent_from_process_and_title(cmd, Some(title));
+            assert!(
+                agent.is_none(),
+                "title {title:?} must not identify an agent"
+            );
+            assert!(status.is_none(), "no agent means no status");
+        }
+    }
+
+    #[test]
+    fn test_exact_binaries_cover_the_extended_allowlist() {
+        for (binary, expected) in [
+            ("agy", "agy"),
+            ("antigravity", "agy"),
+            ("kimi-code", "kimi"),
+            ("cursor-agent", "cursor"),
+            ("omp", "omp"),
+            ("grok", "grok"),
+            ("kiro-cli", "kiro"),
+            ("dsh", "dsh"),
+        ] {
+            let (agent, _) = sniff_agent_from_process_and_title(Some(binary), None);
+            assert_eq!(agent.as_deref(), Some(expected), "binary {binary}");
+        }
+        // 裸 "cursor" 是 IDE 启动器：不是 Agent。
+        let (ide, _) = sniff_agent_from_process_and_title(Some("cursor"), None);
+        assert_eq!(ide, None);
     }
 
     #[test]

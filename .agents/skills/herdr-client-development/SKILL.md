@@ -183,12 +183,16 @@ Variable-height transcript rendering must stay bounded for large histories. Use 
 The Chat View is an alternate semantic presentation of one Herdr-owned Agent session, never a second runtime.
 
 - Claude/Codex/Pi processes run only inside the Herdr TUI; Chat starts no provider process.
-- The live semantic source is the provider session file, decoded incrementally by `shardlane-history` `live/`; do not parse TUI/ANSI output for semantics and do not reparse the whole file per append.
+- The live semantic source is the provider session file (AppendLog providers) or the Shardlane Hook Journal (HookJournal providers, written by `shardlane-host` `agent_hooks::adapter` after strict registry-alias identity normalization), decoded incrementally by `shardlane-history` `live/`; do not parse TUI/ANSI output for semantics and do not reparse the whole file per append.
 - Agent↔source correlation is exact `(provider, native session id)` from Herdr `AgentSessionInfo` matched with History resume-identity rules; never guess by cwd/mtime.
 - Ordinary prompts go only through Herdr `agent.prompt` in verified sendable states; blocked/unsupported interactions route to Terminal explicitly.
 - There is exactly one `AgentComposer` and one conversation/activity presentation language (shared `agent_ui`); New Agent, History Detail, and Chat configure them without duplicating them, and lifecycle ownership stays with each surface.
 
 Unknown provider/session behavior stays unsupported rather than guessed.
+
+For self-testing the hook -> journal -> Chat pipeline against a live agent
+session (manual hook replay, operation-log reading, failure signatures), see
+`.agents/skills/shardlane-hook-selftest/SKILL.md`.
 
 ## Remote API & golden fixtures rule
 

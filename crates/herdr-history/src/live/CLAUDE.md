@@ -16,6 +16,13 @@ Omp fork) session files running inside the Herdr TUI.
   live increments share the same `feed_line` path, so
   `parse_full(fixture) == incremental feed + settle` holds by construction
   (contract tests in `tests.rs`).
+- `journal.rs` 是 provider 中立的 Hook Journal 解码器（2026-09-19，
+  `LiveCapability::HookJournal`）：消费 Host hook 适配层写入的归一化
+  JSONL（版本化 `v` 字段，未知版本/kind 一律计入 unknown——fail-closed），
+  只投影 user_prompt/assistant_message 为消息；journal 文件由
+  shardlane-host `agent_hooks::adapter` 拥有，本模块只读不写。轮转
+  （8MiB 上限）会重置该会话的 Chat 可见历史——durable 全量 transcript
+  由规划中的 AntigravityAdapter v2 承担，不在本层拼接双代。
 - The render/GUI layer may only consume `LiveSnapshot` (`messages` + `facts`
   + `generation`); `open`/`sync` I/O must happen in a background task, and
   results may only be applied after generation validation.

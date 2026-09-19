@@ -337,12 +337,11 @@ impl ChatModel {
                 }
             }
             LiveChange::Appended => {
-                if sync.appended.is_empty() && sync.changed.is_empty() {
-                    return;
-                }
                 let Some(snapshot) = self.snapshot.as_mut() else {
                     // First delivery is the initial hydration: the appended batch
-                    // is equivalent to a complete snapshot.
+                    // is equivalent to a complete snapshot. 首交付即使
+                    // appended 为空（Hook Journal 0 消息起步）也必须安装
+                    // 快照——否则 Connecting 视图永不退场（2026-09-19 修复）。
                     self.install_snapshot(LiveSnapshot {
                         messages: sync.appended_messages.clone(),
                         facts: LiveFacts::default(),
@@ -350,6 +349,9 @@ impl ChatModel {
                     });
                     return;
                 };
+                if sync.appended.is_empty() && sync.changed.is_empty() {
+                    return;
+                }
                 let first_new_index = snapshot.messages.len();
                 upsert_batch(
                     &mut snapshot.messages,
@@ -626,11 +628,14 @@ mod tests {
             Some(AgentId::CommandCode)
         );
         assert_eq!(normalize_provider("unknown-agent", Some("shell")), None);
-        // Antigravity encrypts bodies (only the metadata DB exists): there is no
-        // decodable live semantics, so it must never enter Chat entry gating
-        // (only the herdr TUI is shown).
-        assert_eq!(normalize_provider("agy", None), None);
-        assert_eq!(normalize_provider("antigravity", Some("agy")), None);
+        // Antigravity enters Chat through the Hook Journal transport (native
+        // CLI hooks; the encrypted .pb bodies stay unread). Registry is the
+        // single authority, so this flip needs no Chat-side list.
+        assert_eq!(normalize_provider("agy", None), Some(AgentId::Antigravity));
+        assert_eq!(
+            normalize_provider("antigravity", Some("agy")),
+            Some(AgentId::Antigravity)
+        );
     }
 
     #[test]
@@ -745,6 +750,22 @@ mod tests {
             vec![(2, user_message_at(2, "question two"))],
             vec![],
         ));
+
+        // 回归（2026-09-19）：Hook Journal 0 消息首交付也必须安装空快照，
+        // 否则 Connecting 视图永不退场。
+        let mut journal_model = ChatModel::default();
+        journal_model.apply_sync(&appended_sync(vec![], vec![]));
+        assert!(
+            journal_model.snapshot.is_some(),
+            "first delivery with zero messages must still install the snapshot"
+        );
+        assert_eq!(
+            journal_model
+                .snapshot
+                .as_ref()
+                .map(|snapshot| snapshot.messages.len()),
+            Some(0)
+        );
 
         let mut full_model = ChatModel::default();
         full_model.install_snapshot(LiveSnapshot {

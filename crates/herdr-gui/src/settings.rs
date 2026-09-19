@@ -270,12 +270,16 @@ pub struct ProvidersConfig {
 
 impl Default for ProvidersConfig {
     fn default() -> Self {
-        let default_agents: [shardlane_history::AgentId; 5] = [
+        let default_agents: [shardlane_history::AgentId; 6] = [
             shardlane_history::AgentId::ClaudeCode,
             shardlane_history::AgentId::Codex,
             shardlane_history::AgentId::Cursor,
             shardlane_history::AgentId::Pi,
             shardlane_history::AgentId::Omp,
+            // Antigravity（Preview）：hook→journal→Chat 全链路已通
+            //（2026-09-19），跟随 Cursor 先例——功能完整的 Preview 档位
+            // 默认可用；存量的显式 providers 配置不受默认值影响。
+            shardlane_history::AgentId::Antigravity,
         ];
         Self {
             enabled: default_agents
@@ -1422,7 +1426,8 @@ mod providers_tests {
     use super::*;
 
     /// R4 contract: the default instance enables the Stable set (ClaudeCode, Codex, Cursor,
-    /// Pi, Omp); Hidden/Preview never enter the default.
+    /// Pi, Omp) plus functionally-complete Antigravity (hook→journal→Chat
+    /// 全链路, 2026-09-19); Hidden never enters the default.
     #[test]
     fn default_enabled_covers_the_stable_set() {
         let config = ProvidersConfig::default();
@@ -1431,10 +1436,11 @@ mod providers_tests {
         assert!(config.is_enabled(shardlane_history::AgentId::Cursor));
         assert!(config.is_enabled(shardlane_history::AgentId::Pi));
         assert!(config.is_enabled(shardlane_history::AgentId::Omp));
+        assert!(config.is_enabled(shardlane_history::AgentId::Antigravity));
         // Hidden providers never enter the default even when they implement live decoding.
         assert!(!config.is_enabled(shardlane_history::AgentId::Kimi));
         assert!(!config.is_enabled(shardlane_history::AgentId::Grok));
-        // Preview is opt-in by default.
+        // Preview whose bridge/projection has known gaps stays opt-in.
         assert!(!config.is_enabled(shardlane_history::AgentId::CommandCode));
         assert!(!config.is_enabled(shardlane_history::AgentId::Qoder));
     }
