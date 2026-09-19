@@ -13,6 +13,7 @@ mod files_view;
 mod header;
 pub(crate) mod lazygit;
 mod lazygit_view;
+mod loopback_probe;
 mod services_view;
 #[cfg(target_os = "macos")]
 pub(crate) mod webview;
