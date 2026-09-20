@@ -44,6 +44,15 @@ provenance entry below. Windows note: the default named-pipe convention
 (`\\.\pipe\herdr\...`) that the client mirrors for Herdr sockets is
 verified separately against live herdr by the release workflow.
 
+- `lib/x86_64-apple-darwin/libghostty-vt.a` (installed 2026-09-20): the
+  x86_64 slice of the pinned universal baseline `lib/libghostty-vt.a`
+  (inventoried 2026-08-25), extracted locally with
+  `lipo -thin x86_64` — no upstream rebuild. ABI gate: exported
+  `_ghostty_*` symbol set (162 symbols) is identical to
+  `lib/aarch64-apple-darwin/libghostty-vt.a`. Required by the per-target
+  `build.rs` lookup for the CI Intel cross-build and the universal
+  macOS bundle.
+
 NaN
 
 1. **Source**: clone Ghostty upstream at the target tag/commit (nightly
