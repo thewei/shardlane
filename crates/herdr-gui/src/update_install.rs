@@ -224,8 +224,7 @@ fn content_length(url: &str) -> Option<u64> {
     }
     String::from_utf8_lossy(&output.stdout)
         .lines()
-        .filter(|line| line.to_ascii_lowercase().starts_with("content-length:"))
-        .next_back()
+        .rfind(|line| line.to_ascii_lowercase().starts_with("content-length:"))
         .and_then(|line| line.split(':').nth(1))
         .and_then(|value| value.trim().parse().ok())
 }

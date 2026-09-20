@@ -442,7 +442,7 @@ pub(crate) fn recent_targets(
             })
         })
         .collect();
-    rows.sort_by(|a, b| b.last_activity_ms.cmp(&a.last_activity_ms));
+    rows.sort_by_key(|a| std::cmp::Reverse(a.last_activity_ms));
     rows.truncate(limit);
     rows
 }
