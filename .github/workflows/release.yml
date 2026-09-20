@@ -1,10 +1,12 @@
 name: release
 
-# Multi-platform release pipeline (v0.1.17+): four build jobs produce the
-# per-platform archive + SHA-256 pairs, then one publish job assembles the
-# GitHub release and the backward-compatible multi-platform latest.json.
-# Merge gate: the windows job's live-herdr socket verification must pass
-# before any tag publishes.
+# Release pipeline: two macOS build jobs produce per-arch ad-hoc-signed app
+# archives + SHA-256 pairs, then one publish job assembles the GitHub release
+# and the backward-compatible latest.json. v0.1.17 ships macOS-only (the
+# linux/windows jobs are defined but disabled until the shardlane-history
+# windows portability split and a linux-viable gpui-symbols land; the
+# vendored per-target archives for both targets are already committed and
+# ABI-gated, so re-enabling is a one-line-if flip per job).
 #
 # [PROTOCOL]: Update .github/CLAUDE.md on change, then check /CLAUDE.md.
 
@@ -116,6 +118,9 @@ jobs:
 
   linux-x86_64:
     runs-on: ubuntu-24.04
+    # Disabled for v0.1.17: shardlane-history compiles unix-only file
+    # permission APIs. Re-enable together with the windows job.
+    if: ${{ false }}
     env:
       TARGET: x86_64-unknown-linux-gnu
     steps:
@@ -142,6 +147,10 @@ jobs:
 
   windows-x86_64:
     runs-on: windows-2025
+    # Disabled for v0.1.17: same shardlane-history portability split as the
+    # linux job. Its live-herdr named-pipe socket verification (the merge
+    # gate) runs again once the job returns.
+    if: ${{ false }}
     env:
       TARGET: x86_64-pc-windows-msvc
     steps:
@@ -194,7 +203,7 @@ jobs:
           if-no-files-found: error
 
   publish:
-    needs: [macos-aarch64, macos-x86_64, linux-x86_64, windows-x86_64]
+    needs: [macos-aarch64, macos-x86_64]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -221,16 +230,14 @@ jobs:
           permalink() { printf 'https://github.com/%s/releases/download/%s/%s' "$REPO" "$TAG" "$1"; }
           if ! gh release view "$TAG" >/dev/null 2>&1; then
             gh release create "$TAG" --verify-tag --generate-notes \
-              --notes "macOS archives are ad-hoc signed (not notarized): verify the SHA-256 file and approve the first launch. Linux ships as a tar.gz with runtime requirements in the README. Windows ships as a zip."
+              --notes "macOS archives are ad-hoc signed (not notarized): verify the SHA-256 file and approve the first launch. v0.1.17 ships macOS only; Linux and Windows packages return in the next release."
           fi
           gh release upload "$TAG" dist/* --clobber
           jq -n \
             --arg version "$VERSION" \
             --arg arm64 "$(permalink Shardlane-macos-aarch64.zip)" \
             --arg x64 "$(permalink Shardlane-macos-x86_64.zip)" \
-            --arg lin64 "$(permalink Shardlane-linux-x86_64.tar.gz)" \
-            --arg win64 "$(permalink Shardlane-windows-x86_64.zip)" \
             --arg notes_url "$NOTES_URL" \
-            '{version: $version, url: $arm64, notes_url: $notes_url, platforms: {"darwin-arm64": {archive: "Shardlane-macos-aarch64.zip", sha256: "Shardlane-macos-aarch64.zip.sha256", url: $arm64}, "darwin-x86_64": {archive: "Shardlane-macos-x86_64.zip", sha256: "Shardlane-macos-x86_64.zip.sha256", url: $x64}, "linux-x86_64": {archive: "Shardlane-linux-x86_64.tar.gz", sha256: "Shardlane-linux-x86_64.tar.gz.sha256", url: $lin64}, "windows-x86_64": {archive: "Shardlane-windows-x86_64.zip", sha256: "Shardlane-windows-x86_64.zip.sha256", url: $win64}}}' > latest.json
+            '{version: $version, url: $arm64, notes_url: $notes_url, platforms: {"darwin-arm64": {archive: "Shardlane-macos-aarch64.zip", sha256: "Shardlane-macos-aarch64.zip.sha256", url: $arm64}, "darwin-x86_64": {archive: "Shardlane-macos-x86_64.zip", sha256: "Shardlane-macos-x86_64.zip.sha256", url: $x64}}}' > latest.json
           python3 -m json.tool latest.json > /dev/null
           gh release upload "$TAG" latest.json --clobber
