@@ -78,10 +78,12 @@ done
 [ -n "$NM_BIN" ] || { echo "no nm/llvm-nm available for ABI verification" >&2; exit 1; }
 
 symbols_of() {
-    # Exported (defined) symbols only; keep the ghostty_* API surface.
+    # Exported (defined) symbols only; keep the ghostty_* API surface. Normalize
+    # the Mach-O leading underscore away so ELF/COFF candidate archives compare
+    # equal to the Mach-O baseline.
     "$NM_BIN" -g --defined-only "$1" 2>/dev/null \
-        | awk "{print \$3}" \
-        | grep "^_ghostty_" | sort -u
+        | awk '{print $3}' \
+        | grep -E "^_?ghostty_" | sed 's/^_//' | sort -u
 }
 
 hash256() {
@@ -137,7 +139,14 @@ echo "==> artifact: $ARTIFACT ($(wc -c < "$ARTIFACT" | tr -d " ") bytes)"
 SYMBOL_VERDICT="skipped"
 if [ "$SKIP_SYMBOLS" -eq 0 ]; then
     [ -f "$BASELINE_LIB" ] || { echo "baseline archive missing: $BASELINE_LIB" >&2; exit 1; }
-    symbols_of "$BASELINE_LIB" > "$WORK/baseline.syms"
+    symbols_of "$BASELINE_LIB" > "$WORK/baseline.syms" || {
+        echo "ABI gate: could not extract baseline symbols with $NM_BIN" >&2
+        exit 1
+    }
+    [ -s "$WORK/baseline.syms" ] || {
+        echo "ABI gate: baseline symbol extraction is empty ($NM_BIN vs Mach-O baseline)" >&2
+        exit 1
+    }
     symbols_of "$ARTIFACT" > "$WORK/candidate.syms"
     # grep -Fxvf instead of comm: equivalent for sorted unique sets and present
     # in Git Bash, where comm is not guaranteed.
