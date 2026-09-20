@@ -1883,6 +1883,10 @@ struct ShardlaneApp {
     observed_services: Vec<scripts::ObservedService>,
     search_open: bool,
     client_picker: Option<ClientPickerOverlay>,
+    /// Key-dispatch-start snapshot of terminal_surface_blocked (set by note_key_dispatch_start,
+    /// consumed by handle_keystroke): dismiss actions run before the keystroke observer, so the
+    /// guard needs the occlusion state as of the key press, not after the action mutated it.
+    modal_open_at_key_dispatch: bool,
     about_open: bool,
     rename_open: bool,
     script_dialog_open: bool,
@@ -2650,6 +2654,7 @@ impl ShardlaneApp {
             observed_services: Vec::new(),
             search_open: false,
             client_picker: None,
+            modal_open_at_key_dispatch: false,
             about_open: false,
             rename_open: false,
             script_dialog_open: false,
@@ -4328,6 +4333,23 @@ fn main() {
                 };
                 view.update(cx, |view, view_cx| {
                     view.handle_keystroke(&event.keystroke, window, view_cx);
+                });
+            })
+            .detach();
+        }
+
+        // Key-dispatch-start snapshot: intercept_keystrokes fires BEFORE the key bindings while
+        // observe_keystrokes above fires AFTER them. Snapshotting the modal-occlusion state here
+        // lets handle_keystroke swallow the dismiss keystroke itself (ESC → PickerCancel clears
+        // the live flags mid-event; without the snapshot the ESC bytes leak into the host PTY).
+        {
+            let shared = shared.clone();
+            cx.intercept_keystrokes(move |_, window, cx| {
+                let Some(view) = shared.window_view(window.window_handle().window_id()) else {
+                    return;
+                };
+                view.update(cx, |view, _view_cx| {
+                    view.note_key_dispatch_start();
                 });
             })
             .detach();

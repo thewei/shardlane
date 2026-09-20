@@ -1,6 +1,8 @@
 //! [INPUT]: Depends on the ShardlaneApp type from the crate root (super) and existing types/imports (use super::*); no independent external dependencies.
 //! [OUTPUT]: Exposes ShardlaneApp's terminal input pipeline: IME/key encoding/paste/clipboard/input queue and dispatch (inherent impl shard),
-//! plus the terminal_keystroke_blocked guard predicate (keys don't enter the terminal while an input surface is focused).
+//! plus the terminal_keystroke_blocked guard predicate (keys don't enter the terminal while an input surface is focused)
+//! and the note_key_dispatch_start snapshot (interceptors run before dismiss actions, observers after: the snapshot
+//! preserves the modal-open state as of the key press so ESC closing a modal never leaks into the hosted TUI).
 //! [POS]: The `crates/herdr-gui` shell input responsibility domain, mechanically split out of main.rs; together with sibling shell_* modules it forms ShardlaneApp's method surface.
 use super::*;
 
@@ -9,6 +11,8 @@ use super::*;
 /// is focused, the key belongs to that input surface and must not be encoded into the terminal.
 /// GPUI still dispatches keys to observe_keystrokes after the Input's KeyBinding actions (see
 /// input.rs's should_swallow_gui_keystroke_with_config comment); this predicate is the sole interception point.
+/// Caveat: a dismiss action (PickerCancel on ESC) runs BEFORE the observer and clears the modal
+/// flags mid-event; callers must OR in the note_key_dispatch_start snapshot to survive that race.
 pub(crate) fn terminal_keystroke_blocked(
     gui_swallow: bool,
     surface_blocked: bool,
@@ -43,6 +47,14 @@ pub(crate) fn route_shell_keystroke<S>(
 }
 
 impl ShardlaneApp {
+    /// Capture the modal/overlay occlusion state at key-dispatch start. GPUI runs this through
+    /// intercept_keystrokes (before key bindings), while handle_keystroke runs through
+    /// observe_keystrokes (after them); without the snapshot, the keystroke that dismisses a
+    /// modal (ESC → PickerCancel) sees "no modal open" and its bytes reach the host PTY.
+    pub(super) fn note_key_dispatch_start(&mut self) {
+        self.modal_open_at_key_dispatch = self.terminal_surface_blocked();
+    }
+
     pub(super) fn clear_ime_state(&mut self) {
         self.ime_target = None;
         self.ime_marked_text.clear();
@@ -369,11 +381,15 @@ impl ShardlaneApp {
             &self.config.shortcuts,
             self.conversation_surface_open(),
         );
-        let surface_blocked = self.terminal_surface_blocked();
+        // Consume the dispatch-start snapshot (note_key_dispatch_start): the dismiss action that
+        // just ran (e.g. ESC → PickerCancel) may have already cleared the live flags below, but
+        // the key was pressed while the modal was open and must not be encoded into the PTY.
+        let modal_open_at_dispatch = std::mem::take(&mut self.modal_open_at_key_dispatch);
+        let surface_blocked = self.terminal_surface_blocked() || modal_open_at_dispatch;
         if terminal_keystroke_blocked(gui_swallow, surface_blocked, false) {
             if let Some(started) = trace_started {
                 crate::terminal_trace::event(format_args!(
-                    "stage=ui.key_route route=blocked gui_swallow={gui_swallow} surface_blocked={surface_blocked} blocked_flags=[settings={} help={} history={} new_agent={} hist_search={} search={} about={} rename={} script_dialog={} nav_loading={}] modified={} elapsed_us={}",
+                    "stage=ui.key_route route=blocked gui_swallow={gui_swallow} surface_blocked={surface_blocked} dispatch_modal={modal_open_at_dispatch} blocked_flags=[settings={} help={} history={} new_agent={} hist_search={} search={} about={} rename={} script_dialog={} nav_loading={}] modified={} elapsed_us={}",
                     self.show_settings,
                     self.show_help,
                     self.history.open,
