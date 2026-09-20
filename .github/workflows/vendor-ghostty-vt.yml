@@ -11,10 +11,14 @@ name: vendor-ghostty-vt
 
 on:
   workflow_dispatch:
-    inputs:
-      ghostty_ref:
-        description: "Ghostty tag or commit to build from"
-        required: true
+inputs:
+  ghostty_ref:
+    description: "Ghostty tag or commit to build from"
+    required: true
+  zig_version:
+    description: "ziglang pip version to install (e.g. 0.15.2); empty installs the latest"
+    required: false
+    default: ""
 
 jobs:
   darwin:
@@ -32,7 +36,12 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install zig
-        run: pip install ziglang
+        run: |
+          if [ -n "${{ inputs.zig_version }}" ]; then
+            pip install "ziglang==${{ inputs.zig_version }}"
+          else
+            pip install ziglang
+          fi
       - name: Vendor matrix-triple
         run: scripts/vendor-ghostty-vt.sh --triple ${{ matrix.triple }} --ghostty-ref "${{ inputs.ghostty_ref }}" --zig "$(python -c 'import ziglang,os;print(os.path.join(os.path.dirname(ziglang.__file__), "zig"))')"
       - uses: actions/upload-artifact@v4
@@ -53,6 +62,13 @@ jobs:
         run: pip install ziglang
       - name: Install llvm-nm (reads the Mach-O baseline archive)
         run: sudo apt-get update && sudo apt-get install -y llvm
+      - name: Install zig
+        run: |
+          if [ -n "${{ inputs.zig_version }}" ]; then
+            pip install "ziglang==${{ inputs.zig_version }}"
+          else
+            pip install ziglang
+          fi
       - name: Vendor x86_64-unknown-linux-gnu
         run: scripts/vendor-ghostty-vt.sh --triple x86_64-unknown-linux-gnu --ghostty-ref "${{ inputs.ghostty_ref }}" --zig "$(python -c 'import ziglang,os;print(os.path.join(os.path.dirname(ziglang.__file__), "zig"))')"
       - uses: actions/upload-artifact@v4
@@ -70,7 +86,12 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install zig
-        run: pip install ziglang
+        run: |
+          if [ -n "${{ inputs.zig_version }}" ]; then
+            pip install "ziglang==${{ inputs.zig_version }}"
+          else
+            pip install ziglang
+          fi
       - name: Vendor x86_64-pc-windows-msvc (bash via git; zig from the ziglang package)
         shell: bash
         run: |
