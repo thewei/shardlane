@@ -34,6 +34,10 @@ jobs:
           ARCHS="$(lipo -archs vendor/ghostty-vt/lib/libghostty-vt.a)"
           [[ " $ARCHS " == *" arm64 "* ]] || exit 1
           [[ " $ARCHS " == *" x86_64 "* ]] || exit 1
+          for triple in aarch64-apple-darwin x86_64-apple-darwin; do
+            test -f "vendor/ghostty-vt/lib/$triple/libghostty-vt.a" ||
+              { echo "missing per-target archive: vendor/ghostty-vt/lib/$triple/libghostty-vt.a (see vendor/ghostty-vt/PIN.md)" >&2; exit 1; }
+          done
 
       - name: Format
         run: cargo fmt -- --check
