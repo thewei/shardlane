@@ -93,6 +93,7 @@ jobs:
           else
             pip install ziglang
           fi
+        shell: bash
       - name: Vendor x86_64-pc-windows-msvc (bash via git; zig from the ziglang package)
         shell: bash
         run: |
