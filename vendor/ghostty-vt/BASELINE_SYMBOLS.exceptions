@@ -1,0 +1,6 @@
+# Target-internal symbols that legitimately exist only on some build targets.
+# Each entry is excluded from the ABI symbol-coverage gate because it is a
+# build/dispatch artifact of a specific target, not part of the client-facing
+# ghostty_* API surface; none is referenced by crates/herdr-gui/src/ghostty/ffi.rs.
+# Recorded 2026-09-20 from the x86_64-pc-windows-msvc build of ghostty@699387c2.
+ghostty_hwy_detect_targets

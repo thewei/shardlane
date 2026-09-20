@@ -51,6 +51,8 @@ jobs:
           python-version: "3.12"
       - name: Install zig
         run: pip install ziglang
+      - name: Install llvm-nm (reads the Mach-O baseline archive)
+        run: sudo apt-get update && sudo apt-get install -y llvm
       - name: Vendor x86_64-unknown-linux-gnu
         run: scripts/vendor-ghostty-vt.sh --triple x86_64-unknown-linux-gnu --ghostty-ref "${{ inputs.ghostty_ref }}" --zig "$(python -c 'import ziglang,os;print(os.path.join(os.path.dirname(ziglang.__file__), "zig"))')"
       - uses: actions/upload-artifact@v4

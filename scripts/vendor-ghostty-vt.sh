@@ -25,8 +25,10 @@
 #
 # The ABI gate: every exported ghostty_* symbol present in the baseline
 # archive (lib/aarch64-apple-darwin/libghostty-vt.a, 162-symbol set) must
-# exist in the produced archive. Struct-layout JSON embedded in both binaries
-# is compared too; differences require --allow-layout-drift and are recorded
+# exist in the produced archive, minus the target-internal exceptions listed
+# in BASELINE_SYMBOLS.exceptions (platform build artifacts, never referenced
+# by the client FFI). Struct-layout JSON embedded in both binaries is
+# compared too; differences require --allow-layout-drift and are recorded
 # in the PIN entry.
 set -euo pipefail
 
@@ -147,6 +149,10 @@ if [ "$SKIP_SYMBOLS" -eq 0 ]; then
         echo "ABI gate: baseline symbol extraction is empty ($NM_BIN vs Mach-O baseline)" >&2
         exit 1
     }
+    if [ -f "$VENDOR_ROOT/BASELINE_SYMBOLS.exceptions" ]; then
+        grep -Fxvf "$VENDOR_ROOT/BASELINE_SYMBOLS.exceptions" "$WORK/baseline.syms" \
+            > "$WORK/baseline.syms" || true
+    fi
     symbols_of "$ARTIFACT" > "$WORK/candidate.syms"
     # grep -Fxvf instead of comm: equivalent for sorted unique sets and present
     # in Git Bash, where comm is not guaranteed.
