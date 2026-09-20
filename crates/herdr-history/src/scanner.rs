@@ -2,8 +2,9 @@
 // Incremental scan flow retains upstream MIT-derived semantics.
 //! [INPUT]: A constructed adapter slice and the Shardlane-owned
 //! HistoryCatalog.
-//! [OUTPUT]: Incremental/full scan reports, FTS metadata, the transcript
-//! page-cache, and missing-source cleanup.
+//! [OUTPUT]: Incremental/full scan reports, FTS metadata, bounded
+//! message-FTS retention/maintenance, the transcript page-cache, and
+//! missing-source cleanup.
 //! [POS]: Background indexing coordinator of the history core; reads no
 //! configuration, creates no runtime, performs no external writes.
 
@@ -19,6 +20,7 @@ pub struct ScanReport {
     pub parsed: usize,
     pub prewarmed: usize,
     pub cache_evicted: usize,
+    pub fts_evicted: usize,
     pub unchanged: usize,
     pub removed: usize,
     pub errors: Vec<String>,
@@ -174,6 +176,18 @@ pub fn scan(
     }
 
     report.cache_evicted = catalog.prune_transcript_page_cache()?;
+    report.fts_evicted = catalog.prune_message_fts()?;
+
+    // A round that changed the index also merges a bounded FTS page budget
+    // (and returns freed pages once auto_vacuum is active), so the bounded
+    // index cannot silently re-inflate between schema migrations.
+    if report.parsed > 0 || report.removed > 0 || report.fts_evicted > 0 {
+        if let Err(error) = catalog.maintain_message_fts() {
+            report
+                .errors
+                .push(format!("message fts maintenance failed: {error}"));
+        }
+    }
     Ok(report)
 }
 

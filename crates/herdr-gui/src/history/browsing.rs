@@ -69,11 +69,12 @@ impl ShardlaneApp {
                     let scan_elapsed = scan_started.elapsed();
                     if report.parsed > 0 || scan_elapsed >= Duration::from_millis(100) {
                         lag_log(format_args!(
-                            "history.scan full={full} discovered={} parsed={} prewarmed={} cache_evicted={} unchanged={} removed={} errors={} {:.1}ms",
+                            "history.scan full={full} discovered={} parsed={} prewarmed={} cache_evicted={} fts_evicted={} unchanged={} removed={} errors={} {:.1}ms",
                             report.discovered,
                             report.parsed,
                             report.prewarmed,
                             report.cache_evicted,
+                            report.fts_evicted,
                             report.unchanged,
                             report.removed,
                             report.errors.len(),

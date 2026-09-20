@@ -1,5 +1,12 @@
 // SPDX-License-Identifier: MIT
 // Catalog shape and FTS strategy retain upstream MIT-derived semantics.
+//! [INPUT]: 依赖 crate::models 的会话/转录/搜索域类型、rusqlite 的 SQLite/FTS5
+//!           持久化、serde 的缓存 payload 编解码
+//! [OUTPUT]: 对外提供 HistoryCatalog(SQLite/FTS 目录 + 页寻址转录缓存)、
+//!           有界 message_fts 保留与维护、v1-v4 模式迁移
+//! [POS]: herdr-history 的唯一持久化层,被 scanner 与 GUI 消费;转录真相始终
+//!        在外部 Agent 只读源文件中,本层所有表都是可丢弃、可重建的派生数据
+//! [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 
 use crate::models::{
     normalize_path_key, AgentId, IndexUnit, ParsedTranscript, Role, SearchHit, SessionFileRef,
@@ -15,6 +22,17 @@ use std::time::Duration;
 const TRANSCRIPT_CACHE_PAGE_SIZE: usize = 64;
 pub(crate) const TRANSCRIPT_CACHE_MAX_SESSIONS: usize = 256;
 pub(crate) const TRANSCRIPT_CACHE_MAX_LOGICAL_BYTES: i64 = 512 * 1024 * 1024;
+/// Message-FTS retention: the trigram index is a bounded, rebuildable search
+/// cache over the most recently updated sessions — never a full mirror of the
+/// read-only sources. Window selection reads only the `sessions` table (cost
+/// proxy: source `size_bytes`), so pruning never scans the index itself.
+pub(crate) const MESSAGE_FTS_MAX_SESSIONS: usize = 800;
+pub(crate) const MESSAGE_FTS_MAX_SOURCE_BYTES: i64 = 256 * 1024 * 1024;
+/// Per-scan FTS5 housekeeping budgets (page units): a bounded merge so the
+/// delete/reinsert churn of `write_session` cannot re-inflate segment
+/// structure, and a bounded page-return cap for incremental vacuum.
+const MESSAGE_FTS_MERGE_PAGES_PER_SCAN: i64 = 2_000;
+const MESSAGE_FTS_VACUUM_PAGES_PER_SCAN: i64 = 4_096;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CachedTranscriptWindow {
@@ -622,6 +640,33 @@ impl HistoryCatalog {
         Ok(evict.len())
     }
 
+    /// Bound the message-FTS index: full-message search stays available only
+    /// for the retention window (non-archived first, then most recently
+    /// updated). Sessions outside the window remain listed, openable, and
+    /// metadata-searchable; only their disposable message index is dropped.
+    pub fn prune_message_fts(&self) -> Result<usize> {
+        self.prune_message_fts_to(MESSAGE_FTS_MAX_SESSIONS, MESSAGE_FTS_MAX_SOURCE_BYTES)
+    }
+
+    fn prune_message_fts_to(&self, max_sessions: usize, max_source_bytes: i64) -> Result<usize> {
+        prune_message_fts_conn(&self.conn, max_sessions, max_source_bytes)
+    }
+
+    /// Post-scan index housekeeping: merge a bounded page budget so trigram
+    /// segments and delete ledgers never re-accumulate, then hand freed
+    /// pages back once INCREMENTAL auto_vacuum is active (a silent no-op on
+    /// databases where migration v4 has not run yet).
+    pub fn maintain_message_fts(&self) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO message_fts(message_fts, rank) VALUES('merge', ?1)",
+            [MESSAGE_FTS_MERGE_PAGES_PER_SCAN],
+        )?;
+        self.conn.execute_batch(&format!(
+            "PRAGMA incremental_vacuum({MESSAGE_FTS_VACUUM_PAGES_PER_SCAN});"
+        ))?;
+        Ok(())
+    }
+
     pub fn uncached_transcript_sources(
         &self,
         limit: usize,
@@ -1093,11 +1138,63 @@ fn write_transcript_pages(
     Ok(())
 }
 
+/// Retention implementation shared by post-scan pruning and the v4
+/// migration. One transaction for the whole eviction batch: each session's
+/// FTS rows are deleted by key, exactly like `write_session` and the
+/// missing-source cleanup already do. Returns the number of sessions whose
+/// index rows were dropped (not row counts).
+fn prune_message_fts_conn(
+    conn: &Connection,
+    max_sessions: usize,
+    max_source_bytes: i64,
+) -> Result<usize> {
+    if max_sessions == 0 || max_source_bytes <= 0 {
+        let _deleted = conn.execute("DELETE FROM message_fts", [])?;
+        // Same session-count semantics as the windowed path below.
+        let sessions: i64 =
+            conn.query_row("SELECT COUNT(*) FROM sessions", [], |row| row.get(0))?;
+        return Ok(usize::try_from(sessions).unwrap_or(0));
+    }
+    let mut statement = conn.prepare(
+        "SELECT key, size_bytes FROM sessions
+         ORDER BY archived ASC, updated_at DESC, key ASC",
+    )?;
+    let rows = statement.query_map([], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?.max(0)))
+    })?;
+    let mut retained_sessions = 0usize;
+    let mut retained_bytes = 0i64;
+    let mut evict = Vec::new();
+    for row in rows {
+        let (session_key, size_bytes) = row?;
+        let next_bytes = retained_bytes.saturating_add(size_bytes);
+        if retained_sessions < max_sessions && next_bytes <= max_source_bytes {
+            retained_sessions += 1;
+            retained_bytes = next_bytes;
+        } else {
+            evict.push(session_key);
+        }
+    }
+    drop(statement);
+
+    if evict.is_empty() {
+        return Ok(0);
+    }
+    let transaction = conn.unchecked_transaction()?;
+    let mut deleted = transaction.prepare("DELETE FROM message_fts WHERE session_key = ?1")?;
+    for session_key in &evict {
+        deleted.execute(params![session_key])?;
+    }
+    drop(deleted);
+    transaction.commit()?;
+    Ok(evict.len())
+}
+
 /// Current catalog schema version (`PRAGMA user_version`). A database already
 /// stamped with this version skips every schema write on open. New migrations
 /// append to [`MIGRATIONS`] with the next unused version; existing entries
 /// never change or reorder.
-const SCHEMA_VERSION: i64 = 3;
+const SCHEMA_VERSION: i64 = 4;
 
 type SchemaMigration = fn(&mut Connection) -> Result<()>;
 
@@ -1108,6 +1205,7 @@ const MIGRATIONS: &[(i64, SchemaMigration)] = &[
     (1, migrate_base_schema),
     (2, migrate_rekey_project_keys),
     (3, migrate_retire_transcript_cache),
+    (4, migrate_bound_message_fts),
 ];
 
 fn run_migrations(conn: &mut Connection) -> Result<usize> {
@@ -1281,6 +1379,28 @@ fn migrate_retire_transcript_cache(conn: &mut Connection) -> Result<()> {
         )?;
     }
     conn.execute("DROP TABLE transcript_cache", [])?;
+    Ok(())
+}
+
+/// Version 4: the message FTS index becomes bounded derived data. Rows
+/// outside the retention window are dropped, one 'optimize' merge reclaims
+/// the delete-space the trigram segments accumulated (measured on the
+/// reference catalog: FTS 1.4 GB -> 57 MB), and a single VACUUM both
+/// compacts the accumulated freelist (~967 MB there) and makes INCREMENTAL
+/// auto_vacuum durable so post-scan `maintain_message_fts` keeps returning
+/// pages. Runs once on a background open; measured ~26 s on the real
+/// 2.4 GB catalog, and every stage is safe to redo if interrupted.
+fn migrate_bound_message_fts(conn: &mut Connection) -> Result<()> {
+    prune_message_fts_conn(conn, MESSAGE_FTS_MAX_SESSIONS, MESSAGE_FTS_MAX_SOURCE_BYTES)?;
+    conn.execute(
+        "INSERT INTO message_fts(message_fts) VALUES('optimize')",
+        [],
+    )?;
+    // Auto_vacuum only becomes a durable database property via VACUUM, so
+    // the pragma must precede it; VACUUM cannot run inside a transaction,
+    // and migrations already execute in autocommit mode.
+    conn.pragma_update(None, "auto_vacuum", "INCREMENTAL")?;
+    conn.execute_batch("VACUUM;")?;
     Ok(())
 }
 
@@ -2060,6 +2180,95 @@ mod tests {
         assert!(catalog
             .cached_transcript_window("new", &new_source, 0, 1)?
             .is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn message_fts_prune_is_bounded_and_index_only() -> Result<()> {
+        let mut catalog = HistoryCatalog::memory()?;
+        for (key, updated_at, archived) in [
+            ("old-live", 10_i64, false),
+            ("new-live", 30_i64, false),
+            ("new-archived", 40_i64, true),
+        ] {
+            let mut parsed = session(key, key, &format!("/tmp/{key}.jsonl"), updated_at);
+            parsed.meta.archived = archived;
+            catalog.write_session(&parsed.meta, updated_at, &parsed.units)?;
+        }
+
+        // One-slot window: the archived session is evicted ahead of the
+        // older live one because archived rows can never match search.
+        assert_eq!(catalog.prune_message_fts_to(1, i64::MAX)?, 2);
+        assert_eq!(catalog.search("old-live", 10)?.len(), 0);
+        assert_eq!(catalog.search("new-archived", 10)?.len(), 0);
+        assert_eq!(catalog.search("new-live", 10)?.len(), 1);
+        // Pruning is index-only: listing and direct access are untouched.
+        assert_eq!(catalog.list_sessions(10)?.len(), 2);
+        assert!(catalog.session("new-archived")?.is_some());
+
+        // A zero window clears the index completely; sessions survive.
+        assert_eq!(catalog.prune_message_fts_to(0, i64::MAX)?, 3);
+        assert_eq!(catalog.search("new-live", 10)?.len(), 0);
+        assert_eq!(catalog.list_sessions(10)?.len(), 2);
+        Ok(())
+    }
+
+    #[test]
+    fn message_fts_maintenance_keeps_search_healthy() -> Result<()> {
+        let mut catalog = HistoryCatalog::memory()?;
+        let parsed = session("k", "maintain me", "/tmp/k.jsonl", 10);
+        catalog.write_session(&parsed.meta, 10, &parsed.units)?;
+        catalog.maintain_message_fts()?;
+        assert_eq!(catalog.search("maintain me", 10)?.len(), 1);
+        Ok(())
+    }
+
+    #[test]
+    fn bound_message_fts_migration_prunes_and_enables_incremental_vacuum() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let path = temp.path().join("catalog.db");
+        {
+            let mut catalog = HistoryCatalog::open(&path)?;
+            let keep = session("keep", "keepme zzzkeep", "/tmp/keep.jsonl", 99_000);
+            let drop = session("drop", "dropme zzzdrop", "/tmp/drop.jsonl", 50_000);
+            catalog.write_session(&keep.meta, 99_000, &keep.units)?;
+            catalog.write_session(&drop.meta, 50_000, &drop.units)?;
+            // Push the catalog past the production count window so the v4
+            // prune must evict the out-of-window session's index rows.
+            let mut filler = String::from(
+                "INSERT INTO sessions (key, native_id, agent, title, project_path, project_key, project_name, file_path, created_at, updated_at, message_count, size_bytes, mtime_ms) VALUES ",
+            );
+            for index in 1..=805 {
+                if index > 1 {
+                    filler.push_str(", ");
+                }
+                let updated = 60_000 + index;
+                filler.push_str(&format!(
+                    "('filler-{index}', 'filler-{index}', 'claude-code', 'filler {index}', '/work/demo', '/work/demo', 'demo', '/tmp/filler-{index}.jsonl', {updated}, {updated}, 1, 10, {updated})",
+                ));
+            }
+            catalog.conn.execute_batch(&filler)?;
+            // Roll the schema stamp back to v3 so reopening reruns exactly
+            // the v4 step against this populated catalog.
+            catalog.conn.pragma_update(None, "user_version", 3)?;
+        }
+
+        let (catalog, applied) = HistoryCatalog::open_with_migration_count(&path)?;
+        assert_eq!(applied, 1);
+        assert_eq!(catalog.search("zzzdrop", 10)?.len(), 0);
+        assert_eq!(catalog.search("zzzkeep", 10)?.len(), 1);
+        // Prune is index-only: every session stays listed/reachable.
+        assert_eq!(catalog.count_sessions()?, 807);
+        let auto_vacuum: i64 = catalog
+            .conn
+            .query_row("PRAGMA auto_vacuum", [], |row| row.get(0))?;
+        assert_eq!(
+            auto_vacuum, 2,
+            "INCREMENTAL auto_vacuum must be durable after the migration"
+        );
+        drop(catalog);
+        let (_catalog, applied) = HistoryCatalog::open_with_migration_count(&path)?;
+        assert_eq!(applied, 0);
         Ok(())
     }
 
