@@ -1,9 +1,19 @@
 // SPDX-License-Identifier: MIT
 // Portions Copyright (c) 2026 Corey Chiu; retained under the upstream MIT terms.
 
+/**
+ * [INPUT]: 依赖 rusqlite 的只读连接与 OpenFlags、std::fs 的拷贝/权限原语、
+ *          上游传入的外部 Agent SQLite 数据库路径
+ * [OUTPUT]: 对外提供 SqliteRo（临时只读镜像连接）与 virtual_path（镜像虚拟路径
+ *           拼装）；内部维护拷贝上限与临时目录守卫
+ * [POS]: adapters 的 SQLite 只读镜像器——把外部只读数据库以受控副本暴露给
+ *        目录层，平台差异（unix 权限位 / windows 默认 ACL）收敛在
+ *        harden_temp_dir 与 open_hardened_copy 两个 helper 内
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
+
 use rusqlite::{Connection, OpenFlags};
 use std::fs;
-use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -17,6 +27,44 @@ static TEMP_DIR_SEQ: AtomicU64 = AtomicU64::new(0);
 
 pub(crate) fn copy_within_limit(len: u64, cap: u64) -> bool {
     len <= cap
+}
+
+/// Tighten a freshly created temp directory to owner-only access. Unix does
+/// this with mode bits (0700); windows leans on the user-profile default ACL,
+/// which already scopes the directory to the running user.
+fn harden_temp_dir(temp_dir: &Path) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        let _ = fs::set_permissions(temp_dir, fs::Permissions::from_mode(0o700));
+    }
+    #[cfg(not(unix))]
+    let _ = temp_dir;
+}
+
+/// Open the hardened copy exclusively: `create_new` rejects symlinks and
+/// pre-planted files, so the copy cannot be redirected to an
+/// attacker-controlled location. Unix additionally creates it with 0600
+/// instead of chmod-after-write.
+fn open_hardened_copy(db_copy: &Path) -> Option<fs::File> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt as _;
+        fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(db_copy)
+            .ok()
+    }
+    #[cfg(not(unix))]
+    {
+        fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(db_copy)
+            .ok()
+    }
 }
 
 pub struct SqliteRo {
@@ -64,16 +112,11 @@ pub fn open_sqlite_ro(db: &Path, tag: &str) -> Option<SqliteRo> {
     fs::create_dir_all(&temp_dir).ok()?;
     let guard = TempDirGuard(temp_dir.clone());
     let db_copy = temp_dir.join("db.sqlite");
-    // 多用户主机加固：目录收紧 0700，目标文件 create_new(0600)——
+    // 多用户主机加固：目录收紧到仅属主可见，目标文件 create_new 独占创建——
     // create_new 天然拒绝符号链接与预置文件，拷贝不会被引向
     // 攻击者可读的位置（目录名含 pid/seq，本可被预测抢注）。
-    let _ = fs::set_permissions(&temp_dir, fs::Permissions::from_mode(0o700));
-    let mut output = fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .mode(0o600)
-        .open(&db_copy)
-        .ok()?;
+    harden_temp_dir(&temp_dir);
+    let mut output = open_hardened_copy(&db_copy)?;
     let mut input = fs::File::open(db).ok()?;
     std::io::copy(&mut input, &mut output).ok()?;
     for suffix in ["-wal", "-shm"] {

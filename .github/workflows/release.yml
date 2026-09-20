@@ -2,11 +2,12 @@ name: release
 
 # Release pipeline: two macOS build jobs produce per-arch ad-hoc-signed app
 # archives + SHA-256 pairs, then one publish job assembles the GitHub release
-# and the backward-compatible latest.json. v0.1.17 ships macOS-only (the
-# linux/windows jobs are defined but disabled until the shardlane-history
-# windows portability split and a linux-viable gpui-symbols land; the
-# vendored per-target archives for both targets are already committed and
-# ABI-gated, so re-enabling is a one-line-if flip per job).
+# and the backward-compatible latest.json. v0.1.17 ships macOS-only. The
+# linux/windows jobs are defined but disabled: the vendored per-target
+# archives are committed and ABI-gated, shardlane-history and gpui-symbols
+# portability splits have landed, but the rest of the workspace (herdr-gui
+# and the GPUI backends) is not yet validated on native linux/windows
+# runners — port and validate there before flipping the two `if` lines.
 #
 # [PROTOCOL]: Update .github/CLAUDE.md on change, then check /CLAUDE.md.
 
@@ -118,8 +119,9 @@ jobs:
 
   linux-x86_64:
     runs-on: ubuntu-24.04
-    # Disabled for v0.1.17: shardlane-history compiles unix-only file
-    # permission APIs. Re-enable together with the windows job.
+    # Disabled for v0.1.17: shardlane-history's unix-only file permission
+    # APIs are now split, but the rest of the workspace is unvalidated on
+    # native linux runners. Re-enable together with the windows job.
     if: ${{ false }}
     env:
       TARGET: x86_64-unknown-linux-gnu
@@ -147,9 +149,10 @@ jobs:
 
   windows-x86_64:
     runs-on: windows-2025
-    # Disabled for v0.1.17: same shardlane-history portability split as the
-    # linux job. Its live-herdr named-pipe socket verification (the merge
-    # gate) runs again once the job returns.
+    # Disabled for v0.1.17: shardlane-history's split has landed, but the
+    # rest of the workspace is unvalidated on native windows runners. Its
+    # live-herdr named-pipe socket verification (the merge gate) runs again
+    # once the job returns.
     if: ${{ false }}
     env:
       TARGET: x86_64-pc-windows-msvc

@@ -116,6 +116,10 @@ workspace = true
 # main thread in next_drawable (measured on macOS 15). See vendor/gpui/PACING-PATCH.md
 [patch.crates-io]
 gpui = { path = "vendor/gpui" }
+# Linux build fix vendored from 0.6.1 (crates.io latest, unfixed upstream):
+# the non-macOS render_sf_symbol stub predates symbol.rs's 7-argument call.
+# Remove when upstream lands the arity fix.
+gpui-symbols = { path = "vendor/gpui-symbols" }
 
 [profile.release]
 opt-level = 3
