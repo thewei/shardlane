@@ -36,6 +36,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install zig
+        shell: bash
         run: |
           if [ -n "${{ inputs.zig_version }}" ]; then
             pip install "ziglang==${{ inputs.zig_version }}"
