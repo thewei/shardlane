@@ -11,7 +11,6 @@
  *        harden_temp_dir 与 open_hardened_copy 两个 helper 内
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
-
 use rusqlite::{Connection, OpenFlags};
 use std::fs;
 use std::path::{Path, PathBuf};
