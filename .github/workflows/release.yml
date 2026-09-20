@@ -59,7 +59,10 @@ jobs:
       - name: Create ad-hoc ZIP and SHA-256 checksum
         run: |
           APP="target/$TARGET/release/bundle/osx/Shardlane.app"
-          scripts/archive-macos.sh +            --app "$APP" +            --output-dir dist +            --architecture aarch64
+          scripts/archive-macos.sh \
+            --app "$APP" \
+            --output-dir dist \
+            --architecture aarch64
 
       - uses: actions/upload-artifact@v4
         with:
@@ -100,7 +103,10 @@ jobs:
       - name: Create ad-hoc ZIP and SHA-256 checksum
         run: |
           APP="target/$TARGET/release/bundle/osx/Shardlane.app"
-          scripts/archive-macos.sh +            --app "$APP" +            --output-dir dist +            --architecture x86_64
+          scripts/archive-macos.sh \
+            --app "$APP" \
+            --output-dir dist \
+            --architecture x86_64
 
       - uses: actions/upload-artifact@v4
         with:
@@ -200,7 +206,7 @@ jobs:
       - name: Collect archives
         run: |
           mkdir -p dist
-          find artifacts -type f -exec cp {} dist/ ;
+          find artifacts -type f -exec cp {} dist/ ';'
           ls -la dist/
 
       - name: Publish GitHub release with multi-platform manifest
