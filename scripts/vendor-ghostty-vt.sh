@@ -151,7 +151,8 @@ if [ "$SKIP_SYMBOLS" -eq 0 ]; then
     }
     if [ -f "$VENDOR_ROOT/BASELINE_SYMBOLS.exceptions" ]; then
         grep -Fxvf "$VENDOR_ROOT/BASELINE_SYMBOLS.exceptions" "$WORK/baseline.syms" \
-            > "$WORK/baseline.syms" || true
+            > "$WORK/baseline.filtered.syms" || true
+        mv "$WORK/baseline.filtered.syms" "$WORK/baseline.syms"
     fi
     symbols_of "$ARTIFACT" > "$WORK/candidate.syms"
     # grep -Fxvf instead of comm: equivalent for sorted unique sets and present

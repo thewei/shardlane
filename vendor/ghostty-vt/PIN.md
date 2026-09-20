@@ -53,6 +53,32 @@ verified separately against live herdr by the release workflow.
   `build.rs` lookup for the CI Intel cross-build and the universal
   macOS bundle.
 
+## x86_64-unknown-linux-gnu / x86_64-pc-windows-msvc — installed 2026-09-20
+
+- Source: https://github.com/ghostty-org/ghostty.git @
+  699387c2c16dd5723e8825ad608538142b07b86b (2026-06-14, "Update VOUCHED
+  list") — identified as the baseline-vintage snapshot by a local bisect:
+  at this commit the rebuilt aarch64 archive reproduces the baseline's
+  exported symbol set (162/162, zero missing and zero extra) and the
+  embedded struct-layout fingerprint byte-for-byte.
+- Zig 0.15.2 (the ref's build.zig.zon minimum; the vendoring workflow
+  takes it as an explicit `zig_version` dispatch input).
+- Artifacts: `lib/x86_64-unknown-linux-gnu/libghostty-vt.a`
+  (14,647,614 bytes) and `lib/x86_64-pc-windows-msvc/ghostty-vt.lib`
+  (7,028,626 bytes), built by
+  `.github/workflows/vendor-ghostty-vt.yml` (run 35491443333).
+- ABI verification: layout fingerprint of both artifacts matches the
+  baseline exactly; linux exports 162 symbols == the baseline set;
+  windows exports 161 == baseline minus `ghostty_hwy_detect_targets`
+  (target-internal highway dispatch helper, recorded in
+  `BASELINE_SYMBOLS.exceptions`, unreferenced by the client FFI). All
+  function symbols bound by `crates/herdr-gui/src/ghostty/ffi.rs` are
+  present in both.
+- Note: the runner-side gate entries appended by the workflow reported
+  `baseline=0` due to an in-place filter truncation bug in the script
+  (fixed 2026-09-20); the numbers above were re-verified locally against
+  the installed artifacts with Apple llvm-nm and the fixed script.
+
 NaN
 
 1. **Source**: clone Ghostty upstream at the target tag/commit (nightly
