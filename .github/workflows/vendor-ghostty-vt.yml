@@ -32,9 +32,9 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install zig
-        run: pip install ziglang && echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+        run: pip install ziglang
       - name: Vendor matrix-triple
-        run: scripts/vendor-ghostty-vt.sh --triple ${{ matrix.triple }} --ghostty-ref "${{ inputs.ghostty_ref }}" --zig zig
+        run: scripts/vendor-ghostty-vt.sh --triple ${{ matrix.triple }} --ghostty-ref "${{ inputs.ghostty_ref }}" --zig "$(python -c 'import ziglang,os;print(os.path.join(os.path.dirname(ziglang.__file__), "zig"))')"
       - uses: actions/upload-artifact@v4
         with:
           name: ghostty-vt-${{ matrix.triple }}
@@ -50,9 +50,9 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install zig
-        run: pip install ziglang && echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+        run: pip install ziglang
       - name: Vendor x86_64-unknown-linux-gnu
-        run: scripts/vendor-ghostty-vt.sh --triple x86_64-unknown-linux-gnu --ghostty-ref "${{ inputs.ghostty_ref }}" --zig zig
+        run: scripts/vendor-ghostty-vt.sh --triple x86_64-unknown-linux-gnu --ghostty-ref "${{ inputs.ghostty_ref }}" --zig "$(python -c 'import ziglang,os;print(os.path.join(os.path.dirname(ziglang.__file__), "zig"))')"
       - uses: actions/upload-artifact@v4
         with:
           name: ghostty-vt-x86_64-unknown-linux-gnu
@@ -69,10 +69,17 @@ jobs:
           python-version: "3.12"
       - name: Install zig
         run: pip install ziglang
-      - name: Vendor x86_64-pc-windows-msvc (bash via git; zig from pip Scripts)
+      - name: Vendor x86_64-pc-windows-msvc (bash via git; zig from the ziglang package)
         shell: bash
         run: |
-          ZIG="$(python -m ziglang 2>/dev/null && echo py || true)"
+          ZIG="$(python -c 'import ziglang,os;print(os.path.join(os.path.dirname(ziglang.__file__), "zig"))')"
+          if ! command -v llvm-nm >/dev/null 2>&1; then
+            if [ ! -x "/c/Program Files/LLVM/bin/llvm-nm.exe" ]; then
+              choco install llvm -y --no-progress
+            fi
+            export PATH="/c/Program Files/LLVM/bin:$PATH"
+          fi
+          command -v llvm-nm >/dev/null 2>&1 || { echo "llvm-nm unavailable for the ABI gate" >&2; exit 1; }
           scripts/vendor-ghostty-vt.sh --triple x86_64-pc-windows-msvc --ghostty-ref "${{ inputs.ghostty_ref }}" --zig "$(python -c 'import ziglang,os;print(os.path.join(os.path.dirname(ziglang.__file__), "zig"))')"
       - uses: actions/upload-artifact@v4
         with:

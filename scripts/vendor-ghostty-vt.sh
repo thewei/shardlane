@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 #
-# [INPUT]: 依赖 zig 工具链、git、llvm-nm/nm、ghostty-org/ghostty 上游仓库；
-#           目标三元组映射表内置（Rust triple -> Zig target）
+# [INPUT]: 依赖 zig 工具链、git、llvm-nm/nm、strings/llvm-strings（缺失时退化为
+#           grep -aoE）、任一 sha256 工具（shasum/sha256sum/openssl）、
+#           ghostty-org/ghostty 上游仓库；目标三元组映射表内置（Rust triple -> Zig target）
 # [OUTPUT]: 产出 vendor/ghostty-vt/lib/<rust-triple>/libghostty-vt.a（windows-msvc 为
 #           ghostty-vt.lib），并按 PIN.md 协议追加来源记录；ABI 门禁失败即拒绝入库
 # [POS]: scripts 的 vendored 终端语义层生产入口；多平台 release 工作流的库来源，
@@ -83,13 +84,30 @@ symbols_of() {
         | grep "^_ghostty_" | sort -u
 }
 
+hash256() {
+    # Portable stdin sha256 (Git Bash ships sha256sum, macOS shasum, both may be absent).
+    if command -v shasum >/dev/null 2>&1; then
+        shasum -a 256 | awk '{print $1}'
+    elif command -v sha256sum >/dev/null 2>&1; then
+        sha256sum | awk '{print $1}'
+    else
+        openssl dgst -sha256 | awk '{print $NF}'
+    fi
+}
+
 layout_fingerprint() {
     # The archive embeds self-describing struct-layout JSON. Extract the
     # printable segments that carry Ghostty struct layout facts and hash them,
     # so drift across Ghostty snapshots is detectable without parsing Zig.
-    strings -n 24 "$1" 2>/dev/null \
+    if command -v strings >/dev/null 2>&1; then
+        strings -n 24 "$1" 2>/dev/null
+    elif command -v llvm-strings >/dev/null 2>&1; then
+        llvm-strings -n 24 "$1" 2>/dev/null
+    else
+        grep -aoE "[[:print:]]{24,}" "$1" 2>/dev/null
+    fi \
         | grep -E "Ghostty(Style|GridRef|Selection|TerminalOptions|RenderStateColors)" \
-        | grep -E "offset|size" | sort -u | shasum -a 256 | cut -d" " -f1
+        | grep -E "offset|size" | sort -u | hash256
 }
 
 WORK="$(mktemp -d)"
@@ -121,7 +139,9 @@ if [ "$SKIP_SYMBOLS" -eq 0 ]; then
     [ -f "$BASELINE_LIB" ] || { echo "baseline archive missing: $BASELINE_LIB" >&2; exit 1; }
     symbols_of "$BASELINE_LIB" > "$WORK/baseline.syms"
     symbols_of "$ARTIFACT" > "$WORK/candidate.syms"
-    MISSING="$(comm -23 "$WORK/baseline.syms" "$WORK/candidate.syms")"
+    # grep -Fxvf instead of comm: equivalent for sorted unique sets and present
+    # in Git Bash, where comm is not guaranteed.
+    MISSING="$(grep -Fxvf "$WORK/candidate.syms" "$WORK/baseline.syms" || true)"
     if [ -n "$MISSING" ]; then
         echo "ABI gate FAILED: baseline symbols missing from produced archive:" >&2
         echo "$MISSING" >&2
