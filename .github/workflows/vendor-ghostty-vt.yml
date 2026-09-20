@@ -11,14 +11,14 @@ name: vendor-ghostty-vt
 
 on:
   workflow_dispatch:
-inputs:
-  ghostty_ref:
-    description: "Ghostty tag or commit to build from"
-    required: true
-  zig_version:
-    description: "ziglang pip version to install (e.g. 0.15.2); empty installs the latest"
-    required: false
-    default: ""
+    inputs:
+      ghostty_ref:
+        description: "Ghostty tag or commit to build from"
+        required: true
+      zig_version:
+        description: "ziglang pip version to install (e.g. 0.15.2); empty installs the latest"
+        required: false
+        default: ""
 
 jobs:
   darwin:
