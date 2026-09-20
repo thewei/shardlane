@@ -310,6 +310,43 @@ Findings that transfer to any future "feels worse than Ghostty" report:
    script's printed manual command for a human operator instead.
 
 
+## Step 3.8 — grid desync attribution: shell redraws vs client projection vs runtime VT (2026-09-20)
+
+When the hosted surface shows text at wrong columns, frozen deletions, or displaced
+overlays, attribute the layer BEFORE touching any code. Worked case:
+zsh-autosuggestions ghost suggestions that wrap across rows displaced the whole line
+(`❯ pi --h␣␣␣␣␣␣elp`) and backspace appeared to stop deleting. Verdict: Herdr
+runtime VT, not Shardlane — client never patched.
+
+1. **Server grid first** — `HERDR_SOCKET_PATH=<live> herdr pane read <pane> --source
+   visible --ansi`. If the artifact exists in the server's cell grid, every
+   Shardlane paint path is already exonerated.
+2. **Inject keys without the client** — reproduce the user's keystroke sequence via
+   `herdr pane send-text/send-keys`. Reproduction here rules out the client input
+   encoder entirely.
+3. **Capture the real byte stream** — in an isolated server (temp `HOME`, own
+   socket), `tab create --env HOME=$REAL_HOME --cwd <repo>` gives the user's actual
+   shell config; then `herdr pane run <pane> "script -q /tmp/capture.txt /bin/zsh
+   -il"`, type the trigger keystrokes. macOS `script` buffers — exit the inner
+   shell to flush before reading. `pane read --raw` is a grid re-encode, not raw
+   bytes; useless here.
+4. **Replay through a reference VT** — feed the capture to pyte at the pane's exact
+   size (width = measure the prompt row's EOL padding; height = viewport_rows).
+   The reference result defines "correct": same bytes, independent parser.
+5. **Verdict matrix** — artifact in grid but not reference VT → runtime VT bug (hand
+   the byte capture upstream). Reference VT wrong too → shell-side bug (zsh/prompt
+   tool), fix via config. Bytes and grid both sane but the app paints wrong →
+   Shardlane projection bug (fix here).
+
+Case detail: the trigger was ZLE's wrap-restore dance for a ~130-char ghost
+(`^[[A` + `^H×n` + `^[[K` + `^[[1B` + `^M` + `^[[A` + `^[[nC`); pyte replay of
+the 5867-byte capture stayed healthy end-to-end while the Herdr grid desynced, so
+the runtime owns the fix. User-side mitigation until upstream ships: Ctrl+C /
+Ctrl+L resyncs via full redraw; avoid completing/deleting while a line-wrapping
+ghost is visible; `zsh-autosuggestions` disabled in `~/.zshrc` (2026-09-20) with
+an inline re-enable note.
+
+
 ## Step 4 — run the regression matrix
 
 Run deterministic tests first. Keep the commands exact so a future agent can paste
