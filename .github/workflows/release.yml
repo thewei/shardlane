@@ -2,7 +2,7 @@ name: release
 
 # Release pipeline: two macOS build jobs produce per-arch ad-hoc-signed app
 # archives + SHA-256 pairs, then one publish job assembles the GitHub release
-# and the backward-compatible latest.json. v0.1.17 ships macOS-only. The
+# and the backward-compatible latest.json. Releases ship macOS-only; the
 # linux/windows jobs are defined but disabled: the vendored per-target
 # archives are committed and ABI-gated, shardlane-history and gpui-symbols
 # portability splits have landed, but the rest of the workspace (herdr-gui
@@ -233,7 +233,7 @@ jobs:
           permalink() { printf 'https://github.com/%s/releases/download/%s/%s' "$REPO" "$TAG" "$1"; }
           if ! gh release view "$TAG" >/dev/null 2>&1; then
             gh release create "$TAG" --verify-tag --generate-notes \
-              --notes "macOS archives are ad-hoc signed (not notarized): verify the SHA-256 file and approve the first launch. v0.1.17 ships macOS only; Linux and Windows packages return in the next release."
+              --notes "macOS archives are ad-hoc signed (not notarized): verify the SHA-256 file and approve the first launch. This release ships macOS only; Linux and Windows packages return in a future release."
           fi
           gh release upload "$TAG" dist/* --clobber
           jq -n \
