@@ -131,6 +131,12 @@ debug = "line-tables-only"
 # 若 "*" 意外命中 workspace 成员（cargo build -v 可见 -C debuginfo=0），改回在 [profile.dev] 层控制。
 debug = false
 
+[profile.dev.package.gpui]
+# vendored gpui 是 path dep，dev 默认带 -C incremental，会被 sccache 旁路（每次冷重建多付 ~1min）。
+# 依赖 crate 不需要增量（增量只对正在编辑的本地 crate 有价值）；关掉后 gpui 进入 sccache 缓存集。
+# 注：改此开关会使 gpui 及其下游重编一次并重预热缓存，属预期。
+incremental = false
+
 [profile.release]
 opt-level = 3
 lto = "thin"
