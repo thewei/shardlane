@@ -1,0 +1,10 @@
+{
+  "name": "Shardlane",
+  "identifier": "com.whstudio.shardlane.next",
+  "version": "0.10.0",
+  "out": "build",
+  "icon": "resources/icon.png",
+  "macos": {
+    "minimumSystemVersion": "13.0"
+  }
+}

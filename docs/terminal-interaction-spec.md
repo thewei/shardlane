@@ -11,6 +11,18 @@ current architecture: the normal work surface is the singleton hosted Herdr
 TUI — one local `herdr` child, one PTY, one private Ghostty terminal model,
 one GPUI presentation/input bridge. It does not redefine runtime ownership.
 
+**Approved migration (2026-10-04):** `next/` preserves Herdr runtime
+authority while replacing the GPUI presentation bridge with MyGo Native UI and
+the official MyGo Terminal/Ghostty surface. The native shell maps Herdr's
+authoritative `session.snapshot.layouts` directly to same-window Terminal
+elements; each visible Pane runs Herdr's supported
+`terminal attach <terminal_id>` client. Herdr's own full-shell Sidebar/Tab
+chrome is therefore absent and `TuiChromeProjection` is not migrated. Terminal
+input/IME/selection/mouse semantics come from MyGo/Ghostty/Herdr rather than a
+Shardlane VT implementation. Hidden Tabs keep no attachment fleet and automatic
+attach never uses `--takeover`. The current Rust implementation remains
+canonical until native focus/IME/resize/multi-Pane/performance parity is verified.
+
 Deleted with the Embedded path and **not to be reintroduced**: per-Pane
 controllers/takeover, native multi-pane terminal rendering, local Ghostty
 viewport scrolling, a native terminal scrollbar, ⌘F local scrollback search,

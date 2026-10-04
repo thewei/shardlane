@@ -3,7 +3,8 @@
 Status: **Canonical / as-built + approved-next architecture**
 Baseline: 2026-08-25
 Runtime baseline: Herdr 0.8.x. Current transitional code still accepts socket protocol 19; the approved TUI-only cutover raises the minimum fully supported protocol to 20 because native shell → hosted TUI navigation uses protocol-20 focus operations. Known wrapper contracts remain version-checked rather than assuming unlimited forward compatibility.
-UI baseline: GPUI 0.2.2, gpui-component 0.5.1 + gpui-component-assets 0.5.1
+Current shipped UI baseline: GPUI 0.2.2, gpui-component 0.5.1 + gpui-component-assets 0.5.1
+Approved migration UI baseline (2026-10-04; pin advanced 2026-10-05): MyGo 0.2.7 Native UI, Go 1.27.1, and the official MyGo Terminal/Ghostty surface under `next/`; this path gates on Herdr 0.9.3 / socket protocol 22 for the audited snapshot/direct-attach capabilities.
 
 This file is the single architectural source of truth for Shardlane. Other documents may define interaction details, execution order, progress evidence, or handoff context, but they must not redefine ownership.
 
@@ -44,6 +45,237 @@ Shardlane must never become a second runtime authority.
 **Done 2026-08-27 — product pruning.** Notes, Bookmarks, and Annotation have been deleted outright: modules, routes, actions, config writers, assets, feature-only tests, and the annotation-only native capture/image dependencies (objc2-core-foundation/core-graphics/image-io/screen-capture-kit) are gone from the codebase. Existing user-created files/packages are not destructively erased by startup migration. Browser/right panel, Activity, Scripts/Services, Shortcuts, History, New Agent, Remote/Mobile, and Workspace/Project organization remain retained capabilities unless a later product decision explicitly changes them.
 
 **Approved Next (2026-08-30) — Same-Session / Dual-Surface Chat interactions.** Terminal View and Chat View are two product surfaces over the **same Herdr-owned live Agent session**. The native Provider CLI/TUI remains running inside Herdr. Conversation read projection combines the existing read-only transcript/live decoder, narrow Provider hook/plugin/extension events, and Herdr's exact Agent/session/lifecycle state. Ordinary Chat Composer messages continue through the canonical Host Conversation transaction and Herdr `agent.prompt`; a question/approval that belongs to the current in-flight turn is a separate Host-owned `ConversationInteraction` and may be resolved only through an exact Provider hook/plugin response bridge. `blocked` must never be answered by converting the choice into a generic prompt or guessed PTY keys. Companion Shardlane hooks/plugins must coexist with Herdr integrations and must not steal lifecycle authority from Herdr. Provider-native App Server/RPC/native server transports are optional only after a measured **Same-Session Gate** proves one Agent core/session, single-writer ownership, retained native TUI, safe fallback, and acceptable performance. **ACP is explicitly frozen as of 2026-08-30: no ACP dependency, adapter, client/server/proxy, capability field, Host DTO, feature flag, or preparatory runtime code may be added until a later explicit product decision unfreezes it. Passing the Same-Session Gate does not itself authorize ACP work.** The decision/evidence/execution set for this direction is maintained in the internal engineering archive (not published).
+
+### Approved Next (2026-10-04) — MyGo Native UI shell + native Terminal migration
+
+The approved desktop migration lives under `next/` and replaces the current
+GPUI presentation incrementally rather than translating the Rust view tree.
+Its ownership model is normative during the transition:
+
+```text
+MyGo Native UI
+├─ Header / Sidebar / Breadcrumbs / Toolbar / standard controls
+├─ official MyGo Terminal views for visible Herdr Panes
+├─ Native History list/detail
+└─ Native Chat / Conversation surfaces
+                     |
+                     v
+            Go application/domain services
+                     |
+                     v
+                   Herdr
+```
+
+- The canonical desktop shell is MyGo Native UI. Standard shell controls use
+  MyGo's native widget set before custom drawing. The main window does not need
+  React, DOM layout, Vite, Bun, or a WebView.
+- Native page navigation uses one long-lived MyGo `ui.Router` owned by the
+  presentation shell. Sidebar/Titlebar stay outside it; `/workspace`,
+  `/new-task`, `/search`, `/history`, `/history/{id}` and
+  `/settings/{section...}` are presentation routes only. Router history may
+  retain scroll/input/focus state, but runtime focus and product truth continue
+  to come from Herdr/domain services.
+- Herdr remains the only Pane/layout runtime. `session.snapshot.layouts` is the
+  authoritative geometry/topology for the focused Tab. The native shell maps
+  those rectangles into same-window MyGo `terminal.View` elements; it does not
+  create a client-side Pane layout model.
+- Each visible native Terminal uses Herdr's supported
+  `terminal attach <terminal_id>` client. Herdr owns the PTY, process,
+  scrollback, terminal identity, resize semantics and persistence; Shardlane
+  owns only visibility-scoped presentation attachments and product navigation.
+  Hidden Tabs keep no direct-attach fleet. Automatic direct attach never uses
+  `--takeover`.
+- The Go Herdr adapter enumerates sessions with `herdr session list --json`,
+  starts the selected session through the Herdr CLI when needed, projects
+  runtime state from `session.snapshot`, and consumes `events.subscribe` as a
+  reconciliation trigger. It is an implementation replacement for the Rust
+  adapter, not a second runtime or client-side Workspace registry.
+- **History UI and Chat UI are Native UI for the current migration.** WebView
+  presentation for either surface is frozen. MyGo 0.2.7 does not provide an
+  official WebView element embedded inside the Native UI tree, and the migration
+  must not invent private AppKit/GTK/HWND embedding or a second localhost
+  presentation backend. This freeze may be reconsidered only after MyGo ships an
+  official supported Native-UI-embeddable WebView capability and a later explicit
+  product decision unfreezes it. Runtime/domain ownership would remain unchanged.
+- Daily development of the new desktop path must not require compiling the
+  Rust GUI. Current `shardlane-host`, `shardlane-history` and
+  `shardlane-remote` remain compatibility/parity references until each domain
+  is deliberately ported and its existing contracts are preserved.
+- The Remote/Mobile `/api/v2` wire contract and golden fixtures remain the
+  compatibility authority while the Host implementation moves from Rust to
+  Go; migration does not authorize a second or incompatible API.
+- Framework ownership is deliberately narrow: MyGo owns native presentation,
+  window/platform integration and official terminal emulation; ordinary Go
+  packages own application/domain logic; Herdr owns runtime truth. A future
+  desktop-framework change must therefore not require rewriting Herdr/domain
+  services.
+
+**Terminal cutover gates.** Direct Pane attach resolves the old full-TUI chrome
+problem without porting `TuiChromeProjection`: the native surfaces display the
+Herdr-owned Pane terminals directly, while Shardlane renders Sidebar/Tab/Pane
+product chrome with MyGo widgets. Before default-client cutover, real hardware
+must still verify multi-Pane resize, focus transfer, IME/CJK candidates,
+selection/copy/paste, mouse protocols, fullscreen, rapid Tab/Pane switching and
+performance. The rewrite must not introduce a client-owned PTY/process/layout
+authority, VT parser, scrollback authority, or pixel-crop compensation.
+
+- Native presentation uses reusable Shardlane design tokens/components rather
+  than page-local styling: macOS-like vibrancy and neutral surfaces, compact
+  shadcn-like controls, reusable SVG icon buttons, and native-painted Project →
+  Tab → Pane hierarchy guides. Presentation files are split by shell area/page
+  so no single view file becomes the application state container.
+- Desktop diagnostics use size-bounded structured logs under MyGo `PathLogs`
+  (2 MiB active + 3 backups by default). Logs may contain operation names,
+  stable runtime IDs, counts, errors and timing, but never terminal output,
+  prompts/conversation bodies, credentials or provider secrets.
+
+### Approved Next (2026-10-05) — 0.9 Workspace Intelligence & Desktop Experience
+
+After the Agent/Conversation/Status/History core closes in 0.5–0.8, the next
+large desktop milestone restores the retained development-workspace surfaces
+without changing runtime authority:
+
+```text
+Command Center
+├─ typed navigation/actions over existing snapshots
+└─ no open-time filesystem/network/Herdr work
+
+Project Tools
+├─ Files       — Native, read-only, selected-Tab cwd
+├─ Services    — Script + observed process/port projection
+├─ Lazygit     — one bounded auxiliary MyGo Terminal
+└─ Preview     — local-only PreviewService
+
+Desktop lifecycle
+├─ Git status / optional read-only PR enrichment
+├─ notification + Dock attention
+├─ Diagnostics / bounded Logs
+└─ official MyGo signed updater
+```
+
+Normative boundaries for this milestone:
+
+- The **Command Center** is a Shardlane presentation/application-service
+  catalog over already-derived Projects, Tabs, Panes, Agents, recent History,
+  Services and app actions. It is not another search index and must perform no
+  Herdr RPC, filesystem scan, Git/network command or transcript parse when it
+  opens.
+- Files and local Git facts follow the currently selected **Tab cwd**. The
+  Project does not gain a second client-owned cwd. Files are read-only in this
+  milestone; Script definitions remain Shardlane-owned only while Herdr lacks a
+  native Script resource, while Script Tabs/Panes/processes remain Herdr-owned.
+- Lazygit retains the existing bounded auxiliary-tool exception: at most one
+  auxiliary tool process/PTY per window, visibility/project scoped, never a
+  replacement for or member of the Herdr Pane runtime.
+- The retained Browser product scope remains **local Project Preview only**.
+  MyGo 0.2.7 still has no official Native-UI-embedded WebView element, so the
+  migration may render Preview in a separate project-scoped MyGo WebView
+  window until an official embedded capability exists. Private AppKit/GTK/HWND
+  embedding is forbidden. Preview accepts local dev targets only and hands
+  external navigation to the system browser; it does not become general
+  browser tabs/history/bookmarks.
+- Local Git status is a client-side read projection cached off the render path.
+  Optional GitHub PR enrichment is read-only first and must reuse an approved
+  authentication source (initially an already-authenticated official `gh` CLI
+  is acceptable); Shardlane does not store a new GitHub token merely to show
+  PR state. Worktree mutations remain Herdr-owned and are exposed only after a
+  verified runtime API is pinned.
+- Desktop notification/Dock/menu-bar presentation consumes the existing Agent
+  attention/review models; it does not define a second status classifier.
+  Local file drops may paste bounded, safely quoted paths into the exact native
+  Terminal under the pointer, but never synthesize Enter or remote file
+  transfer.
+- Diagnostics consumes the existing bounded structured log and sanitized
+  runtime/application facts. Diagnostic export is explicit and may never
+  include terminal output, prompts/conversation bodies, History transcripts,
+  credentials or provider secrets. No diagnostic payload is uploaded
+  automatically.
+- Application updates use MyGo's official signed updater/plugin rather than a
+  line-for-line port of the Rust platform installer. Signing secrets stay
+  outside the repository and development/unconfigured builds degrade to an
+  explicit unavailable state.
+- Shardlane keeps one canonical Sidebar. 0.9 may add density and high-contrast
+  preferences, but it must not add titlebar Tabs or alternate navigation
+  ownership. Magpie-style provider/model Profiles are adapted only as
+  Shardlane-owned New Task Presets over fields the canonical launch contract
+  actually owns; provider keys/config/model routing remain outside that
+  feature.
+
+Detailed execution and reference comparison live in
+`docs/mygo-native-0.9.0-workspace-intelligence-desktop-experience-plan.md` and
+`docs/reference-magpie-herdr-gpui-shardlane-0.9-audit.md`.
+
+### Approved Next (2026-10-05) — 0.10 Git Workbench & Unified Primary Surface
+
+0.10 supersedes the **MyGo-target Lazygit exception** from the 0.9 plan. The
+legacy Rust implementation may remain useful as migration evidence, but the
+new Native target does not ship or maintain Lazygit. Git review becomes a
+first-class Shardlane Native capability instead.
+
+The `/workspace` center has exactly one local presentation owner:
+
+```text
+WorkspacePrimarySurface
+├─ Terminal
+├─ Diff Review
+└─ Commit
+```
+
+The global MyGo Router continues to own top-level pages such as History, Chat,
+Settings and Search. `WorkspacePrimarySurface` is contextual presentation
+state inside `/workspace`, not a second router and not a runtime model.
+
+Normative 0.10 boundaries:
+
+- Selecting a Project, Tab, Pane or Agent destination returns the workspace
+  center to **Terminal**. Selecting a changed file from the contextual tool
+  panel opens **Diff Review** in that same center; Commit is also a center
+  surface, not a modal. Right-panel visibility never implicitly changes the
+  center surface.
+- While Diff/Commit is visible and `/workspace` remains active, Herdr-owned
+  terminal processes and the client's current terminal attachments may remain
+  alive for fast restoration, but `terminal.View` is not rendered and hidden
+  terminals receive no keyboard, mouse, shortcut or file-drop input.
+- The Right Panel becomes **Changes / Files / Services**. Changes is a compact
+  navigator/summary over the selected Tab's Git repository; it never renders
+  a second full diff. Files and Services must consume background immutable
+  snapshots only; render-time filesystem/process/Git work is forbidden.
+- Git facts and mutations are local client capabilities over the selected
+  Tab's resolved repository root. They do not create another Workspace,
+  Project, Tab or process authority. One Git Workbench service/cache owns
+  repository state; the transitional `gitintel` cache must be migrated or
+  removed rather than duplicated.
+- Native Git review supports working-tree/index changes versus HEAD plus
+  untracked files, bounded patch parsing, virtualized unified/split rendering,
+  syntax highlighting, bounded word-level presentation differences and
+  bidirectional Changes-tree ↔ Diff selection synchronization.
+- Commit is an explicit Git mutation with stale-state fences. The transaction
+  must prove that unrelated already-staged work is neither consumed nor added
+  to the selected commit. No force/reset-hard/destructive clean is permitted.
+- Branch switching is explicit, local-branch-only in the core release,
+  non-force, performs no automatic fetch, and never restarts Herdr-owned
+  Terminals/Agents/services merely because the worktree changed. New Branch
+  may use `git switch -c` after validation.
+- `egoist/godiff` is a UI/behavior reference only under the audited 2026-10-05
+  snapshot. Its relevant implementation packages are `internal/*` and the
+  audited repository had no explicit root license file, so Shardlane does not
+  copy/vendor/import that internal source. The client uses clean-room
+  Shardlane-owned models/services and independently licensed dependencies.
+- The 0.10 preflight must reconcile 0.9 integration gaps before declaring
+  closure: Files render-time IO, Script persistence/real execution, real
+  Services ports, Preview ownership, File Drop wiring, Terminal Find UI,
+  updater/build prerequisites and release version metadata. Historical 0.9
+  package tests are evidence, not proof of end-to-end completion.
+- The canonical left Sidebar keeps Project → Tab → Pane structure lines and
+  single ownership. Its visual density/header/file-list language may adapt
+  Godiff's compact macOS-native patterns without adding a second navigation
+  hierarchy.
+
+Detailed execution/audit documents:
+
+- `docs/reference-godiff-shardlane-0.10-audit.md`
+- `docs/mygo-native-0.10.0-git-workbench-primary-surface-plan.md`
+- `docs/prompts/mygo-native-0.10.0-git-workbench-primary-surface-implementation-prompt.md`
 
 ### Multi-instance model (current — 2026-09-01 no-registry revision)
 
@@ -165,6 +397,17 @@ The expensive terminal/render path must remain visibility-scoped.
 Replaceable client background work follows owner lifetime. When a GPUI job becomes obsolete because the user selected another object or left the surface, Shardlane keeps its job handle and drops it to cancel the obsolete work. `.detach()` is reserved for work that intentionally outlives the initiating UI state.
 
 ## 5. Terminal architecture
+
+**Approved migration note (2026-10-04).** `next/` preserves Herdr runtime
+authority but does not embed the full Herdr shell. Its visible terminal is
+MyGo's native Terminal/Ghostty surface running Herdr's supported
+`terminal attach <terminal_id>` client for the currently selected Pane. This
+removes Herdr Sidebar/Tab chrome without carrying `TuiChromeProjection` into
+the rewrite. The focused Tab keeps only its currently visible direct attachments, derived
+from Herdr's authoritative layout; hidden Tabs keep none. Real-device multi-Pane
+interaction acceptance remains a cutover gate as described above. The current Rust PTY/Ghostty/GPUI implementation remains the
+shipped path until parity is verified, and a Web-terminal fallback is not the
+normal desktop Terminal.
 
 **Current — Herdr TUI is the sole normal terminal surface.** This means the hosted Herdr TUI is the sole **normal Terminal implementation/surface**; it is not a claim that no other Agent *presentation* may exist. An approved-next semantic Chat View (see §6) renders the same Herdr-owned Agent session without becoming a second terminal implementation. Landed 2026-08-27, with the bounded auxiliary-tool (Lazygit) exception landed 2026-08-29: Shardlane keeps its retained native UI/UX and product features while deleting the direct Embedded per-Pane terminal controller/render path. The normal work surface owns exactly one **primary** `herdr` TUI process behind one local PTY, one private Ghostty terminal-emulator model, and one GPUI presentation/input bridge. While a visible Right Panel is explicitly on Lazygit, Shardlane may own **at most one ephemeral auxiliary tool process/PTY** with its own private Ghostty model and session state; it is bound to the active Project's resolved Git root, is stopped on hide/close/Project switch, never occupies Herdr's global terminal slot, and never creates a per-Project process fleet. A detected Lazygit older than the certified minimum may still use the stable CLI startup arguments, but receives no Shardlane overlay and is visibly marked “update recommended”; missing CLI remains a blocking native state. Native Sidebar/Search/History/New Agent/Activity/notification navigation converges on one Herdr focus-intent seam; native secondary surfaces may cover/block terminal input without tearing down the primary host. Remote clients retain independent navigation and move the Mac TUI only through an explicit cross-client action. The cutover raises the minimum fully supported Herdr socket protocol to 20 because native shell → TUI focus relies on protocol-20 `workspace.focus`/`tab.focus`/`pane.focus`/`agent.focus`; older servers receive an explicit upgrade state, never an Embedded fallback. `TerminalSurfaceMode`, per-Pane `terminal session control --takeover`, `PaneTerminalSlot`/`pane_terminals`, Embedded native pane layout rendering, deep-history reseed/scrollbar/controller branches, and mode-switch recovery are deleted. `portable-pty`, Ghostty models, IME, selection/copy/paste, mouse/trackpad encoding, terminal appearance, and host restart/failure UX remain private hosted-surface infrastructure; only the primary host participates in Herdr runtime focus. Hosted-TUI right-click is owned by the Herdr TUI itself (2026-09-18): every mouse button — Right included — is encoded straight to the hosted PTY, so Herdr's own TUI context menu is the only right-click menu; Shardlane registers no native terminal context menu and never withholds Right press/motion. Clipboard and Pane operations that the deleted native menu used to mirror remain available through the Sidebar Pane rows, keyboard shortcuts, and the TUI's own menu.
 
@@ -395,11 +638,12 @@ app when `dist/` is embedded. Public Relay/cloud infrastructure and
 production-grade public TLS remain future work. Runtime ownership is
 unchanged.
 
-Shardlane is evolving from one native GUI client into a Mac **Host/Core + clients** architecture:
+Shardlane is evolving from one native GUI client into a Mac **Host/Core + clients** architecture. The currently shipped desktop is GPUI; the approved `next/` desktop replaces that presentation with MyGo Native UI + native Terminal while preserving the same Host/Core ownership:
 
 ```text
-                         ┌─ macOS GPUI client
+                         ┌─ current macOS GPUI client
 Herdr Runtime ← Shardlane Host/Core
+                         ├─ approved MyGo Native UI desktop client
                          └─ Remote API / Protocol ← mobile/other clients
 ```
 
@@ -464,7 +708,7 @@ A change is architecturally correct when all are true:
 - Herdr remains the sole backend/runtime authority;
 - real Herdr technical names remain accurate rather than being cosmetically renamed;
 - terminal semantics live in Ghostty when Ghostty provides them;
-- standard UI behavior uses gpui-component when available;
+- standard UI behavior uses the owning presentation framework rather than hand-rolled substitutes (gpui-component on the current client; MyGo native widgets/platform standards on the approved MyGo client);
 - external Agent history remains read-only;
 - history continuation returns through Herdr;
 - only visible runtime data drives expensive terminal/render work;

@@ -1,10 +1,13 @@
 # Shardlane — native macOS workspace for coding agents
 
-Rust + GPUI 0.2.2 + gpui-component 0.5.1 + Crepuscularity GPUI + vendored libghostty-vt + Herdr runtime APIs
+Current production: Rust + GPUI 0.2.2 + gpui-component 0.5.1 + Crepuscularity GPUI + vendored libghostty-vt + Herdr runtime APIs
+
+Approved migration (`rewrite/mygo`): Go 1.27.1 + MyGo 0.2.7 Native UI + official MyGo native Terminal; Herdr remains the runtime authority. The 0.10 target removes Lazygit and gives `/workspace` one local `WorkspacePrimarySurface` owner for Terminal / Diff Review / Commit, with a contextual Changes / Files / Services Right Panel and a Shardlane-owned Native Git Workbench. History and Chat are Native UI for the current migration. WebView presentation is frozen until MyGo provides an official supported Native-UI-embeddable WebView capability and a later explicit product decision unfreezes it.
 
 <directory>
 assets/ - packaged Shardlane brand artwork
-crates/ - Shardlane application and read-only Agent-history code
+crates/ - current Rust Shardlane application, Host, Remote API, and read-only Agent-history code
+next/ - approved MyGo rewrite: native UI shell, Go Herdr adapter, same-window native Terminal surfaces
 ui/ - thin Crepuscularity shell composition templates
 vendor/ - bundled native runtime artifacts (ghostty-vt) + patched gpui 0.2.2 (see vendor/gpui/PACING-PATCH.md, wired via [patch.crates-io])
 scripts/ - tiered verification and composable UI acceptance entrypoints (verify.sh: check/unit/history/ui/fast/full)
@@ -15,7 +18,8 @@ docs/ - public architecture, interaction, performance, packaging, and remote doc
 </directory>
 
 <config>
-Cargo.toml - Shardlane package/workspace/dependency policy
+Cargo.toml - current Rust Shardlane package/workspace/dependency policy
+next/go.mod + next/mygo.json - MyGo Native UI rewrite toolchain and packaging policy
 crepus.toml - Shardlane development target
 build.rs - links bundled libghostty-vt
 AGENTS.md - repository engineering rules and required reading
@@ -39,7 +43,7 @@ scripts/acceptance-capabilities.py + scripts/acceptance/ - no-GUI capability inv
 .agents/skills/ui-acceptance-testing/SKILL.md - reusable UI acceptance driver/isolation/evidence workflow
 </config>
 
-Product rule: **Shardlane is the client and brand. Herdr is the backend/runtime.** Herdr remains authoritative for workspaces, tabs, panes, layouts, agents, scrollback, persistence, terminal sessions, and process lifecycle. Shardlane owns native macOS presentation, local interaction state/preferences, and the read-only Agent-history browsing/index layer.
+Product rule: **Shardlane is the client and brand. Herdr is the backend/runtime.** The `next/` rewrite changes presentation/runtime-adapter implementation only; it must not introduce a second Workspace registry, pane runtime, terminal authority, or process lifecycle owner. Herdr remains authoritative for workspaces, tabs, panes, layouts, agents, scrollback, persistence, terminal sessions, and process lifecycle. Shardlane owns native macOS presentation, local interaction state/preferences, and the read-only Agent-history browsing/index layer.
 
 Implementation rule: do not hand-roll capabilities while mature owners exist. Search in order: Herdr API → vendored libghostty-vt → gpui-component → GPUI → proven compatible implementation → custom code. Missing runtime APIs are fixed at the Herdr boundary rather than bypassed with a parallel terminal/process path.
 

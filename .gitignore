@@ -7,3 +7,8 @@
 /vendor/ghostty/
 /vendor/ghostty-vt/lib/*.dylib
 __pycache__/
+# MyGo rewrite
+/next/node_modules/
+/next/dist/
+/next/build/
+/next/.mygo/

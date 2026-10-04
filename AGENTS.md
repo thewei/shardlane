@@ -9,7 +9,7 @@ Before engineering Shardlane, read:
 3. For real-app UI acceptance, `.agents/skills/ui-acceptance-testing/SKILL.md` and
    `docs/ui-acceptance-testing.md` — Computer Use MCP, isolation, and evidence contract.
 
-Internal iteration plans, audits, handoffs, and progress evidence are kept in a private engineering archive outside this repository; public documentation under `docs/` is self-contained.
+The active MyGo migration execution contract and task roadmap are repository-owned at `docs/mygo-native-execution-rules.md` and `docs/mygo-native-migration-roadmap.md` so parallel implementers share one version. Architecture ownership still lives only in `docs/client-product-architecture.md`; ad-hoc audits/progress evidence that are not part of the active migration contract may remain outside the repository.
 
 ## Product/runtime boundary
 
@@ -23,8 +23,10 @@ Internal iteration plans, audits, handoffs, and progress evidence are kept in a 
 
 ## Build
 
-- Use Cargo for Rust work.
-- Use `crepus dev --bin shardlane` for local app smoke tests.
+- Use Cargo for current Rust work.
+- Use `crepus dev --bin shardlane` for current Rust app smoke tests.
+- The approved `next/` migration uses Go 1.27.1 + MyGo Native UI pinned at v0.2.15 (`next/go.mod` is the version authority); use `GOTOOLCHAIN=auto` so the repository pin does not require changing the user's global Go installation.
+- `next/internal/nativeui` owns presentation only; `next/internal/herdr` owns the Go Herdr CLI/socket boundary. Herdr remains runtime authority. Use MyGo native components and official plugins before custom presentation infrastructure.
 - Use `wax`, not `brew`.
 
 ## Checks
@@ -38,6 +40,14 @@ cargo test --locked --workspace
 cargo build --locked --workspace
 git diff --check
 git diff --cached --check
+```
+
+For changes under `next/`, additionally run:
+
+```sh
+cd next
+GOTOOLCHAIN=go1.27.1 go test ./...
+GOTOOLCHAIN=go1.27.1 go tool mygo build
 ```
 
 When packaging changes, also build and structurally verify `Shardlane.app`.
@@ -58,8 +68,11 @@ For native runtime/input/render changes, smoke the app and inspect `/tmp/shardla
 
 ## Scope and ownership
 
+- **MyGo rewrite ownership (Approved Next, 2026-10-04):** `next/internal/herdr` is the Go runtime adapter and `next/internal/nativeui` is the MyGo Native UI presentation layer. Sidebar/Header/Breadcrumbs/Toolbar and visible terminal surfaces live in one native window. Herdr `session.snapshot.layouts` remains the Pane topology authority; native UI only maps its visible Pane rectangles to official MyGo Terminal elements running supported `herdr terminal attach <terminal_id>`. Automatic attach must never use `--takeover`, hidden Tabs keep no attachment fleet, and no client-owned PTY/layout/runtime may appear. **History UI and Chat UI are Native UI for the current migration; WebView presentation is frozen until MyGo ships an official supported Native-UI-embeddable WebView capability and a later explicit product decision unfreezes it.** Current Rust Host/History/Remote remain compatibility/parity references until deliberately migrated.
+- `next/` uses bounded structured logs under MyGo `PathLogs` (2 MiB active + 3 backups by default). Never log terminal bytes/output, prompt or conversation bodies, credentials, auth headers, provider secrets, or environment dumps.
 - Herdr socket/projection wrappers → `crates/shardlane-host/src/herdr.rs` (`crates/herdr-gui/src/herdr.rs` is a re-export shim). Backend-neutral runtime seam → `crates/shardlane-host/src/mux/` (docs/multiplexer-api.md): the macOS shell and the Remote API consume instances only through `mux::MuxRegistry` + the `Multiplexer*` traits; `HerdrClient` concrete references above the adapter are restricted to the as_herdr() whitelist (Domain 7/9 services, protocol gate).
 - **Integration acceptance order (2026-09-02):** Herdr-behavior parity first, then GUI completeness, then new-backend integration (tmux). An acceptance pass over a new mux adapter does not substitute for regression coverage of the Herdr path, and a new backend must never delay or mask a Herdr/GUI defect.
+- **MyGo 0.10 target (2026-10-05):** Lazygit is removed from the Native target. `/workspace` has one local `WorkspacePrimarySurface` owner for Terminal / Diff Review / Commit; the Right Panel is Changes / Files / Services. Godiff is a UI/behavior reference only; do not copy/import its `internal/*` implementation. 0.10 also reconciles the post-0.9 wiring gaps documented in `docs/reference-godiff-shardlane-0.10-audit.md`.
 - **Multi-instance model (2026-09-01, no-registry revision):** a workspace IS a Herdr instance (a named Herdr session); there is NO Shardlane-side workspace registry — instances are enumerated live from `herdr session list` (`shardlane_host::herdr::list_sessions`). One workspace is displayed per window; each window owns its client, runtime state, and TUI child for its bound instance (`bind_instance`/`open_or_jump_project` in `main.rs`); switching workspaces rebinds the window or jumps to the workspace's existing window. Layout persistence is Herdr's (`session.json` restores workspaces/tabs/per-Tab cwd on server restart); Shardlane persists only cosmetics + window bookkeeping: per-session display-name overrides (`settings.instance_display_names` — herdr has no session rename), the machine list (`settings.devices`, local seeded; SSH socket bridging lives in `ssh_bridge.rs`), and the open-window snapshot (`settings.open_workspaces` for launch restore). One TUI child per instance, process-wide (`TuiManagerRegistry`, shared by desktop windows and Remote/mobile viewers; unwatched children are reaped after their idle lease). Projects/workspaces inside an instance belong to Herdr: every Tab's cwd belongs to Herdr, and the right panel (Files/Lazygit) follows the focused Tab's cwd. Renaming a workspace writes only the display-name override — instances are Herdr-owned and never created/renamed/deleted behind the CLI. The legacy client-side "Workspace grouping" machinery (`workspace_management.rs` + `workspace_management/`, the `config.workspaces` registry, `project_path_overrides`/`project_path_last_seen_ms`/`workspace_dormant_project_paths`, the project auto-restore policy, the sidebar/status-bar workspace switchers, and the `workspace.N` shortcuts) was deleted on 2026-09-01; do not reintroduce it — project path resolution goes through `build_project_index` only. Still forbidden: a second Shardlane runtime implementation, the Embedded per-Pane path, a mode switch, Notes/Bookmarks/Annotation. Do not invent Herdr protocol methods; `HERDR_SESSION`/socket targeting (`bootstrap_for_session` / `connect_herdr_for` with `?instance=<session>`) is the only per-instance seam.
 - `terminal_stream.rs` is the shared hosted-PTY transport for the primary Herdr TUI child and the bounded auxiliary tool child; the per-Pane controller branch remains deleted (2026-08-27 TUI-only convergence).
 - libghostty terminal semantics required by the hosted TUI → `ghostty.rs`.
