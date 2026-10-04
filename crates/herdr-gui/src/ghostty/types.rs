@@ -56,8 +56,9 @@ pub fn color_query_report_bytes(queries: u8, foreground: u32, background: u32) -
 }
 
 /// Selection overlay fallback derived from the hosted Herdr terminal's resolved colors.
-/// Shardlane does not own a separate Terminal palette. A 25% foreground mix is visibly distinct while preserving
-/// much stronger glyph contrast than the historical fixed dark-blue highlight in light themes.
+/// Shardlane does not own a separate Terminal palette. A 25% foreground mix is visibly distinct
+/// while preserving much stronger glyph contrast than the historical fixed dark-blue highlight
+/// in light themes.
 pub(super) fn default_selection_color(default_foreground: u32, default_background: u32) -> u32 {
     let channel = |shift: u32| {
         let fg = (default_foreground >> shift) & 0xff;
@@ -65,31 +66,6 @@ pub(super) fn default_selection_color(default_foreground: u32, default_backgroun
         ((bg.saturating_mul(3) + fg) / 4) << shift
     };
     channel(16) | channel(8) | channel(0) | 0xff00_0000
-}
-
-/// Resolve a *confirmed* host surface color from the visible Herdr frame, not from a parallel
-/// Shardlane theme table. A dominant explicit background is accepted only when it covers at
-/// least 80% of visible cells. Anything below that threshold is deliberately `None`: rapid
-/// scroll/resize frames are often only partially repainted, and encoding that transition as the
-/// terminal default background caused the host surface to flash black between Herdr-colored
-/// frames. The presentation seam may retain the previously confirmed surface until a new color
-/// is confirmed.
-pub(super) fn dominant_surface_background(lines: &[TerminalLine]) -> Option<u32> {
-    let total_cells = lines.iter().map(|line| line.cells.len()).sum::<usize>();
-    if total_cells == 0 {
-        return None;
-    }
-
-    let mut by_background = std::collections::HashMap::<u32, usize>::new();
-    for run in lines.iter().flat_map(|line| line.runs.iter()) {
-        let Some(background) = run.bg else {
-            continue;
-        };
-        let count = by_background.entry(background).or_default();
-        *count = count.saturating_add(usize::from(run.cell_count));
-    }
-    let (background, cells) = by_background.into_iter().max_by_key(|(_, cells)| *cells)?;
-    (cells.saturating_mul(5) >= total_cells.saturating_mul(4)).then_some(background)
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -128,12 +104,11 @@ pub struct TerminalFrame {
     /// presentation treats this as the authoritative Terminal color source instead of keeping a
     /// second Shardlane-owned palette in parallel.
     pub default_foreground: Option<u32>,
-    /// Resolved terminal default background after Herdr/OSC theme application.
+    /// Resolved terminal default background after Herdr/OSC theme application. This is the
+    /// single host-surface background: the Herdr TUI paints its own surface from Shardlane's
+    /// OSC 10/11 answers (the same seeded colors this field resolves from), so no
+    /// reverse-measured "dominant visible background" estimate participates anywhere.
     pub default_background: Option<u32>,
-    /// Actual visible Herdr surface background. When an explicit background covers at least 80%
-    /// of the projected viewport this is that dominant color; otherwise it equals the resolved
-    /// terminal default. Shardlane content chrome consumes this field directly.
-    pub surface_background: Option<u32>,
     /// Visible cursor position in viewport cell coordinates.
     pub cursor: Option<(u16, u16)>,
     pub cursor_style: TerminalCursorStyle,
@@ -151,36 +126,11 @@ impl TerminalFrame {
     pub(crate) fn scalars_match(&self, other: &TerminalFrame) -> bool {
         self.default_foreground == other.default_foreground
             && self.default_background == other.default_background
-            && self.surface_background == other.surface_background
             && self.cursor == other.cursor
             && self.cursor_style == other.cursor_style
             && self.cursor_blinking == other.cursor_blinking
             && self.cursor_color == other.cursor_color
             && self.selection_color == other.selection_color
-    }
-
-    /// Keep the last high-confidence Herdr surface color across partial repaint frames. Rapid
-    /// wheel/trackpad scrolling can update only part of the visible grid, so a frame that does
-    /// not meet the 80% confirmation threshold must not be interpreted as a request to switch
-    /// the host surface back to the terminal default. Returns true when a previous confirmed
-    /// surface was retained.
-    pub(crate) fn retain_confirmed_surface_background_from(
-        &mut self,
-        previous: &TerminalFrame,
-    ) -> bool {
-        if self.surface_background.is_some()
-            || self.lines.is_empty()
-            || previous.surface_background.is_none()
-        {
-            return false;
-        }
-        self.surface_background = previous.surface_background;
-        if let (Some(foreground), Some(background)) =
-            (self.default_foreground, self.surface_background)
-        {
-            self.selection_color = Some(default_selection_color(foreground, background));
-        }
-        true
     }
 
     /// Project a rectangular terminal viewport by removing chrome cells from each edge.
@@ -200,7 +150,6 @@ impl TerminalFrame {
             .iter()
             .map(|line| project_terminal_line(line, left, right))
             .collect::<Vec<_>>();
-        let surface_background = dominant_surface_background(&lines);
         let cursor = self.cursor.and_then(|(col, row)| {
             let row = row.checked_sub(top)?;
             let col = col.checked_sub(left)?;
@@ -215,14 +164,12 @@ impl TerminalFrame {
             lines,
             default_foreground: self.default_foreground,
             default_background: self.default_background,
-            surface_background,
             cursor,
             cursor_style: self.cursor_style,
             cursor_blinking: self.cursor_blinking,
             cursor_color: self.cursor_color,
             selection_color: self.default_foreground.and_then(|foreground| {
-                surface_background
-                    .or(self.default_background)
+                self.default_background
                     .map(|background| default_selection_color(foreground, background))
             }),
         }

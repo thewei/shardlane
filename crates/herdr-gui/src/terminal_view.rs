@@ -510,11 +510,12 @@ impl TerminalPane {
         if Arc::ptr_eq(&self.frame, &frame) {
             return;
         }
-        // Hosted Herdr owns Terminal colors. Default bg/fg are resolved by Ghostty after Herdr
-        // theme/OSC application and travel with the frame; Shardlane only falls back before the
-        // first authoritative frame exists.
+        // Hosted Herdr owns Terminal colors. The canvas fill follows ONLY the seeded default
+        // background — never a reverse-measured dominant color — so partial repaints, chrome
+        // crops, and fullscreen TUI apps cannot drag the canvas color around. Before the first
+        // authoritative frame the placeholder background stays.
         let previous_paint_style = self.paint_style();
-        if let Some(background) = frame.surface_background.or(frame.default_background) {
+        if let Some(background) = frame.default_background {
             self.bg = background;
         }
         self.cursor_color = frame

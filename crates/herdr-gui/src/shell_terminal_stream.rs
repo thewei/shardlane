@@ -235,27 +235,14 @@ impl ShardlaneApp {
         // shape and cannot be reused as the signature baseline for the next polling round.
         self.terminal_raw_frame = frame.clone();
         let projected = !projection.is_empty();
-        let mut frame = if projected {
+        let frame = if projected {
             Arc::new(projection.project_frame(&frame))
         } else {
             frame
         };
-        let retained_surface_background = if self.terminal_target.as_deref()
-            == Some(herdr_tui::TUI_TARGET)
-            && frame.surface_background.is_none()
-            && !frame.lines.is_empty()
-            && self.terminal_frame.surface_background.is_some()
-        {
-            Arc::make_mut(&mut frame).retain_confirmed_surface_background_from(&self.terminal_frame)
-        } else {
-            false
-        };
-        let previous_surface_background = self
-            .terminal_frame
-            .surface_background
-            .or(self.terminal_frame.default_background);
-        let next_surface_background = frame.surface_background.or(frame.default_background);
-        let surface_background_changed = previous_surface_background != next_surface_background;
+        let previous_background = self.terminal_frame.default_background;
+        let next_background = frame.default_background;
+        let background_changed = previous_background != next_background;
         let compare_started = trace.then(Instant::now);
         // B16: under `pane_plan` the stored visible frame is the plan's baseline projected by
         // the same (empty) projection, so the deep compare's verdict is already decided —
@@ -308,11 +295,10 @@ impl ShardlaneApp {
                 .checked_div(total_cells)
                 .unwrap_or(0);
             crate::terminal_trace::event(format_args!(
-                "stage=frame.bg_stats rows={} default_fg={:06x} default_bg={:06x} surface_bg={:06x} surface_retained={retained_surface_background} total_cells={total_cells} explicit_cells={explicit_cells} dominant_bg={dominant_bg:06x} dominant_cells={dominant_cells} dominant_permille={dominant_permille}",
+                "stage=frame.bg_stats rows={} default_fg={:06x} default_bg={:06x} total_cells={total_cells} explicit_cells={explicit_cells} dominant_bg={dominant_bg:06x} dominant_cells={dominant_cells} dominant_permille={dominant_permille}",
                 frame.lines.len(),
                 frame.default_foreground.unwrap_or(0),
                 frame.default_background.unwrap_or(0),
-                frame.surface_background.unwrap_or(0),
             ));
         }
         self.terminal_frame = frame.clone();
@@ -326,10 +312,11 @@ impl ShardlaneApp {
         let pane_plan = pane_plan.unwrap_or(TerminalFramePlan::Unknown);
         self.terminal_pane
             .update(cx, |pane, cx| pane.set_frame(frame, pane_plan, cx));
-        if surface_background_changed {
+        if background_changed {
             // The content Header consumes the Herdr-derived background (content_surface_theme).
-            // Repaint Root only when that effective color actually changes (first confirmation/
-            // theme switch), never for ordinary Terminal frames or partial scroll repaints.
+            // Repaint Root only when the seeded default background actually changes (first
+            // confirmation/theme switch), never for ordinary Terminal frames or partial scroll
+            // repaints — partial repaints cannot move the default by design.
             cx.notify();
         }
         if trace {

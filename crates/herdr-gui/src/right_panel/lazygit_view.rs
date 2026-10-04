@@ -30,8 +30,7 @@ impl ShardlaneApp {
         );
         let preedit = self.ime_preedit_overlay(lazygit::LAZYGIT_TARGET, &frame, cx);
         let color = frame
-            .surface_background
-            .or(frame.default_background)
+            .default_background
             .unwrap_or(self.theme(window).terminal);
         let target = lazygit::LAZYGIT_TARGET.to_string();
 

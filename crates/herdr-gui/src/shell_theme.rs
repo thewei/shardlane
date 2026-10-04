@@ -65,10 +65,12 @@ impl ShardlaneApp {
         (theme.text, theme.terminal)
     }
 
+    /// Header/content-chrome background: the seeded default background the Herdr TUI itself
+    /// paints from (OSC 10/11 answers). Deliberately NOT a frame-dominance estimate — the
+    /// chrome must not move with partial repaints or fullscreen TUI apps.
     pub(super) fn hosted_terminal_background_rgb_from_theme(&self, theme: UiTheme) -> u32 {
         self.terminal_frame
-            .surface_background
-            .or(self.terminal_frame.default_background)
+            .default_background
             .unwrap_or(theme.terminal)
     }
 

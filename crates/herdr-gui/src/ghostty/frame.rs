@@ -374,9 +374,7 @@ impl GhosttyTerminal {
         frame.cursor_style = self.cursor_style()?;
         frame.cursor_blinking = self.render_bool(RENDER_STATE_DATA_CURSOR_BLINKING)?;
         frame.cursor_color = Some(cursor_color);
-        frame.selection_color = frame
-            .surface_background
-            .or(default_background)
+        frame.selection_color = default_background
             .map(|background| default_selection_color(default_foreground, background));
         self.finish_osc8_frame();
         Ok(SignatureFramePlan::Reuse(frame))
@@ -475,19 +473,15 @@ impl GhosttyTerminal {
             y = y.saturating_add(1);
         }
         self.finish_osc8_frame();
-        let surface_background = dominant_surface_background(&lines)
-            .or_else(|| previous.and_then(|frame| frame.surface_background));
         Ok(TerminalFrame {
             lines,
             default_foreground: Some(default_fg),
             default_background: default_bg,
-            surface_background,
             cursor,
             cursor_style,
             cursor_blinking,
             cursor_color: Some(cursor_color),
-            selection_color: surface_background
-                .or(default_bg)
+            selection_color: default_bg
                 .map(|background| default_selection_color(default_fg, background)),
         })
     }

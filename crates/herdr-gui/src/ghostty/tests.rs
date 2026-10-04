@@ -7,11 +7,10 @@
 //! invariants.
 
 use super::{
-    color_query_report_bytes, default_selection_color, dominant_surface_background,
-    ghostty_type_json, push_run, terminal_bg, GhosttyRuntime, GhosttyTerminal, TerminalCursorStyle,
-    TerminalDelta, TerminalFrame, TerminalFramePlan, TerminalKey, TerminalLine, TerminalModifiers,
-    TerminalMouseAction, TerminalMouseButton, TerminalMouseGeometry, COLOR_QUERY_BACKGROUND,
-    COLOR_QUERY_FOREGROUND,
+    color_query_report_bytes, default_selection_color, ghostty_type_json, push_run, terminal_bg,
+    GhosttyRuntime, GhosttyTerminal, TerminalCursorStyle, TerminalDelta, TerminalFrame,
+    TerminalFramePlan, TerminalKey, TerminalLine, TerminalModifiers, TerminalMouseAction,
+    TerminalMouseButton, TerminalMouseGeometry, COLOR_QUERY_BACKGROUND, COLOR_QUERY_FOREGROUND,
 };
 
 #[test]
@@ -42,150 +41,14 @@ fn default_selection_color_is_derived_from_resolved_terminal_colors() {
 }
 
 #[test]
-fn dominant_surface_background_requires_eighty_percent_visible_coverage() {
-    let mut line = TerminalLine {
-        cells: vec![" ".to_string(); 10],
-        ..TerminalLine::default()
-    };
-    for col in 0..8 {
-        push_run(
-            &mut line.runs,
-            col,
-            " ".to_string(),
-            0xffffff,
-            Some(0x282a36),
-        );
-    }
-    assert_eq!(dominant_surface_background(&[line.clone()]), Some(0x282a36));
-
-    line.runs.clear();
-    for col in 0..7 {
-        push_run(
-            &mut line.runs,
-            col,
-            " ".to_string(),
-            0xffffff,
-            Some(0x282a36),
-        );
-    }
-    assert_eq!(dominant_surface_background(&[line]), None);
-}
-
-#[test]
-fn partial_repaint_retains_previous_confirmed_surface_background() {
-    let previous = TerminalFrame {
-        lines: vec![TerminalLine {
-            cells: vec![" ".to_string(); 10],
-            ..TerminalLine::default()
-        }],
-        default_foreground: Some(0xffffff),
-        default_background: Some(0x000000),
-        surface_background: Some(0x282a36),
-        selection_color: Some(default_selection_color(0xffffff, 0x282a36)),
-        ..TerminalFrame::default()
-    };
-    let mut partial_line = TerminalLine {
-        cells: vec![" ".to_string(); 10],
-        ..TerminalLine::default()
-    };
-    for col in 0..7 {
-        push_run(
-            &mut partial_line.runs,
-            col,
-            " ".to_string(),
-            0xffffff,
-            Some(0x282a36),
-        );
-    }
-    let mut current = TerminalFrame {
-        surface_background: dominant_surface_background(std::slice::from_ref(&partial_line)),
-        lines: vec![partial_line],
-        default_foreground: Some(0xffffff),
-        default_background: Some(0x000000),
-        selection_color: Some(default_selection_color(0xffffff, 0x000000)),
-        ..TerminalFrame::default()
-    };
-
-    assert_eq!(current.surface_background, None);
-    assert!(current.retain_confirmed_surface_background_from(&previous));
-    assert_eq!(current.surface_background, Some(0x282a36));
-    assert_eq!(
-        current.selection_color,
-        Some(default_selection_color(0xffffff, 0x282a36))
-    );
-}
-
-#[test]
-fn newly_confirmed_surface_background_replaces_previous_theme() {
-    let previous = TerminalFrame {
-        lines: vec![TerminalLine::default()],
-        default_foreground: Some(0xffffff),
-        default_background: Some(0x000000),
-        surface_background: Some(0x282a36),
-        ..TerminalFrame::default()
-    };
-    let mut line = TerminalLine {
-        cells: vec![" ".to_string(); 10],
-        ..TerminalLine::default()
-    };
-    for col in 0..8 {
-        push_run(
-            &mut line.runs,
-            col,
-            " ".to_string(),
-            0xffffff,
-            Some(0x1e1e2e),
-        );
-    }
-    let mut current = TerminalFrame {
-        surface_background: dominant_surface_background(std::slice::from_ref(&line)),
-        lines: vec![line],
-        default_foreground: Some(0xffffff),
-        default_background: Some(0x000000),
-        ..TerminalFrame::default()
-    };
-
-    assert!(!current.retain_confirmed_surface_background_from(&previous));
-    assert_eq!(current.surface_background, Some(0x1e1e2e));
-}
-
-#[test]
-fn projected_frame_recomputes_surface_background_for_visible_pane() {
-    let mut line = TerminalLine {
-        cells: vec![" ".to_string(); 10],
-        ..TerminalLine::default()
-    };
-    for col in 0..2 {
-        push_run(
-            &mut line.runs,
-            col,
-            " ".to_string(),
-            0xffffff,
-            Some(0x5f1f2a),
-        );
-    }
-    for col in 2..10 {
-        push_run(
-            &mut line.runs,
-            col,
-            " ".to_string(),
-            0xffffff,
-            Some(0x282a36),
-        );
-    }
-    let frame = TerminalFrame {
-        lines: vec![line],
-        default_foreground: Some(0xffffff),
-        default_background: Some(0x000000),
-        surface_background: Some(0x282a36),
-        ..TerminalFrame::default()
-    };
-    let projected = frame.project_rect(0, 0, 8, 0);
-    assert_eq!(projected.surface_background, Some(0x5f1f2a));
-    assert_eq!(
-        projected.selection_color,
-        Some(default_selection_color(0xffffff, 0x5f1f2a))
-    );
+fn terminal_frame_has_no_surface_background_estimate() {
+    // The surface-background dominance estimate (80% coverage + previous-frame retention)
+    // was the source of whole-canvas color jumps: partial repaints, chrome crops, and
+    // fullscreen TUI apps all moved it. It is deleted; the canvas follows only the seeded
+    // default background.
+    let frame = TerminalFrame::default();
+    assert_eq!(frame.default_background, None);
+    assert_eq!(frame.selection_color, None);
 }
 
 #[test]
@@ -1578,38 +1441,40 @@ fn ghostty_scrollbar_round_trips_absolute_rows() {
 }
 
 #[test]
-fn rapid_scroll_partial_theme_rows_keep_confirmed_surface_background() {
+fn rapid_scroll_partial_theme_rows_keep_stable_default_background() {
     let runtime = GhosttyRuntime::detect().unwrap_or_else(|error| panic!("{error}"));
     let api = runtime.load_api().unwrap_or_else(|error| panic!("{error}"));
     let mut terminal = GhosttyTerminal::new(api, 20, 6).unwrap_or_else(|error| panic!("{error}"));
 
-    // Older scrollback rows deliberately paint only half of each row with the Herdr-like
-    // background. Once these dominate the viewport they fall below the 80% confirmation
-    // threshold and reproduce the partial-repaint shape that used to flash to default black.
+    // Regression guard for the deleted surface-background estimate: scrollback rows that
+    // paint only part of the viewport with explicit backgrounds used to drag the whole
+    // canvas color around through the 80% dominance heuristic. The canvas now follows only
+    // the seeded default background, which partial scrolls must never move.
     for row in 0..12 {
         terminal
             .write(format!("\x1b[48;2;40;42;54mP{row:02}xxxxxxx\x1b[0m.........\r\n").as_bytes());
     }
-    // Finish with six almost-full themed rows so the initial viewport strongly confirms
-    // #282a36. Leave the final row without a newline so all six visible rows stay themed.
     for row in 0..6 {
-        let ending = if row == 5 { "" } else { "\r\n" };
+        let ending = if row == 5 { "\r\n" } else { "" };
         terminal.write(
             format!("\x1b[48;2;40;42;54mT{row:02}xxxxxxxxxxxxxxxx\x1b[0m{ending}").as_bytes(),
         );
     }
 
     let mut frame = terminal.frame().unwrap_or_else(|error| panic!("{error}"));
-    assert_eq!(frame.surface_background, Some(0x282a36));
+    let seeded = frame.default_background;
+    assert!(
+        seeded.is_some(),
+        "themed viewport must resolve a default background"
+    );
     for _ in 0..8 {
         terminal.scroll(-1);
         frame = terminal
             .frame_reusing(Some(&frame))
             .unwrap_or_else(|error| panic!("{error}"));
         assert_eq!(
-            frame.surface_background,
-            Some(0x282a36),
-            "partial scroll viewport must retain the previously confirmed Herdr surface"
+            frame.default_background, seeded,
+            "partial scroll viewport must retain the seeded default background"
         );
     }
 }
