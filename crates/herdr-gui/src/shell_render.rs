@@ -829,12 +829,14 @@ impl ShardlaneApp {
             cx,
         );
         let preedit = self.ime_preedit_overlay(herdr_tui::TUI_TARGET, &self.terminal_frame, cx);
+        // Terminal 区域在 Shardlane 侧不再叠加动态背景层：div 保持透明，透出的就是
+        // TerminalPane 绘制的 Herdr TUI 画面本身（frame 背景由 pane 的终端画布语义负责）。
+        // Header 的动态跟随不受影响——content_surface_theme 直接读 terminal_frame。
         let surface = div()
             .relative()
             .flex()
             .flex_1()
             .h_full()
-            .bg(rgb(self.hosted_terminal_background_rgb_from_theme(theme)))
             .cursor_text()
             // UX fix: with the root context always ShardlaneApp, the "HerdrTui"-specific bindings
             // (cmd-v/c/a, cmd-=/-/0, cmd-f, cmd-up/down) mount on this surface's sub-context,

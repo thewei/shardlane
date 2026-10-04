@@ -327,9 +327,9 @@ impl ShardlaneApp {
         self.terminal_pane
             .update(cx, |pane, cx| pane.set_frame(frame, pane_plan, cx));
         if surface_background_changed {
-            // Content/Header surfaces consume the same Herdr-derived background. Repaint Root only
-            // when that effective color actually changes (first confirmation/theme switch), never
-            // for ordinary Terminal frames or partial scroll repaints.
+            // The content Header consumes the Herdr-derived background (content_surface_theme).
+            // Repaint Root only when that effective color actually changes (first confirmation/
+            // theme switch), never for ordinary Terminal frames or partial scroll repaints.
             cx.notify();
         }
         if trace {
