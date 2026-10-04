@@ -15,7 +15,9 @@ docs/ - public architecture, interaction, performance, packaging, and remote doc
 </directory>
 
 <config>
-Cargo.toml - Shardlane package/workspace/dependency policy
+Cargo.toml - Shardlane package/workspace/dependency policy + dev/release build profiles
+.cargo/config.toml - rustc-wrapper=sccache 编译缓存层（仓库级 cargo 配置，crepus/cargo 全部生效）
+rust-toolchain.toml - 固定工具链 1.91.1（rustup 锚点；防 brew upgrade 静默全量重建）
 crepus.toml - Shardlane development target
 build.rs - links bundled libghostty-vt
 AGENTS.md - repository engineering rules and required reading

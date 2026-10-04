@@ -1,0 +1,9 @@
+# [INPUT]: rustup（/opt/homebrew/opt/rustup/bin 的 shim 须位于 PATH 中 Homebrew cargo 之前）
+# [OUTPUT]: 固定全仓库 build/clippy/fmt 的工具链版本；杜绝 brew upgrade rust 静默触发 823 crate 全量重建
+# [POS]: 仓库根工具链锚点；版本号同时是 .cargo/config.toml 中 sccache 缓存 key 的组成部分，升级需整仓重预热
+# [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+
+[toolchain]
+channel = "1.91.1"
+profile = "minimal"
+components = ["clippy", "rustfmt"]

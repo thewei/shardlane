@@ -1,0 +1,10 @@
+# [INPUT]: 依赖 PATH 中的 sccache（brew install sccache；编译器级内容寻址缓存，key = 预处理源码 + 编译器版本 + flags）
+# [OUTPUT]: 为 cargo build/test/clippy 与 crepus dev 的所有 rustc 调用提供透明缓存层，不改任何调用方
+# [POS]: 仓库级 cargo 配置（cargo 自当前目录向上查找）；与 rust-toolchain.toml 联动——工具链版本进缓存 key
+# [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+
+[build]
+# 依赖大头（naga/rav1e/image/syn/tokio 等 registry crate）跨 cargo clean、跨工具链补丁版本复用，
+# 冷全量重建从 ~4min 降到 ~1min。vendored gpui 等本地 path crate 带 -C incremental，sccache 自动旁路
+# （符合预期：增量大头由 cargo 自身 incremental 承担）。
+rustc-wrapper = "sccache"

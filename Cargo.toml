@@ -1,7 +1,7 @@
 # [INPUT]: cargo-bundle 0.11.0, vendored app artwork, workspace crate manifests,
 # lsp-types 0.97/anyhow (the provider contract for the gpui-component Input completion menu),
 # and rust-i18n 3.1.5 (the i18n backend shared with gpui-component; catalog in crates/herdr-gui/locales)
-# [OUTPUT]: the single source of truth for the Shardlane package/binary and macOS bundle identity/icon
+# [OUTPUT]: the single source of truth for the Shardlane package/binary, macOS bundle identity/icon, and dev/release build profiles
 # [POS]: repository-root build contract; consumed by cargo build, cargo bundle, CI, and local packaging scripts
 
 [package]
@@ -120,6 +120,16 @@ gpui = { path = "vendor/gpui" }
 # the non-macOS render_sf_symbol stub predates symbol.rs's 7-argument call.
 # Remove when upstream lands the arity fix.
 gpui-symbols = { path = "vendor/gpui-symbols" }
+
+[profile.dev]
+# dev 构建最大隐形成本是全图 debuginfo=2（默认）；行号表足以定位 panic 的文件/行。
+# 需要深入依赖栈帧时本地临时改回 debug=2，勿提交。
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+# 第三方依赖（naga/rav1e/syn/tokio...）不生成调试符号：编译更快、target/ 更小。
+# 若 "*" 意外命中 workspace 成员（cargo build -v 可见 -C debuginfo=0），改回在 [profile.dev] 层控制。
+debug = false
 
 [profile.release]
 opt-level = 3
