@@ -1,4 +1,0 @@
-[app]
-name = "shardlane"
-kind = "gpui"
-bin = "shardlane"
