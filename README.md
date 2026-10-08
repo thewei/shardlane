@@ -8,7 +8,7 @@ Shardlane is the **client/product**. **Herdr remains the backend runtime** and o
 
 - macOS 13+
 - Go 1.27.1 — the module pins it; `GOTOOLCHAIN=auto` lets Go fetch that toolchain without changing your global install
-- a MyGo framework checkout named `mygo` sibling to this repository: `go.mod` temporarily carries `replace github.com/egoist/mygo => ../mygo` for the approved F146/F147 `Options.LocalDragSelect` patch until upstream ships the option (see `../mygo/LOCAL-PATCH.md`)
+- no frontend toolchain is needed: the MyGo framework (v0.2.15 plus the approved F146/F147 `Options.LocalDragSelect` patch, see `third_party/mygo/LOCAL-PATCH.md`) is vendored in-repo via a `replace` directive until upstream ships the option
 - `herdr` — if it is missing, Shardlane offers `wax install herdr`
 
 ## Development

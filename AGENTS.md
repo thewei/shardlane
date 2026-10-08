@@ -30,7 +30,7 @@ git diff --cached --check
 ```
 
 - `go.mod` pins Go 1.27.1 and MyGo v0.2.15; use `GOTOOLCHAIN=auto` so the repository pin does not require changing the user's global Go installation.
-- `go.mod` carries a temporary, user-approved `replace github.com/egoist/mygo => ../mygo` (F146/F147 `Options.LocalDragSelect` patch). Do not remove the replace or add a second framework source; bump the pin and delete the replace only once upstream ships the option. Until then GitHub Actions cannot run Go gates (no sibling mygo checkout in CI).
+- `go.mod` carries a temporary, user-approved `replace github.com/egoist/mygo => ./third_party/mygo` (F146/F147 `Options.LocalDragSelect` patch vendored in-repo). Do not remove the replace or add a second framework source; bump the pin and delete `third_party/mygo` only once upstream ships the option.
 - When packaging changes, also build and structurally verify `Shardlane.app`.
 
 ## Scope and ownership

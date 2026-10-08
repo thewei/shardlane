@@ -1,0 +1,36 @@
+name: checks
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  go:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Test
+        run: go test ./...
+
+      - name: Build app bundle
+        run: go tool mygo build
+
+      - name: Verify app bundle
+        run: |
+          APP="build/darwin-arm64/Shardlane.app"
+          test -x "$APP/Contents/MacOS/Shardlane"
+          test -f "$APP/Contents/Info.plist"
+          plutil -lint "$APP/Contents/Info.plist"

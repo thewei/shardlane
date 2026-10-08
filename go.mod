@@ -4,13 +4,13 @@ go 1.27.1
 
 tool github.com/egoist/mygo/cmd/mygo
 
-// LOCAL FRAMEWORK PATCH (F146/F147, user-approved 2026-10-06): ../mygo is
-// v0.2.15 plus Options.LocalDragSelect (scrollback panes select text and
-// get a right-click menu while the wheel keeps reporting). Remove this
-// replace and bump the pin once upstream ships the option — Shardlane code
-// needs no changes. See ../mygo/LOCAL-PATCH.md. The path resolves to the
-// mygo checkout sibling of this repository.
-replace github.com/egoist/mygo => ../mygo
+// LOCAL FRAMEWORK PATCH (F146/F147, user-approved 2026-10-06): the vendored
+// fork under third_party/mygo is v0.2.15 plus Options.LocalDragSelect
+// (scrollback panes select text and get a right-click menu while the wheel
+// keeps reporting). Remove this replace, bump the pin, and delete
+// third_party/mygo once upstream ships the option — Shardlane code needs no
+// changes. See third_party/mygo/LOCAL-PATCH.md.
+replace github.com/egoist/mygo => ./third_party/mygo
 
 require (
 	github.com/alecthomas/chroma/v2 v2.27.0

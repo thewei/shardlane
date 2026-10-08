@@ -10,7 +10,7 @@ Thank you for your interest in improving Shardlane. This document covers the set
 
 ## Development setup
 
-macOS 13+ and Go 1.27.1 (pinned in `go.mod`; use `GOTOOLCHAIN=auto` so the toolchain fetches itself) are required. The module also expects a MyGo framework checkout named `mygo` sibling to this repository — see the replace directive in [`go.mod`](go.mod) and the [README](README.md#requirements).
+macOS 13+ and Go 1.27.1 (pinned in `go.mod`; use `GOTOOLCHAIN=auto` so the toolchain fetches itself) are required. The patched MyGo framework fork is vendored in-repo (`third_party/mygo`, wired through `go.mod`) — no sibling checkout or frontend toolchain is needed. See the [README](README.md#requirements).
 
 Run the app for local smoke testing with:
 
