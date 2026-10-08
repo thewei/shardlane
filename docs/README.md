@@ -2,6 +2,8 @@
 
 Shardlane architecture and engineering documentation. `client-product-architecture.md` remains the unique architecture source of truth. The active MyGo migration execution rules and roadmap are intentionally repository-owned so parallel implementers share one task contract; incidental audits/progress evidence may still live outside the repository.
 
+Note: documents that describe the removed Rust/GPUI desktop (packaging scripts, vendored libghostty-vt, Host Remote API, Multiplexer seam, Rust latency harnesses) remain here as historical reference for the `rewrite/mygo` and `main` branches; the Go/MyGo Native UI client is the only implementation on this branch.
+
 ## Read first
 
 1. **`client-product-architecture.md`** — canonical architecture source of truth. Product/runtime ownership, layer boundaries, dependency/version policy, projection model, the Agent-history boundary, packaging, and the development workflow.

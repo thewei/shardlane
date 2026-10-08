@@ -97,7 +97,7 @@ git diff --cached --check
 
 For packaging changes also: build the `.app`, verify `Shardlane.app` exists under `build/darwin-arm64/`, verify the executable runs, lint `Info.plist`, and perform available signing/structural verification. Packaging identity lives in `mygo.json`.
 
-Real-app UI acceptance (only-the-real-app questions: picker contents, multi-Pane input/resize, rendering) follows the `.agents/skills/ui-acceptance-testing/SKILL.md` evidence contract — Computer Use first, isolation mandatory (temporary `HOME` + dedicated `HERDR_SOCKET_PATH`; never drive the user's live instance), Herdr ground-truth assertions over pixels alone. Its script entrypoints were removed with the Rust implementation; re-point them at the Go app before the next acceptance session.
+Real-app UI acceptance (only-the-real-app questions: picker contents, multi-Pane input/resize, rendering) drives a real app run through the Computer Use tools with mandatory isolation — temporary `HOME` + dedicated `HERDR_SOCKET_PATH`, never the user's live instance — and asserts Herdr/protocol ground truth over pixels alone, recording PASS/FAIL evidence per scenario. The Rust-era acceptance harness scripts were removed with the Rust implementation; rebuild the harness entrypoints against the Go app before the next acceptance session.
 
 ## Completion review
 

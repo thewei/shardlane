@@ -1,6 +1,6 @@
 ---
 name: shardlane-ui-audit
-description: Use when auditing Shardlane MyGo (next/) real-app UX/UI with a Computer Use driver — finding interface inconsistencies, ambiguities, and broken affordances; verifying findings against code/Herdr truth; fixing and re-verifying on device; or continuing the F-numbered findings ledger in docs/ui-computer-use-findings-2026-10-06.md. Covers the device-driving quirks (coordinates, chords, popups, own-pane safety), the fix conventions (single-sourced actions, tooltips, plurals, HIG ellipsis, user-language copy), and the concurrent-batch protocol. Not for backend-only acceptance (use ui-acceptance-testing) or mobile (use shardlane-mobile-development).
+description: Use when auditing the Shardlane MyGo client real-app UX/UI with a Computer Use driver — finding interface inconsistencies, ambiguities, and broken affordances; verifying findings against code/Herdr truth; fixing and re-verifying on device; or continuing the F-numbered findings ledger in docs/ui-computer-use-findings-2026-10-06.md. Covers the device-driving quirks (coordinates, chords, popups, own-pane safety), the fix conventions (single-sourced actions, tooltips, plurals, HIG ellipsis, user-language copy), and the concurrent-batch protocol. Not for backend-only acceptance.
 ---
 
 # Shardlane UI 审计与修复（CUA 实机驱动）
@@ -12,12 +12,12 @@ description: Use when auditing Shardlane MyGo (next/) real-app UX/UI with a Comp
 
 1. `AGENTS.md` + `CLAUDE.md`；
 2. `docs/ui-computer-use-findings-2026-10-06.md` 的**最后两轮**——台账是滚动契约，开工前必须对账既有编号与已修项，新编号从最大号续；
-3. `next/CLAUDE.md`（模块地图与所有权）；
-4. 需要驱动细节时 `.agents/skills/ui-acceptance-testing/SKILL.md`。
+3. `CLAUDE.md`（目录/模块地图与所有权）；
+4. 需要驱动细节时参考 `docs/ui-acceptance-testing.md`（Rust 时代契约，脚本已移除，隔离与证据纪律仍适用）。
 
 ## 硬边界
 
-- 只测 `next/` MyGo 客户端；Rust `crates/` 是冻结的参考实现，不修不测。
+- 只测本仓库 MyGo 客户端；Rust 实现只在 `rewrite/mygo`/`main` 分支，不修不测。
 - 终端 pane 常常**就是审计会话自己的 stdin**：永不点击 pane 头部的 Close Pane、永不向终端 surface 发裸文本/裸 Return。导航只走侧栏、标题栏、菜单栏、修饰键 chord。
 - 破坏性 UI（Stage/Unstage/Commit/Discard/Delete/Confirm 的 Confirm 侧）在用户真实仓库上一律不点；用代码读 + 既有测试钉住，或 scratch 仓库。
 - 不 kill 用户实例；重启走「替换二进制 → graceful quit → open」。
@@ -26,9 +26,9 @@ description: Use when auditing Shardlane MyGo (next/) real-app UX/UI with a Comp
 
 ```sh
 git status --porcelain            # 识别并行批次的工作；有 UU/DU 先停下读「并发协议」
-cd next && GOTOOLCHAIN=go1.27.1 go build ./...   # 树必须先可编译
+GOTOOLCHAIN=go1.27.1 go build ./...   # 树必须先可编译（仓库根）
 md5 -q /Users/wilson/Applications/Shardlane.app/Contents/MacOS/Shardlane \
-  next/build/darwin-arm64/Shardlane.app/Contents/MacOS/Shardlane   # 运行实例是否=当前代码
+  build/darwin-arm64/Shardlane.app/Contents/MacOS/Shardlane   # 运行实例是否=当前代码
 ```
 
 CUA 绑定：`cua.getApp("Shardlane")`（bundle `com.whstudio.shardlane.next`）。首次绑定返回完整 AX 树。
@@ -62,13 +62,13 @@ CUA 绑定：`cua.getApp("Shardlane")`（bundle `com.whstudio.shardlane.next`）
 
 ```sh
 # 文案/字符串定位
-rg -n "疑似文案" next/internal/nativeui/*.go | grep -v _test
+rg -n "疑似文案" internal/nativeui/*.go | grep -v _test
 # 单复数批
-rg -n 'Sprintf\("[^"]*%d [a-z]+' next/internal/nativeui/*.go | grep -v _test
+rg -n 'Sprintf\("[^"]*%d [a-z]+' internal/nativeui/*.go | grep -v _test
 # tooltip 缺失批：SingleLine() 截断文本行是否有 .Tooltip
-rg -n "SingleLine\(\)" next/internal/nativeui/*.go | grep -v _test
+rg -n "SingleLine\(\)" internal/nativeui/*.go | grep -v _test
 # 对话框打开项的 "…" 惯例
-rg -n 'openTextDialog|openConfirm' next/internal/nativeui/dialogs.go
+rg -n 'openTextDialog|openConfirm' internal/nativeui/dialogs.go
 ```
 
 - 每个 finding 必须有**代码证据**（文件:行）或**后端真值**（`herdr pane read`、`~/Library/Logs/Shardlane/shardlane.log`），二者至少其一；纯截图观察标「待验证」。
@@ -82,13 +82,12 @@ rg -n 'openTextDialog|openConfirm' next/internal/nativeui/dialogs.go
 - **可恢复性**：任何截断文本必须有 Tooltip（全路径/全名）；计数优先于名称存活。
 - **复数**：用 `pluralS(n)`；动词单复数（"1 needs attention"）单独处理。
 - **HIG**：打开对话框的菜单项/按钮加 "…"；确认框 Confirm 永不默认聚焦（F69）。
-- **新文件加 L3 头部**（[INPUT]/[OUTPUT]/[POS]/[PROTOCOL]），结构性变更回写 `next/CLAUDE.md`。
+- **新文件加 L3 头部**（[INPUT]/[OUTPUT]/[POS]/[PROTOCOL]），结构性变更回写 `CLAUDE.md`。
 - **测试钉住**：每个行为修复带回归测试（改字符串的测试同步更新到新契约）；测试失败先分清「测试过期」还是「代码错了」。
 
 ## 重建 → 部署 → 实机复核
 
 ```sh
-cd next
 GOTOOLCHAIN=go1.27.1 go test ./...        # 全绿才继续；预先存在的失败先在干净 HEAD 复现定性
 GOTOOLCHAIN=go1.27.1 go tool mygo build
 cp build/darwin-arm64/Shardlane.app/Contents/MacOS/Shardlane \
