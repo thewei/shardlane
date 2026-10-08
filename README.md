@@ -1,154 +1,124 @@
-# Shardlane
+# Shardlane Next (MyGo Native UI migration)
 
-Shardlane is a native macOS workspace for coding agents, built with Rust, GPUI, gpui-component, and libghostty-vt.
+`next/` is the approved rewrite of the existing Shardlane client. It remains the same product and keeps Herdr as the sole runtime authority.
 
-Shardlane is the **client/product**. **Herdr remains the backend runtime** and owns workspaces, tabs, panes, terminal sessions, agents, persistence, layout state, and process lifecycle. Shardlane projects that runtime into a native macOS interface; it does not replace or duplicate Herdr.
+## Target shape
 
-## Download
-
-Prebuilt macOS Apple Silicon binaries are published on GitHub Releases:
-
-- [Download the latest release](https://github.com/thewei/shardlane/releases/latest/download/Shardlane-macos-aarch64.zip) — ad-hoc signed and not notarized; right-click the app and choose Open on first launch to approve it in Gatekeeper.
-- [Release index](https://github.com/thewei/shardlane/releases) · [Project site](https://thewei.github.io/shardlane/)
-
-Shardlane requires the [Herdr](https://herdr.dev) runtime. If it is missing, the app offers to install it with `wax install herdr`.
-
-## Requirements
-
-- macOS with Xcode / macOS SDK
-- stable Rust
-- `herdr`
-- bundled `libghostty-vt`
-- `crepus` for the hot-reload development loop
-- `wax` for installing Herdr when it is missing
-- `cargo-bundle` 0.11.0 for building the macOS `.app`
-
-Install development tools once:
-
-```sh
-cargo install waxpkg
-cargo install crepuscularity-cli --version 0.16.0
-cargo install cargo-bundle --version 0.11.0 --locked
+```text
+MyGo Native UI
+├─ native Header / Sidebar / Breadcrumbs / Toolbar
+├─ native Terminal views for only the visible Herdr Panes
+└─ optional future rich-content Web windows/surfaces for Chat/History
+             │
+             ▼
+        Go application/domain services
+             │
+             ▼
+           Herdr
 ```
 
-If `herdr` is missing, Shardlane attempts `wax install herdr`.
+The main shell is pure Go/MyGo Native UI: no React, Vite, Bun, DOM layout, or WebView is required to launch the desktop window. Herdr `session.snapshot.layouts` remains the Pane topology authority. Shardlane maps the focused Tab's authoritative Pane rectangles into same-window MyGo `terminal.View` elements, each attached through Herdr's supported `terminal attach <terminal_id>` client. Hidden Tabs keep no terminal attachment.
+
+History View, History Detail and Chat View are Native UI for the current migration. Verified against MyGo 0.2.6 as well as the pinned 0.2.5: Native UI windows still have no official embedded WebView element. WebView presentation is therefore frozen rather than implemented as a separate window or private AppKit embedding. This can be reconsidered only after MyGo ships an official Native-UI-embeddable WebView capability and a later explicit product decision unfreezes it.
 
 ## Development
 
 ```sh
-SDKROOT="$(xcrun --show-sdk-path)" crepus dev --bin shardlane
+cd next
+GOTOOLCHAIN=auto go tool mygo dev
 ```
 
-Direct Cargo run:
+The module pins Go 1.27.1 and MyGo (see `next/go.mod` for the authoritative pin, currently v0.2.15). `GOTOOLCHAIN=auto` can fetch the project toolchain without replacing the globally installed Go.
+
+## Verification and packaging
 
 ```sh
-SDKROOT="$(xcrun --show-sdk-path)" cargo run --locked --bin shardlane
+cd next
+GOTOOLCHAIN=go1.27.1 go test ./...
+GOTOOLCHAIN=go1.27.1 go tool mygo build
 ```
 
-## Checks
+The migration build deliberately opens the trial window centered on the primary display instead of restoring prior WebView-era window positions. State restoration will return after the Native UI shell stabilizes.
 
-```sh
-cargo fmt -- --check
-cargo clippy --locked --workspace --all-targets -- -D warnings
-cargo test --locked --workspace
-cargo build --locked --workspace
-git diff --check
+Current macOS outputs:
+
+```text
+build/darwin-arm64/Shardlane.app
+build/darwin-arm64/Shardlane 0.2.0.dmg
 ```
 
-Real-app UI acceptance uses the isolated Computer Use/MCP workflow in
-[`docs/ui-acceptance-testing.md`](docs/ui-acceptance-testing.md) and
-[`.agents/skills/ui-acceptance-testing/SKILL.md`](.agents/skills/ui-acceptance-testing/SKILL.md):
 
-```sh
-# No-GUI capability inventory (safe to run from any Agent/CI worker).
-scripts/acceptance-capabilities.py check --json
-# Print the read-only probe to execute through the host MCP.
-scripts/acceptance-capabilities.py mcp-snippet
-scripts/verify.sh ui
-scripts/mux-acceptance.sh --driver computer-use --prepare --keep
+## Native design system
+
+The Native UI presentation is intentionally componentized rather than page-styled ad hoc:
+
+```text
+internal/nativeui/
+├─ theme.go              macOS/shadcn-like neutral tokens
+├─ icons.go              reusable outline SVG icon set
+├─ components.go         iconButton/navButton/panelCard/treeRow
+├─ titlebar.go
+├─ sidebar.go
+├─ project_tree.go       Project → Tab → Pane hierarchy + connector guides
+├─ router.go
+├─ page_*.go             one page/domain per file
+├─ workspace.go
+├─ terminal.go
+├─ runtime.go
+├─ watcher.go
+└─ dialogs.go
 ```
 
-`check` reports each local capability as `available`, `blocked`, `unknown`, or
-`unavailable`. The Computer Use MCP itself must be probed by the Agent host with
-`mcp__node_repl__js`; a shell process cannot declare or emulate that connector.
-In Codex desktop, enable the Computer Use plugin/server/skill toggles first;
-custom MCP servers belong to the host `~/.codex/config.toml`, not this repo.
+On macOS the root uses MyGo vibrancy behind the sidebar/titlebar, while content surfaces remain opaque for terminal and text clarity. Project rows use native-painted hierarchy guides and folder/tab/terminal icons instead of margin-only indentation.
 
-Native CGEvent/System Events pacing or scroll measurements are explicit
-real-device fallbacks and require `SHARDLANE_UI_DRIVER=native
-SHARDLANE_ALLOW_GLOBAL_INPUT=1`; shared-display screenshots/video additionally
-require `SHARDLANE_ALLOW_GLOBAL_CAPTURE=1`.
+## Diagnostics and bounded logs
 
-## macOS app bundle
+Structured JSON logs are written to MyGo `PathLogs` (macOS: `~/Library/Logs/Shardlane/shardlane.log`). The active file is capped at 2 MiB with three backups, so normal disk use is bounded to about 8 MiB. `SHARDLANE_LOG_LEVEL=debug` enables diagnostic detail; `info` is the default. Settings → Runtime shows the active path and can reveal it in Finder. Terminal output, prompt/conversation bodies, credentials and provider secrets are intentionally not logged.
 
-One-click release (gates + Mobile Web + install + archive):
+## Native navigation
 
-```sh
-scripts/release-macos.sh
+The main Native UI shell uses MyGo `ui.Router` rather than one monolithic page state. The persistent Sidebar/Titlebar sit outside the router; page state and keyboard focus are retained in router history.
+
+```text
+/workspace
+/new-task
+/search
+/history
+/history/{id}
+/settings/{section...}
 ```
 
-Or use the individual reproducible entrypoints (the bundle name, identifier, and icon are configured once in `Cargo.toml`):
+`/search` is already functional against the authoritative current Herdr projection (Projects, Tabs, Panes and live Agents). Selecting a result routes back to `/workspace` and focuses the corresponding Herdr target. `Cmd+K`, `Cmd+,` and `Cmd+Shift+N` match the current Shardlane defaults. Terminal attachments are visibility-scoped: leaving `/workspace` closes the MyGo presentation attachments, and returning recreates only the visible Herdr Pane attachments.
 
-```sh
-scripts/package-macos.sh
-scripts/package-macos.sh --release --with-mobile-web --mobile-root ../herdr-mobile --install
-```
+## Migration boundary
 
-For the individual cargo-bundle steps and the cross-repo development/debug loop, read [`docs/macos-packaging-and-development.md`](docs/macos-packaging-and-development.md).
+Established now:
+- MyGo 0.2.15 native main window and hidden native title bar;
+- native Sidebar matching the shipped shell hierarchy: New Task/Search/History actions, Agents, Projects → Tabs → Panes, plus footer Workspace switcher + Settings;
+- native Workspace create/rename/delete dialogs and Project/Tab/Pane context menus;
+- trial-window lifecycle hardened for Native UI: explicit native `OnShow` placement on the primary display instead of the old WebView `OnReadyToShow` path;
+- native Agents section, Breadcrumbs, Toolbar and status/error presentation;
+- Herdr instance/session discovery and protocol-22+ socket gate for the audited 0.9.3 baseline;
+- Project/Tab/Pane/Agent projection from `session.snapshot`;
+- Herdr event subscription with authoritative snapshot reconciliation;
+- Project/Tab/Pane focus plus basic Tab/Pane mutations through verified Herdr RPCs;
+- same-window MyGo native Terminal views attached to visible Herdr Pane terminal IDs;
+- authoritative Herdr multi-Pane layout mapped into native element geometry;
+- app/DMG packaging through MyGo with no frontend build toolchain.
 
-Bundle identity:
+Still intentionally on the migration path:
+- full current Sidebar actions/polish, drag/reorder, menus and shortcut parity;
+- 0.10 Git Workbench closure: one `/workspace` Terminal / Diff Review / Commit primary surface, plus Right Panel Changes / Files / Services; Lazygit is removed from the Native target;
+- semantic Chat/Conversation services and final Chat presentation choice;
+- read-only History catalog/search/cache and final History Detail presentation choice;
+- Remote/Mobile Host API v2 and its golden contracts;
+- Windows named-pipe Herdr transport and platform acceptance;
+- final removal of the Rust GUI/Host/History compatibility implementation after parity.
 
-- App: `Shardlane.app`
-- Executable: `shardlane`
-- Bundle identifier: `dev.shardlane.app`
+### 0.10 workspace-surface target
 
-Tags matching `v*` build one arm64 (Apple Silicon) ad-hoc-signed `Shardlane.app` release archive (`Shardlane-macos-aarch64.zip`) and SHA-256 checksum. It is not notarized; first launch on another Mac requires the user to explicitly allow the app in Finder/System Settings.
+The approved 0.10 Native target is documented in `../docs/mygo-native-0.10.0-git-workbench-primary-surface-plan.md`. Godiff is a UI/behavior reference only; Shardlane does not copy/import Godiff `internal/*` implementation. The global Router continues to own top-level pages, while `/workspace` has one local primary surface owner for Terminal, Diff Review, or Commit.
 
-To create the same archive locally after building a release app:
+### Terminal ownership
 
-```sh
-scripts/package-macos.sh --release --target aarch64-apple-darwin
-scripts/archive-macos.sh \
-  --app target/aarch64-apple-darwin/release/bundle/osx/Shardlane.app \
-  --output-dir dist \
-  --architecture aarch64
-(cd dist && shasum -a 256 -c Shardlane-macos-aarch64.zip.sha256)
-```
-
-The GitHub Actions `release` workflow runs this archive step automatically for `v*` tags and uploads both files to the GitHub release.
-
-## Architecture
-
-Ownership is intentionally narrow:
-
-1. **Herdr** — runtime/backend authority.
-2. **libghostty-vt** — terminal semantics.
-3. **gpui-component / GPUI** — native desktop UI and interaction primitives.
-4. **Shardlane shell** — presentation, navigation, local settings, and read-only coding-agent history browsing.
-
-Runtime capabilities missing from Herdr must be added at the Herdr boundary rather than implemented as a second local runtime inside Shardlane.
-
-## Scope
-
-- native macOS client
-- Herdr socket/runtime integration
-- libghostty-backed terminal rendering
-- workspace/tab/pane navigation
-- coding-agent history and resume flows through Herdr
-- local right-panel web preview only (not a general browser)
-- optional packaged Mobile Web companion served by the Host Remote API
-- no plugin marketplace
-- no cloud account layer
-- no telemetry
-
-## Contributing
-
-Development setup, the verification gates every change must pass, and review expectations live in [CONTRIBUTING.md](CONTRIBUTING.md). Bug reports and feature requests use the issue templates.
-
-## Security
-
-Report vulnerabilities privately through GitHub's vulnerability reporting — see [SECURITY.md](SECURITY.md). Do not open public issues for anything exploitable.
-
-## License
-
-Shardlane is free software licensed under the [GNU General Public License v3.0](LICENSE): you may use, study, modify, and redistribute it; derivative works must likewise be licensed under GPLv3. Embedded third-party material keeps its own license — see [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
+MyGo owns terminal emulation/presentation through its official Terminal plugin and Ghostty library. Herdr owns PTYs, processes, Pane topology, layout, terminal IDs, persistence and runtime state. Shardlane owns only the visibility-scoped presentation attachments and product navigation. Automatic direct attach never uses `--takeover`.
