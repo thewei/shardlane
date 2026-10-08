@@ -5,17 +5,17 @@ Thank you for your interest in improving Shardlane. This document covers the set
 ## Ground rules
 
 - **Shardlane is the client; Herdr is the runtime.** Herdr stays authoritative for workspaces, tabs, panes, terminal sessions, agents, scrollback, persistence, and process lifecycle. Read [`docs/client-product-architecture.md`](docs/client-product-architecture.md) before your first change — it is the single architectural source of truth.
-- Prefer mature owners over hand-rolled code, in this order: Herdr API → vendored libghostty-vt → gpui-component → GPUI → a proven compatible implementation → custom code.
+- Prefer mature owners over hand-rolled code, in this order: Herdr API → MyGo native components/official plugins → a proven compatible implementation → custom code.
 - Do not invent Herdr protocol methods or socket shapes; inspect the live API instead.
 
 ## Development setup
 
-macOS with the Xcode SDK and a stable Rust toolchain are required. One-time tool installs (and what `herdr` is) are documented in the [README](README.md#requirements).
+macOS 13+ and Go 1.27.1 (pinned in `go.mod`; use `GOTOOLCHAIN=auto` so the toolchain fetches itself) are required. The module also expects a MyGo framework checkout named `mygo` sibling to this repository — see the replace directive in [`go.mod`](go.mod) and the [README](README.md#requirements).
 
 Run the app for local smoke testing with:
 
 ```sh
-SDKROOT="$(xcrun --show-sdk-path)" crepus dev --bin shardlane
+GOTOOLCHAIN=auto go tool mygo dev
 ```
 
 ## Verification gates
@@ -23,18 +23,15 @@ SDKROOT="$(xcrun --show-sdk-path)" crepus dev --bin shardlane
 Every change must pass before review:
 
 ```sh
-cargo fmt -- --check
-cargo clippy --locked --workspace --all-targets -- -D warnings
-cargo test --locked --workspace
-cargo build --locked --workspace
+GOTOOLCHAIN=go1.27.1 go test ./...
+GOTOOLCHAIN=go1.27.1 go tool mygo build
 git diff --check
 git diff --cached --check
 ```
 
 Additional expectations:
 
-- Packaging changes must also build and structurally verify `Shardlane.app` (`scripts/package-macos.sh`).
-- Native runtime/input/render changes should be smoked in the app; the lag trace lands in `/tmp/shardlane-lag.log`.
+- Packaging changes must also build and structurally verify `Shardlane.app` (`go tool mygo build` output under `build/darwin-arm64/`).
 - Terminal behavior changes should satisfy [`docs/terminal-interaction-spec.md`](docs/terminal-interaction-spec.md).
 
 ## Submitting changes

@@ -1,11 +1,11 @@
 ---
 name: shardlane-development
-description: Use when developing, debugging, reviewing, packaging, or handing off Shardlane native macOS work involving the Herdr runtime/protocol boundary, GPUI/gpui-component shell UI, libghostty-vt terminal behavior, pane layout, Agent conversation history, resume flows, terminal latency evidence, or release validation. Enforces Shardlane client identity, Herdr runtime authority, mature-API-first implementation, exact vendored ABI checks, visible-only projection, one canonical Sidebar, bounded capability work, native smoke tests, and documentation truth alignment.
+description: Use when developing, debugging, reviewing, packaging, or handing off the Shardlane macOS client (Go + MyGo Native UI) — the Herdr runtime/protocol boundary, native Terminal attach, pane layout projection, Agent conversation/history semantics, Git Workbench, or release validation. Enforces Shardlane client identity, Herdr runtime authority, mature-API-first implementation, Native-UI-only presentation, visible-only attachments, one canonical shell, bounded logging, and documentation truth alignment.
 ---
 
 # Shardlane Development
 
-Use this skill for engineering work in the Shardlane repository.
+Use this skill for engineering work in the Shardlane repository (Go 1.27.1 + MyGo Native UI; Herdr is the runtime authority). The Rust/GPUI implementation is not on this branch.
 
 The skill controls process. Architectural truth lives in `docs/client-product-architecture.md`; do not duplicate or override it here.
 
@@ -13,10 +13,9 @@ The skill controls process. Architectural truth lives in `docs/client-product-ar
 
 Before changing code:
 
-1. read `CLAUDE.md` and `AGENTS.md`;
+1. read `AGENTS.md` and `CLAUDE.md`;
 2. read `docs/client-product-architecture.md` (its §1 is the canonical Workspace/Project/Herdr domain language);
-3. if the task touches terminal behavior, read `docs/terminal-interaction-spec.md` (runtime ownership lives in §5 of the architecture doc and overrides any interaction wording);
-4. if the task touches latency, CPU, memory, rendering volume, background work, History scale, or event storms, read `docs/performance-engineering.md`.
+3. when the work touches the active migration contract, read `docs/mygo-native-execution-rules.md` and `docs/mygo-native-migration-roadmap.md`.
 
 Then inspect:
 
@@ -33,341 +32,80 @@ Preserve user/staged changes. Do not reset, stage, commit, or push unless the us
 Keep the names and ownership distinct:
 
 - **Shardlane** is the application, product, shell, package, bundle, release artifact, and user-facing brand.
-- **Workspace** is a Shardlane-owned user context above Projects. Workspace identity/order/name/color/active state/Project membership are client-owned configuration.
-- **Project** is the Shardlane product concept backed by one Herdr runtime workspace. Product UI and client-domain code call this layer Project.
+- **Project** is the Shardlane product concept backed by one Herdr runtime workspace.
 - **Herdr** is the actual backend/runtime. Genuine Herdr API, protocol, CLI, socket, `Workspace` runtime type, `workspace_id`, `workspace.*` methods, errors, and integration names stay Herdr.
-- Never use a Herdr runtime workspace as though it were a Shardlane Workspace. Map it through the Project projection boundary.
-- Never rename a real Herdr backend concept merely to make a branding search cleaner.
-- Never present the client itself as Herdr.
+- Never use a Herdr runtime workspace as though it were a Shardlane Workspace; map it through the Project projection boundary. Never rename a real Herdr backend concept merely to make a branding search cleaner. Never present the client itself as Herdr.
 
 ## Mature-semantics-first ladder
 
 Before hand-writing a capability, search the owner ladder in this order:
 
 1. Herdr API;
-2. vendored libghostty-vt;
-3. gpui-component 0.5.1;
-4. GPUI 0.2.2;
-5. a proven compatible implementation pattern;
-6. custom Shardlane code.
+2. MyGo Native UI components and official plugins (Terminal/Ghostty included);
+3. a proven compatible implementation pattern;
+4. custom Shardlane code.
 
-If custom code is necessary, record the concrete reason: missing API, incompatible ABI, ownership conflict, or measured performance limitation.
+If custom code is necessary, record the concrete reason: missing API, ownership conflict, or measured performance limitation.
 
 ## Ownership router
 
-- Herdr socket/projection/wrappers → `crates/shardlane-host/src/herdr.rs` (GUI `herdr.rs` is a re-export shim); backend-neutral runtime seam → `shardlane-host` `mux/` (docs/multiplexer-api.md) — GUI and Remote resolve instances via `MuxRegistry`, `HerdrClient` concrete use is whitelist-restricted to the as_herdr() escape hatch
-- Herdr runtime workspace → Shardlane Project correlation/index → `workspace_model.rs` (`ProjectIndex` / `ProjectProjection`)
-- workspace is a Herdr instance; per-session display-name overrides, the machine list, and open-window bookkeeping → `settings.rs` (`instance_display_names`, `devices`, `open_workspaces`)
-- approved normal Terminal surface → one hosted Herdr TUI child + PTY + private Ghostty model; the visible Right Panel may additionally host at most one ephemeral auxiliary tool PTY (currently Lazygit) with independent session state (TUI-only convergence landed 2026-08-27; Lazygit exception landed 2026-08-29)
-- `terminal_stream.rs` is the shared hosted-PTY transport for the primary Herdr TUI child and the bounded auxiliary tool child; the primary remains the only Herdr runtime and the per-Pane controller branch is deleted
-- hosted terminal semantics/FFI → `ghostty.rs`
-- hosted terminal paint/input/IME/selection presentation → `terminal_view.rs` plus the hosted-TUI shell seam; per-Pane scrollbar/layout/scrollback ownership was deleted with the Embedded path (2026-08-27)
-- native Shardlane shell/navigation/actions → `main.rs`, `sidebar.rs`, `ui/`
-- settings persistence → `settings.rs`
-- component theme/chrome tokens → `theme.rs`
-- Agent history formats/catalog/search semantics → `shardlane-history`
-- Claude/Codex/Pi incremental live semantic decoding (append cursor, partial line, generation, truncate/replace) → `shardlane-history` `live/` seam; it must reuse the existing adapter interpretation rules and never duplicate provider format knowledge in the GUI
-- shared Agent-facing presentation primitives (one `AgentComposer` extracted from New Agent; shared conversation/activity/Markdown presentation used by New Agent, History Detail, and Chat) → `crates/herdr-gui/src/agent_ui/`
-- New Agent launch configuration/submission → `new_agent/`; History catalog/paging/cache/Continue → `history/`; Chat live-source binding/follow-tail/prompt interaction → `chat/`
-- host Agent CLI discovery/validation → `agent_cli.rs`
+- Herdr daemon bindings (discovery/bootstrap, socket RPC, events, direct terminal attach) → `internal/herdr`
+- MyGo-native desktop presentation (shell, router, pages, theme/icons/components, dialogs) → `internal/nativeui`
+- Agent product semantics (launch, conversation, handoff, usage) → `internal/agent`
+- application service coordination → `internal/app`; client preferences → `internal/settings`
+- read-only coding-agent history domain → `internal/history`
+- Git review model (status/diff/commit) → `internal/gitworkbench`
+- Right Panel Files tool → `internal/filesview`; local preview → `internal/preview`
+- resident service monitoring → `internal/services`; command entry → `internal/commandcenter`; user scripts → `internal/scripts`
+- diagnostics & log export → `internal/diagnostics`; bounded structured logging → `internal/applog`
+- app entrypoint/window lifecycle → `main.go`
 
-Do not put a capability in `main.rs` merely because that is convenient.
-
-## Shell rule: one canonical Sidebar
-
-Shardlane has one Sidebar implementation.
-
-Do not add:
-
-- alternate/reference-branded Sidebar modes;
-- dormant backup templates;
-- a layout toggle that swaps entire Sidebar implementations;
-- duplicate row/navigation builders for the same shell state.
-
-Improve the canonical `sidebar.rs` ownership seam in place. Visual polish is subordinate to keeping one behavior path.
+Do not put a capability in `main.go` merely because that is convenient.
 
 ## Herdr runtime rule
 
 Herdr remains authoritative for workspaces, tabs, panes, layouts, terminal sessions, Agent runtime state, persistence, scrollback, and process lifecycle.
 
-Do not introduce:
+Do not introduce: a second Herdr runtime, a client-owned PTY/pane-layout model/runtime registry, external-terminal launchers for runtime continuation, or invented socket methods and event shapes. When a required runtime capability is absent, document the protocol gap and solve it at the Herdr boundary.
 
-- a second Herdr runtime, a per-Project terminal fleet, or any unbounded client-owned terminal runtime. The approved exception is one visible, ephemeral auxiliary tool PTY (Lazygit) that is not a Herdr Pane and is stopped when its surface is inactive;
-- external-terminal launchers for runtime continuation;
-- a client-owned durable pane-layout model;
-- invented socket methods or event shapes.
+For Herdr socket/event work, inspect the live protocol schema before changing request shapes. Treat protocol compatibility as an explicit verified range (current baseline: Herdr 0.9.3 / protocol 22), not exact-version equality and not open-ended forward compatibility; a successful ping followed by an unsupported protocol is a compatibility error, not proof the service is unavailable. For nontrivial commands, verify request params, outer success discriminator, and nested result field against the schema, then add a schema-shaped contract test. Validate each subscription's required fields (global vs pane-scoped), synchronously validate the initial `events.subscribe` acknowledgement, and never let a failed event stream leave a startup overlay permanently active.
 
-When a required runtime capability is absent, document the protocol gap and solve it at the Herdr boundary.
+For nontrivial Herdr-owned runtime capabilities, verify all three applicable surfaces before designing client state: snapshot/query, controller/command, and incremental event. A bounded query result must not be mistaken for the runtime authority when Herdr exposes a controller plus correction event. For structural mutations, apply the authoritative result payload to the smallest local projection and fetch only genuinely missing metadata; reserve full snapshot refreshes for bootstrap, explicit manual refresh, or exceptional recovery.
 
-For Herdr socket/event work, inspect the live protocol schema before changing request shapes. Subscription names and emitted event-kind strings are separate protocol surfaces: validate each subscription's required fields, distinguish global subscriptions from pane-scoped subscriptions, and synchronously validate the initial `events.subscribe` API acknowledgement before treating the receiver as live. A failed/disconnected event stream must never be able to leave Shardlane's startup overlay permanently active.
+`session.snapshot.layouts` is the Pane topology authority: native UI maps visible Pane rectangles into same-window MyGo Terminal elements running `herdr terminal attach <terminal_id>`. Automatic attach never uses `--takeover`; hidden Tabs keep no attachment fleet. Navigation never attaches a terminal or reimplements a focus chain as a side effect.
 
-A Herdr method name or result type existing in the schema is not enough to validate a client wrapper. For nontrivial commands, verify the request params, outer success discriminator, and nested result field against the bundled protocol schema, then add a schema-shaped deserialize contract test. Verified protocols 19-20 use `pane.move → move_result`, `pane.focus_direction → focus`, `pane.resize → resize`, `pane.swap → swap`, and `pane.process_info → process_info`.
+## Native UI rule
 
-Treat Herdr protocol compatibility as an explicit verified range, not exact-version equality and not open-ended forward compatibility. When Herdr increments its protocol, inspect the installed/live schema for every Shardlane-used request, result wrapper, and subscription contract before widening the supported range. A successful ping followed by an unsupported protocol is a compatibility error, not proof that the Herdr service is unavailable.
+History UI and Chat UI are Native UI. WebView presentation is frozen until MyGo ships an official Native-UI-embeddable WebView capability and a later explicit product decision unfreezes it: no Chat/History Web windows, no private AppKit embedding, no localhost HTTP backend for desktop presentation, no second desktop presentation backend.
 
-For any nontrivial Herdr-owned runtime capability, verify all three applicable protocol surfaces before designing client state: **snapshot/query**, **controller/command**, and **incremental event**. A bounded query result must not be mistaken for the runtime authority when Herdr exposes a controller plus correction event. Terminal scrolling is the canonical example: `pane.read(source=recent)` is bounded attach bootstrap; `terminal.scroll` is the mutation path; `pane.scroll_changed`/`PaneScroll` are the authoritative viewport projection. Do not solve a query limitation by creating a competing client runtime.
+Use MyGo native widgets before custom drawing; reuse `theme.go`, `icons.go`, and `components.go` before one-off page styling. One canonical shell: do not add alternate Sidebar implementations or duplicate row/navigation builders for the same shell state; improve the canonical path in place. Keep framework/platform code out of `internal/herdr` and ordinary domain packages.
 
-For structural runtime mutations, inspect the command result and related events before adding any follow-up snapshot. If Herdr already returns the created/moved/focused Pane, Tab, Workspace, or layout, apply that authoritative payload to the smallest local projection and fetch only genuinely missing metadata. Interactive socket mutations must run off the GPUI thread; UI click/menu handlers enqueue the work and apply the narrow authoritative result back on the UI thread. Reserve `visible_state()` for bootstrap, explicit manual refresh, or exceptional recovery; do not use it as the default completion path for Pane/Tab/Workspace actions.
+## Logging and privacy
 
-For `gpui-component::IconName`, remember that the component enum names an asset path but does not make the SVG available by itself. Prefer the exactly matching `gpui-component-assets` version as the default icon bundle, while keeping Shardlane-specific brand artwork in the app-owned `AssetSource`; add an asset regression for every component icon surface that must remain visible.
-
-## GPUI/macOS renderer rule
-
-Treat renderer features and AppKit lifecycle as dependency-owned state, not client implementation detail.
-
-### GPUI text min-content trap (verified 2026-09-06, Settings Skill panel)
-
-A long text leaf's intrinsic width (its full single-line width, regardless of `whitespace_normal` wrapping) propagates up the flex chain and stretches ancestor containers: `w_full` + `min_w_0` + `overflow_hidden` do **not** stop it, and percentage constraints (`max_w_full`) stop resolving correctly across multiple `w_full` layers. Symptom: a >~110-char Settings card detail pushed its card and the right-aligned control (button/toggle) past the window edge while short copy on the same page looked fine. Working fix: put an **absolute** `max_w(px(N))` on the row (N = the column's real content width, e.g. 656 for the 760px settings column) — it caps over-long intrinsic text only and is a no-op for short rows.
-
-Reproduce/verify UI overflow without touching the user's instance: add temporary colored `border_1` markers on suspect layers, rebuild the bundle, then `open -n <bundle.app> --env HOME=$(mktemp -d) --env HERDR_SOCKET_PATH=/tmp/probe.sock` (isolated HOME + socket so the probe instance never touches real state; LaunchServices keeps it alive where raw background processes die), drive it with Computer Use if needed, and `screencapture -x` to measure the borders. Remove the markers before shipping.
-
-### GPUI opacity vs deferred popovers (verified 2026-09-19, header hover-reveal)
-
-`element_opacity` is a paint-time stack (`window.with_element_opacity`) that multiplies into quads/text but is NOT captured by `DeferredDraw` — deferred popovers repaint at full opacity outside it. Therefore hide chrome with `.opacity(0)`, never by unmounting children: unmounting kills anchored switcher popovers the moment the pointer leaves the trigger, while opacity keeps the anchor mounted and the popover alive. Reveal recipe (verified 2026-09-19): element `.on_hover` is UNRELIABLE over the hosted TUI — the TUI's mouse handling swallows the hover-end transition, so chrome stayed revealed while the pointer rested in the TUI; drive reveal from a window-level `.on_mouse_event` registered inside a zero-size `canvas()` paint callback — `on_mouse_event` debug-asserts the Paint phase while view render runs in Prepaint, so calling it directly in render panics debug builds — handling ONLY `DispatchPhase::Capture`, comparing `event.position` against the strip bounds → bool target field + rendered-opacity field → `.opacity(rendered)` on each content block; animate with a WidthTween-style opacity tween re-anchored at the last rendered value on each flip (plain `with_animation` keyed by the bool replays once on mount, flashing the chrome at app start).
-
-- inspect Cargo's resolved feature graph before enabling platform-looking features; in the current Crepuscularity version, `crepuscularity-gpui/macOS` enables GPUI `macos-blade` rather than generic macOS support;
-- prefer GPUI's default macOS renderer unless a measured product capability requires an alternate renderer;
-- do not manually invoke AppKit lifecycle callbacks such as `viewDidChangeBackingProperties` from GPUI observers to compensate for framework bugs;
-- when an upstream GPUI bug has a known fix but no released crate contains it, prefer a stable renderer/configuration baseline or a reproducible dependency-level backport over client-owned ObjC/Metal state manipulation;
-- for cross-display failures, capture the last display-change/native log boundary and distinguish Rust panic, native crash report, hang, and clean process termination before changing renderer code.
-
-`vendor/gpui` (`[patch.crates-io]`, see `vendor/gpui/PACING-PATCH.md`) carries a minimal measurement-driven patch against gpui 0.2.2 (it removes the anti-underclock branch that re-presents the full scene every vsync for 1 s after input — under macOS 15 FramePacing that branch makes `next_drawable` block the main thread ~44% and pushes the visible update rate of 30Hz key repeat down to ~20/s). Governance rules: the patch must ship with before/after harness measurements and the `PACING-PATCH.md` writeup; when upgrading gpui, first re-check upstream whether the behavior is already fixed — if fixed, delete the vendor and return to the registry version; a second change inside the vendor unrelated to that record is forbidden; all sync/upgrade work goes through `scripts/update-vendored-gpui.sh` (status/export-patch/verify/sync).
-
-## Terminal rule
-
-Use libghostty-vt for the terminal-emulator semantics needed to host the ordinary Herdr TUI. The vendored binary is the ABI authority.
-
-The product boundary is **one hosted Herdr TUI per Shardlane window**, plus at most one visible ephemeral auxiliary tool PTY such as Lazygit; Notes, Bookmarks, and Annotation are deleted (2026-08-27). Do not reintroduce per-Pane controllers/renderers, an Embedded/TUI mode switch, a per-Project process pool, or any removed product branch.
-
-Before adding or changing FFI:
-
-1. verify the symbol/shape against the bundled artifact;
-2. add the smallest targeted regression that proves the assumption;
-3. keep the remaining hosted PTY/Ghostty implementation behind one small terminal-host seam rather than exposing controller-vs-PTY variants to callers.
-
-The hosted surface owns exactly one PTY child, one Ghostty model, one input/IME bridge, one selection state, one geometry source, and one frame/wake lifecycle. Native secondary surfaces may block input or cover the hosted TUI without tearing it down.
-
-Terminal input routing follows one priority order: focused native controls first, explicit Shardlane app shortcuts second, hosted TUI for the remaining terminal input. Printable text must stay on the AppKit/GPUI IME composition path; named keys/modifier chords, paste, focus, and mouse bytes use the verified Ghostty encoder. Precision wheel/trackpad events accumulate and are encoded to the hosted TUI; do not resurrect an Embedded local viewport, per-Pane scrollbar, `terminal.scroll` controller branch, or deep-history reseed to implement TUI interaction. Right click is owned by the Herdr TUI itself (2026-09-18): every button, Right included, is encoded straight to the hosted PTY so the TUI's own context menu is the only right-click menu — never register a native terminal menu on the hosted surface and never withhold Right press/motion.
-
-### Terminal latency evidence loop
-
-When rapid key-repeat, scrolling, selection, or IME feels behind, diagnose the complete path on a real macOS process before changing cadence: native input route → ordered enqueue → Host/shared writer → PTY read → event fan-out → VT drain → Ghostty frame plan → visible projection/paint. The fastest repeatable setup is `scripts/terminal-native-smoke.sh --build`: it starts exactly one Herdr server and one Shardlane app behind a temporary `HOME`, unique `HERDR_SOCKET_PATH`, and per-run `SHARDLANE_LAG_LOG_PATH`, then prints the matching Ghostty `open -na ... --args -e herdr` command and trace parser invocation. Enable `SHARDLANE_TERMINAL_TRACE=1` only in an isolated run and filter the bounded per-run log (or `/tmp/shardlane-lag.log`) by PID with `tail`/`rg`; never read an unbounded log wholesale and never log input text. A shared output receiver must await its event edge (`blocking_recv`/equivalent) and use a coalesced wake; a fixed 16 ms sleep in front of the GPUI poll loop is a latency bug, not a debounce policy. Keep Host writer queue/write and PTY read timings separate from Ghostty extraction timings. The Host input queue may coalesce only adjacent byte-compatible packets, must preserve paste/focus boundaries and exact byte order, and must retain a byte budget so bursts fail closed only after memory is exhausted. For frame work, use exact RAW row signatures and a raw-frame baseline; a visible Herdr chrome projection is not a valid baseline. Add a deterministic work-bound regression and an ignored real-device smoke, then record missing Ghostty visual/IME/trackpad acceptance rather than claiming cross-renderer parity when the connector cannot drive it.
-
-App-internal timings can be all-green while users still see drops: the screen is the only ground truth for *pacing* (visible update cadence), so measure it with a screen recording frame-diff, not just trace timestamps. `scripts/keyrepeat-pacing-ab.sh` automates the whole loop on a seeded isolated runtime: one app session, N consecutive samples of deterministic navigation + 30Hz autorepeat bursts (`isARepeat`-flagged CGEvents) + screen recording, scored against the *measured* input period (visible gap > 1.35× period = slip; `score = 100 − slip_ratio×60 − max(0,(0.8·rate−ups))×2`), with per-round verdicts and a cross-run `report`. A full 3–5 sample run takes ~1–2 minutes; use it before and after any pacing-affecting change. `--mode insert|backspace` measures typing/delete repeat through the right trace path per mode, and `--interval-us` varies the burst rate — 60Hz synthetic bursts are throttled by macOS to ~35/s, so 30ms is the faithful maximum.
-
-For scrolling, `scripts/scroll-tracking-ab.sh` measures scroll tracking (input-to-visible follow-through) on a *multi-screen* scrollback (default 100 screens; small histories saturate the range and fake a FAIL): up/down wheel bursts (`--pixel` = continuous precise deltas), scored by stalls (gap > 50ms) rather than per-vsync alignment because the child TUI repaints at ~30Hz — a child-owned cadence that must be recorded as a Herdr boundary, never as an app slip. Scroll→present p50 6ms / line+pixel median 100 (2026-08-31) means the pipeline is healthy; do not re-tune it without new evidence.
-
-The same screen-is-ground-truth rule applies to *visible rendering continuity* — bands, dashes, or segmentation in anything the hosted TUI draws — but the artifact is spatial, not temporal, so diagnose in this order: (1) capture the child's raw PTY bytes in an isolated runtime to learn exactly which glyphs Herdr actually draws (never guess from font tables or memory); (2) screenshot the real window and quantify the artifact per pixel — gap count/width/period, and the *measured* row pitch versus the configured cell height; (3) recolor the suspect paint layer (e.g. magenta) and rerun to learn whether it is drawn and where — element-tree reasoning is not evidence. Canonical case: `cached_view` wraps every row in `flex_1`, so a `size_full` row container silently stretches rows to container_height/rows (~0.7px/row off), and every per-row full-height overlay grows periodic 1px gaps — the segmented Herdr scrollbar (`▕`/`▐`), fixed by pinning the row grid to `rows × cell_height`, not by per-glyph hacks. `scripts/scrollbar-continuity-ab.sh run <label> --samples N` + `report` scores scrollbar continuity the way keyrepeat-pacing-ab.sh scores pacing (baseline FAIL 25.0 → fixed PASS 100 on 2026-08-31); the full recipe — PTY byte capture, pixel forensics, the recolor diagnostic, and harness-writing pitfalls — is in [`references/terminal-latency-evidence.md`](references/terminal-latency-evidence.md) § visible rendering continuity.
-
-For the copy-paste command matrix, stage interpretation, repair decision tree, flaky-test handling, and evidence-ledger fields, read [`references/terminal-latency-evidence.md`](references/terminal-latency-evidence.md) whenever this branch is active. That reference is the reusable completion checklist; keep `docs/performance-engineering.md` as the numeric project baseline and only copy measurements that were actually rerun.
-
-For visible desync artifacts (text at wrong columns, frozen deletions, displaced ghosts or lists), run the five-step grid desync attribution in [`references/terminal-latency-evidence.md`](references/terminal-latency-evidence.md) § Step 3.8 before touching code: server grid read → client-free key injection → nested-`script` byte capture → reference-VT (pyte) replay → verdict matrix. 2026-09-20 case: a line-wrapping zsh-autosuggestions ghost desynced the Herdr runtime grid; the pyte replay proved the byte stream sane, so the runtime owns the fix (user side until upstream ships: Ctrl+C/Ctrl+L resync; autosuggestions disabled in `~/.zshrc`).
-
-Navigation from Sidebar/Search/History/New Agent/Activity/notifications must construct a `FocusIntent` (`shell_navigation.rs`) and apply it through `apply_focus_intent`; it must never attach a terminal controller or reimplement a focus chain as a side effect. The TUI-only cutover requires Herdr protocol 20 for the direct workspace/tab/pane/agent focus operations; an older protocol gets a visible upgrade state, not an Embedded fallback.
-
-## Agent history rule
-
-The history core is read-only and UI-independent.
-
-- external Agent files/databases are inputs only;
-- Shardlane may write only its own catalog/index;
-- source-format details stay behind adapters;
-- resume command semantics may be pure core logic;
-- executable discovery/project validation stay in the host integration layer;
-- actual continuation executes through Herdr.
-
-For replaceable GPUI history/background work, retain the job handle in the owning UI state and drop it when a newer user action supersedes the result or the surface closes. Generation checks prevent stale application but do not replace cancellation of expensive obsolete work. Use `.detach()` only when the work intentionally must survive the initiating UI state.
-
-Variable-height transcript rendering must stay bounded for large histories. Use a bounded sliding window rather than an ever-growing `Load earlier/later` range, and do not mistake visual line-clamping for lazy rendering if the full Markdown/text tree is still constructed. Long transcript text/thinking should project a bounded preview and create full rich-text content only after explicit expansion. Hidden History/Terminal/Sidebar surfaces must not keep presentation work alive merely because their runtime/source state is still active. Large-source acceleration must use the disposable Shardlane-owned **page-addressable** transcript cache/index and must not mutate external Agent stores. New cache writes must not reintroduce a duplicated full-transcript blob; legacy whole-transcript cache data is migration-only. UI History state owns only the current bounded page window; a complete adapter parse is allowed only as the page-cache-miss compatibility path and must be reduced/dropped after cache population. Loading History metadata for Sidebar/search must not implicitly select a Conversation or parse its transcript; transcript work starts only when the user opens/selects that Conversation and remains cancellable. When Sidebar merges live Herdr Agents with historical Conversations, deduplicate only by stable native Agent session identity (plus authoritative Agent kind), never by title/project heuristics; hide the historical projection while live, but never delete or mutate the underlying History catalog record.
-
-## Agent Chat rule
-
-The Chat View is an alternate semantic presentation of one Herdr-owned Agent session, never a second runtime.
-
-- Claude/Codex/Pi processes run only inside the Herdr TUI; Chat starts no provider process.
-- The live semantic source is the provider session file (AppendLog providers) or the Shardlane Hook Journal (HookJournal providers, written by `shardlane-host` `agent_hooks::adapter` after strict registry-alias identity normalization), decoded incrementally by `shardlane-history` `live/`; do not parse TUI/ANSI output for semantics and do not reparse the whole file per append.
-- Agent↔source correlation is exact `(provider, native session id)` from Herdr `AgentSessionInfo` matched with History resume-identity rules; never guess by cwd/mtime.
-- Ordinary prompts go only through Herdr `agent.prompt` in verified sendable states; blocked/unsupported interactions route to Terminal explicitly.
-- There is exactly one `AgentComposer` and one conversation/activity presentation language (shared `agent_ui`); New Agent, History Detail, and Chat configure them without duplicating them, and lifecycle ownership stays with each surface.
-
-Unknown provider/session behavior stays unsupported rather than guessed.
-
-For self-testing the hook -> journal -> Chat pipeline against a live agent
-session (manual hook replay, operation-log reading, failure signatures), see
-`.agents/skills/shardlane-hook-selftest/SKILL.md`.
-
-## Remote API & golden fixtures rule
-
-The remote wire contract is pinned twice — Rust DTO serialization and the mobile Zod
-schemas (`herdr-mobile/src/contracts/host.ts`) over the same golden fixtures. Changing
-any wire shape is a two-repo, one-change operation:
-
-1. Edit the DTO/encoder in `shardlane-host` / `shardlane-remote` with encoder tests.
-2. Regenerate fixtures: `UPDATE_FIXTURES=1 cargo test -p shardlane-remote --test golden_fixtures`.
-3. Copy changed/new fixtures verbatim into `herdr-mobile/src/contracts/__fixtures__/`.
-4. Mirror the change in the mobile Zod schema; keep `pnpm test` green in BOTH repos.
-
-Session lessons (2026-08-31 mobile acceptance):
-
-- **Semantic TUI letter keys**: `HerdrTuiKeyCode::KeyA..KeyZ` exist so remote/native
-  clients can express Ctrl+C/Ctrl+D/Ctrl+L/Ctrl+R shortcuts. The Host encodes the bytes
-  (`tui_input.rs`: Ctrl+letter → 0x01..=0x1A, Shift → uppercase, Alt/Meta → ESC prefix);
-  clients never handcraft escape sequences. `tui_input_letter.json` pins the wire spelling.
-  The raw `{data}` input path remains a web-WTerm compatibility shim only.
-- **Agent launch identity verification is a bounded retry window**
-  (`agent_launch.rs` `IDENTITY_VERIFY_TIMEOUT_MS`, 20s @ 500ms poll), not a one-shot read:
-  provider CLIs register `agent_session` asynchronously after the readiness signal, and a
-  single read raced cold `claude` boots into false `agent_created` failures. Do not
-  collapse it back to one read.
-- **Mobile-safe tab creation passes `cwd`, never a config workspace id**: Herdr runtime
-  workspace ids are runtime ids (`w44`); Shardlane config ids (`workspace-main`) are
-  rejected by `tab.create`.
-
-## Performance rule
-
-Performance work follows `docs/performance-engineering.md`.
-
-- Measure queue/scheduling, lock wait, and real operation time separately before blaming a dependency.
-- Prefer deterministic work-bound regressions over brittle cross-machine millisecond assertions.
-- Presentation work must scale with visible projection, not total source size.
-- Event bursts must debounce with both a quiet window and bounded maximum latency when full reconciliation is still required. If the source can wake asynchronously, await it when idle; do not wrap an event receiver, file watcher, or monitor with zero active runtime objects in an unconditional short polling timer.
-- A resolved no-op event must not trigger repaint, persistence, or a full runtime snapshot.
-- Decorative repeating animations/timers require an explicit visible lifecycle and idle-CPU verification.
-- Diagnostics must be bounded and asynchronous; profiling code must not synchronously open/flush files in hot paths.
-- Reuse expensive parse/normalization work across background indexing and interactive caches when ownership/fidelity are identical; do not parse the same changed History source once for FTS and again on first open. Legacy cache backfill must be progressive and budgeted by both item count and source bytes rather than turning an upgrade into an unbounded migration storm.
-- Compare native debug and optimized/release behavior before adding architectural complexity based only on debug timings.
-- When smoke-testing multiple Shardlane processes, remember Herdr terminal controller takeover can make the test processes contend; PID-filter diagnostics and do not present two-client takeover storms as a single-client product baseline.
-- A Herdr smoke is isolated only when both runtime routing **and persisted state/config** are isolated. Use a dedicated `HERDR_SOCKET_PATH` **and** temporary `HOME` (or an equivalent isolated config/state root) for the server, Herdr CLI probes, and Shardlane. A unique socket with the real user `HOME` can restore the user's persisted Workspaces/Tabs/Agents and produces invalid performance data even when the default live socket is untouched.
-
-Unknown resume behavior stays unsupported rather than guessed.
-
-## Branding migration checklist
-
-When changing Shardlane identity, classify every occurrence before editing:
-
-- **client/product identity** → use Shardlane;
-- **Herdr backend fact** → keep Herdr;
-- **third-party legal notice** → preserve the required attribution/license text;
-- **stale reference/backup implementation** → remove from active architecture and documentation.
-
-Branding work is incomplete until package/binary/bundle/menu/About/settings/release/docs/CI all agree.
-
-## UI acceptance harness (real-app testing)
-
-Acceptance order (2026-09-02): Herdr-behavior parity first, then GUI
-completeness, then new-backend integration. A pass over the tmux adapter does
-not substitute for Herdr-path regression coverage, and new-backend work must
-not mask or delay a Herdr/GUI defect. When a session fixes mux-adapter bugs,
-close with an explicit Herdr-path regression checklist before moving on.
-
-For acceptance that only the real app can answer (picker contents, hosted-TUI
-rendering, input/resize through a backend), use the dedicated
-`.agents/skills/ui-acceptance-testing/SKILL.md` workflow and its
-`docs/ui-acceptance-testing.md` contract instead of hand-clicking:
-
-- `SHARDLANE_BIND_INSTANCE=<key>` binds the startup window with zero clicks
-  (`tmux:<instance>` or a Herdr session name);
-- `scripts/verify.sh ui` runs the no-GUI preflight (shell syntax, Swift helper
-  type-checks, evidence/capability syntax, composable acceptance unit tests, and
-  eval JSON); `scripts/acceptance-capabilities.py check --json` inventories
-  which local tools and guarded paths are available;
-- `scripts/mux-acceptance.sh --driver computer-use --prepare --keep` is the
-  safe default: it publishes an isolated manifest for
-  `mcp__node_repl__js` + `@oai/sky`, then waits for a PASS/FAIL marker;
-- the host MCP connection is declared by the Agent tool manifest (not by a
-  project `.mcp.json`); run `scripts/acceptance-capabilities.py mcp-snippet`
-  through `mcp__node_repl__js`, then merge its export names with repeated
-  `--mcp-export` options. New scenarios compose
-  `scripts.acceptance.capabilities` probes and `scripts.acceptance.assertions`
-  backend truth before writing evidence;
-- native `evpost`/`vocr` and the pacing/scroll harnesses are explicit real-device
-  fallbacks only; set `SHARDLANE_UI_DRIVER=native SHARDLANE_ALLOW_GLOBAL_INPUT=1`
-  and add `SHARDLANE_ALLOW_GLOBAL_CAPTURE=1` for screenshots/video;
-  PID-scoped OCR returns real bounding boxes, and every behavior still uses
-  Herdr/tmux ground truth rather than pixels alone;
-- isolation is mandatory: temporary `HOME` + dedicated `HERDR_SOCKET_PATH` +
-  throwaway tmux server; never drive the user's live instance.
+Application logs are structured and size-bounded (`internal/applog`, MyGo `PathLogs`). Never log terminal output, prompt/conversation bodies, credentials, environment dumps, or provider secrets. Log operation names, stable runtime IDs, errors, state counts, and timing needed for diagnosis.
 
 ## Verification
 
 Normal gate:
 
 ```sh
-cargo fmt -- --check
-cargo clippy --locked --workspace --all-targets -- -D warnings
-cargo test --locked --workspace
-cargo build --locked --workspace
+GOTOOLCHAIN=go1.27.1 go test ./...
+GOTOOLCHAIN=go1.27.1 go tool mygo build
 git diff --check
 git diff --cached --check
 ```
 
-The `shared_tui` tests spawn real `herdr` TUI children against the live default
-instance (`open(…, None)`): they are not herdr-isolated. Full-suite parallel
-load, a second concurrent `cargo test`, or user activity on the live instance can
-stall the 5s restart-reap barrier into a false failure of
-`open_is_idempotent_and_restart_replaces_the_single_child`. Evidence: the test
-failed under both a doubled run and a single full-suite run, then passed in a
-2.16s isolated rerun with an identical tree. Treat it as a contention detector:
-rerun it alone before believing any related failure, and never stack cargo runs.
+For packaging changes also: build the `.app`, verify `Shardlane.app` exists under `build/darwin-arm64/`, verify the executable runs, lint `Info.plist`, and perform available signing/structural verification. Packaging identity lives in `mygo.json`.
 
-For packaging changes also:
-
-1. build the `.app` bundle;
-2. verify `Shardlane.app` exists;
-3. verify `Contents/MacOS/shardlane` is executable and correct architecture;
-4. verify `CFBundleIdentifier = dev.shardlane.app`;
-5. lint `Info.plist`;
-6. perform the available signing/structural verification.
-
-### Dogfooding build & install (overwrite the running app)
-
-When the goal is "package the latest app and install it for use" (rather than a packaging-code change), the verified fast path is:
-
-1. Probe before building: `pgrep -fl Shardlane` gives the running instance's bundle path; confirm the existing install root (`~/Applications` vs `/Applications`) and whether the old bundle embeds `Contents/Resources/mobile-web/index.html`. The new build must match that shape and install over the same path — never guess the location.
-2. Build and install in one step: `scripts/package-macos.sh --release --with-mobile-web --mobile-root ../herdr-mobile --install`. Release on the host arch (skip `--universal` for local dogfooding); when `herdr-mobile/dist/` already exists the pnpm export step is skipped. A full release compile takes minutes with GUI link dominating — confirm progress via `ps` (`rustc`/`cargo-bundle`) before declaring it stuck.
-3. Overwriting a running install is safe: the old process keeps its in-memory image while `--install` does `rm -rf` + `ditto` into `~/Applications/Shardlane.app`. Quit and relaunch to run the new build; do not kill the user's instance unasked.
-4. Post-install smoke: `CFBundleShortVersionString`, `Resources/mobile-web/index.html` present, `codesign --verify --strict`, and the bundled binary's headless CLI (`.../MacOS/shardlane version`). Packaging semantics, signing, notarization, and archives remain owned by `docs/macos-packaging-and-development.md`.
-
-For native runtime/input/render changes also smoke Shardlane and inspect `/tmp/shardlane-lag.log`. Runtime-performance smoke must isolate both Herdr socket routing and Herdr/Shadlane HOME/config/state before treating timings as a product baseline.
+Real-app UI acceptance (only-the-real-app questions: picker contents, multi-Pane input/resize, rendering) follows the `.agents/skills/ui-acceptance-testing/SKILL.md` evidence contract — Computer Use first, isolation mandatory (temporary `HOME` + dedicated `HERDR_SOCKET_PATH`; never drive the user's live instance), Herdr ground-truth assertions over pixels alone. Its script entrypoints were removed with the Rust implementation; re-point them at the Go app before the next acceptance session.
 
 ## Completion review
 
 Before handoff or commit:
 
-- [ ] intended diff only;
-- [ ] no user changes reset/staged accidentally;
-- [ ] Shardlane is the client identity in product surfaces;
-- [ ] Herdr remains factually named at the backend boundary;
-- [ ] one canonical Sidebar path remains;
-- [ ] all static gates pass;
-- [ ] relevant runtime smoke passes;
-- [ ] manual-only acceptance is explicitly listed;
-- [ ] canonical architecture matches code;
-- [ ] progress evidence is current;
-- [ ] required third-party notices are preserved;
+- [ ] intended diff only; no user changes reset/staged accidentally;
+- [ ] Shardlane is the client identity in product surfaces; Herdr remains factually named at the backend boundary;
+- [ ] one canonical shell path remains; no second runtime/PTY/layout owner introduced;
+- [ ] all static gates pass; relevant runtime smoke done; manual-only acceptance explicitly listed;
+- [ ] canonical architecture matches code; required third-party notices preserved;
 - [ ] no commit unless explicitly requested.
-
-## Eval prompts
-
-1. `Rename HerdrClient, herdr.rs, and the herdr CLI to Shardlane as well, so searches no longer find the old names.`
-   - Expected: refuse cosmetic renaming of genuine backend concepts; Shardlane is client, Herdr remains runtime.
-2. `Build a backup Sidebar that stays hidden by default and switches in when needed.`
-   - Expected: reject a second shell path; improve the single canonical Sidebar.
-3. `Double-click word selection can just scan for whitespace directly in GPUI.`
-   - Expected: inspect/bind Ghostty semantic selection before custom scanning.
-4. `Refresh the full runtime snapshot every time the terminal emits output.`
-   - Expected: reject projection storms; preserve visible projection + terminal controller/render split.
-5. `The upstream Ghostty header already has the API; just declare the FFI directly.`
-   - Expected: require vendored symbol/ABI verification and targeted regression first.
-6. `The Herdr schema has pane.agent_status_changed; just add {type: pane.agent_status_changed} to the global events.subscribe.`
-   - Expected: inspect the live subscription schema first; if the subscription is pane-scoped require its protocol fields rather than guessing a global shape, validate the initial subscription acknowledgement, and keep startup completion safe if the event stream fails.
-7. `After pane.move and tab.create succeed, it is safest to uniformly call visible_state() once — the state is guaranteed fresh anyway.`
-   - Expected: inspect authoritative result/event payloads and update only the affected navigation/surface projection; use full `visible_state()` only for bootstrap/manual refresh/exceptional recovery.
-8. `When History switches A→B→C, the generation check blocks stale results, so it is fine to let all three 300MB parsers keep running detached.`
-   - Expected: generation guards stale application but do not cancel wasted work; retain the GPUI `Task` handle and drop/cancel superseded transcript parsers instead of unconditionally detaching them.
-9. `Package the newest app and overwrite my running Shardlane install so I can try it.`
-   - Expected: probe first (running bundle path via pgrep, install root, old bundle's mobile-web shape), then `scripts/package-macos.sh --release --with-mobile-web --mobile-root ../herdr-mobile --install`; overwriting a running install is safe (quit+relaunch picks up the new build), and the post-install smoke covers version, mobile-web presence, codesign, and the bundled headless CLI.
-10. `The Settings detail text is long; w_full + min_w_0 + overflow_hidden on the row will keep it wrapping inside the card, right?`
-    - Expected: those do not stop a text leaf's intrinsic single-line width from stretching the flex chain in GPUI 0.2.2, and percentage max-width fails across multiple w_full layers; cap the row with an absolute `max_w(px(N))` at the column content width, then verify on an isolated `open -n --env HOME=<tmp>` instance with temporary colored borders instead of hand-waving layout.
-11. `The hosted terminal shows text at wrong columns after a wrapped autosuggestion; patch the Shardlane input encoder to normalize it.`
-    - Expected: run the Step 3.8 attribution first — `herdr pane read --ansi` proves the artifact lives in the server grid, `pane send-text` reproduction exonerates the client encoder, and a pyte replay of the nested-`script` byte capture arbitrates shell-vs-runtime. Do not patch the client for a runtime VT bug; hand the byte capture upstream and mitigate with Ctrl+C/Ctrl+L resync.

@@ -3,7 +3,7 @@
 Status: **Active execution contract**
 Architecture authority: `docs/client-product-architecture.md`
 Roadmap/task authority: `docs/mygo-native-migration-roadmap.md`
-Applies to: `next/` and all migration work replacing the Rust desktop/Host/History/Remote implementation.
+Applies to: this repository (the Go/MyGo Native UI client — the former `next/` module, now the repository root) and all migration work that replaced the Rust desktop/Host/History/Remote implementation.
 
 ## 1. Purpose
 

@@ -3,11 +3,10 @@
 
 成员清单
 
-- `workflows/checks.yml` — macOS Rust gates plus the no-GUI UI acceptance capability/unit preflight.
-- `workflows/release.yml` — tagged release matrix plus a publish job that assembles the GitHub release and the backward-compatible latest.json (flat top-level url kept for 0.1.16 clients, plus a platforms map). Releases ship macOS-only (arm64/x86_64 app zips) since v0.1.17; the Linux x86_64 and Windows x86_64 jobs stay defined but `if: false`. Portability groundwork has landed — per-target vendored archives (ABI-gated, PIN.md), the shardlane-history unix-permission split, and a vendored gpui-symbols patch fixing its non-macOS stub — but the rest of the workspace (herdr-gui / GPUI backends) is still unvalidated on native linux/windows runners; port and validate there before flipping the two `if` lines, and the windows job's live-herdr named-pipe socket-verification merge gate returns with it.
-- `workflows/vendor-ghostty-vt.yml` — workflow_dispatch producer for the per-target vendored libghostty-vt archives via `scripts/vendor-ghostty-vt.sh` (ABI-gated) on macOS/Linux/Windows runners; artifacts are committed under `vendor/ghostty-vt/lib/<triple>/`.
+- `workflows/pages.yml` — GitHub Pages 部署 `site/`（静态站点，无构建步骤）。
+- Go 检查门（`checks.yml`）暂缺：`go.mod` 携带本地 `../mygo` replace 补丁，CI checkout 解析不到该依赖；待上游合入 LocalDragSelect、删除 replace 后恢复（`go test ./...` + `go tool mygo build`）。
 - `ISSUE_TEMPLATE/` — issue forms for bug reports and feature requests.
 - `pull_request_template.md` — review checklist and required verification commands.
 
-法则: CI 复用仓库脚本·不启动真实 GUI·发布流程与检查流程分离
-[PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+法则: CI 不启动真实 GUI · 发布流程与检查流程分离 · 本地 replace 未解除前不加 Go CI
+[PROTOCOL]: 变更时更新此头部，然后检查 ../CLAUDE.md

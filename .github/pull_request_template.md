@@ -12,9 +12,6 @@
 
 <!-- The gates below are required; check what you ran. -->
 
-- [ ] `cargo fmt -- --check`
-- [ ] `cargo clippy --locked --workspace --all-targets -- -D warnings`
-- [ ] `cargo test --locked --workspace`
-- [ ] `cargo build --locked --workspace`
+- [ ] `GOTOOLCHAIN=go1.27.1 go test ./...`
+- [ ] `GOTOOLCHAIN=go1.27.1 go tool mygo build`
 - [ ] Packaging changes: `Shardlane.app` built and structurally verified
-- [ ] Native runtime/input/render changes: app smoked (`/tmp/shardlane-lag.log` inspected)

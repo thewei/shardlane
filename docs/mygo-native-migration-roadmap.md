@@ -49,7 +49,7 @@ WebView work for History or Chat is frozen until MyGo provides an official suppo
 ## 2. Target Go package shape
 
 ```text
-next/
+(repository root)
 ├─ main.go
 ├─ internal/
 │  ├─ applog/
@@ -608,7 +608,7 @@ Prompt: `docs/prompts/mygo-native-0.10.0-git-workbench-primary-surface-implement
 
 ## N15 — MyGo v0.2.15 capability integration (2026-10-06)
 
-Pin bump: `github.com/egoist/mygo` v0.2.9 → v0.2.15 in `next/go.mod` (the version authority). Inherited by the upgrade itself: macOS KVO resize/fullscreen crash fix, per-size window-zoom painting, GPU burst under CPU frame cost, Core-Animation continuous corners, CSS-like pressed-hover semantics, and the framework-level Enter/Escape-during-IME-composition guard.
+Pin bump: `github.com/egoist/mygo` v0.2.9 → v0.2.15 in `go.mod` (the version authority). Inherited by the upgrade itself: macOS KVO resize/fullscreen crash fix, per-size window-zoom painting, GPU burst under CPU frame cost, Core-Animation continuous corners, CSS-like pressed-hover semantics, and the framework-level Enter/Escape-during-IME-composition guard.
 
 | Task | Capability | Landing |
 |---|---|---|

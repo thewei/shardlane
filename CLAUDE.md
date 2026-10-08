@@ -1,52 +1,30 @@
-# Shardlane — native macOS workspace for coding agents
+# Shardlane — native macOS workspace for coding agents (Go / MyGo Native UI)
 
-Current production: Rust + GPUI 0.2.2 + gpui-component 0.5.1 + Crepuscularity GPUI + vendored libghostty-vt + Herdr runtime APIs
-
-Approved migration (`rewrite/mygo`): Go 1.27.1 + MyGo 0.2.7 Native UI + official MyGo native Terminal; Herdr remains the runtime authority. The 0.10 target removes Lazygit and gives `/workspace` one local `WorkspacePrimarySurface` owner for Terminal / Diff Review / Commit, with a contextual Changes / Files / Services Right Panel and a Shardlane-owned Native Git Workbench. History and Chat are Native UI for the current migration. WebView presentation is frozen until MyGo provides an official supported Native-UI-embeddable WebView capability and a later explicit product decision unfreezes it.
+Current implementation: Go 1.27.1 + MyGo Native UI (pinned v0.2.15 plus the local `../mygo` replace patch) + official MyGo Terminal/Ghostty; Herdr remains the runtime authority. The previous Rust/GPUI implementation lives only on `rewrite/mygo`/`main`.
 
 <directory>
-assets/ - packaged Shardlane brand artwork
-crates/ - current Rust Shardlane application, Host, Remote API, and read-only Agent-history code
-next/ - approved MyGo rewrite: native UI shell, Go Herdr adapter, same-window native Terminal surfaces
-ui/ - thin Crepuscularity shell composition templates
-vendor/ - bundled native runtime artifacts (ghostty-vt) + patched gpui 0.2.2 (see vendor/gpui/PACING-PATCH.md, wired via [patch.crates-io])
-scripts/ - tiered verification and composable UI acceptance entrypoints (verify.sh: check/unit/history/ui/fast/full)
+internal/ - Go application/domain packages (nativeui presentation, herdr adapter, agent/history/gitworkbench domains, settings, applog, ...)
+resources/ - MyGo packaging resources (app icon)
 site/ - public site (landing + downloads page) published to GitHub Pages (static HTML/CSS, no build step)
-docs/ - public architecture, interaction, performance, packaging, and remote documentation
+docs/ - architecture source of truth, MyGo migration contract/roadmap, interaction/performance/audit documentation
 .agents/skills/ - project-local engineering workflow/checklists
-.github/ - CI and release workflows
+.github/ - CI workflows, issue/PR templates
 </directory>
 
 <config>
-Cargo.toml - current Rust Shardlane package/workspace/dependency policy
-next/go.mod + next/mygo.json - MyGo Native UI rewrite toolchain and packaging policy
-crepus.toml - Shardlane development target
-build.rs - links bundled libghostty-vt
+go.mod + go.sum + mygo.json - Go toolchain (1.27.1), MyGo pin (v0.2.15 + replace ../mygo), and packaging policy
 AGENTS.md - repository engineering rules and required reading
 README.md - developer setup, run, checks, packaging, and product scope
-THIRD_PARTY_NOTICES.md - required notices for third-party material only
-scripts/package-macos.sh - reproducible macOS build/sign/verify/install entrypoint
-scripts/release-macos.sh - one-click release: gates + Mobile Web + install + dist archive
-scripts/vendor-ghostty-vt.sh - ABI-gated producer of per-target vendored libghostty-vt archives
-scripts/package-linux.sh - Linux release tar.gz packaging entrypoint
-scripts/package-windows.ps1 - Windows release zip packaging entrypoint
-.github/workflows/vendor-ghostty-vt.yml - dispatch producer for the four vendored archives
-scripts/archive-macos.sh - reproducible macOS app ZIP/checksum entrypoint
-docs/macos-packaging-and-development.md - packaging, Mobile Web composition, and debug runbook
 docs/client-product-architecture.md - unique architecture source of truth
-docs/ui-acceptance-testing.md - isolated real-app acceptance, Computer Use MCP, native fallback, and ground-truth evidence
-scripts/acceptance-capabilities.py + scripts/acceptance/ - no-GUI capability inventory, MCP probe, and composable backend assertions
-.github/workflows/checks.yml - macOS CI gates plus no-GUI UI acceptance/unit preflight
-.github/workflows/release.yml - four-target release matrix (macOS arm64/x86_64, Linux x86_64, Windows x86_64) + multi-platform latest.json published on v* tags
+docs/mygo-native-execution-rules.md - active migration execution contract
+docs/mygo-native-migration-roadmap.md - active migration roadmap and task order
 .github/workflows/pages.yml - GitHub Pages deployment for site/
-.agents/skills/herdr-client-development/SKILL.md - Shardlane engineering workflow
-.agents/skills/ui-acceptance-testing/SKILL.md - reusable UI acceptance driver/isolation/evidence workflow
 </config>
 
-Product rule: **Shardlane is the client and brand. Herdr is the backend/runtime.** The `next/` rewrite changes presentation/runtime-adapter implementation only; it must not introduce a second Workspace registry, pane runtime, terminal authority, or process lifecycle owner. Herdr remains authoritative for workspaces, tabs, panes, layouts, agents, scrollback, persistence, terminal sessions, and process lifecycle. Shardlane owns native macOS presentation, local interaction state/preferences, and the read-only Agent-history browsing/index layer.
+Product rule: **Shardlane is the client and brand. Herdr is the backend/runtime.** Shardlane must not introduce a second Workspace registry, pane runtime, terminal authority, or process lifecycle owner. Herdr remains authoritative for workspaces, tabs, panes, layouts, agents, scrollback, persistence, terminal sessions, and process lifecycle. Shardlane owns native macOS presentation, local interaction state/preferences, and the read-only Agent-history browsing/index layer.
 
-Implementation rule: do not hand-roll capabilities while mature owners exist. Search in order: Herdr API → vendored libghostty-vt → gpui-component → GPUI → proven compatible implementation → custom code. Missing runtime APIs are fixed at the Herdr boundary rather than bypassed with a parallel terminal/process path.
+Implementation rule: do not hand-roll capabilities while mature owners exist. Search in order: Herdr API → MyGo native components/official plugins → a proven compatible implementation → custom code. Missing runtime APIs are fixed at the Herdr boundary rather than bypassed with a parallel terminal/process path.
 
-Shell rule: Shardlane has one canonical Sidebar implementation. Do not reintroduce legacy alternate Sidebar layouts or reference-project-specific presentation modes.
+CI note: GitHub Actions Go gates are intentionally absent while `go.mod` carries the local `../mygo` replace patch (CI checkouts have no sibling mygo checkout); reintroduce `.github/workflows/checks.yml` (go test + mygo build) once the patch is upstreamed and the replace is removed.
 
 Principles: minimal · stable · navigation-first · version-exact · mature-API-first

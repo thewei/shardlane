@@ -4,7 +4,7 @@ Status: **Canonical / as-built + approved-next architecture**
 Baseline: 2026-08-25
 Runtime baseline: Herdr 0.8.x. Current transitional code still accepts socket protocol 19; the approved TUI-only cutover raises the minimum fully supported protocol to 20 because native shell → hosted TUI navigation uses protocol-20 focus operations. Known wrapper contracts remain version-checked rather than assuming unlimited forward compatibility.
 Current shipped UI baseline: GPUI 0.2.2, gpui-component 0.5.1 + gpui-component-assets 0.5.1
-Approved migration UI baseline (2026-10-04; pin advanced 2026-10-05): MyGo 0.2.7 Native UI, Go 1.27.1, and the official MyGo Terminal/Ghostty surface under `next/`; this path gates on Herdr 0.9.3 / socket protocol 22 for the audited snapshot/direct-attach capabilities.
+Approved migration UI baseline (2026-10-04; pin advanced 2026-10-05): MyGo 0.2.7 Native UI, Go 1.27.1, and the official MyGo Terminal/Ghostty surface in this repository (the former `next/` module, now the repository root); this path gates on Herdr 0.9.3 / socket protocol 22 for the audited snapshot/direct-attach capabilities.
 
 This file is the single architectural source of truth for Shardlane. Other documents may define interaction details, execution order, progress evidence, or handoff context, but they must not redefine ownership.
 
@@ -48,7 +48,7 @@ Shardlane must never become a second runtime authority.
 
 ### Approved Next (2026-10-04) — MyGo Native UI shell + native Terminal migration
 
-The approved desktop migration lives under `next/` and replaces the current
+The approved desktop migration lives at the repository root and replaced the former
 GPUI presentation incrementally rather than translating the Rust view tree.
 Its ownership model is normative during the transition:
 
@@ -398,7 +398,7 @@ Replaceable client background work follows owner lifetime. When a GPUI job becom
 
 ## 5. Terminal architecture
 
-**Approved migration note (2026-10-04).** `next/` preserves Herdr runtime
+**Approved migration note (2026-10-04).** The Go client preserves Herdr runtime
 authority but does not embed the full Herdr shell. Its visible terminal is
 MyGo's native Terminal/Ghostty surface running Herdr's supported
 `terminal attach <terminal_id>` client for the currently selected Pane. This
@@ -638,7 +638,7 @@ app when `dist/` is embedded. Public Relay/cloud infrastructure and
 production-grade public TLS remain future work. Runtime ownership is
 unchanged.
 
-Shardlane is evolving from one native GUI client into a Mac **Host/Core + clients** architecture. The currently shipped desktop is GPUI; the approved `next/` desktop replaces that presentation with MyGo Native UI + native Terminal while preserving the same Host/Core ownership:
+Shardlane is evolving from one native GUI client into a Mac **Host/Core + clients** architecture. The former shipped desktop was GPUI; the approved Go desktop replaces that presentation with MyGo Native UI + native Terminal while preserving the same Host/Core ownership:
 
 ```text
                          ┌─ current macOS GPUI client
