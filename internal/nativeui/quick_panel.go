@@ -136,7 +136,7 @@ func (s *Shell) QuickPanelView(c *ui.Context) {
 				}
 				for _, entry := range entries {
 					entry := entry
-					var row *ui.Element
+					var row ui.Element
 					ui.Box(c).Children(func() {
 						row = s.agentCardRow(c, entry.Card, false)
 						// §17.2: the usage caption renders under the card
@@ -260,7 +260,7 @@ func (s *Shell) ToggleQuickPanel(trayBounds mygo.Rectangle) {
 // bounds are window coordinates; the window bounds make them screen
 // coordinates. No attached panel (headless tests, platform fallback) keeps
 // the click a no-op.
-func (s *Shell) toggleAgentActivityPanel(anchor *ui.Element) {
+func (s *Shell) toggleAgentActivityPanel(anchor ui.Element) {
 	if s.quickPanel == nil || s.win == nil {
 		return
 	}

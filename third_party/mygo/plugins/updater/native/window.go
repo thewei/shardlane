@@ -80,7 +80,7 @@ func (w *window) view(c *ui.Context) {
 	c.SetTheme(t)
 	w.keys(c, v)
 
-	var body, aside, buttons *ui.Element
+	var body, aside, buttons ui.Element
 	ui.Column(c).Fill().Padding(padTop, padSide, padBottom).Gap(footGap).Children(func() {
 		top := w.row(c).Grow(1).Gap(iconGap).AlignItems(ui.Start)
 		if v.Release {
@@ -103,7 +103,7 @@ func (w *window) view(c *ui.Context) {
 
 // row creates a row, laid out from the right in a window of a language
 // written from right to left.
-func (w *window) row(c *ui.Context) *ui.Element {
+func (w *window) row(c *ui.Context) ui.Element {
 	r := ui.Row(c)
 	if w.texts.RTL {
 		r.Reverse()
@@ -117,22 +117,22 @@ func (w *window) row(c *ui.Context) *ui.Element {
 // English or be errors.
 func (w *window) body(c *ui.Context, t *ui.Theme, v frontend.View) {
 	small := t.Rem(11.0 / 13)
-	ui.Text(c, v.Title).Key("title").Bold().Margin(0, 0, 4, 0)
+	ui.Text(c.Key("title"), v.Title).Bold().Margin(0, 0, 4, 0)
 	if v.Message != "" {
-		ui.Text(c, v.Message).Key("message").Margin(0, 0, 6, 0)
+		ui.Text(c.Key("message"), v.Message).Margin(0, 0, 6, 0)
 	}
 	if v.Bar {
-		bar := ui.Progress(c, v.Progress).Key("bar").Margin(6, 0, 4, 0)
+		bar := ui.Progress(c.Key("bar"), v.Progress).Margin(6, 0, 4, 0)
 		if w.texts.RTL {
 			bar.Reverse()
 		}
 	}
 	if v.Detail != "" {
-		ui.Text(c, v.Detail).Key("detail").FontSize(small).TextColor(t.TextMuted).
+		ui.Text(c.Key("detail"), v.Detail).FontSize(small).TextColor(t.TextMuted).
 			MaxLines(2).Tooltip(v.Detail).Selectable()
 	}
 	if len(v.Notes) > 0 {
-		ui.Column(c).Key("notes").Grow(1).Margin(6, 0, 0, 0).Children(func() {
+		ui.Column(c.Key("notes")).Grow(1).Margin(6, 0, 0, 0).Children(func() {
 			ui.Text(c, w.texts.ReleaseNotes).FontSize(small).Bold().Margin(0, 0, 4, 0)
 			ui.Scroll(c).Grow(1).Background(panel(t)).Border(1, t.Border).Padding(8, 12).Children(func() {
 				notes(c, t, v.Notes)
@@ -157,11 +157,11 @@ func (w *window) buttons(c *ui.Context, t *ui.Theme, v frontend.View, aside bool
 			continue
 		}
 		// Keyed by action, so that the focus leaves with the button.
-		var e *ui.Element
+		var e ui.Element
 		if b.Default {
-			e = ui.PrimaryButton(c, "").Key(string(b.Action))
+			e = ui.PrimaryButton(c.Key(string(b.Action)), "")
 		} else {
-			e = ui.Button(c, "").Key(string(b.Action)).Shadow(0, 1, 1, 0, ui.RGBA(0, 0, 0, 0.08))
+			e = ui.Button(c.Key(string(b.Action)), "").Shadow(0, 1, 1, 0, ui.RGBA(0, 0, 0, 0.08))
 		}
 		e.Padding(0, 14).Height(height).MinWidth(84).Disabled(w.off(v, b)).Children(func() {
 			ui.Text(c, b.Label).SingleLine()
@@ -199,7 +199,7 @@ func (w *window) respond(v frontend.View, b frontend.Button) {
 // fit asks for the size the content needs, as measured in the last frame
 // when it laid out the same view at the same size: the width of the
 // buttons, and for status views the height of the text.
-func (w *window) fit(c *ui.Context, v frontend.View, body, aside, buttons *ui.Element) {
+func (w *window) fit(c *ui.Context, v frontend.View, body, aside, buttons ui.Element) {
 	ww, wh := c.Size()
 	l := layout{v.Prompt, v.Title, v.Message, v.Detail, v.Bar, v.Checkbox, v.Release, ww, wh}
 	if l != w.built {

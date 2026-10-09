@@ -31,7 +31,7 @@ sel.Trigger.Gap(6).Padding(6, 10).Radius(8).Border(1, t.Border).Children(func() 
 	ui.Text(c, app.size)
 	ui.Icon(c, chevron)
 })
-sel.Popup(func(panel *ui.Element) {
+sel.Popup(func(panel ui.Element) {
 	panel.Margin(4, 0, 0, 0).Padding(4).Radius(10).Background(t.Background).Border(1, t.Border)
 	for _, size := range sizes {
 		item := sel.Item(size).Padding(6, 10).Radius(6)

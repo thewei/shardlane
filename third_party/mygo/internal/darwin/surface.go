@@ -17,6 +17,7 @@ import (
 	"github.com/ebitengine/purego/objc"
 
 	"github.com/egoist/mygo/internal/platform"
+	"github.com/egoist/mygo/transfer"
 )
 
 // The surface of a window that shows content MyGo draws itself is a
@@ -123,11 +124,13 @@ type surface struct {
 
 	// Accessibility: whether the content describes its frames, the last
 	// tree, the elements of its nodes and those at the top (an NSArray).
-	accessOn bool
-	access   platform.AccessTree
-	elements map[uint64]*accessElement
-	topLevel id
-	updating bool
+	accessOn      bool
+	access        platform.AccessTree
+	elements      map[uint64]*accessElement
+	topLevel      id
+	updating      bool
+	dataDrag      *macDataSource
+	dragOperation transfer.Operation
 }
 
 func (w *window) createSurface(content NSRect) {
@@ -155,6 +158,7 @@ func (w *window) createSurface(content NSRect) {
 }
 
 func (s *surface) destroy() {
+	s.CancelDataDrag()
 	if s.link != 0 {
 		send(s.link, "invalidate")
 		release(s.link)
@@ -179,6 +183,10 @@ func (w *window) Surface() platform.Surface {
 func (s *surface) Native() platform.SurfaceNative {
 	return platform.SurfaceNative{View: uintptr(s.view), Layer: uintptr(send(s.view, "layer"))}
 }
+
+// ShowsMaterial reports whether the window has a material, whose effect
+// view, behind the surface, shows where its frames are transparent.
+func (s *surface) ShowsMaterial() bool { return s.w.effect != 0 }
 
 func (s *surface) scale() float64 {
 	if f := msgFloat(s.w.win, sel("backingScaleFactor")); f > 0 {
@@ -385,6 +393,10 @@ func (s *surface) SetCursor(c platform.Cursor) {
 }
 
 func (s *surface) SetTextInput(t platform.TextInputState) {
+	if s.input.Client != t.Client && s.input.Active {
+		s.marked = ""
+		send(send(s.view, "inputContext"), "discardMarkedText")
+	}
 	if s.input.Active && !t.Active && s.marked != "" {
 		s.marked = ""
 		send(send(s.view, "inputContext"), "discardMarkedText")
@@ -518,6 +530,7 @@ func (b *Backend) surfaceOf(view id) *surface {
 }
 
 func registerSurfaceClass() {
+	registerDataDragClasses()
 	b := func() *Backend { return theBackend }
 	mouse := func(kind platform.SurfaceEventKind, button int) func(id, objc.SEL, id) {
 		return func(self id, _ objc.SEL, ev id) {
@@ -567,11 +580,7 @@ func registerSurfaceClass() {
 		if s == nil {
 			return 0
 		}
-		x, y := s.dragPoint(info)
-		if s.send(platform.SurfaceEvent{Kind: platform.FileDragOver, X: x, Y: y}) {
-			return 1 // NSDragOperationCopy
-		}
-		return 0
+		return s.nativeDataOperation(info)
 	}
 	methods := []objc.MethodDef{
 		// Files dragged from other apps.
@@ -579,7 +588,7 @@ func registerSurfaceClass() {
 		method("draggingUpdated:", dragged),
 		method("draggingExited:", func(self id, _ objc.SEL, info id) {
 			if s := b().surfaceOf(self); s != nil {
-				s.send(platform.SurfaceEvent{Kind: platform.FileDragLeave})
+				s.nativeDataEvent(info, platform.DataDragLeave)
 			}
 		}),
 		method("prepareForDragOperation:", func(self id, _ objc.SEL, info id) bool { return true }),
@@ -588,8 +597,7 @@ func registerSurfaceClass() {
 			if s == nil {
 				return false
 			}
-			x, y := s.dragPoint(info)
-			return s.send(platform.SurfaceEvent{Kind: platform.FileDrop, X: x, Y: y, Files: draggedFiles(info)})
+			return s.nativeDataEvent(info, platform.DataDrop)
 		}),
 	}
 	classDef("MyGoSurfaceView", "NSView", []string{"NSTextInputClient"}, append(append(methods, accessViewMethods()...), []objc.MethodDef{
@@ -718,7 +726,7 @@ func registerSurfaceClass() {
 			// method's alone, as Enter choosing a candidate or Escape
 			// giving the composition up, as GTK's and IMM32's filtering
 			// keeps them on Linux and Windows.
-			if !ime || s.marked == "" {
+			if !ime || !s.hasMarkedText() {
 				s.send(platform.SurfaceEvent{Kind: platform.KeyPressed, Key: eventKey(ev), Mods: mods, Repeat: sendBool(ev, "isARepeat")})
 			}
 			// Input methods see the key while a text input has the focus;
@@ -734,6 +742,11 @@ func registerSurfaceClass() {
 				s.send(platform.SurfaceEvent{Kind: platform.KeyReleased, Key: eventKey(ev), Mods: eventMods(ev)})
 			}
 		}),
+		method("flagsChanged:", func(self id, _ objc.SEL, ev id) {
+			if s := b().surfaceOf(self); s != nil {
+				s.send(platform.SurfaceEvent{Kind: platform.ModifiersChanged, Mods: eventMods(ev)})
+			}
+		}),
 		command("copy"), command("cut"), command("paste"), command("selectAll"), command("undo"), command("redo"), command("delete"),
 		method("pasteAsPlainText:", func(self id, _ objc.SEL, sender id) {
 			if s := b().surfaceOf(self); s != nil {
@@ -745,7 +758,7 @@ func registerSurfaceClass() {
 		// NSTextInputClient
 		method("hasMarkedText", func(self id, _ objc.SEL) bool {
 			s := b().surfaceOf(self)
-			return s != nil && s.marked != ""
+			return s != nil && s.hasMarkedText()
 		}),
 		method("markedRange", func(self id, _ objc.SEL) nsRange {
 			if s := b().surfaceOf(self); s != nil {
@@ -765,9 +778,8 @@ func registerSurfaceClass() {
 			}
 		}),
 		method("unmarkText", func(self id, _ objc.SEL) {
-			if s := b().surfaceOf(self); s != nil && s.marked != "" {
-				s.marked = ""
-				s.send(platform.SurfaceEvent{Kind: platform.TextComposition})
+			if s := b().surfaceOf(self); s != nil {
+				s.unmarkText()
 			}
 		}),
 		method("validAttributesForMarkedText", func(self id, _ objc.SEL) id { return nsArray() }),
@@ -782,13 +794,37 @@ func registerSurfaceClass() {
 				s.insertText(stringOf(text), replacement)
 			}
 		}),
-		method("characterIndexForPoint:", func(self id, _ objc.SEL, p NSPoint) uint { return nsNotFound }),
+		method("characterIndexForPoint:", func(self id, _ objc.SEL, p NSPoint) uint {
+			s := b().surfaceOf(self)
+			if s != nil && s.input.Client != nil {
+				window := msgRectToRect(s.w.win, sel("convertRectFromScreen:"), NSRect{Origin: p})
+				local := msgConvertRectView(self, sel("convertRect:fromView:"), window, 0)
+				if index, ok := s.input.Client.IndexForPoint(local.Origin.X, local.Origin.Y); ok {
+					return uint(index)
+				}
+			}
+			return nsNotFound
+		}),
 		method("firstRectForCharacterRange:actualRange:", func(self id, _ objc.SEL, r nsRange, actual *nsRange) cgRect {
 			s := b().surfaceOf(self)
 			if s == nil {
 				return cgRect{}
 			}
 			c := s.input.Caret
+			if client := s.input.Client; client != nil {
+				rangeWanted := clientRange(r)
+				if rangeWanted == nil {
+					return cgRect{}
+				}
+				bounds, used, ok := client.BoundsForRange(*rangeWanted)
+				if !ok {
+					return cgRect{}
+				}
+				c = bounds
+				if actual != nil {
+					*actual = nsRange{Location: uint(used.Start), Length: uint(max(0, used.End-used.Start))}
+				}
+			}
 			inWindow := msgConvertRectView(self, sel("convertRect:toView:"), NSRect{Origin: NSPoint{c.X, c.Y}, Size: NSSize{max(c.W, 1), c.H}}, 0)
 			screen := msgRectToRect(s.w.win, sel("convertRectToScreen:"), inWindow)
 			return cgRect{X: screen.Origin.X, Y: screen.Origin.Y, W: screen.Size.Width, H: screen.Size.Height}

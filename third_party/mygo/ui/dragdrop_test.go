@@ -22,20 +22,20 @@ func TestDragAndDrop(t *testing.T) {
 	var dropped []string
 	var over bool
 	clicks, numbers := 0, 0
-	tt := NewTester(func(c *Context) {
-		Column(c).Gap(20).Padding(20).Children(func() {
-			src := Box(c).Size(100, 40).Label("Source").Drag("hello")
+	tt := coreNewTester(func(c *context) {
+		coreColumn(c).Gap(20).Padding(20).Children(func() {
+			src := coreBox(c).Size(100, 40).Label("Source").Drag("hello")
 			if src.Clicked() {
 				clicks++
 			}
-			target := Box(c).Size(200, 100).Label("Target")
-			if v, ok := Drop[string](target); ok {
+			target := coreBox(c).Size(200, 100).Label("Target")
+			if v, ok := coreDrop[string](target); ok {
 				dropped = append(dropped, v)
 			}
-			_, over = DragOver[string](target)
+			_, over = coreDragOver[string](target)
 			// Inside the target, an element taking numbers, not text.
-			inner := Box(c).Size(50, 30).Label("Numbers")
-			if _, ok := Drop[int](inner); ok {
+			inner := coreBox(c).Size(50, 30).Label("Numbers")
+			if _, ok := coreDrop[int](inner); ok {
 				numbers++
 			}
 		})
@@ -106,9 +106,9 @@ func TestListReorder(t *testing.T) {
 			items = slices.Insert(rest, at, moved...)
 		},
 	}
-	tt := NewTester(func(c *Context) {
-		List(c, &s, len(items), func(i int) {
-			Text(c, items[i]).Padding(8)
+	tt := coreNewTester(func(c *context) {
+		coreList(c, &s, len(items), func(i int) {
+			coreText(c, items[i]).Padding(8)
 		}).Grow(1)
 	}, 300, 400)
 	b, _ := tt.Find("b")
@@ -154,9 +154,9 @@ func TestGridReorder(t *testing.T) {
 	s := GridState{Selected: &sel, Reorder: func(items []int, to int) {
 		moves = append(moves, append(slices.Clone(items), to))
 	}}
-	tt := NewTester(func(c *Context) {
-		GridView(c, &s, 12, 100, 60, func(i int) {
-			Textf(c, "Item %d", i)
+	tt := coreNewTester(func(c *context) {
+		coreGridView(c, &s, 12, 100, 60, func(i int) {
+			coreTextf(c, "Item %d", i)
 		}).Grow(1)
 	}, 448, 400)
 	from, _ := tt.Find("Item 0")

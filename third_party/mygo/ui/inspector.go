@@ -106,7 +106,7 @@ type inspector struct {
 	issuesScroll ScrollState
 	// selElem and hoverElem are the elements of the frame being painted
 	// with those IDs.
-	selElem, hoverElem *Element
+	selElem, hoverElem *node
 	// times are how long the last frame took to build, lay out and paint,
 	// counted from lapAt; elements is how many it had, and history the
 	// times of the last frames, frames of them in all.
@@ -293,7 +293,7 @@ func (in *inspector) choose(id uint64) {
 
 // snapshot notes the elements of the frame laid out under root, and asks
 // for another frame when the panel showed others.
-func (in *inspector) snapshot(rt *engine, root *Element) {
+func (in *inspector) snapshot(rt *engine, root *node) {
 	in.nodes = in.nodes[:0]
 	in.selElem, in.hoverElem = nil, nil
 	if in.seen == nil {
@@ -315,7 +315,7 @@ func (in *inspector) snapshot(rt *engine, root *Element) {
 	}
 }
 
-func (in *inspector) walk(rt *engine, e *Element, depth, parent int32, sum *uint64) {
+func (in *inspector) walk(rt *engine, e *node, depth, parent int32, sum *uint64) {
 	if e.id == in.panel && e.parent != nil && e.parent.parent == nil {
 		return
 	}
@@ -407,7 +407,7 @@ func (in *inspector) setOpen(i int32, open, all bool) {
 
 // elementName returns the widget an element is, else its role, else its
 // kind: its tag in the tree.
-func elementName(e *Element) string {
+func elementName(e *node) string {
 	if e.widget != "" {
 		return e.widget
 	}
@@ -536,7 +536,7 @@ func roleName(r Role) string {
 
 // accessibleRole returns the role assistive technology sees, named as
 // Chrome names roles, and whether it sees the element.
-func accessibleRole(e *Element) (string, bool) {
+func accessibleRole(e *node) (string, bool) {
 	r, ok := e.accessRole()
 	if !ok {
 		return "none", false

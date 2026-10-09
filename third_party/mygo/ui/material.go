@@ -14,17 +14,17 @@ type Material interface {
 // MaterialBuilder is a Material that follows the element it fills, as
 // its state: Element.Material calls BuildMaterial as the element is
 // built, and paints the material it returns.
-type MaterialBuilder interface {
+type nodeMaterialBuilder interface {
 	Material
-	BuildMaterial(e *Element) Material
+	BuildMaterial(e *node) Material
 }
 
 // Material fills the element with m in place of a background, shaped by
 // its Radius:
 //
 //	ui.Row(c).Padding(8, 16).Radius(22).Material(glass.Glass{})
-func (e *Element) Material(m Material) *Element {
-	if b, ok := m.(MaterialBuilder); ok {
+func (e *node) Material(m Material) *node {
+	if b, ok := m.(nodeMaterialBuilder); ok {
 		m = b.BuildMaterial(e)
 	}
 	e.material, e.fill = m, fillMaterial

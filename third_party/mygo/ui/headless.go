@@ -9,6 +9,7 @@ import (
 	"github.com/egoist/mygo/internal/platform"
 	"github.com/egoist/mygo/internal/raster"
 	"github.com/egoist/mygo/internal/scene"
+	"github.com/egoist/mygo/transfer"
 )
 
 // headless renders frames in memory with the software renderer.
@@ -42,8 +43,16 @@ type headless struct {
 	// window shows.
 	hz     float32
 	hidden bool
+	// material tells that the window shows one (SetVibrancy).
+	material bool
+	// reading runs once as the clipboard is next read, as GTK's nested
+	// event loop may draw a frame then.
+	reading func()
 	// last is the scene of the last frame, which tests inspect.
-	last *scene.Scene
+	last        *scene.Scene
+	dragData    transfer.Data
+	dragLocal   any
+	dragOptions transfer.DragOptions
 }
 
 func (h *headless) size() (float32, float32, float32) { return h.w, h.h, h.scale }
@@ -58,14 +67,35 @@ func (h *headless) requestFrame()                              { h.requested.Sto
 func (h *headless) setCursor(c Cursor)                         { h.cursor = c }
 func (h *headless) setTextInput(t platform.TextInputState)     { h.ime = t }
 func (h *headless) updateAccessibility(t *platform.AccessTree) { h.keepAccess(t) }
-func (h *headless) readClipboard() string                      { return h.clipboard }
 func (h *headless) writeClipboard(s string)                    { h.clipboard = s }
 func (h *headless) startDrag()                                 {}
-func (h *headless) titleBarDoubleClicked()                     {}
-func (h *headless) isDark() bool                               { return h.dark }
-func (h *headless) preferences() platform.Preferences          { return h.prefs }
-func (h *headless) titleBar() TitleBar                         { return h.bar }
-func (h *headless) invalidate()                                { h.requested.Store(true) }
+func (h *headless) setDropFormats([]transfer.Format)           {}
+func (h *headless) readClipboard() string {
+	if r := h.reading; r != nil {
+		h.reading = nil
+		r()
+	}
+	return h.clipboard
+}
+
+func (h *headless) startDataDrag(d transfer.Data, local any, o transfer.DragOptions, x, y float32) error {
+	h.dragData, h.dragLocal, h.dragOptions = d.Snapshot(), local, o
+	return nil
+}
+func (h *headless) cancelDataDrag() { h.finishDataDrag(transfer.Result{Canceled: true}) }
+func (h *headless) finishDataDrag(r transfer.Result) {
+	done := h.dragOptions.Done
+	h.dragData, h.dragLocal, h.dragOptions = transfer.Data{}, nil, transfer.DragOptions{}
+	if done != nil {
+		done(r)
+	}
+}
+func (h *headless) titleBarDoubleClicked()            {}
+func (h *headless) isDark() bool                      { return h.dark }
+func (h *headless) preferences() platform.Preferences { return h.prefs }
+func (h *headless) titleBar() TitleBar                { return h.bar }
+func (h *headless) vibrancy() bool                    { return h.material }
+func (h *headless) invalidate()                       { h.requested.Store(true) }
 
 // openURL notes the link, and gives done the error FailOpenURL set before
 // the next frame, as a window gives it after the system opened the link.
@@ -97,8 +127,8 @@ func (h *headless) image() *image.RGBA {
 
 // Render draws a frame of view in a window of width×height DIPs at scale
 // device pixels per DIP, without a window: for snapshots and tests.
-func Render(view func(c *Context), width, height int, scale float32) *image.RGBA {
-	t := NewTester(view, width, height)
+func coreRender(view func(c *context), width, height int, scale float32) *image.RGBA {
+	t := coreNewTester(view, width, height)
 	t.SetScale(scale)
 	return t.Image()
 }
@@ -114,12 +144,13 @@ type Tester struct {
 // NewTester starts testing view in a window of width×height DIPs. Two
 // elements given one key under one parent make it panic where the second
 // was given, as apps only log it.
-func NewTester(view func(c *Context), width, height int) *Tester {
+func coreNewTester(view func(c *context), width, height int) *Tester {
 	h := &headless{w: float32(width), h: float32(height), scale: 1}
 	t := &Tester{rt: newRuntime(view, h), h: h}
 	t.rt.collect = true
 	// Duplicate keys panic, so that the test fails where the key was given.
 	t.rt.strict = true
+	t.rt.handleChecks = true
 	t.settle()
 	return t
 }
@@ -161,6 +192,13 @@ func (t *Tester) SetScale(scale float32) {
 // title bar take, which Context.TitleBar returns.
 func (t *Tester) SetTitleBar(bar TitleBar) {
 	t.h.bar = bar
+	t.Frame()
+}
+
+// SetVibrancy sets whether the window shows a material where the view
+// draws no background, which Context.Vibrancy returns.
+func (t *Tester) SetVibrancy(shows bool) {
+	t.h.material = shows
 	t.Frame()
 }
 
@@ -342,6 +380,12 @@ func (t *Tester) Move(x, y float32) {
 // Scroll scrolls by dx, dy DIPs with the pointer at (x, y).
 func (t *Tester) Scroll(x, y, dx, dy float32) {
 	t.send(platform.SurfaceEvent{Kind: platform.PointerScroll, X: float64(x), Y: float64(y), DX: float64(dx), DY: float64(dy)})
+}
+
+// HoldModifiers presses or lets go of modifier keys on their own, as holding
+// Cmd does, leaving mods held.
+func (t *Tester) HoldModifiers(mods Modifiers) {
+	t.send(platform.SurfaceEvent{Kind: platform.ModifiersChanged, Mods: platform.Modifiers(mods)})
 }
 
 // Key presses a key with modifiers.

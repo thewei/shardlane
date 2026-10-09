@@ -69,7 +69,7 @@ the action and close it. Call it once in the view, wherever. Toasts in the
 bottom right corner:
 
 ```go
-ui.ToastViewportBase(c, func(viewport *ui.Element, toasts []ui.Toast) {
+ui.ToastViewportBase(c, func(viewport ui.Element, toasts []ui.Toast) {
 	viewport.Padding(16).AlignItems(ui.End).Gap(8)
 	for _, t := range toasts {
 		toast := ui.ToastBase(c, t)

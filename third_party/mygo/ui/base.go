@@ -22,8 +22,8 @@ import "fmt"
 // children that takes the keyboard focus, and reports Clicked for the
 // pointer, Enter and Space. Style it and give it children; Button is
 // ButtonBase with the theme's look.
-func ButtonBase(c *Context) *Element {
-	b := Row(c).Center().Focusable().Shrink(0)
+func coreButtonBase(c *context) *node {
+	b := coreRow(c).Center().Focusable().Shrink(0)
 	b.flags |= flagClickable | flagHover
 	return b
 }
@@ -33,7 +33,7 @@ func ButtonBase(c *Context) *Element {
 // Changed reports, and that assistive technology sees as a check box,
 // checked or not. Draw its box from *checked; Checkbox is CheckboxBase
 // with the theme's look.
-func CheckboxBase(c *Context, checked *bool) *Element {
+func coreCheckboxBase(c *context, checked *bool) *node {
 	if g := c.checks; g != nil {
 		g.boxes = append(g.boxes, checked)
 	}
@@ -43,16 +43,14 @@ func CheckboxBase(c *Context, checked *bool) *Element {
 // SwitchBase creates a switch without a look: CheckboxBase, which
 // assistive technology sees as a switch. Switch is SwitchBase with the
 // theme's look.
-func SwitchBase(c *Context, on *bool) *Element { return toggle(c, on, RoleSwitch, "Switch") }
+func coreSwitchBase(c *context, on *bool) *node { return toggle(c, on, RoleSwitch, "Switch") }
 
-func toggle(c *Context, on *bool, role Role, widget string) *Element {
-	e := Row(c).Focusable().Shrink(0)
+func toggle(c *context, on *bool, role Role, widget string) *node {
+	e := coreRow(c).Focusable().Shrink(0)
 	e.flags |= flagClickable | flagHover | flagToggle
 	e.widget, e.role = widget, role
-	if e.Clicked() {
-		*on = !*on
-		e.st.changed = true
-	}
+	*valueBinding[*bool](e) = on
+	e.onValueInput(toggleInput)
 	e.checked = 1 + int8(b2f(*on))
 	return e
 }
@@ -62,14 +60,12 @@ func toggle(c *Context, on *bool, role Role, widget string) *Element {
 // focus, which Changed reports, and that assistive technology sees as a
 // radio button, on when *selected is value. Radio is RadioBase with the
 // theme's look.
-func RadioBase[T comparable](c *Context, selected *T, value T) *Element {
-	e := Row(c).Focusable().Shrink(0)
+func coreRadioBase[T comparable](c *context, selected *T, value T) *node {
+	e := coreRow(c).Focusable().Shrink(0)
 	e.flags |= flagClickable | flagHover | flagToggle
 	e.widget, e.role = "Radio", RoleRadio
-	if e.Clicked() && *selected != value {
-		*selected = value
-		e.st.changed = true
-	}
+	*valueBinding[radioValue[T]](e) = radioValue[T]{selected: selected, value: value}
+	e.onValueInput(radioInput[T])
 	e.checked = 1 + int8(b2f(*selected == value))
 	return e
 }
@@ -91,7 +87,7 @@ func RadioBase[T comparable](c *Context, selected *T, value T) *Element {
 //
 // Vertical makes it go up from lo at the bottom. Slider is SliderBase with
 // the theme's look.
-func SliderBase(c *Context, value *float64, lo, hi float64) *Element {
+func coreSliderBase(c *context, value *float64, lo, hi float64) *node {
 	s := sliderBase(c, value, lo, hi, 0)
 	s.widget = "SliderBase" // which Vertical takes
 	return s
@@ -108,54 +104,17 @@ type sliderKey struct{}
 
 // sliderBase creates a SliderBase whose values are lo and the multiples of
 // step from it, any for 0.
-func sliderBase(c *Context, value *float64, lo, hi, step float64) *Element {
-	s := Box(c).Focusable()
+func sliderBase(c *context, value *float64, lo, hi, step float64) *node {
+	s := coreBox(c).Focusable()
 	s.flags |= flagDraggable | flagHover
 	s.widget = "Slider"
-	st := s.st
-	// The view says them again as it builds the element.
-	set := Local(s, sliderKey{}, func() sliderSettings { return sliderSettings{} })
-	settings := *set
-	*set = sliderSettings{}
-	if settings.step > 0 {
-		step = settings.step
-	}
-	setValue := func(v float64) {
-		v = snap(max(lo, min(hi, v)), lo, hi, step)
-		if v != *value {
-			*value = v
-			st.changed = true
-			c.rt.consumed = true
-		}
-	}
-	if st.pressed && !s.disabled() {
-		switch {
-		case settings.vertical && st.ch > 0:
-			frac := 1 - (c.rt.pointerY-st.cy)/st.ch
-			setValue(lo + float64(max(0, min(1, frac)))*(hi-lo))
-		case !settings.vertical && st.cw > 0:
-			frac := (c.rt.pointerX - st.cx) / st.cw
-			setValue(lo + float64(max(0, min(1, frac)))*(hi-lo))
-		}
-	}
+	*coreLocal(s, sliderKey{}, func() sliderSettings { return sliderSettings{} }) = sliderSettings{}
+	*valueBinding[sliderValue](s) = sliderValue{value: value, lo: lo, hi: hi, step: step}
+	s.onValueInput(sliderInput)
 	if step <= 0 {
 		step = (hi - lo) / 100
 	}
 	s.accStep = step
-	switch {
-	case s.Shortcut(0, KeyLeft), s.Shortcut(0, KeyDown):
-		setValue(*value - step)
-	case s.Shortcut(0, KeyRight), s.Shortcut(0, KeyUp):
-		setValue(*value + step)
-	case s.Shortcut(0, KeyPageDown):
-		setValue(*value - max(step, (hi-lo)/10))
-	case s.Shortcut(0, KeyPageUp):
-		setValue(*value + max(step, (hi-lo)/10))
-	case s.Shortcut(0, KeyHome):
-		setValue(lo)
-	case s.Shortcut(0, KeyEnd):
-		setValue(hi)
-	}
 	s.role, s.hasRange, s.accRange = RoleSlider, true, [3]float64{lo, hi, *value}
 	return s
 }
@@ -163,13 +122,13 @@ func sliderBase(c *Context, value *float64, lo, hi, step float64) *Element {
 // Step makes the values of a slider lo and the multiples of step from it,
 // which the arrows move between, as a StepSlider's. Of a range of your own
 // (Range), it tells assistive technology how far the keys move the value.
-func (e *Element) Step(step float64) *Element {
+func (e *node) Step(step float64) *node {
 	if step <= 0 {
 		return e
 	}
 	e.accStep = step
 	if e.widget == "Slider" || e.widget == "SliderBase" {
-		Local(e, sliderKey{}, func() sliderSettings { return sliderSettings{} }).step = step
+		coreLocal(e, sliderKey{}, func() sliderSettings { return sliderSettings{} }).step = step
 	}
 	return e
 }
@@ -178,9 +137,9 @@ func (e *Element) Step(step float64) *Element {
 // box to hi at the top, and tells assistive technology so. Pad it by half
 // the thumb's height, rather than its width. Slider, drawn across, stays
 // so.
-func (e *Element) Vertical() *Element {
+func (e *node) Vertical() *node {
 	if e.widget == "SliderBase" {
-		Local(e, sliderKey{}, func() sliderSettings { return sliderSettings{} }).vertical = true
+		coreLocal(e, sliderKey{}, func() sliderSettings { return sliderSettings{} }).vertical = true
 		e.vertical = true
 	}
 	return e
@@ -188,10 +147,10 @@ func (e *Element) Vertical() *Element {
 
 // TabsParts are the parts of a tab list without a look: TabsBase makes
 // the list, and Tab its tabs.
-type TabsParts struct {
+type tabsParts struct {
 	// List holds the tabs: build them in its children.
-	List     *Element
-	c        *Context
+	List     *node
+	c        *context
 	selected *int
 	n        int
 	// follow is set when the keys chose a tab, which then takes the
@@ -217,44 +176,46 @@ type TabsParts struct {
 //	})
 //
 // Tabs is TabsBase with the theme's look.
-func TabsBase(c *Context, selected *int, n int) TabsParts {
-	list := Row(c).Shrink(0).Role(RoleTabList).FocusGroup(Horizontal)
+func coreTabsBase(c *context, selected *int, n int) tabsParts {
+	list := coreRow(c).Shrink(0).Role(RoleTabList).FocusGroup(Horizontal)
 	list.widget = "Tabs"
 	if n > 0 {
 		*selected = max(0, min(*selected, n-1))
 	}
-	return TabsParts{List: list, c: c, selected: selected, n: n, follow: Local(list, "follow", func() bool { return false })}
+	return tabsParts{List: list, c: c, selected: selected, n: n, follow: coreLocal(list, "follow", func() bool { return false })}
 }
 
 // Tab creates tab i of the list: a row that takes the focus and chooses
 // i when clicked. Style it from whether i is the one chosen.
-func (p TabsParts) Tab(i int) *Element {
+func (p tabsParts) Tab(i int) *node {
 	c := p.c
-	tab := Row(c).Focusable().Shrink(0).Role(RoleTab)
+	tab := coreRow(c).Focusable().Shrink(0).Role(RoleTab)
 	tab.widget = "Tab"
 	tab.flags |= flagClickable | flagHover
-	choose := func(i int, keys bool) {
-		i = (i%p.n + p.n) % p.n
-		if i != *p.selected {
-			*p.selected = i
-			p.List.st.changed = true
-			c.rt.consumed = true
+	tab.afterInput(func() {
+		choose := func(i int, keys bool) {
+			i = (i%p.n + p.n) % p.n
+			if i != *p.selected {
+				*p.selected = i
+				p.List.st.markChanged()
+				c.rt.consumed = true
+			}
+			*p.follow = keys
 		}
-		*p.follow = keys
-	}
-	if tab.Clicked() {
-		choose(i, false)
-	}
-	switch {
-	case tab.Shortcut(0, KeyRight), tab.Shortcut(0, KeyDown):
-		choose(i+1, true)
-	case tab.Shortcut(0, KeyLeft), tab.Shortcut(0, KeyUp):
-		choose(i-1, true)
-	case tab.Shortcut(0, KeyHome):
-		choose(0, true)
-	case tab.Shortcut(0, KeyEnd):
-		choose(p.n-1, true)
-	}
+		if tab.Clicked() {
+			choose(i, false)
+		}
+		switch {
+		case tab.Shortcut(0, KeyRight), tab.Shortcut(0, KeyDown):
+			choose(i+1, true)
+		case tab.Shortcut(0, KeyLeft), tab.Shortcut(0, KeyUp):
+			choose(i-1, true)
+		case tab.Shortcut(0, KeyHome):
+			choose(0, true)
+		case tab.Shortcut(0, KeyEnd):
+			choose(p.n-1, true)
+		}
+	})
 	on := i == *p.selected
 	if on && *p.follow {
 		tab.Focus()
@@ -267,11 +228,11 @@ func (p TabsParts) Tab(i int) *Element {
 
 // SelectParts are the parts of a select without a look: SelectBase makes
 // its trigger, Popup its popup and Item the options in it.
-type SelectParts[T comparable] struct {
+type selectParts[T comparable] struct {
 	// Trigger opens and closes the popup: give it children showing the
 	// choice.
-	Trigger  *Element
-	c        *Context
+	Trigger  *node
+	c        *context
 	selected *T
 	open     *bool
 	// highlight is the index of the option the pointer or the arrows are
@@ -296,7 +257,7 @@ type SelectParts[T comparable] struct {
 //	sel.Trigger.Padding(6, 10).Border(1, gray).Children(func() {
 //		ui.Text(c, app.size)
 //	})
-//	sel.Popup(func(panel *ui.Element) {
+//	sel.Popup(func(panel ui.Element) {
 //		panel.Padding(4).Background(white).Border(1, gray)
 //		for _, size := range sizes {
 //			item := sel.Item(size).Padding(6, 10)
@@ -308,69 +269,71 @@ type SelectParts[T comparable] struct {
 //	})
 //
 // Select is SelectBase with the theme's look.
-func SelectBase[T comparable](c *Context, selected *T) *SelectParts[T] {
-	b := ButtonBase(c)
+func coreSelectBase[T comparable](c *context, selected *T) *selectParts[T] {
+	b := coreButtonBase(c)
 	b.widget, b.role, b.accValue = "Select", RolePopUpButton, fmt.Sprint(*selected)
-	s := &SelectParts[T]{
+	s := &selectParts[T]{
 		Trigger: b, c: c, selected: selected,
-		open:      Local(b, "open", func() bool { return false }),
-		highlight: Local(b, "highlight", func() int { return -1 }),
-		values:    Local(b, "values", func() []T { return nil }),
-		pointer:   Local(b, "pointer", func() [2]float32 { return [2]float32{} }),
+		open:      coreLocal(b, "open", func() bool { return false }),
+		highlight: coreLocal(b, "highlight", func() int { return -1 }),
+		values:    coreLocal(b, "values", func() []T { return nil }),
+		pointer:   coreLocal(b, "pointer", func() [2]float32 { return [2]float32{} }),
 	}
-	open := func(o bool) {
-		*s.open, *s.highlight = o, -1
-		*s.pointer = [2]float32{c.rt.pointerX, c.rt.pointerY}
-		c.rt.consumed = true
-	}
-	if b.Clicked() {
-		open(!*s.open)
-	}
-	n := len(*s.values)
-	move := func(i int) {
-		*s.highlight = max(0, min(i, n-1))
-		c.rt.consumed = true
-	}
-	if !*s.open {
-		if b.Shortcut(0, KeyDown) || b.Shortcut(0, KeyUp) {
-			open(true)
+	b.afterInput(func() {
+		open := func(o bool) {
+			*s.open, *s.highlight = o, -1
+			*s.pointer = [2]float32{c.rt.pointerX, c.rt.pointerY}
+			c.rt.consumed = true
 		}
-	} else if n > 0 {
-		switch {
-		case b.Shortcut(0, KeyDown):
-			move(*s.highlight + 1)
-		case b.Shortcut(0, KeyUp):
-			move(*s.highlight - 1)
-		case b.Shortcut(0, KeyHome):
-			move(0)
-		case b.Shortcut(0, KeyEnd):
-			move(n - 1)
-		case b.Shortcut(0, KeyEnter), b.Shortcut(0, KeySpace):
-			if h := *s.highlight; h >= 0 && h < n {
-				s.choose((*s.values)[h])
+		if b.Clicked() {
+			open(!*s.open)
+		}
+		n := len(*s.values)
+		move := func(i int) {
+			*s.highlight = max(0, min(i, n-1))
+			c.rt.consumed = true
+		}
+		if !*s.open {
+			if b.Shortcut(0, KeyDown) || b.Shortcut(0, KeyUp) {
+				open(true)
+			}
+		} else if n > 0 {
+			switch {
+			case b.Shortcut(0, KeyDown):
+				move(*s.highlight + 1)
+			case b.Shortcut(0, KeyUp):
+				move(*s.highlight - 1)
+			case b.Shortcut(0, KeyHome):
+				move(0)
+			case b.Shortcut(0, KeyEnd):
+				move(n - 1)
+			case b.Shortcut(0, KeyEnter), b.Shortcut(0, KeySpace):
+				if h := *s.highlight; h >= 0 && h < n {
+					s.choose((*s.values)[h])
+				}
 			}
 		}
-	}
+	})
 	b.expanded = *s.open
 	return s
 }
 
-func (s *SelectParts[T]) choose(v T) {
+func (s *selectParts[T]) choose(v T) {
 	if *s.selected != v {
 		*s.selected = v
-		s.Trigger.st.changed = true
+		s.Trigger.st.markChanged()
 	}
 	*s.open = false
 	s.c.rt.consumed = true
 }
 
 // Open reports whether the popup shows.
-func (s *SelectParts[T]) Open() bool { return *s.open }
+func (s *selectParts[T]) Open() bool { return *s.open }
 
 // Highlight moves the highlight to the option of value while the popup
 // shows, as a select of your own may do as the user types the option's
 // first letters; Enter then chooses it.
-func (s *SelectParts[T]) Highlight(value T) {
+func (s *selectParts[T]) Highlight(value T) {
 	for i, v := range *s.values {
 		if v == value {
 			if *s.highlight != i {
@@ -386,9 +349,9 @@ func (s *SelectParts[T]) Highlight(value T) {
 // open: fn styles the panel and builds the options in it with Item.
 // Clicking outside it or pressing Escape closes it. It returns the panel,
 // or nil when the popup is closed.
-func (s *SelectParts[T]) Popup(fn func(panel *Element)) *Element {
+func (s *selectParts[T]) Popup(fn func(panel *node)) *node {
 	b := s.Trigger
-	return popover(s.c, b, s.open, true, func(panel *Element) {
+	return popover(s.c, b, s.open, true, func(panel *node) {
 		panel.MinWidth(b.Bounds().W)
 		s.next = s.next[:0]
 		fn(panel)
@@ -399,11 +362,11 @@ func (s *SelectParts[T]) Popup(fn func(panel *Element)) *Element {
 // Item creates an option choosing value: a row that is Highlighted when
 // the pointer or the arrows are on it, and chooses value and closes the
 // popup when clicked.
-func (s *SelectParts[T]) Item(value T) *Element {
+func (s *selectParts[T]) Item(value T) *node {
 	c := s.c
 	i := len(s.next)
 	s.next = append(s.next, value)
-	item := Row(c)
+	item := coreRow(c)
 	item.flags |= flagClickable | flagHover
 	if *s.highlight < 0 && value == *s.selected {
 		*s.highlight = i
@@ -419,15 +382,17 @@ func (s *SelectParts[T]) Item(value T) *Element {
 	}
 	item.highlighted = *s.highlight == i
 	item.checked = 1 + int8(b2f(value == *s.selected))
-	if item.Clicked() {
-		s.choose(value)
-	}
+	item.afterInput(func() {
+		if item.Clicked() {
+			s.choose(value)
+		}
+	})
 	return item
 }
 
 // Highlighted reports whether an option of a select is the one the pointer
 // or the arrows are on.
-func (e *Element) Highlighted() bool { return e.highlighted }
+func (e *node) Highlighted() bool { return e.highlighted }
 
 // PopoverBase shows a panel without a look below anchor while *open is
 // true: fn styles the panel and builds its content. Pressing outside the
@@ -441,28 +406,28 @@ func (e *Element) Highlighted() bool { return e.highlighted }
 //
 // It returns the panel, or nil while closed; Popover is PopoverBase with
 // the theme's look.
-func PopoverBase(c *Context, anchor *Element, open *bool, fn func(panel *Element)) *Element {
+func corePopoverBase(c *context, anchor *node, open *bool, fn func(panel *node)) *node {
 	return popover(c, anchor, open, false, fn)
 }
 
 // popover shows the panel of a PopoverBase, over a backdrop taking the
 // presses outside it with modal, as a select's popup: a menu of the
 // system's takes them too.
-func popover(c *Context, anchor *Element, open *bool, modal bool, fn func(panel *Element)) *Element {
+func popover(c *context, anchor *node, open *bool, modal bool, fn func(panel *node)) *node {
 	if !*open {
 		return nil
 	}
-	var panel *Element
-	Overlay(c, func() {
+	var panel *node
+	coreOverlay(c, func() {
 		if modal {
-			back := Box(c).Absolute().Left(0).Top(0).Right(0).Bottom(0)
+			back := coreBox(c).Absolute().Left(0).Top(0).Right(0).Bottom(0)
 			back.flags |= flagClickable
 			back.popover = anchor
 			if back.Clicked() {
 				*open = false
 			}
 		}
-		panel = Box(c).Role(RolePopup).AttachTo(anchor, AnchorBottomLeft, AnchorTopLeft)
+		panel = coreBox(c).Role(RolePopup).AttachTo(anchor, AnchorBottomLeft, AnchorTopLeft)
 		// Presses on it stay in it.
 		panel.flags |= flagClickable
 		panel.Children(func() { fn(panel) })
@@ -478,19 +443,19 @@ func popover(c *Context, anchor *Element, open *bool, modal bool, fn func(panel 
 // panel, and the panel, and builds the panel's content. Clicking the
 // backdrop or pressing Escape sets *open to false. It returns the panel,
 // or nil while closed; Modal is DialogBase with the theme's look.
-func DialogBase(c *Context, open *bool, fn func(backdrop, panel *Element)) *Element {
+func coreDialogBase(c *context, open *bool, fn func(backdrop, panel *node)) *node {
 	if !*open {
 		return nil
 	}
-	var panel *Element
-	Overlay(c, func() {
-		back := Box(c).Absolute().Left(0).Top(0).Right(0).Bottom(0).Center().Modal()
+	var panel *node
+	coreOverlay(c, func() {
+		back := coreBox(c).Absolute().Left(0).Top(0).Right(0).Bottom(0).Center().Modal()
 		back.flags |= flagClickable
 		if back.Clicked() || back.OverlayShortcut(0, KeyEscape) {
 			*open = false
 		}
 		back.Children(func() {
-			panel = Box(c).Role(RoleDialog)
+			panel = coreBox(c).Role(RoleDialog)
 			panel.flags |= flagClickable
 			panel.Children(func() { fn(back, panel) })
 		})
@@ -501,8 +466,8 @@ func DialogBase(c *Context, open *bool, fn func(backdrop, panel *Element)) *Elem
 // TextInputBase creates a single-line text input without a look, editing
 // *value: TextInput without its padding, background, border and
 // corners.
-func TextInputBase(c *Context, value *string) *Element { return textInputBase(c, value, false) }
+func coreTextInputBase(c *context, value *string) *node { return textInputBase(c, value, false) }
 
 // TextAreaBase creates a multi-line text input without a look, editing
 // *value: TextArea without its padding, background, border and corners.
-func TextAreaBase(c *Context, value *string) *Element { return textInputBase(c, value, true) }
+func coreTextAreaBase(c *context, value *string) *node { return textInputBase(c, value, true) }

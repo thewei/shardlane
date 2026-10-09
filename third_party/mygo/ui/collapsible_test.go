@@ -9,15 +9,15 @@ import (
 
 func TestCollapsible(t *testing.T) {
 	open, changes := false, 0
-	tt := NewTester(func(c *Context) {
-		Column(c).Gap(8).Children(func() {
-			if Collapsible(c, "Advanced", &open, func() {
-				Text(c, "Inside")
-				Button(c, "Inner")
+	tt := coreNewTester(func(c *context) {
+		coreColumn(c).Gap(8).Children(func() {
+			if coreCollapsible(c, "Advanced", &open, func() {
+				coreText(c, "Inside")
+				coreButton(c, "Inner")
 			}).Changed() {
 				changes++
 			}
-			Button(c, "After")
+			coreButton(c, "After")
 		})
 	}, 400, 400)
 	tt.SetPreferences(Preferences{ReduceMotion: true, TextScale: 1})
@@ -25,14 +25,14 @@ func TestCollapsible(t *testing.T) {
 	if tt.HasText("Inside") {
 		t.Fatal("closed, it shows its content")
 	}
-	if n := node(t, tt.h.access, platform.RoleDisclosure, "Advanced"); n.States&platform.AccessExpanded != 0 || n.Actions&platform.ActionPress == 0 {
+	if n := accessNode(t, tt.h.access, platform.RoleDisclosure, "Advanced"); n.States&platform.AccessExpanded != 0 || n.Actions&platform.ActionPress == 0 {
 		t.Errorf("closed, the disclosure: %+v", n)
 	}
 	tt.Click("Advanced")
 	if !open || changes != 1 || !tt.HasText("Inside") {
 		t.Fatalf("a click: open %v, %d changes, shows %q", open, changes, tt.Texts())
 	}
-	if n := node(t, tt.h.access, platform.RoleDisclosure, "Advanced"); n.States&platform.AccessExpanded == 0 {
+	if n := accessNode(t, tt.h.access, platform.RoleDisclosure, "Advanced"); n.States&platform.AccessExpanded == 0 {
 		t.Errorf("open, the disclosure: %+v", n)
 	}
 	// Tab goes into the content; Space and Enter close and open.
@@ -55,13 +55,13 @@ func TestCollapsibleAnimates(t *testing.T) {
 	open := false
 	var progress float32
 	var clip, inner uint64
-	tt := NewTester(func(c *Context) {
-		p := CollapsibleBase(c, &open)
-		p.Trigger.Children(func() { Text(c, "More") })
+	tt := coreNewTester(func(c *context) {
+		p := coreCollapsibleBase(c, &open)
+		p.Trigger.Children(func() { coreText(c, "More") })
 		progress = p.Progress()
 		if panel := p.Panel(func() {
 			for range 5 {
-				Text(c, "Line")
+				coreText(c, "Line")
 			}
 		}); panel != nil {
 			clip, inner = panel.parent.id, panel.id
@@ -105,11 +105,11 @@ func TestCollapsibleAnimates(t *testing.T) {
 
 func TestAccordion(t *testing.T) {
 	general, privacy, advanced := true, false, false
-	tt := NewTester(func(c *Context) {
-		Accordion(c, func() {
-			AccordionItem(c, "General", &general, func() { Button(c, "Save") })
-			AccordionItem(c, "Privacy", &privacy, func() { Text(c, "Tracking") })
-			AccordionItem(c, "Advanced", &advanced, func() { Text(c, "Logs") })
+	tt := coreNewTester(func(c *context) {
+		coreAccordion(c, func() {
+			coreAccordionItem(c, "General", &general, func() { coreButton(c, "Save") })
+			coreAccordionItem(c, "Privacy", &privacy, func() { coreText(c, "Tracking") })
+			coreAccordionItem(c, "Advanced", &advanced, func() { coreText(c, "Logs") })
 		})
 	}, 400, 400)
 	tt.SetPreferences(Preferences{ReduceMotion: true, TextScale: 1})
@@ -149,7 +149,7 @@ func TestAccordion(t *testing.T) {
 		name string
 		open bool
 	}{{"General", true}, {"Privacy", true}, {"Advanced", false}} {
-		if n := node(t, tt.h.access, platform.RoleDisclosure, s.name); (n.States&platform.AccessExpanded != 0) != s.open {
+		if n := accessNode(t, tt.h.access, platform.RoleDisclosure, s.name); (n.States&platform.AccessExpanded != 0) != s.open {
 			t.Errorf("%s: %+v", s.name, n)
 		}
 	}

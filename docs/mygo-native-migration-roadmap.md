@@ -624,6 +624,23 @@ Deferred: headless-terminal `Resize` + `Snapshot` (v0.2.11) for Remote/mobile se
 
 Fast verification: `GOTOOLCHAIN=go1.27.1 go test ./...`; `GOTOOLCHAIN=go1.27.1 go tool mygo build`. Known environmental flake: `applog/TestCaptureStderrRoutesFd2IntoFile` (2 s marker deadline) can false-FAIL under full-suite parallel load; it passes isolated `-count=3` on the upgraded tree — rerun isolated before diagnosing (same convention as the `shared_tui` contention detector).
 
+## N16 — MyGo v0.3.4 checked-element migration (2026-10-08)
+
+Pin bump: `github.com/egoist/mygo` v0.2.15 → v0.3.4 in `go.mod` (the version authority). Upstream still ships neither local delta, so the vendored fork was rebased onto v0.3.4 with both deltas re-applied by hand (reference diff kept at the v0.2.15 rebase; `third_party/mygo/LOCAL-PATCH.md` records the v0.3.4 sites). Inherited by the upgrade itself: press-based selection/focus painting fixes, scheduled repaints surviving unrelated events, editor paste double-application fix, input-ordering fixes (inline handlers see pending edits; `ComboboxParts.Chosen()` same-build), bounded native text-layout cache memory, nil UI input panic guards, every frame on the GPU, shared text selection for native UI containers, custom context menus (`EditItems`/`SelectionColor`), native cross-window drag & drop, and `ui.Context.Vibrancy()` detection.
+
+The v0.3.0 checked-element model (constructors return `ui.Element` values that expire before the next build pass; persistent identity in `ui.Handle`) migrated via the official codemod (`go tool mygo migrate-ui -write`), then by hand:
+
+| Task | Change | Landing |
+|---|---|---|
+| N16-01 | Codemod: pointer element types → values, nil checks → `Valid()`, fluent keys → `Context.Key` | 22 files in `nativeui/` |
+| N16-02 | Stored per-pass elements → `ListState`'s embedded `Handle`: the five `*ListEl` fields are gone; row focus tints query `state.FocusWithin(c)`, valid before construction and across passes (row callbacks build before the list element exists in the same pass, so stored elements were silently stale) | `shell.go`, `git_service.go`, `gd_surface.go`, `changes_panel.go`, `sidebar.go` |
+| N16-03 | Collapsible disclosures commit their bound local with a same-build `Changed()` before the store write-back (unqueried controls apply input after construction, so the write-back saw the pre-toggle value and clicks were lost) | `chat_ui.go` (thinking, tools), `page_history.go` (thinking) |
+| N16-04 | `mygo vet` (type-aware element/Context checks) joins the check set beside `go test`; `AGENTS.md` updated | `AGENTS.md` |
+
+Deferred (available in v0.3.4, needs a product/design decision before adoption): `ui.Handle.Focus()`/`FocusBind` could replace the WIX-021 field-focus delta for the Command Center and add focus-follow for workspace panes — kept on the vendored delta until upstream signals the delegation API; declarative `OnShortcut` commands could replace `c.Shortcut` polling in views over time; native drag & drop for external files onto the project tree; `Vibrancy()`-aware titlebar/sidebar materials.
+
+Fast verification: `GOTOOLCHAIN=go1.27.1 go test ./...`; `GOTOOLCHAIN=auto go tool mygo vet .`; `GOTOOLCHAIN=auto go tool mygo build`.
+
 # M7 — Remote / Mobile API v2
 
 Keep current wire compatibility; reuse Go app services.

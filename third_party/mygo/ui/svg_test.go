@@ -25,16 +25,16 @@ func colorIn(img *image.RGBA, r Rect, scale float32) color.RGBA {
 func TestIconTakesTheTextColorAndSize(t *testing.T) {
 	square := MustParseSVG([]byte(squareSVG))
 	blue := RGB(0, 0, 255)
-	view := func(c *Context) {
-		Column(c).Fill().Padding(10).Gap(10).Background(RGB(255, 255, 255)).Children(func() {
-			Icon(c, square).Label("plain")
-			Row(c).TextColor(blue).FontSize(24).Children(func() {
-				Icon(c, square).Label("inherited")
+	view := func(c *context) {
+		coreColumn(c).Fill().Padding(10).Gap(10).Background(RGB(255, 255, 255)).Children(func() {
+			coreIcon(c, square).Label("plain")
+			coreRow(c).TextColor(blue).FontSize(24).Children(func() {
+				coreIcon(c, square).Label("inherited")
 			})
-			Icon(c, square).Size(40, 20).TextColor(blue).Label("sized")
+			coreIcon(c, square).Size(40, 20).TextColor(blue).Label("sized")
 		})
 	}
-	tt := NewTester(view, 200, 200)
+	tt := coreNewTester(view, 200, 200)
 	theme := tt.rt.c.theme
 	plain, _ := tt.Find("plain")
 	if plain.W != theme.FontSize || plain.H != theme.FontSize {
@@ -70,14 +70,14 @@ func TestIconTakesTheTextColorAndSize(t *testing.T) {
 func TestIconDrawsItsShapeOnce(t *testing.T) {
 	check := MustParseSVG([]byte(checkSVG))
 	hot := false
-	view := func(c *Context) {
+	view := func(c *context) {
 		col := RGB(0, 0, 0)
 		if hot {
 			col = RGB(255, 0, 0)
 		}
-		Icon(c, check).FontSize(32).TextColor(col).Label("check")
+		coreIcon(c, check).FontSize(32).TextColor(col).Label("check")
 	}
-	tt := NewTester(view, 100, 100)
+	tt := coreNewTester(view, 100, 100)
 	tt.SetScale(2)
 	draws := 0
 	j := &tt.rt.svgs.job
@@ -114,14 +114,14 @@ func TestImageOfAnSVG(t *testing.T) {
 	if w, h := logo.Size(); w != 30 || h != 10 {
 		t.Fatalf("Size %vx%v", w, h)
 	}
-	view := func(c *Context) {
-		Column(c).Fill().Background(RGB(255, 255, 255)).TextColor(RGB(0, 0, 255)).AlignItems(Start).Children(func() {
-			Image(c, logo).Label("logo")
-			Image(c, logo).Size(60, 60).Fit(Cover).Label("cover")
-			Image(c, logo).Size(60, 10).Fit(FillBox).Label("stretched")
+	view := func(c *context) {
+		coreColumn(c).Fill().Background(RGB(255, 255, 255)).TextColor(RGB(0, 0, 255)).AlignItems(Start).Children(func() {
+			coreImage(c, logo).Label("logo")
+			coreImage(c, logo).Size(60, 60).Fit(Cover).Label("cover")
+			coreImage(c, logo).Size(60, 10).Fit(FillBox).Label("stretched")
 		})
 	}
-	tt := NewTester(view, 200, 200)
+	tt := coreNewTester(view, 200, 200)
 	img := tt.Image()
 	r, _ := tt.Find("logo")
 	if r.W != 30 || r.H != 10 {
@@ -146,10 +146,10 @@ func TestImageOfAnSVG(t *testing.T) {
 func TestPictureFollowsTheTextColor(t *testing.T) {
 	logo := MustParseSVG([]byte(logoSVG))
 	col := RGB(0, 0, 255)
-	view := func(c *Context) {
-		Image(c, logo).TextColor(col).Label("logo")
+	view := func(c *context) {
+		coreImage(c, logo).TextColor(col).Label("logo")
 	}
-	tt := NewTester(view, 100, 100)
+	tt := coreNewTester(view, 100, 100)
 	first := tt.rt.svgs.pictures
 	if len(first) != 1 {
 		t.Fatalf("%d pictures", len(first))
@@ -185,10 +185,10 @@ func TestPictureFollowsTheTextColor(t *testing.T) {
 
 func TestIconsInAccessibility(t *testing.T) {
 	check := MustParseSVG([]byte(checkSVG))
-	tt := NewTester(func(c *Context) {
-		Row(c).Children(func() {
-			Icon(c, check)
-			Icon(c, check).Label("Done")
+	tt := coreNewTester(func(c *context) {
+		coreRow(c).Children(func() {
+			coreIcon(c, check)
+			coreIcon(c, check).Label("Done")
 		})
 	}, 100, 50)
 	tt.send(platform.SurfaceEvent{Kind: platform.AccessibilityOn})
@@ -205,8 +205,8 @@ func TestIconsInAccessibility(t *testing.T) {
 
 func TestPainterDrawsSVGs(t *testing.T) {
 	check, logo := MustParseSVG([]byte(checkSVG)), MustParseSVG([]byte(logoSVG))
-	img := Render(func(c *Context) {
-		Box(c).Fill().Background(RGB(255, 255, 255)).Draw(func(p *Painter, r Rect) {
+	img := coreRender(func(c *context) {
+		coreBox(c).Fill().Background(RGB(255, 255, 255)).Draw(func(p *Painter, r Rect) {
 			p.Icon(check, Rect{0, 0, 48, 48}, RGB(0, 128, 0))
 			p.Image(logo, Rect{0, 60, 30, 10}, Contain)
 		})

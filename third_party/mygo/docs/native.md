@@ -126,6 +126,15 @@ mygo.Clipboard.Clear()
 
 Pages can use the web's `navigator.clipboard` too.
 
+`Clipboard.Write(transfer.Data)` and `Clipboard.Read(formats...)` share the
+native drag/drop model: ordered items, alternative representations, file
+lists, custom MIME formats, and lazy providers. `Formats` discovers portable
+names without requesting bytes; `ReadFormat`, `ReadFiles`, `WriteFiles`, and
+`Flush` provide explicit negotiation, file transfer, and persistence. See
+[Clipboard and drag data](data-transfer.md) for provider lifetimes and native
+format mappings. The [clipboard example](../examples/clipboard) demonstrates
+these operations.
+
 ## The shell
 
 ```go

@@ -118,8 +118,7 @@ func (s *Shell) terminalCanvas(c *ui.Context) {
 			if w <= 0 || h <= 0 {
 				continue
 			}
-			frame := ui.Box(c).
-				Key(surface.key).
+			frame := ui.Box(c.Key(surface.key)).
 				Absolute().
 				Left(inner.X + inner.W*left/100 + gorexFrameInset).
 				Top(inner.Y + inner.H*top/100 + gorexFrameInset).

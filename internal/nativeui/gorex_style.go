@@ -146,7 +146,7 @@ func gorexContentCard(c *ui.Context, k *gorexColors, build func()) {
 // gorexIconButton is a borderless button of an icon, with a face on hover;
 // label names it for screen readers and its tooltip explains it. Selected
 // keeps a quiet filled face, as the surface switch's current side does.
-func gorexIconButton(c *ui.Context, k *gorexColors, svg *ui.SVG, label, tooltip string, selected bool, size, iconSize float32) *ui.Element {
+func gorexIconButton(c *ui.Context, k *gorexColors, svg *ui.SVG, label, tooltip string, selected bool, size, iconSize float32) ui.Element {
 	b := ui.Box(c).Size(size, size).Center().Radius(size / 2.6).Cursor(ui.CursorPointer).Role(ui.RoleButton).Label(label)
 	if tooltip != "" {
 		b.Tooltip(tooltip)
@@ -173,7 +173,7 @@ func gorexIconButton(c *ui.Context, k *gorexColors, svg *ui.SVG, label, tooltip 
 // gorexActivityDot is the dot of something running: a solid dot in a soft
 // halo. It does not animate, as drawing frames all along would cost more
 // than it tells.
-func gorexActivityDot(c *ui.Context, col ui.Color, size float32) *ui.Element {
+func gorexActivityDot(c *ui.Context, col ui.Color, size float32) ui.Element {
 	e := ui.Box(c).Size(size+6, size+6).Margin(0, 0, 0, 1)
 	e.Draw(func(p *ui.Painter, r ui.Rect) {
 		cx, cy := r.X+r.W/2, r.Y+r.H/2
@@ -185,7 +185,7 @@ func gorexActivityDot(c *ui.Context, col ui.Color, size float32) *ui.Element {
 }
 
 // gorexAttentionDot is the plain dot of a Pane that needs someone.
-func gorexAttentionDot(c *ui.Context, col ui.Color, tooltip string) *ui.Element {
+func gorexAttentionDot(c *ui.Context, col ui.Color, tooltip string) ui.Element {
 	return ui.Box(c).Size(7, 7).Radius(4).Background(col).Margin(0, 0, 0, 2).Tooltip(tooltip)
 }
 
@@ -193,28 +193,28 @@ func gorexAttentionDot(c *ui.Context, col ui.Color, tooltip string) *ui.Element 
 // paper, in both window kinds.
 func gorexTerminalThemes() (light, dark *terminal.Theme) {
 	return &terminal.Theme{
-			Foreground: ui.Hex("#2a2d31"),
-			Background: ui.Hex("#fbfbfb"),
-			Cursor:     ui.Hex("#3a3d42"),
-			Selection:  ui.RGBA(46, 111, 208, 0.2),
-			Palette: [16]ui.Color{
-				ui.Hex("#2a2d31"), ui.Hex("#c2465a"), ui.Hex("#4e8e5f"), ui.Hex("#b07a1e"),
-				ui.Hex("#2e6fd0"), ui.Hex("#9050c8"), ui.Hex("#1e8c9c"), ui.Hex("#8a8d93"),
-				ui.Hex("#6e7178"), ui.Hex("#d9566b"), ui.Hex("#5ba671"), ui.Hex("#c89026"),
-				ui.Hex("#4a8fe0"), ui.Hex("#a56bd8"), ui.Hex("#2ba2b3"), ui.Hex("#b5b8be"),
-			},
-		}, &terminal.Theme{
-			Foreground: ui.Hex("#e6e6ea"),
-			Background: ui.Hex("#1e1e22"),
-			Cursor:     ui.Hex("#e6e6ea"),
-			Selection:  ui.RGBA(108, 178, 255, 0.28),
-			Palette: [16]ui.Color{
-				ui.Hex("#3a3a40"), ui.Hex("#ff6b7f"), ui.Hex("#7bd88f"), ui.Hex("#e5c07b"),
-				ui.Hex("#6cb2ff"), ui.Hex("#c792ea"), ui.Hex("#56d4dd"), ui.Hex("#d0d0d6"),
-				ui.Hex("#6e6e78"), ui.Hex("#ff8c9c"), ui.Hex("#9be8a8"), ui.Hex("#f2d28a"),
-				ui.Hex("#8ec5ff"), ui.Hex("#d7a8f2"), ui.Hex("#7fe3ea"), ui.Hex("#ffffff"),
-			},
-		}
+		Foreground: ui.Hex("#2a2d31"),
+		Background: ui.Hex("#fbfbfb"),
+		Cursor:     ui.Hex("#3a3d42"),
+		Selection:  ui.RGBA(46, 111, 208, 0.2),
+		Palette: [16]ui.Color{
+			ui.Hex("#2a2d31"), ui.Hex("#c2465a"), ui.Hex("#4e8e5f"), ui.Hex("#b07a1e"),
+			ui.Hex("#2e6fd0"), ui.Hex("#9050c8"), ui.Hex("#1e8c9c"), ui.Hex("#8a8d93"),
+			ui.Hex("#6e7178"), ui.Hex("#d9566b"), ui.Hex("#5ba671"), ui.Hex("#c89026"),
+			ui.Hex("#4a8fe0"), ui.Hex("#a56bd8"), ui.Hex("#2ba2b3"), ui.Hex("#b5b8be"),
+		},
+	}, &terminal.Theme{
+		Foreground: ui.Hex("#e6e6ea"),
+		Background: ui.Hex("#1e1e22"),
+		Cursor:     ui.Hex("#e6e6ea"),
+		Selection:  ui.RGBA(108, 178, 255, 0.28),
+		Palette: [16]ui.Color{
+			ui.Hex("#3a3a40"), ui.Hex("#ff6b7f"), ui.Hex("#7bd88f"), ui.Hex("#e5c07b"),
+			ui.Hex("#6cb2ff"), ui.Hex("#c792ea"), ui.Hex("#56d4dd"), ui.Hex("#d0d0d6"),
+			ui.Hex("#6e6e78"), ui.Hex("#ff8c9c"), ui.Hex("#9be8a8"), ui.Hex("#f2d28a"),
+			ui.Hex("#8ec5ff"), ui.Hex("#d7a8f2"), ui.Hex("#7fe3ea"), ui.Hex("#ffffff"),
+		},
+	}
 }
 
 // applyGorexTerminalTheme points one attach's options at the gorex

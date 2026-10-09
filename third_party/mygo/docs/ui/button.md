@@ -65,3 +65,18 @@ for a design of your own: see [custom widgets](custom-widgets.md).
 
 Assistive technology sees a button named by its text or its `Label`, which
 it presses as a click does.
+
+## Click actions
+
+Use `Clicked()` for inline control flow or `OnClick` to run an action after
+construction:
+
+```go
+ui.Button(c, "Save").Disabled(app.saving).OnClick(app.save)
+```
+
+The callback sees the final configuration and runs after bound-value input.
+It can change the model without interrupting a loop that is building controls.
+Handled input is consumed before the view rebuilds. See
+[Events and actions](views.md#events-and-actions) for choosing between queries
+and callbacks.

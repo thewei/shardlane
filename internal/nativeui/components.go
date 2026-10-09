@@ -6,7 +6,7 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-func iconButton(c *ui.Context, glyph *ui.SVG, label string) *ui.Element {
+func iconButton(c *ui.Context, glyph *ui.SVG, label string) ui.Element {
 	t := c.Theme()
 	b := ui.ButtonBase(c).
 		Size(28, 28).
@@ -36,7 +36,7 @@ func rowTint(tokens DesignTokens, selected, hovered bool) (ui.Color, bool) {
 	}
 }
 
-func navButton(c *ui.Context, glyph *ui.SVG, label, shortcut string, selected bool) *ui.Element {
+func navButton(c *ui.Context, glyph *ui.SVG, label, shortcut string, selected bool) ui.Element {
 	t := c.Theme()
 	tokens := designTokens(t.Dark)
 	b := ui.ButtonBase(c).
@@ -69,7 +69,7 @@ func sectionLabel(c *ui.Context, label string) {
 		TextColor(c.Theme().TextMuted)
 }
 
-func panelCard(c *ui.Context, children func()) *ui.Element {
+func panelCard(c *ui.Context, children func()) ui.Element {
 	t := c.Theme()
 	tokens := designTokens(t.Dark)
 	return ui.Column(c).
@@ -136,7 +136,7 @@ func (s *Shell) sidebarRowHeight() float32 {
 
 // sidebarTopAction is one compact icon control in the sidebar top actions
 // row (GWB-060): icon-only with accessible label + tooltip.
-func sidebarTopAction(c *ui.Context, glyph *ui.SVG, label, shortcut string, selected bool) *ui.Element {
+func sidebarTopAction(c *ui.Context, glyph *ui.SVG, label, shortcut string, selected bool) ui.Element {
 	t := c.Theme()
 	tokens := designTokens(t.Dark)
 	b := ui.ButtonBase(c).
@@ -180,12 +180,12 @@ func (spec treeRowSpec) cornerMark() (StatusTone, string, bool) {
 // treeRow draws a compact Finder/Xcode-style hierarchy row with connector
 // guides. Children are pointer-pass-through so clicks/context menus belong to
 // the whole row rather than only its empty padding.
-func treeRow(c *ui.Context, spec treeRowSpec) *ui.Element {
+func treeRow(c *ui.Context, spec treeRowSpec) ui.Element {
 	t := c.Theme()
 	tokens := designTokens(t.Dark)
-	var row *ui.Element
+	var row ui.Element
 	height := designRowHeight(spec.Height)
-	ui.Box(c).Key(spec.Key).Children(func() {
+	ui.Box(c.Key(spec.Key)).Children(func() {
 		row = ui.ButtonBase(c).
 			FillWidth().
 			Height(height).

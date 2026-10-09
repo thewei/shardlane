@@ -8,12 +8,12 @@ import (
 
 func TestLetterSpacingAndFeatures(t *testing.T) {
 	var params text.Params
-	tt := NewTester(func(c *Context) {
-		Column(c).Gap(8).AlignItems(Start).Children(func() {
-			Text(c, "Wide").Label("plain")
-			Text(c, "Wide").LetterSpacing(6).Label("spaced")
-			Row(c).FontFeatures("tnum", "liga=0").LetterSpacing(1).Children(func() {
-				params = Text(c, "12:30").textParams(0)
+	tt := coreNewTester(func(c *context) {
+		coreColumn(c).Gap(8).AlignItems(Start).Children(func() {
+			coreText(c, "Wide").Label("plain")
+			coreText(c, "Wide").LetterSpacing(6).Label("spaced")
+			coreRow(c).FontFeatures("tnum", "liga=0").LetterSpacing(1).Children(func() {
+				params = coreText(c, "12:30").textParams(0)
 			})
 		})
 	}, 400, 200)

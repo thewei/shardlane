@@ -79,12 +79,12 @@ func loadingState(c *ui.Context, text string) {
 
 // inlineNotice is the shared one-line status notice; a non-nil onRetry adds
 // the retry action. It reports the element so callers can place it.
-func inlineNotice(c *ui.Context, tone StatusTone, text string, onRetry func()) *ui.Element {
+func inlineNotice(c *ui.Context, tone StatusTone, text string, onRetry func()) ui.Element {
 	t := c.Theme()
 	dark := t.Dark
 	typ := Typography()
 	sp := Spacing()
-	var view *ui.Element
+	var view ui.Element
 	ui.Box(c).Children(func() {
 		view = ui.Row(c).FillWidth().Padding(sp.S, sp.L).
 			Background(designTokens(dark).StatusBackground(tone, dark)).
@@ -133,11 +133,11 @@ func providerBadge(c *ui.Context, agent history.AgentID) {
 }
 
 // agentRow is the shared Agent row: label plus derived status pill.
-func agentRow(c *ui.Context, label string, status string) *ui.Element {
+func agentRow(c *ui.Context, label string, status string) ui.Element {
 	sp := Spacing()
 	typ := Typography()
 	tone := operationalTone(normalizeRuntimeStatus(status))
-	var view *ui.Element
+	var view ui.Element
 	ui.Box(c).Children(func() {
 		view = ui.Row(c).FillWidth().Padding(sp.XS, sp.S).Gap(sp.S).AlignItems(ui.Center).Children(func() {
 			ui.Text(c, fallbackText(label, "Agent")).FontSize(typ.Body).Grow(1).SingleLine()
@@ -149,11 +149,11 @@ func agentRow(c *ui.Context, label string, status string) *ui.Element {
 
 // toolCard is the shared tool call/result card, reusable by History detail
 // and future Chat.
-func toolCard(c *ui.Context, name string, inputPreview string, output *string, isError bool) *ui.Element {
+func toolCard(c *ui.Context, name string, inputPreview string, output *string, isError bool) ui.Element {
 	t := c.Theme()
 	typ := Typography()
 	sp := Spacing()
-	var view *ui.Element
+	var view ui.Element
 	ui.Box(c).Children(func() {
 		view = ui.Column(c).FillWidth().Padding(7, 9).Gap(3).
 			Radius(Radius().Control).Background(t.Surface).Children(func() {

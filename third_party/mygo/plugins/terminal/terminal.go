@@ -4,7 +4,7 @@
 //
 //	term, err := terminal.New(terminal.Options{})
 //	...
-//	mygo.NewWindow(mygo.WindowOptions{Title: "Terminal", Content: ui.View(func(c *ui.Context) {
+//	mygo.NewWindow(mygo.WindowOptions{Title: "Terminal", Content: ui.View(func(c ui.Frame) {
 //		terminal.View(c, term).Fill()
 //	})})
 //
@@ -92,6 +92,7 @@ type Options struct {
 	// the program. For panes whose content lives in the terminal's own
 	// scrollback, whose program does not consume mouse events.
 	LocalDragSelect bool
+
 	// OnTitle, OnExit, OnBell and OnNotify run on a goroutine of the
 	// terminal when a program sets the title, when the program (or Conn)
 	// ends, when it rings the bell, and when it asks for a desktop

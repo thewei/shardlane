@@ -230,7 +230,7 @@ func TestToggleQuickPanelWithoutPanel(t *testing.T) {
 	if shell.router.Path() != "/history" {
 		t.Fatalf("fallback route = %q, want no navigation", shell.router.Path())
 	}
-	shell.toggleAgentActivityPanel(nil)
+	shell.toggleAgentActivityPanel(ui.Element{})
 
 	// With a panel attached, hideQuickPanel is nil-safe pre-attach and the
 	// Escape path in the view never panics.

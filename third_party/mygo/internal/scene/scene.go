@@ -291,10 +291,14 @@ type Scene struct {
 }
 
 // Reset empties the scene for another frame, keeping its storage.
-func (s *Scene) Reset(width, height int, clear Color) {
-	s.Width, s.Height, s.Clear = width, height, clear
+func (s *Scene) Reset(width, height int, color Color) {
+	s.Width, s.Height, s.Clear = width, height, color
+	// Ops and effects can keep images and effect resources alive beyond
+	// the end of the shorter list the next frame paints.
+	clear(s.Ops)
 	s.Ops = s.Ops[:0]
 	s.Glyphs = s.Glyphs[:0]
+	clear(s.Effects)
 	s.Effects = s.Effects[:0]
 	s.Wide = s.Wide[:0]
 }

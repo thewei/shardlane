@@ -37,6 +37,11 @@ platform, and are skipped with a note elsewhere: macOS apps are signed and
 put in disk images on macOS only, and Windows installers are made on other
 systems only where [NSIS](#the-installer) is installed.
 
+The CLI defaults to `CGO_ENABLED=0`. If an app's dependencies need cgo,
+set `CGO_ENABLED=1` in the environment for `mygo dev`, `mygo build` and
+`mygo generate`. Those builds need a C compiler for the target platform;
+when cross-compiling, set `CC` to a suitable cross compiler.
+
 | Platform | In `build/<os>-<arch>/` |
 |---|---|
 | macOS | `My App.app`, signed, and `My App 0.1.0.dmg` |

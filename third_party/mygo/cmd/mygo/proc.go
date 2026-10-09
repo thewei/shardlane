@@ -50,7 +50,12 @@ func goCommandContext(ctx context.Context, dir string, env []string, args ...str
 	cmd := exec.CommandContext(ctx, "go", args...)
 	cmd.Dir = dir
 	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
-	cmd.Env = append(append(os.Environ(), "CGO_ENABLED=0"), env...)
+	cmd.Env = os.Environ()
+	// MyGo needs no cgo by default, but an app's dependencies may.
+	if os.Getenv("CGO_ENABLED") == "" {
+		cmd.Env = append(cmd.Env, "CGO_ENABLED=0")
+	}
+	cmd.Env = append(cmd.Env, env...)
 	return cmd
 }
 

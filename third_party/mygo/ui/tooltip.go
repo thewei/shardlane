@@ -45,7 +45,7 @@ type tooltips struct {
 // The tip goes above anchor, centered, or below it where there is no room
 // above; fn may place it elsewhere with AttachTo, as to the right:
 //
-//	ui.TooltipBase(c, b, func(tip *ui.Element) {
+//	ui.TooltipBase(c, b, func(tip ui.Element) {
 //		tip.AttachTo(b, ui.AnchorRight, ui.AnchorLeft).Margin(0, 0, 0, 6)
 //		tip.Padding(4, 8).Radius(6).Background(dark).TextColor(light)
 //		tip.Children(func() { ui.Text(c, "Share") })
@@ -55,14 +55,14 @@ type tooltips struct {
 // tooltip, which it does not read: give anchor a Description to tell what
 // the tip does. It returns the tip, or nil while it does not show;
 // Element.Tooltip is TooltipBase with the theme's look.
-func TooltipBase(c *Context, anchor *Element, fn func(tip *Element)) *Element {
+func coreTooltipBase(c *context, anchor *node, fn func(tip *node)) *node {
 	tip, _ := tooltipBase(c, anchor, fn)
 	return tip
 }
 
 // tooltipBase is TooltipBase, which also reports whether the keyboard
 // focus brought the tip rather than the pointer.
-func tooltipBase(c *Context, anchor *Element, fn func(tip *Element)) (*Element, bool) {
+func tooltipBase(c *context, anchor *node, fn func(tip *node)) (*node, bool) {
 	anchor.flags |= flagHover
 	anchor.tip = true
 	rt := c.rt
@@ -75,9 +75,9 @@ func tooltipBase(c *Context, anchor *Element, fn func(tip *Element)) (*Element, 
 	if c.inert || rt.showTooltip(c) != anchor.id || rt.tips.dismissed == anchor.id {
 		return nil, false
 	}
-	var tip *Element
-	Overlay(c, func() {
-		tip = Box(c).Absolute().PassThrough().Role(RoleTooltip)
+	var tip *node
+	coreOverlay(c, func() {
+		tip = coreBox(c).Absolute().PassThrough().Role(RoleTooltip)
 		fn(tip)
 		if tip.attach == 0 && !tip.place.on {
 			tip.AttachTo(anchor, AnchorTop, AnchorBottom)
@@ -93,7 +93,7 @@ func tooltipBase(c *Context, anchor *Element, fn func(tip *Element)) (*Element, 
 // keyboard focus comes to it, as TooltipBase does: near the pointer, or
 // below the element for the focus. It describes the element to assistive
 // technology where Description does not.
-func (e *Element) Tooltip(s string) *Element {
+func (e *node) Tooltip(s string) *node {
 	if e.description == "" {
 		e.description = s
 	}
@@ -105,11 +105,11 @@ func (e *Element) Tooltip(s string) *Element {
 	rt := c.rt
 	x, y := rt.pointerX+12, rt.pointerY+18
 	fill, text := t.inverse()
-	tooltipBase(c, e, func(tip *Element) {
+	tooltipBase(c, e, func(tip *node) {
 		tip.MaxWidth(t.Space(80)).Padding(t.Space(1.25), t.Space(2)).Radius(t.Space(1.25)).
 			Background(fill).TextColor(text).FontSize(t.FontSize - 1)
 		tip.Shadow(0, 2, 8, 0, RGBA(0, 0, 0, 0.2))
-		tip.Children(func() { Text(c, s) })
+		tip.Children(func() { coreText(c, s) })
 		if rt.tips.byFocus {
 			tip.AttachTo(e, AnchorBottom, AnchorTop).Margin(t.Space(1), 0, 0, 0)
 		} else {
@@ -123,7 +123,7 @@ func (e *Element) Tooltip(s string) *Element {
 // once: the innermost element with a tip under the pointer once it has
 // rested there long enough, or the one with the keyboard focus from the
 // keyboard, whichever came last.
-func (rt *engine) showTooltip(c *Context) uint64 {
+func (rt *engine) showTooltip(c *context) uint64 {
 	t := &rt.tips
 	if t.frame == rt.frame && t.pass == rt.pass {
 		return t.shown

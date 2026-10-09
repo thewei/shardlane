@@ -21,7 +21,7 @@ const (
 // first, and Home and End to the first and the last. An element inside
 // that takes those keys itself, as a slider or a text input does, keeps
 // them. Groups inside a group are part of it.
-func (e *Element) FocusGroup(o Orientation) *Element {
+func (e *node) FocusGroup(o Orientation) *node {
 	e.focusGroup = o
 	return e
 }

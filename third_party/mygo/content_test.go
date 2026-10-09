@@ -116,14 +116,36 @@ func TestContentInvalidateAndUpdate(t *testing.T) {
 // TestContentTitleBar checks that native UI gets the room the window
 // controls of a hidden title bar take, and a frame when it changes.
 func TestContentTitleBar(t *testing.T) {
+	for _, style := range []TitleBarStyle{TitleBarHidden, TitleBarHiddenInset} {
+		t.Run(string(style), func(t *testing.T) { testContentTitleBar(t, style) })
+	}
+}
+
+// A native UI window has no webview. On Linux, even the function that
+// reads its zoom is nil until the first webview is created.
+type contentTitleBarWindow struct {
+	platform.Window
+	t *testing.T
+}
+
+func (w *contentTitleBarWindow) Zoom() float64 {
+	w.t.Error("queried webview zoom for a native UI window")
+	return 1
+}
+
+func testContentTitleBar(t *testing.T, style TitleBarStyle) {
+	t.Helper()
 	var bar ui.TitleBar
 	view := func(c *ui.Context) { bar = c.TitleBar() }
-	w := NewWindow(WindowOptions{Width: 300, Height: 200, TitleBarStyle: TitleBarHidden, TitleBarHeight: 52, Content: ui.View(view)})
+	w := NewWindow(WindowOptions{Width: 300, Height: 200, TitleBarStyle: style, TitleBarHeight: 52, Content: ui.View(view)})
 	t.Cleanup(w.Destroy)
 	wins := fb.Windows()
 	fw := wins[len(wins)-1]
 	s := fw.FakeSurface()
-	onMain(func() { s.Frame() })
+	onMain(func() {
+		w.native = &contentTitleBarWindow{Window: w.native, t: t}
+		s.Frame()
+	})
 	if bar != (ui.TitleBar{Height: 52, Right: 138}) {
 		t.Errorf("TitleBar = %+v", bar)
 	}
@@ -135,6 +157,25 @@ func TestContentTitleBar(t *testing.T) {
 	})
 	if !framed || bar != (ui.TitleBar{Height: 46, Left: 80}) {
 		t.Errorf("after a change: frame %v, TitleBar = %+v", framed, bar)
+	}
+	// Full screen removes the controls, and leaving it restores them.
+	// Native UI must hear both changes without queuing events for a page
+	// that does not exist (or asking the backend for its webview's zoom).
+	for _, room := range []platform.TitleBar{{}, {Height: 46, Left: 80}} {
+		onMain(func() {
+			fw.TitleBarRoom = room
+			fw.H.TitleBarChanged()
+			framed = s.Frame()
+		})
+		if !framed || bar != (ui.TitleBar{Height: float32(room.Height), Left: float32(room.Left), Right: float32(room.Right)}) {
+			t.Errorf("after a full screen change: frame %v, TitleBar = %+v, want %+v", framed, bar, room)
+		}
+	}
+	w.outMu.Lock()
+	queued := len(w.held) + len(w.outbox)
+	w.outMu.Unlock()
+	if queued != 0 || len(fw.Scripts()) != 0 {
+		t.Errorf("title bar changes reached a page: %d queued events, scripts %q", queued, fw.Scripts())
 	}
 
 	// A window with its title bar has no room to keep clear of.
@@ -254,8 +295,8 @@ func TestContentMenuRoles(t *testing.T) {
 
 func TestContentDuplicateKeyTellsWhere(t *testing.T) {
 	view := func(c *ui.Context) {
-		ui.Row(c).Key(1)
-		ui.Row(c).Key(1)
+		ui.Row(c.Key(1))
+		ui.Row(c.Key(1))
 	}
 	var out bytes.Buffer
 	log.SetOutput(&out)

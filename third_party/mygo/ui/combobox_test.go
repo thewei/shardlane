@@ -9,14 +9,59 @@ import (
 
 var fonts = []string{"Arial", "Helvetica", "Times", "Courier", "Optima"}
 
+func TestComboboxChosenRebuildsDependentUI(t *testing.T) {
+	for _, keyboard := range []bool{false, true} {
+		name := "pointer"
+		if keyboard {
+			name = "keyboard"
+		}
+		t.Run(name, func(t *testing.T) {
+			text, picked, choices := "", "none", 0
+			tt := NewTester(func(c *Context) {
+				Text(c, "Picked: "+picked)
+				p := ComboboxBase(c.Key("combo"), &text)
+				p.Input.Label("Combo").Width(180)
+				p.Popup(func(panel Element) {
+					panel.Children(func() {
+						for _, value := range []string{"Alpha", "Beta"} {
+							p.Item(value).Children(func() { Text(c, value) })
+						}
+					})
+				})
+				if value, ok := p.Chosen(); ok {
+					picked = value
+					choices++
+				}
+			}, 300, 300)
+			if err := tt.Click("Combo"); err != nil {
+				t.Fatal(err)
+			}
+			if keyboard {
+				tt.Key(0, KeyDown)
+				tt.Key(0, KeyDown)
+				tt.Key(0, KeyEnter)
+			} else if err := tt.Click("Beta"); err != nil {
+				t.Fatal(err)
+			}
+			if picked != "Beta" || choices != 1 || !tt.HasText("Picked: Beta") {
+				t.Fatalf("picked %q, choices %d, texts %q", picked, choices, tt.Texts())
+			}
+			tt.Frame()
+			if choices != 1 {
+				t.Fatal("another frame repeated the choice")
+			}
+		})
+	}
+}
+
 func TestCombobox(t *testing.T) {
 	font, changes := "Arial", 0
-	tt := NewTester(func(c *Context) {
-		Row(c).Gap(8).Children(func() {
-			if Combobox(c, &font, fonts).Label("Font").Width(200).Changed() {
+	tt := coreNewTester(func(c *context) {
+		coreRow(c).Gap(8).Children(func() {
+			if coreCombobox(c, &font, fonts).Label("Font").Width(200).Changed() {
 				changes++
 			}
-			Button(c, "Next")
+			coreButton(c, "Next")
 		})
 	}, 400, 400)
 	// A click shows all the options.
@@ -60,26 +105,26 @@ func TestCombobox(t *testing.T) {
 	}
 	tt.Key(0, KeyTab)
 	tt.send(platform.SurfaceEvent{Kind: platform.AccessibilityOn})
-	if n := node(t, tt.h.access, platform.RoleComboBox, "Font"); n.Value != "Courier" || font != "Courier" {
+	if n := accessNode(t, tt.h.access, platform.RoleComboBox, "Font"); n.Value != "Courier" || font != "Courier" {
 		t.Errorf("after the focus left, it shows %q, chose %q", n.Value, font)
 	}
 }
 
 func TestComboboxAccessibility(t *testing.T) {
 	font := "Arial"
-	tt := NewTester(func(c *Context) {
-		Combobox(c, &font, fonts).Label("Font").Width(200)
+	tt := coreNewTester(func(c *context) {
+		coreCombobox(c, &font, fonts).Label("Font").Width(200)
 	}, 400, 400)
 	tt.send(platform.SurfaceEvent{Kind: platform.AccessibilityOn})
 	tt.Click("Font")
 	tt.Key(0, KeyDown) // the first
 	tt.Key(0, KeyDown)
 	tree := tt.h.access
-	cb := node(t, tree, platform.RoleComboBox, "Font")
+	cb := accessNode(t, tree, platform.RoleComboBox, "Font")
 	if cb.States&platform.AccessExpanded == 0 || cb.Value != "Arial" {
 		t.Errorf("the combobox: %+v", cb)
 	}
-	list := node(t, tree, platform.RoleList, "")
+	list := accessNode(t, tree, platform.RoleList, "")
 	if list.States&platform.AccessSelectable == 0 {
 		t.Errorf("the popup: %+v", list)
 	}
@@ -93,8 +138,8 @@ func TestComboboxAccessibility(t *testing.T) {
 func TestAutocomplete(t *testing.T) {
 	city, submitted := "", 0
 	cities := []string{"Paris", "Parma", "Lyon", "Comparis"}
-	tt := NewTester(func(c *Context) {
-		if Autocomplete(c, &city, cities).Label("City").Width(200).Submitted() {
+	tt := coreNewTester(func(c *context) {
+		if coreAutocomplete(c, &city, cities).Label("City").Width(200).Submitted() {
 			submitted++
 		}
 	}, 400, 400)
@@ -121,9 +166,9 @@ func TestAutocomplete(t *testing.T) {
 
 func TestSearchField(t *testing.T) {
 	query, changes, dialog := "", 0, true
-	tt := NewTester(func(c *Context) {
-		Modal(c, &dialog, func() {
-			if SearchField(c, &query).Label("Search mail").Width(240).AutoFocus().Changed() {
+	tt := coreNewTester(func(c *context) {
+		coreModal(c, &dialog, func() {
+			if coreSearchField(c, &query).Label("Search mail").Width(240).AutoFocus().Changed() {
 				changes++
 			}
 		})
@@ -155,7 +200,7 @@ func TestSearchField(t *testing.T) {
 	tt.send(platform.SurfaceEvent{Kind: platform.AccessibilityOn})
 	dialog = true
 	tt.Frame()
-	n := node(t, tt.h.access, platform.RoleTextField, "Search mail")
+	n := accessNode(t, tt.h.access, platform.RoleTextField, "Search mail")
 	if n.States&platform.AccessSearch == 0 {
 		t.Errorf("the search field reads %+v", n)
 	}
@@ -164,8 +209,8 @@ func TestSearchField(t *testing.T) {
 func TestTokenField(t *testing.T) {
 	tags := []string{"go"}
 	langs := []string{"typescript", "python", "rust"}
-	tt := NewTester(func(c *Context) {
-		TokenField(c, &tags, langs).Label("Tags").Width(360)
+	tt := coreNewTester(func(c *context) {
+		coreTokenField(c, &tags, langs).Label("Tags").Width(360)
 	}, 500, 400)
 	tt.Click("Tags")
 	tt.Type("zig,")

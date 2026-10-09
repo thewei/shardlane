@@ -1,14 +1,17 @@
 package mygo
 
 import (
+	"bytes"
 	"crypto/rand"
 	"errors"
+	"image/png"
 	"math"
 	"runtime"
 	"sync"
 
 	"github.com/egoist/mygo/internal/accelerator"
 	"github.com/egoist/mygo/internal/platform"
+	"github.com/egoist/mygo/transfer"
 )
 
 var errLoopStopped = errors.New("mygo: the event loop has stopped")
@@ -59,50 +62,57 @@ var Clipboard ClipboardModule
 // ReadText returns the plain text on the clipboard.
 func (ClipboardModule) ReadText() string {
 	needsApp("Clipboard.ReadText")
-	return onMainValue(func() string { return backend().Clipboard().ReadText() })
+	return clipboardNativeValue(func() string { return backend().Clipboard().ReadText() })
 }
 
 // WriteText puts plain text on the clipboard.
-func (ClipboardModule) WriteText(text string) {
+func (c ClipboardModule) WriteText(text string) {
 	needsApp("Clipboard.WriteText")
-	onMain(func() { backend().Clipboard().WriteText(text) })
+	_ = c.Write(transfer.TextData(text))
 }
 
 // ReadHTML returns the HTML on the clipboard.
 func (ClipboardModule) ReadHTML() string {
 	needsApp("Clipboard.ReadHTML")
-	return onMainValue(func() string { return backend().Clipboard().ReadHTML() })
+	return clipboardNativeValue(func() string { return backend().Clipboard().ReadHTML() })
 }
 
 // WriteHTML puts HTML on the clipboard.
-func (ClipboardModule) WriteHTML(markup string) {
+func (c ClipboardModule) WriteHTML(markup string) {
 	needsApp("Clipboard.WriteHTML")
-	onMain(func() { backend().Clipboard().WriteHTML(markup) })
+	_ = c.Write(transfer.New(transfer.NewItem(transfer.Bytes(transfer.HTML, []byte(markup)), transfer.Bytes(transfer.Text, []byte(markup)))))
 }
 
 // ReadImage returns the image on the clipboard as PNG, or nil.
 func (ClipboardModule) ReadImage() []byte {
 	needsApp("Clipboard.ReadImage")
-	return onMainValue(func() []byte { return backend().Clipboard().ReadImage() })
+	return clipboardNativeValue(func() []byte { return backend().Clipboard().ReadImage() })
 }
 
 // WriteImage puts a PNG image on the clipboard.
-func (ClipboardModule) WriteImage(png []byte) error {
+func (c ClipboardModule) WriteImage(data []byte) error {
 	needsApp("Clipboard.WriteImage")
-	return onMainValue(func() error { return backend().Clipboard().WriteImage(png) })
+	if _, err := png.Decode(bytes.NewReader(data)); err != nil {
+		return err
+	}
+	return c.Write(transfer.New(transfer.NewItem(transfer.Bytes(transfer.PNG, data))))
 }
 
 // Clear empties the clipboard.
 func (ClipboardModule) Clear() {
 	needsApp("Clipboard.Clear")
-	onMain(func() { backend().Clipboard().Clear() })
+	onMain(func() {
+		if !clipboardProviding && !clipboardStopped {
+			withClipboardOperation(func() { backend().Clipboard().Clear() })
+		}
+	})
 }
 
 // AvailableFormats lists the formats (MIME types or platform types) on the
 // clipboard.
 func (ClipboardModule) AvailableFormats() []string {
 	needsApp("Clipboard.AvailableFormats")
-	return onMainValue(func() []string { return backend().Clipboard().AvailableFormats() })
+	return clipboardNativeValue(func() []string { return backend().Clipboard().AvailableFormats() })
 }
 
 // Display describes a monitor.

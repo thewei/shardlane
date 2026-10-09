@@ -29,8 +29,9 @@ git diff --check
 git diff --cached --check
 ```
 
-- `go.mod` pins Go 1.27.1 and MyGo v0.2.15; use `GOTOOLCHAIN=auto` so the repository pin does not require changing the user's global Go installation.
-- `go.mod` carries a temporary, user-approved `replace github.com/egoist/mygo => ./third_party/mygo` (F146/F147 `Options.LocalDragSelect` patch vendored in-repo). Do not remove the replace or add a second framework source; bump the pin and delete `third_party/mygo` only once upstream ships the option.
+- `go.mod` pins Go 1.27.1 and MyGo v0.3.4 (checked elements: constructors return `ui.Element` values, persistent identity lives in `ui.Handle`); use `GOTOOLCHAIN=auto` so the repository pin does not require changing the user's global Go installation.
+- `go.mod` carries a temporary, user-approved `replace github.com/egoist/mygo => ./third_party/mygo` (v0.3.4 plus two vendored deltas: F146/F147 terminal `Options.LocalDragSelect` and WIX-021 field focus delegation — `AutoFocus` on a SearchField/Combobox reaches its inner input). Do not remove the replace or add a second framework source; bump the pin and delete `third_party/mygo` only once upstream ships both. See `third_party/mygo/LOCAL-PATCH.md`.
+- `GOTOOLCHAIN=auto go tool mygo vet .` (ordinary vet + type-aware element/Context checks) belongs in the check set beside `go test`.
 - When packaging changes, also build and structurally verify `Shardlane.app`.
 
 ## Scope and ownership

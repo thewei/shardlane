@@ -5,7 +5,8 @@
 // Windows backend (no cgo). Every op of a scene is an instanced quad drawn
 // by one shader (shader.hlsl, compiled ahead of time into shaders.go);
 // clips are scissor rectangles, with the innermost rounded clip computed
-// in the shader.
+// in the shader. The swap chain is the window's, opaque, or with
+// NewComposed shown on it through DirectComposition, with its alpha.
 package d3d11
 
 //go:generate go run gen.go
@@ -32,6 +33,8 @@ var (
 	procInvalidateRect = user32.NewProc("InvalidateRect")
 )
 
+var procDCompositionCreateDevice = syscall.NewLazyDLL(device.SystemDir() + `\dcomp.dll`).NewProc("DCompositionCreateDevice")
+
 type guid struct {
 	Data1 uint32
 	Data2 uint16
@@ -46,6 +49,8 @@ var (
 	iidIDXGISwapChain2 = guid{0xa8be2ac4, 0x199f, 0x4946, [8]byte{0xb3, 0x31, 0x79, 0x59, 0x9f, 0xb9, 0x8d, 0xe7}}
 	iidID3D11Texture2D = guid{0x6f15aaf2, 0xd208, 0x4e89, [8]byte{0x9a, 0xb4, 0x48, 0x95, 0x35, 0xd3, 0x4f, 0x9c}}
 )
+
+var iidIDCompositionDevice = guid{0xc37ea93a, 0xe7aa, 0x450d, [8]byte{0xb1, 0x6f, 0x97, 0x46, 0xcb, 0x04, 0x07, 0xf3}}
 
 // Vtable indices, from the Windows SDK headers.
 const (
@@ -92,10 +97,18 @@ const (
 	dxgiGetParent              = 6
 	factoryMakeWindowAssoc     = 8
 	factoryCreateSwapChainHwnd = 15
+	factoryCreateSwapChainComp = 24 // CreateSwapChainForComposition
 	scPresent                  = 8
 	scGetBuffer                = 9
 	scResizeBuffers            = 13
 	scSetSourceSize            = 29 // IDXGISwapChain2
+
+	// IDCompositionDevice, IDCompositionTarget and IDCompositionVisual
+	dcompCommit           = 3
+	dcompCreateTarget     = 6 // CreateTargetForHwnd
+	dcompCreateVisual     = 7
+	dcompTargetSetRoot    = 3
+	dcompVisualSetContent = 15 // the overload taking an IUnknown
 )
 
 const (
@@ -239,6 +252,12 @@ type Renderer struct {
 	w, h      int  // the size drawn, which the swap chain shows
 	warp      bool // the device is WARP, Windows' software rasterizer
 
+	// composed tells that the swap chain shows on the window through
+	// DirectComposition, with its alpha, as the content of visual, the
+	// root of dcomp's target for the window.
+	composed              bool
+	dcomp, target, visual uintptr
+
 	// swapChain2 is the swap chain's IDXGISwapChain2 (Windows 8.1), bw×bh
 	// the size of its buffers, larger than w×h while resizing, and
 	// resizedAt when the window last changed size.
@@ -271,12 +290,21 @@ type Renderer struct {
 }
 
 // New creates a renderer drawing into the window hwnd, on the GPU or, when
-// there is none, with Windows' software rasterizer (WARP).
-func New(hwnd uintptr) (*Renderer, error) {
+// there is none, with Windows' software rasterizer (WARP). Its frames are
+// opaque: what they leave transparent shows black.
+func New(hwnd uintptr) (*Renderer, error) { return newRenderer(hwnd, false) }
+
+// NewComposed creates a renderer whose frames show on the window hwnd
+// through DirectComposition, premultiplied by their alpha, over what is
+// behind the window's content: in a window without a redirection bitmap
+// (WS_EX_NOREDIRECTIONBITMAP), its system backdrop, as Mica.
+func NewComposed(hwnd uintptr) (*Renderer, error) { return newRenderer(hwnd, true) }
+
+func newRenderer(hwnd uintptr, composed bool) (*Renderer, error) {
 	if hwnd == 0 {
 		return nil, errors.New("d3d11: no window")
 	}
-	r := &Renderer{hwnd: hwnd, images: map[uint64]*texture{}}
+	r := &Renderer{hwnd: hwnd, composed: composed, images: map[uint64]*texture{}}
 	var err error
 	if r.device, r.ctx, r.warp, err = device.New(); err != nil {
 		return nil, err
@@ -376,7 +404,10 @@ func (r *Renderer) init() error {
 // of them (SetSourceSize): they are resized only when the window outgrows
 // them, and a frame is free to draw while DWM holds two. A frame
 // settleDelay after the last change, which the settle timer asks for,
-// gives the swap chain two buffers of the window's size again.
+// gives the swap chain two buffers of the window's size again. A swap chain
+// for composition stretches the size it shows over its buffers' instead,
+// which would magnify the frames: it shows its buffers whole, and the
+// window clips what is beyond the frame, which the frame leaves transparent.
 const (
 	resizeBuffers = 3
 	settleTimer   = 0x6d79 // the timer's ID on the window
@@ -399,8 +430,8 @@ func (r *Renderer) resize(w, h int) error {
 	r.resizedAt = time.Now()
 	r.armSettle()
 	if r.resizing && w <= r.bw && h <= r.bh {
-		if hr := call(r.swapChain2, scSetSourceSize, uintptr(w), uintptr(h)); failed(hr) {
-			return fmt.Errorf("d3d11: cannot set the swap chain's source size: %#x", uint32(hr))
+		if err := r.setSourceSize(w, h); err != nil {
+			return err
 		}
 		r.w, r.h = w, h
 		return nil
@@ -416,19 +447,23 @@ func (r *Renderer) buffers(w, h, bw, bh, n int) error {
 	if r.swapChain == 0 {
 		desc := swapChainDesc1{Width: uint32(bw), Height: uint32(bh), Format: formatB8G8R8A8Unorm, SampleCount: 1,
 			BufferUsage: 0x20, BufferCount: uint32(n), Scaling: 0, SwapEffect: 4 /* flip discard */}
-		if hr := call(r.factory, factoryCreateSwapChainHwnd, r.device, r.hwnd, uintptr(unsafe.Pointer(&desc)), 0, 0, uintptr(unsafe.Pointer(&r.swapChain))); failed(hr) {
-			return fmt.Errorf("d3d11: cannot create the swap chain: %#x", uint32(hr))
+		if r.composed {
+			if err := r.composeSwapChain(desc); err != nil {
+				return err
+			}
+		} else {
+			if hr := call(r.factory, factoryCreateSwapChainHwnd, r.device, r.hwnd, uintptr(unsafe.Pointer(&desc)), 0, 0, uintptr(unsafe.Pointer(&r.swapChain))); failed(hr) {
+				return fmt.Errorf("d3d11: cannot create the swap chain: %#x", uint32(hr))
+			}
+			const noAltEnter = 2
+			call(r.factory, factoryMakeWindowAssoc, r.hwnd, noAltEnter)
 		}
-		const noAltEnter = 2
-		call(r.factory, factoryMakeWindowAssoc, r.hwnd, noAltEnter)
 		call(r.swapChain, 0, uintptr(unsafe.Pointer(&iidIDXGISwapChain2)), uintptr(unsafe.Pointer(&r.swapChain2)))
 	} else if hr := call(r.swapChain, scResizeBuffers, uintptr(n), uintptr(bw), uintptr(bh), 0, 0); failed(hr) {
 		return fmt.Errorf("d3d11: cannot resize the swap chain: %#x", uint32(hr))
 	}
-	if r.swapChain2 != 0 {
-		if hr := call(r.swapChain2, scSetSourceSize, uintptr(w), uintptr(h)); failed(hr) {
-			return fmt.Errorf("d3d11: cannot set the swap chain's source size: %#x", uint32(hr))
-		}
+	if err := r.setSourceSize(w, h); err != nil {
+		return err
 	}
 	r.bw, r.bh = bw, bh
 	var back uintptr
@@ -442,6 +477,64 @@ func (r *Renderer) buffers(w, h, bw, bh, n int) error {
 	r.w, r.h = w, h
 	return nil
 }
+
+// setSourceSize makes the swap chain show the w×h pixels at the top left
+// of its buffers, unless it is for composition, which shows them whole.
+func (r *Renderer) setSourceSize(w, h int) error {
+	if r.swapChain2 == 0 || r.composed {
+		return nil
+	}
+	if hr := call(r.swapChain2, scSetSourceSize, uintptr(w), uintptr(h)); failed(hr) {
+		return fmt.Errorf("d3d11: cannot set the swap chain's source size: %#x", uint32(hr))
+	}
+	return nil
+}
+
+// composeSwapChain creates a swap chain for DirectComposition, whose
+// pixels are premultiplied by their alpha, and shows it on the window: the
+// content of the visual at the root of a target for the window, on a
+// DirectComposition device of the renderer's own. The swap chain's frames
+// show as it presents them, with no commit.
+func (r *Renderer) composeSwapChain(desc swapChainDesc1) error {
+	if err := procDCompositionCreateDevice.Find(); err != nil {
+		return fmt.Errorf("d3d11: no DirectComposition: %w", err)
+	}
+	var dxgiDev uintptr
+	if failed(call(r.device, 0, uintptr(unsafe.Pointer(&iidIDXGIDevice)), uintptr(unsafe.Pointer(&dxgiDev)))) {
+		return errors.New("d3d11: no DXGI device")
+	}
+	hr, _, _ := procDCompositionCreateDevice.Call(dxgiDev, uintptr(unsafe.Pointer(&iidIDCompositionDevice)), uintptr(unsafe.Pointer(&r.dcomp)))
+	free(&dxgiDev)
+	if failed(hr) {
+		return fmt.Errorf("d3d11: cannot create the DirectComposition device: %#x", uint32(hr))
+	}
+	// A swap chain for composition flips in sequence and stretches, the
+	// only ways it takes.
+	desc.SwapEffect, desc.AlphaMode = 3 /* flip sequential */, 1 /* premultiplied */
+	if hr := call(r.factory, factoryCreateSwapChainComp, r.device, uintptr(unsafe.Pointer(&desc)), 0, uintptr(unsafe.Pointer(&r.swapChain))); failed(hr) {
+		return fmt.Errorf("d3d11: cannot create the swap chain for composition: %#x", uint32(hr))
+	}
+	if hr := call(r.dcomp, dcompCreateTarget, r.hwnd, 1, uintptr(unsafe.Pointer(&r.target))); failed(hr) {
+		return fmt.Errorf("d3d11: cannot compose the window: %#x", uint32(hr))
+	}
+	if hr := call(r.dcomp, dcompCreateVisual, uintptr(unsafe.Pointer(&r.visual))); failed(hr) {
+		return fmt.Errorf("d3d11: cannot create the visual: %#x", uint32(hr))
+	}
+	if hr := call(r.visual, dcompVisualSetContent, r.swapChain); failed(hr) {
+		return fmt.Errorf("d3d11: cannot show the swap chain in the visual: %#x", uint32(hr))
+	}
+	if hr := call(r.target, dcompTargetSetRoot, r.visual); failed(hr) {
+		return fmt.Errorf("d3d11: cannot show the visual on the window: %#x", uint32(hr))
+	}
+	if hr := call(r.dcomp, dcompCommit); failed(hr) {
+		return fmt.Errorf("d3d11: cannot commit the composition: %#x", uint32(hr))
+	}
+	return nil
+}
+
+// Composed reports whether the frames show through DirectComposition, with
+// their alpha (NewComposed).
+func (r *Renderer) Composed() bool { return r.composed }
 
 // Software reports whether the renderer draws with WARP, on the CPU, for
 // want of a GPU.
@@ -498,7 +591,9 @@ func (r *Renderer) Release() {
 		free(&t.srv)
 		free(&t.tex)
 	}
-	for _, p := range []*uintptr{&r.rtv, &r.swapChain2, &r.swapChain, &r.instBuf, &r.cbuf, &r.passCB, &r.samp, &r.raster, &r.blend, &r.layout,
+	// The target goes first: a window has one at most, which another
+	// renderer of it then makes.
+	for _, p := range []*uintptr{&r.visual, &r.target, &r.dcomp, &r.rtv, &r.swapChain2, &r.swapChain, &r.instBuf, &r.cbuf, &r.passCB, &r.samp, &r.raster, &r.blend, &r.layout,
 		&r.blurPS, &r.downPS, &r.passVS, &r.ps, &r.vs, &r.factory, &r.ctx, &r.device} {
 		free(p)
 	}

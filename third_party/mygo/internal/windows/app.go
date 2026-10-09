@@ -113,6 +113,8 @@ func (b *Backend) Init(h platform.AppHandler, opts platform.AppOptions) error {
 	}
 	b.taskbarCreated = registerWindowMessage("TaskbarCreated")
 	b.taskbarButtonCreated = registerWindowMessage("TaskbarButtonCreated")
+	// Clipboard and drag/drop share startup-created OLE callback tables.
+	dropOnce.Do(initDropTarget)
 	return nil
 }
 

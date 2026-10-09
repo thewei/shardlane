@@ -17,10 +17,12 @@ if ui.TextInput(c, &app.name).AutoFocus().Submitted() {
 ui.TextArea(c, &app.notes).Height(160)
 ```
 
-- `Placeholder` shows a text while the input is empty.
+- `Placeholder` shows a text while the input is empty, on one line in a
+  `TextInput`, wrapped in a text area.
 - `Password` hides what it holds, and keeps it from the clipboard and input
-  methods. Only a `TextInput` takes it: as on every platform, a text area has
-  no password mode.
+  methods, in the frames that call it: an eye button that shows the text
+  stops calling it. Only a `TextInput` takes it: as on every platform, a text
+  area has no password mode.
 - `AutoFocus` gives it the keyboard focus as it appears, as the first field
   of a dialog.
 - `ReadOnly(true)` shows the text without letting the user change it: it
@@ -28,9 +30,31 @@ ui.TextArea(c, &app.notes).Height(160)
   copied.
 - `Disabled(true)` grays it out.
 
+A `TextInput` too narrow for its text keeps the caret in view while it has
+the focus, and shows the start of its text without it.
+
+`TextRanges` colors runs of the text, and sets their weight, in the frames
+that call it, as a message field shows the mentions in what is typed:
+
+```go
+in := ui.TextAreaBase(c, &app.draft).Lines(1, 8)
+for _, m := range mentions(app.draft) {
+	in.TextRanges(ui.TextRange{Start: m.start, End: m.end, Color: m.color, Weight: 600})
+}
+```
+
+The ranges are runes of the text, found in it each frame, and do not
+overlap; a password shows none.
+
 A text area is at least a few lines high and grows with its text; given a
 height, it scrolls within it, with the wheel and a scroll bar, and keeps
-the caret in view as it moves. It lays out only the paragraphs in view and
+the caret in view as it moves. `Lines(min, max)` makes it as high as its
+text wraps at its width, from `min` lines up to `max`, past which it
+scrolls, as a message field grows with what is typed:
+
+```go
+ui.TextArea(c, &app.draft).Lines(1, 8)
+``` It lays out only the paragraphs in view and
 keeps their layouts until they change, so that it holds texts of hundreds
 of thousands of lines, as a log or a source file, and stays as quick to
 type in.
@@ -51,6 +75,20 @@ in the string.
 
 The input keeps the text being edited, its selection and its undo history
 from frame to frame; setting the string from elsewhere replaces the text.
+
+## The caret
+
+`TextSelection` returns the selection as offsets in runes into the text,
+the caret where they are equal, and `SetTextSelection` moves it, as an app
+completing the word being typed puts the caret after it:
+
+```go
+input := ui.TextArea(c, &app.draft)
+if start, _ := input.TextSelection(); app.completed != "" {
+	app.draft, start = complete(app.draft, start, app.completed)
+	input.SetTextSelection(start, start)
+}
+```
 
 ## Errors
 

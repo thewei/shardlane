@@ -134,10 +134,11 @@ type WindowOptions struct {
 	// page that follows the light or dark appearance.
 	BackgroundColor string
 	// Vibrancy puts a translucent, blurred material behind a transparent
-	// page (macOS and Windows 11 22H2), e.g. VibrancySidebar, or behind
-	// native UI where it draws no background (macOS). On Windows, only a
-	// window created with a material can show one, and it has no menu bar:
-	// Alt and F10 open its menus in a popup.
+	// page, or behind native UI where it draws no background (macOS and
+	// Windows 11 22H2), e.g. VibrancySidebar; ui.Context.Vibrancy tells
+	// native UI whether it shows. On Windows, only a window created with a
+	// material can show one, and it has no menu bar: Alt and F10 open its
+	// menus in a popup.
 	Vibrancy Vibrancy
 	// Opacity of the window between 0 and 1 (default 1).
 	Opacity float64
@@ -822,6 +823,8 @@ func (w *Window) SetContentProtection(v bool) {
 // shows none in other windows. See WindowOptions.Vibrancy.
 func (w *Window) SetVibrancy(v Vibrancy) {
 	w.do(func(n platform.Window) { n.SetVibrancy(string(v)) })
+	// Native UI looks again whether the material shows.
+	w.Invalidate()
 }
 
 // ProgressState is the state of a progress bar; see ProgressBar.
@@ -1456,6 +1459,7 @@ func (h *windowHandler) Closed() {
 	if w.native == nil {
 		return
 	}
+	w.cancelDataDrag()
 	w.detachContent()
 	w.native = nil
 	w.destroyed.Store(true)
@@ -1516,6 +1520,12 @@ func (h *windowHandler) Blurred() {
 	fire(&h.w.onBlur)
 }
 
+func (h *windowHandler) MenuItemClicked(id int) {
+	if h.w.native != nil {
+		menuItemClicked(id, h.w)
+	}
+}
+
 func (h *windowHandler) Resized()           { h.w.stateChanged(); fire(&h.w.onResize) }
 func (h *windowHandler) Moved()             { h.w.stateChanged(); fire(&h.w.onMove) }
 func (h *windowHandler) Minimized()         { h.w.stateChanged(); fire(&h.w.onMinimize) }
@@ -1536,7 +1546,7 @@ func (h *windowHandler) TitleBarChanged() {
 // start; this keeps the current page, and later ones, up to date. Main
 // thread only.
 func (w *Window) sendTitleBar() {
-	if !w.hiddenTitleBar || w.native == nil {
+	if w.content != nil || !w.hiddenTitleBar || w.native == nil {
 		return
 	}
 	if msg, err := encodeEvent(bridge.TitleBarEvent, bridge.NewTitleBar(w.native.TitleBar(), w.native.Zoom())); err == nil {

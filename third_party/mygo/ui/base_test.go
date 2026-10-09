@@ -15,29 +15,29 @@ func TestBasesHaveNoLook(t *testing.T) {
 	var value = 50.0
 	var size, text = "M", "hello"
 	open := true
-	tt := NewTester(func(c *Context) {
+	tt := coreNewTester(func(c *context) {
 		th := *c.Theme()
 		th.Background = RGB(255, 255, 255)
 		c.SetTheme(&th)
-		Column(c).Fill().Padding(10).Gap(10).AlignItems(Start).Children(func() {
-			ButtonBase(c).Size(60, 20)
-			CheckboxBase(c, &check).Size(60, 20)
-			SwitchBase(c, &on).Size(60, 20)
-			RadioBase(c, &radio, 1).Size(60, 20)
-			SliderBase(c, &value, 0, 100).Size(60, 20)
-			tabs := TabsBase(c, &tab, 2)
+		coreColumn(c).Fill().Padding(10).Gap(10).AlignItems(Start).Children(func() {
+			coreButtonBase(c).Size(60, 20)
+			coreCheckboxBase(c, &check).Size(60, 20)
+			coreSwitchBase(c, &on).Size(60, 20)
+			coreRadioBase(c, &radio, 1).Size(60, 20)
+			coreSliderBase(c, &value, 0, 100).Size(60, 20)
+			tabs := coreTabsBase(c, &tab, 2)
 			tabs.List.Children(func() {
 				tabs.Tab(0).Size(30, 20)
 				tabs.Tab(1).Size(30, 20)
 			})
-			sel := SelectBase(c, &size)
+			sel := coreSelectBase(c, &size)
 			sel.Trigger.Size(60, 20)
-			sel.Popup(func(panel *Element) {
+			sel.Popup(func(panel *node) {
 				sel.Item("S").Size(60, 20)
 				sel.Item("M").Size(60, 20)
 			})
-			TextInputBase(c, &text).Width(60).TextColor(RGB(255, 255, 255))
-			PopoverBase(c, sel.Trigger, &open, func(panel *Element) { Box(c).Size(30, 30) })
+			coreTextInputBase(c, &text).Width(60).TextColor(RGB(255, 255, 255))
+			corePopoverBase(c, sel.Trigger, &open, func(panel *node) { coreBox(c).Size(30, 30) })
 		})
 	}, 300, 400)
 	img := tt.Image()
@@ -55,14 +55,14 @@ func TestToggleBases(t *testing.T) {
 	var check, on bool
 	radio := "a"
 	var changed []string
-	tt := NewTester(func(c *Context) {
-		Column(c).AlignItems(Start).Children(func() {
-			if CheckboxBase(c, &check).Size(20, 20).Label("check").Changed() {
+	tt := coreNewTester(func(c *context) {
+		coreColumn(c).AlignItems(Start).Children(func() {
+			if coreCheckboxBase(c, &check).Size(20, 20).Label("check").Changed() {
 				changed = append(changed, "check")
 			}
-			SwitchBase(c, &on).Size(20, 20).Label("switch")
-			RadioBase(c, &radio, "a").Size(20, 20).Label("a")
-			if RadioBase(c, &radio, "b").Size(20, 20).Label("b").Changed() {
+			coreSwitchBase(c, &on).Size(20, 20).Label("switch")
+			coreRadioBase(c, &radio, "a").Size(20, 20).Label("a")
+			if coreRadioBase(c, &radio, "b").Size(20, 20).Label("b").Changed() {
 				changed = append(changed, "b")
 			}
 		})
@@ -87,7 +87,7 @@ func TestToggleBases(t *testing.T) {
 	}
 	tt.send(platform.SurfaceEvent{Kind: platform.AccessibilityOn})
 	for label, role := range map[string]platform.AccessRole{"check": platform.RoleCheckBox, "switch": platform.RoleSwitch, "b": platform.RoleRadio} {
-		n := node(t, tt.h.access, role, label)
+		n := accessNode(t, tt.h.access, role, label)
 		on := n.States&platform.AccessChecked != 0
 		if want := label != "check"; on != want {
 			t.Errorf("%s is checked %v to assistive technology, want %v", label, on, want)
@@ -97,9 +97,9 @@ func TestToggleBases(t *testing.T) {
 
 func TestSliderBaseMapsItsContentBox(t *testing.T) {
 	value := 0.0
-	tt := NewTester(func(c *Context) {
-		Column(c).AlignItems(Start).Padding(10).Children(func() {
-			SliderBase(c, &value, 0, 100).Size(120, 20).PaddingX(10).Label("volume")
+	tt := coreNewTester(func(c *context) {
+		coreColumn(c).AlignItems(Start).Padding(10).Children(func() {
+			coreSliderBase(c, &value, 0, 100).Size(120, 20).PaddingX(10).Label("volume")
 		})
 	}, 200, 100)
 	r, _ := tt.Find("volume")
@@ -127,11 +127,11 @@ func TestSliderBaseMapsItsContentBox(t *testing.T) {
 
 func TestTabsBase(t *testing.T) {
 	tab, changes := 0, 0
-	tt := NewTester(func(c *Context) {
-		tabs := TabsBase(c, &tab, 3)
+	tt := coreNewTester(func(c *context) {
+		tabs := coreTabsBase(c, &tab, 3)
 		tabs.List.Children(func() {
 			for i, name := range []string{"One", "Two", "Three"} {
-				tabs.Tab(i).Padding(4).Children(func() { Text(c, name) })
+				tabs.Tab(i).Padding(4).Children(func() { coreText(c, name) })
 			}
 		})
 		if tabs.List.Changed() {
@@ -156,18 +156,18 @@ func TestSelectBase(t *testing.T) {
 	size := "M"
 	sizes := []string{"S", "M", "L", "XL"}
 	highlighted := map[string]bool{}
-	tt := NewTester(func(c *Context) {
-		sel := SelectBase(c, &size)
-		sel.Trigger.Label("size").Padding(4).Children(func() { Text(c, "Size: "+size) })
+	tt := coreNewTester(func(c *context) {
+		sel := coreSelectBase(c, &size)
+		sel.Trigger.Label("size").Padding(4).Children(func() { coreText(c, "Size: "+size) })
 		clear(highlighted)
-		sel.Popup(func(panel *Element) {
+		sel.Popup(func(panel *node) {
 			panel.Label("popup")
 			for _, s := range sizes {
 				item := sel.Item(s).Padding(4).Label("item " + s)
 				if item.Highlighted() {
 					highlighted[s] = true
 				}
-				item.Children(func() { Text(c, s) })
+				item.Children(func() { coreText(c, s) })
 			}
 		})
 	}, 300, 300)
@@ -218,16 +218,16 @@ func TestSelectBase(t *testing.T) {
 
 func TestDialogAndPopoverBases(t *testing.T) {
 	dialog, popover := true, false
-	var back *Element
-	tt := NewTester(func(c *Context) {
-		b := ButtonBase(c).Size(40, 20).Label("anchor")
+	var back *node
+	tt := coreNewTester(func(c *context) {
+		b := coreButtonBase(c).Size(40, 20).Label("anchor")
 		if b.Clicked() {
 			popover = true
 		}
-		PopoverBase(c, b, &popover, func(panel *Element) {
+		corePopoverBase(c, b, &popover, func(panel *node) {
 			panel.Label("popover").Size(50, 50)
 		})
-		DialogBase(c, &dialog, func(backdrop, panel *Element) {
+		coreDialogBase(c, &dialog, func(backdrop, panel *node) {
 			back = backdrop
 			backdrop.Background(RGBA(0, 0, 0, 0.5))
 			panel.Label("dialog").Size(100, 60)
@@ -257,9 +257,9 @@ func TestDialogAndPopoverBases(t *testing.T) {
 
 func TestTextInputBase(t *testing.T) {
 	text := ""
-	var in *Element
-	tt := NewTester(func(c *Context) {
-		in = TextInputBase(c, &text).Width(100).Label("name").AutoFocus()
+	var in *node
+	tt := coreNewTester(func(c *context) {
+		in = coreTextInputBase(c, &text).Width(100).Label("name").AutoFocus()
 	}, 200, 100)
 	tt.Type("Ada")
 	if text != "Ada" {
@@ -272,12 +272,12 @@ func TestTextInputBase(t *testing.T) {
 
 func TestFocusRing(t *testing.T) {
 	ringed := func(show bool) bool {
-		tt := NewTester(func(c *Context) {
+		tt := coreNewTester(func(c *context) {
 			th := *c.Theme()
 			th.Background = RGB(255, 255, 255)
 			c.SetTheme(&th)
-			Column(c).Padding(20).AlignItems(Start).Children(func() {
-				ButtonBase(c).Size(40, 20).Label("b").FocusRing(show)
+			coreColumn(c).Padding(20).AlignItems(Start).Children(func() {
+				coreButtonBase(c).Size(40, 20).Label("b").FocusRing(show)
 			})
 		}, 100, 60)
 		tt.Key(0, KeyTab)
@@ -304,13 +304,13 @@ func TestPopupsOpenWhereTheyFit(t *testing.T) {
 	}{{"bottom right", End, End}, {"top left", Start, Start}} {
 		open := false
 		var first *Rect
-		tt := NewTester(func(c *Context) {
-			Column(c).Fill().Padding(10).Justify(tc.justify).AlignItems(tc.align).Children(func() {
-				b := ButtonBase(c).Size(80, 24).Label("anchor")
+		tt := coreNewTester(func(c *context) {
+			coreColumn(c).Fill().Padding(10).Justify(tc.justify).AlignItems(tc.align).Children(func() {
+				b := coreButtonBase(c).Size(80, 24).Label("anchor")
 				if b.Clicked() {
 					open = true
 				}
-				PopoverBase(c, b, &open, func(panel *Element) {
+				corePopoverBase(c, b, &open, func(panel *node) {
 					panel.Size(160, 120).Margin(4, 0, 0, 0).Draw(func(p *Painter, r Rect) {
 						if first == nil {
 							first = &r
@@ -339,15 +339,15 @@ func TestPopupsOpenWhereTheyFit(t *testing.T) {
 
 func TestEnterWithWindowShortcut(t *testing.T) {
 	window, button, checked := 0, 0, false
-	tt := NewTester(func(c *Context) {
+	tt := coreNewTester(func(c *context) {
 		if c.Shortcut(0, KeyEnter) {
 			window++
 		}
-		Column(c).Children(func() {
-			if Button(c, "Other").Clicked() {
+		coreColumn(c).Children(func() {
+			if coreButton(c, "Other").Clicked() {
 				button++
 			}
-			Checkbox(c, &checked, "Agree")
+			coreCheckbox(c, &checked, "Agree")
 		})
 	}, 300, 200)
 	tt.Key(0, KeyEnter)

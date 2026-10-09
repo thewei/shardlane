@@ -65,14 +65,14 @@ const defaultDuration = 200 * time.Millisecond
 //
 // Changes made by resizing the window do not animate, and nothing does
 // while the desktop asks for less motion (Preferences.ReduceMotion).
-func (e *Element) Transition(t ElementTransition) *Element {
+func (e *node) Transition(t ElementTransition) *node {
 	e.c.transitions = append(e.c.transitions, transitionUse{e: e, t: t})
 	return e
 }
 
 // transitionUse is a call of Transition in the frame being built.
 type transitionUse struct {
-	e *Element
+	e *node
 	t ElementTransition
 	r *transition
 }
@@ -102,7 +102,7 @@ type transition struct {
 	// that laid it out: elem is its element then, and parent the ID of
 	// its parent.
 	built, laid uint64
-	elem        *Element
+	elem        *node
 	parent      uint64
 	// target is where the layout put the element in frame laid, next
 	// where it puts it in the frame being laid out, and shown where it
@@ -122,7 +122,7 @@ type transition struct {
 	colorFrame                         uint64
 	// ghost is the copy of the element going, which moves from gone,
 	// where it showed as it went; opacity is its own.
-	ghost   *Element
+	ghost   *node
 	gone    tbox
 	opacity float32
 }
@@ -210,7 +210,7 @@ func (b tbox) moved(m *Motion, axis uint8) tbox {
 }
 
 // collapseAxis returns the axis a Motion collapses a child of parent along.
-func collapseAxis(m *Motion, parent *Element) uint8 {
+func collapseAxis(m *Motion, parent *node) uint8 {
 	switch {
 	case !m.Collapse:
 		return 0
@@ -224,7 +224,7 @@ func collapseAxis(m *Motion, parent *Element) uint8 {
 // frame showed them to where the layout put them, and the copies of those
 // gone with an Exit: after the layout of a frame in a window w×h, while
 // boxes are relative to their parents.
-func (rt *engine) animateLayout(root *Element, w, h float32) {
+func (rt *engine) animateLayout(root *node, w, h float32) {
 	c := root.c
 	// Changes that resizing the window makes do not animate.
 	resized := w != rt.laidW || h != rt.laidH
@@ -324,7 +324,7 @@ func (rt *engine) animateLayout(root *Element, w, h float32) {
 // byDepth returns the transitions asked for in the order of their
 // elements' depth, those of one depth in the order asked: a counting sort,
 // into a slice the context reuses.
-func (c *Context) byDepth(uses []transitionUse) []transitionUse {
+func (c *context) byDepth(uses []transitionUse) []transitionUse {
 	deepest := 0
 	for i := range uses {
 		deepest = max(deepest, uses[i].e.depth)
@@ -352,7 +352,7 @@ func (c *Context) byDepth(uses []transitionUse) []transitionUse {
 }
 
 // apply shows e at s.
-func (r *transition) apply(e *Element, s tbox) {
+func (r *transition) apply(e *node, s tbox) {
 	if s.w != e.w || s.h != e.h {
 		if r.collapse != 0 {
 			// Collapsing: the content keeps its layout, clipped.
@@ -375,8 +375,8 @@ func (r *transition) apply(e *Element, s tbox) {
 // animateExits moves the copies of the elements gone with an Exit, under
 // their parents, and copies those that just went, from the frame before,
 // which the engine kept for them.
-func (rt *engine) animateExits(root *Element, now time.Time, still bool) {
-	var byID map[uint64]*Element
+func (rt *engine) animateExits(root *node, now time.Time, still bool) {
+	var byID map[uint64]*node
 	for id, r := range rt.trans {
 		if r.built == rt.frame {
 			continue
@@ -397,6 +397,7 @@ func (rt *engine) animateExits(root *Element, now time.Time, still bool) {
 		if r.ghost == nil {
 			e := r.elem
 			r.ghost = ghostOf(e)
+			r.elem = nil
 			r.ghost.leaving = 1
 			if e.flags&flagAbsolute != 0 {
 				r.ghost.leaving = 2
@@ -433,13 +434,13 @@ func (rt *engine) animateExits(root *Element, now time.Time, still bool) {
 
 // elementsByID returns the elements of the frame by ID, in a map the
 // engine reuses.
-func (rt *engine) elementsByID(root *Element) map[uint64]*Element {
+func (rt *engine) elementsByID(root *node) map[uint64]*node {
 	if rt.byID == nil {
-		rt.byID = map[uint64]*Element{}
+		rt.byID = map[uint64]*node{}
 	}
 	clear(rt.byID)
-	var walk func(e *Element)
-	walk = func(e *Element) {
+	var walk func(e *node)
+	walk = func(e *node) {
 		rt.byID[e.id] = e
 		for c := e.first; c != nil; c = c.next {
 			walk(c)
@@ -452,8 +453,8 @@ func (rt *engine) elementsByID(root *Element) map[uint64]*Element {
 // ghostOf copies e, an element of the frame before, and the elements inside
 // it, for its exit transition. The copy only shows: it refers to no other
 // element nor to the app's state, has states of its own, and is inert.
-func ghostOf(e *Element) *Element {
-	g := new(Element)
+func ghostOf(e *node) *node {
+	g := new(node)
 	*g = *e
 	st := *e.st
 	st.trec = nil
@@ -476,7 +477,7 @@ func ghostOf(e *Element) *Element {
 
 // animateColors moves e's background and border colors, once its styleFn
 // set them, as its Transition asks.
-func (rt *engine) animateColors(e *Element, r *transition) {
+func (rt *engine) animateColors(e *node, r *transition) {
 	if r.properties()&propColors == 0 {
 		return
 	}

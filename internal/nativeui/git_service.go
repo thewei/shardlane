@@ -52,7 +52,6 @@ type gitService struct {
 	gdRows      []gdRow
 	gdRowsDirty bool
 	gdList      ui.ListState
-	gdListEl    *ui.Element
 	gdCurrent   int
 	gdSelFile   int
 	gdSelHunk   int
@@ -289,7 +288,6 @@ func (s *Shell) resetGitContextState() {
 	s.git.gdRows = nil
 	s.git.gdRowsDirty = true
 	s.git.gdList = ui.ListState{}
-	s.git.gdListEl = nil
 	s.git.gdCurrent = 0
 	s.git.gdSelFile, s.git.gdSelHunk = -1, -1
 	s.git.gdHScroll = map[string]float32{}

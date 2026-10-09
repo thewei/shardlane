@@ -232,7 +232,6 @@ func (s *Shell) reviewCommit(hash string) {
 	s.git.gdRows = nil
 	s.git.gdRowsDirty = true
 	s.git.gdList = ui.ListState{}
-	s.git.gdListEl = nil
 	s.git.gdCurrent = 0
 	s.git.gdSelFile, s.git.gdSelHunk = -1, -1
 	s.git.gdFinding, s.git.gdQuery = false, ""
@@ -286,7 +285,6 @@ func (s *Shell) reviewLocalChanges() {
 	s.git.gdRows = nil
 	s.git.gdRowsDirty = true
 	s.git.gdList = ui.ListState{}
-	s.git.gdListEl = nil
 	s.git.gdCurrent = 0
 	s.git.gdFinding, s.git.gdQuery = false, ""
 	s.ensureGitSnapshot(true)

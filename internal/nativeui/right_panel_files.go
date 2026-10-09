@@ -119,7 +119,7 @@ func (s *Shell) renderDirectoryLevel(c *ui.Context, dir string, depth int) {
 		// size right-aligned where the changes list puts its counts.
 		paddingLeft := float32(6 + depth*TreeIndentWidth)
 
-		var row *ui.Element
+		var row ui.Element
 		ui.Box(c).Children(func() {
 			r := ui.Row(c).Height(28).FillWidth().Padding(0, 8, 0, paddingLeft).Gap(5).
 				Radius(6).MinWidth(0).AlignItems(ui.Center)

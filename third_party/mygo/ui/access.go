@@ -93,7 +93,7 @@ const (
 
 // Role sets what the element is to assistive technology, for an element
 // drawn as a widget it is not built from, such as a custom toggle.
-func (e *Element) Role(r Role) *Element {
+func (e *node) Role(r Role) *node {
 	e.role = r
 	return e
 }
@@ -105,28 +105,28 @@ func (e *Element) Role(r Role) *Element {
 // Checked tells assistive technology whether the element, as a check box,
 // switch, radio button, toggle button or menu item of your own, is on.
 // Bases set it from their value.
-func (e *Element) Checked(on bool) *Element {
+func (e *node) Checked(on bool) *node {
 	e.checked = 1 + int8(b2f(on))
 	return e
 }
 
 // Mixed tells assistive technology that the element, a check box, is
 // partly on, as one checking a group whose boxes differ.
-func (e *Element) Mixed() *Element {
+func (e *node) Mixed() *node {
 	e.checked = 3
 	return e
 }
 
 // Expanded tells assistive technology whether what the element opens
 // shows, as the popup of a button or the section below a header.
-func (e *Element) Expanded(open bool) *Element {
+func (e *node) Expanded(open bool) *node {
 	e.expanded = open
 	return e
 }
 
 // Value sets what assistive technology reads as the element's value, as
 // the choice a button opening a popup shows.
-func (e *Element) Value(s string) *Element {
+func (e *node) Value(s string) *node {
 	e.accValue = s
 	return e
 }
@@ -134,14 +134,14 @@ func (e *Element) Value(s string) *Element {
 // Range tells assistive technology the range and the value of a slider,
 // progress bar, meter or stepper of your own: value, from lo to hi. Step
 // tells it how far the keys move the value.
-func (e *Element) Range(lo, hi, value float64) *Element {
+func (e *node) Range(lo, hi, value float64) *node {
 	e.hasRange, e.accRange = true, [3]float64{lo, hi, value}
 	return e
 }
 
 // Level tells assistive technology the rank of a heading, from 1 for the
 // highest, or how deep an item of a tree is, from 1 at the top.
-func (e *Element) Level(n int) *Element {
+func (e *node) Level(n int) *node {
 	e.level = max(n, 0)
 	return e
 }
@@ -150,14 +150,14 @@ func (e *Element) Level(n int) *Element {
 // focus while the element does: the option the arrows are on in a list or
 // a menu that keeps the focus itself, as a combobox's input does. Call it
 // once d is built, inside the element or in its popup.
-func (e *Element) ActiveDescendant(d *Element) *Element {
+func (e *node) ActiveDescendant(d *node) *node {
 	e.activeDescendant = d
 	return e
 }
 
 // accessRole returns the element's role, and false for elements assistive
 // technology does not see.
-func (e *Element) accessRole() (platform.AccessRole, bool) {
+func (e *node) accessRole() (platform.AccessRole, bool) {
 	switch e.role {
 	case RoleNone:
 		return 0, false
@@ -196,10 +196,10 @@ func leafRole(r platform.AccessRole) bool {
 
 // innerText returns the texts of an element and those inside it, joined
 // by spaces.
-func (e *Element) innerText() string {
+func (e *node) innerText() string {
 	var b strings.Builder
-	var walk func(e *Element)
-	walk = func(e *Element) {
+	var walk func(e *node)
+	walk = func(e *node) {
 		if e.flags&flagInvisible != 0 {
 			return
 		}
@@ -223,7 +223,7 @@ func (e *Element) innerText() string {
 // accessTree describes the last frame for assistive technology.
 func (rt *engine) accessTree() *platform.AccessTree {
 	t := &platform.AccessTree{}
-	var focused *Element
+	var focused *node
 	switch root := rt.c.root; {
 	case root == nil:
 	case rt.modal != 0 && rt.modalLayer != 0 && rt.c.overlay != nil:
@@ -267,7 +267,7 @@ func (rt *engine) accessTree() *platform.AccessTree {
 }
 
 // listOf returns the List the element is, if any.
-func (e *Element) listOf() *listFrame {
+func (e *node) listOf() *listFrame {
 	if e == nil {
 		return nil
 	}
@@ -275,7 +275,7 @@ func (e *Element) listOf() *listFrame {
 }
 
 // rowsOfElement returns the list whose rows the element holds, if any.
-func (e *Element) rowsOfElement() *listFrame {
+func (e *node) rowsOfElement() *listFrame {
 	if e == nil {
 		return nil
 	}
@@ -285,7 +285,7 @@ func (e *Element) rowsOfElement() *listFrame {
 // accessElement adds the nodes of e and the elements inside it, below
 // node parent; scrolled is set inside a scroll container, and focused gets
 // the element with the keyboard focus.
-func (rt *engine) accessElement(t *platform.AccessTree, e *Element, parent int, scrolled bool, focused **Element) {
+func (rt *engine) accessElement(t *platform.AccessTree, e *node, parent int, scrolled bool, focused **node) {
 	if e.flags&(flagInvisible|flagInert) != 0 {
 		return
 	}
@@ -326,7 +326,7 @@ func (rt *engine) accessElement(t *platform.AccessTree, e *Element, parent int, 
 }
 
 // accessDetails fills in the name, value, states and actions of a node.
-func (rt *engine) accessDetails(e *Element, n *platform.AccessNode) {
+func (rt *engine) accessDetails(e *node, n *platform.AccessNode) {
 	disabled := e.IsDisabled()
 	if disabled {
 		n.States |= platform.AccessDisabled
@@ -441,7 +441,7 @@ func (rt *engine) accessDetails(e *Element, n *platform.AccessNode) {
 		if ed.password {
 			n.States |= platform.AccessPassword
 		} else {
-			n.Value = ed.buf.s
+			n.Value = ed.buf.string()
 			n.SelStart, n.SelEnd = ed.selection()
 		}
 	}

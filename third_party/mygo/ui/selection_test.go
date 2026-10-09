@@ -21,8 +21,8 @@ func expectChosen[K int | string](t *testing.T, sel *Selection[K], keys ...K) {
 
 func TestClickModifiers(t *testing.T) {
 	var got Modifiers = 0xff
-	tt := NewTester(func(c *Context) {
-		if b := Button(c, "Go"); b.Clicked() {
+	tt := coreNewTester(func(c *context) {
+		if b := coreButton(c, "Go"); b.Clicked() {
 			got = b.ClickModifiers()
 		}
 	}, 300, 200)
@@ -42,9 +42,9 @@ func TestClickModifiers(t *testing.T) {
 }
 
 // severalView is a list of 20 rows of which the user chooses several.
-func severalView(s *ListState, changes *int) func(c *Context) {
-	return func(c *Context) {
-		if List(c, s, 20, func(i int) { Textf(c, "Row %d", i).Height(30) }).Grow(1).Changed() {
+func severalView(s *ListState, changes *int) func(c *context) {
+	return func(c *context) {
+		if coreList(c, s, 20, func(i int) { coreTextf(c, "Row %d", i).Height(30) }).Grow(1).Changed() {
 			*changes++
 		}
 	}
@@ -54,7 +54,7 @@ func TestListChoosesSeveral(t *testing.T) {
 	var sel Selection[int]
 	s := ListState{Selection: &sel}
 	changes := 0
-	tt := NewTester(severalView(&s, &changes), 300, 400)
+	tt := coreNewTester(severalView(&s, &changes), 300, 400)
 	mac := runtime.GOOS == "darwin"
 	tt.Click("Row 2")
 	tt.ClickWith(Cmd, "Row 5")
@@ -103,7 +103,7 @@ func TestListExtendsTheChoiceWithTheKeys(t *testing.T) {
 	var sel Selection[int]
 	s := ListState{Selection: &sel}
 	changes := 0
-	tt := NewTester(severalView(&s, &changes), 300, 400)
+	tt := coreNewTester(severalView(&s, &changes), 300, 400)
 	tt.Click("Row 3")
 	tt.Key(Shift, KeyDown)
 	tt.Key(Shift, KeyDown)
@@ -137,7 +137,7 @@ func TestListMovesWithoutChoosing(t *testing.T) {
 	var sel Selection[int]
 	s := ListState{Selection: &sel}
 	changes := 0
-	tt := NewTester(severalView(&s, &changes), 300, 400)
+	tt := coreNewTester(severalView(&s, &changes), 300, 400)
 	tt.Click("Row 3")
 	tt.Key(Ctrl, KeyDown)
 	tt.Key(Ctrl, KeyDown)
@@ -155,8 +155,8 @@ func TestListChoiceOfSeveralFollowsItsItems(t *testing.T) {
 	items := []string{"a", "b", "c", "d", "e", "f", "g", "h"}
 	var sel Selection[string]
 	s := ListState{Key: func(i int) any { return items[i] }, Selection: &sel}
-	tt := NewTester(func(c *Context) {
-		List(c, &s, len(items), func(i int) { Text(c, items[i]).Height(30) }).Grow(1)
+	tt := coreNewTester(func(c *context) {
+		coreList(c, &s, len(items), func(i int) { coreText(c, items[i]).Height(30) }).Grow(1)
 	}, 300, 400)
 	tt.Click("c")
 	tt.ClickWith(Shift, "e")
@@ -182,8 +182,8 @@ func TestListTypeToChoose(t *testing.T) {
 	names := []string{"Apple", "Banana", "Cherry", "Chestnut", "Date", "Citrus"}
 	sel := -1
 	s := ListState{Selected: &sel, Label: func(i int) string { return names[i] }}
-	tt := NewTester(func(c *Context) {
-		List(c, &s, len(names), func(i int) { Text(c, names[i]).Height(30) }).Grow(1).AutoFocus()
+	tt := coreNewTester(func(c *context) {
+		coreList(c, &s, len(names), func(i int) { coreText(c, names[i]).Height(30) }).Grow(1).AutoFocus()
 	}, 300, 400)
 	tt.Key(0, KeyA)
 	if sel != 0 {
@@ -217,7 +217,7 @@ func TestListTypeToChoose(t *testing.T) {
 	}
 	// Assistive technology reads the label.
 	tt.send(platform.SurfaceEvent{Kind: platform.AccessibilityOn})
-	if n := node(t, tt.h.access, platform.RoleListItem, "Chestnut"); n.Label != "Chestnut" {
+	if n := accessNode(t, tt.h.access, platform.RoleListItem, "Chestnut"); n.Label != "Chestnut" {
 		t.Errorf("the row reads %q", n.Label)
 	}
 }
@@ -226,11 +226,11 @@ func TestListTypeToChooseLeavesShortcuts(t *testing.T) {
 	names := []string{"Apple", "Banana", "Cherry"}
 	sel, j := -1, 0
 	s := ListState{Selected: &sel, Label: func(i int) string { return names[i] }}
-	tt := NewTester(func(c *Context) {
+	tt := coreNewTester(func(c *context) {
 		if c.Shortcut(0, KeyJ) {
 			j++
 		}
-		List(c, &s, len(names), func(i int) { Text(c, names[i]).Height(30) }).Grow(1)
+		coreList(c, &s, len(names), func(i int) { coreText(c, names[i]).Height(30) }).Grow(1)
 	}, 300, 400)
 	tt.Click("Apple")
 	tt.Key(0, KeyJ)
@@ -248,8 +248,8 @@ func TestListTypeToChooseLeavesShortcuts(t *testing.T) {
 func TestListPageKeys(t *testing.T) {
 	sel := -1
 	s := ListState{Selected: &sel}
-	tt := NewTester(func(c *Context) {
-		List(c, &s, 100, func(i int) { Textf(c, "Row %d", i).Height(30) }).Grow(1)
+	tt := coreNewTester(func(c *context) {
+		coreList(c, &s, 100, func(i int) { coreTextf(c, "Row %d", i).Height(30) }).Grow(1)
 	}, 300, 400)
 	tt.Click("Row 1")
 	first, last := s.Visible()
@@ -279,12 +279,12 @@ func TestAccessibilityOfListsChoosingSeveral(t *testing.T) {
 	var sel Selection[int]
 	s := ListState{Selection: &sel}
 	changes := 0
-	tt := NewTester(severalView(&s, &changes), 300, 400)
+	tt := coreNewTester(severalView(&s, &changes), 300, 400)
 	tt.send(platform.SurfaceEvent{Kind: platform.AccessibilityOn})
 	tt.Click("Row 2")
 	tt.ClickWith(Shift, "Row 4")
 	tree := tt.h.access
-	if l := node(t, tree, platform.RoleList, ""); l.States&platform.AccessMultiselectable == 0 {
+	if l := accessNode(t, tree, platform.RoleList, ""); l.States&platform.AccessMultiselectable == 0 {
 		t.Errorf("the list: %+v", l)
 	}
 	var chosen []int
@@ -306,12 +306,12 @@ func TestTableChoosesSeveral(t *testing.T) {
 	var sel Selection[int]
 	s := ListState{Selection: &sel}
 	cols := []TableColumn{{Title: "Name"}, {Title: "Size", Width: 80}}
-	tt := NewTester(func(c *Context) {
-		Table(c, &s, cols, 50, func(row, col int) {
+	tt := coreNewTester(func(c *context) {
+		coreTable(c, &s, cols, 50, func(row, col int) {
 			if col == 0 {
-				Textf(c, "File %d", row)
+				coreTextf(c, "File %d", row)
 			} else {
-				Textf(c, "%d KB", row)
+				coreTextf(c, "%d KB", row)
 			}
 		}).Grow(1)
 	}, 400, 400)
@@ -320,7 +320,7 @@ func TestTableChoosesSeveral(t *testing.T) {
 	tt.ClickWith(Cmd, "File 6")
 	expectChosen(t, &sel, 1, 2, 3, 6)
 	tt.send(platform.SurfaceEvent{Kind: platform.AccessibilityOn})
-	if n := node(t, tt.h.access, platform.RoleTable, ""); n.States&platform.AccessMultiselectable == 0 {
+	if n := accessNode(t, tt.h.access, platform.RoleTable, ""); n.States&platform.AccessMultiselectable == 0 {
 		t.Errorf("the table: %+v", n)
 	}
 }
@@ -339,8 +339,8 @@ func TestListTypeRightAfterAClick(t *testing.T) {
 	names := []string{"Apple", "Banana", "Cherry"}
 	sel := -1
 	s := ListState{Selected: &sel, Label: func(i int) string { return names[i] }}
-	tt := NewTester(func(c *Context) {
-		List(c, &s, len(names), func(i int) { Text(c, names[i]).Height(30) }).Grow(1)
+	tt := coreNewTester(func(c *context) {
+		coreList(c, &s, len(names), func(i int) { coreText(c, names[i]).Height(30) }).Grow(1)
 	}, 300, 400)
 	r, _ := tt.Find("Apple")
 	x, y := float64(r.X+r.W/2), float64(r.Y+r.H/2)

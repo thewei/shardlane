@@ -28,6 +28,38 @@ mark; `NoWrap` keeps its lines whole, breaking them only at newlines.
 arrows, and copy it, as an error message or an identifier to paste
 elsewhere.
 
+Put `Selectable` on a container to share one selection across its `Text`
+and `RichText` descendants:
+
+```go
+ui.Column(c).Selectable().Gap(12).Children(func() {
+	ui.Text(c, "First paragraph.")
+	ui.Text(c, "Second paragraph.")
+})
+```
+
+A drag can cross paragraphs in either direction. Shift-click and Shift
+with the arrows extend it, and dragging near a scroll container's edge
+scrolls it. Cmd+C (Ctrl+C on Linux and Windows), the Edit menu's Copy,
+and the context menu copy the selected text, joined with newlines in the
+order the paragraphs were built. Select All selects the whole container,
+including built paragraphs outside its viewport. Inline text and links
+inside a paragraph are copied as part of that paragraph.
+
+Nested `Selectable` containers have separate selections. Buttons and
+text inputs keep their own interaction; their labels do not join the
+container's selection. Use `Unselectable` on a text or a container to
+exclude its subtree; inline elements follow their paragraph's selection.
+Changing the selected text or removing an endpoint clears the shared
+selection. A virtualized list only includes the paragraphs it has built,
+so use a regular scroll container when selecting an entire document.
+
+The highlight is the theme's `Selection`; `SelectionColor` sets another
+for an element and the text inside it, as text on a colored bubble needs
+one that shows on it. A right-click on selectable text shows Copy and
+Select All; a `ContextMenu` on the text or its `Selectable` container
+replaces that menu, and `Menu.EditItems` puts Copy and Select All in it.
+
 ## Rich text
 
 `ui.RichText` mixes styles in one paragraph: each `ui.Span` sets what it

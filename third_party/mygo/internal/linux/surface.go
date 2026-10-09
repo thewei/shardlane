@@ -21,11 +21,9 @@ import (
 // render signal, into the framebuffer of the context GTK makes current,
 // and GTK shows them. Without OpenGL, frames drawn in memory are painted
 // with cairo in the draw signal, as on a GtkDrawingArea, which the surface
-// is with MYGO_GPU=0 and without a GPU. A GtkGLArea makes no context until
-// the content asks for the GPU (UseGPU), as making one loads the driver
-// for good, some 50 MB: until then it paints frames drawn in memory too,
-// and GTK paints the window without OpenGL. GTK's frame clock paces both;
-// keys go through a GtkIMContext while a text input has the focus.
+// is with MYGO_GPU=0 and where OpenGL would not draw on a GPU (gpuGL).
+// GTK's frame clock paces both; keys go through a GtkIMContext while a
+// text input has the focus.
 //
 // Frames drawn in memory are drawn in the frame clock's update phase, by a
 // tick callback, before GTK paints: the area then asks GTK to repaint what
@@ -48,12 +46,6 @@ var (
 	gtkWidgetGetScaleFactor     func(w ptr) int32
 	gtkWidgetGetDisplay         func(w ptr) ptr
 	gtkWidgetHasFocus           func(w ptr) bool
-	gtkWidgetGetRealized        func(w ptr) bool
-	gtkWidgetGetMapped          func(w ptr) bool
-	gtkWidgetUnrealize          func(w ptr)
-	gtkWidgetMap                func(w ptr)
-	gdkWindowLower              func(w ptr)
-	gSignalStopEmissionByName   func(obj ptr, signal *byte)
 	gtkIMMulticontextNew        func() ptr
 	gtkIMContextSetClientWindow func(im, win ptr)
 	gtkIMContextFilterKeypress  func(im, event ptr) bool
@@ -100,12 +92,6 @@ func loadSurface() {
 		mustBind(t, &gtkWidgetGetScaleFactor, "gtk_widget_get_scale_factor")
 		mustBind(t, &gtkWidgetGetDisplay, "gtk_widget_get_display")
 		mustBind(t, &gtkWidgetHasFocus, "gtk_widget_has_focus")
-		mustBind(t, &gtkWidgetGetRealized, "gtk_widget_get_realized")
-		mustBind(t, &gtkWidgetGetMapped, "gtk_widget_get_mapped")
-		mustBind(t, &gtkWidgetUnrealize, "gtk_widget_unrealize")
-		mustBind(t, &gtkWidgetMap, "gtk_widget_map")
-		mustBind(d, &gdkWindowLower, "gdk_window_lower")
-		mustBind(libGObject, &gSignalStopEmissionByName, "g_signal_stop_emission_by_name")
 		mustBind(t, &gtkIMMulticontextNew, "gtk_im_multicontext_new")
 		mustBind(t, &gtkIMContextSetClientWindow, "gtk_im_context_set_client_window")
 		mustBind(t, &gtkIMContextFilterKeypress, "gtk_im_context_filter_keypress")
@@ -132,15 +118,15 @@ func loadSurface() {
 }
 
 type surface struct {
-	w      *window
-	area   ptr // GtkGLArea, or GtkDrawingArea
-	im     ptr // GtkIMContext
-	cr     ptr // the cairo context of the draw signal in progress
-	cursor platform.Cursor
-	// gl tells that the area is a GtkGLArea, lazy that it makes no
-	// context until UseGPU, rendering that its render signal is in
-	// progress, rendered that it ran.
-	gl, lazy, rendering, rendered bool
+	clientComposition platform.InputComposition
+	w                 *window
+	area              ptr // GtkGLArea, or GtkDrawingArea
+	im                ptr // GtkIMContext
+	cr                ptr // the cairo context of the draw signal in progress
+	cursor            platform.Cursor
+	// gl tells that the area is a GtkGLArea, rendering that its render
+	// signal is in progress, rendered that it ran.
+	gl, rendering, rendered bool
 	// present shows the frames the content draws in memory in a GtkGLArea,
 	// as when its GL renderer fails; inMemory tells that it did, failed
 	// that it failed too.
@@ -153,7 +139,7 @@ type surface struct {
 	again, ticking bool
 	// staged is the frame the tick callback drew, which the draw signal
 	// paints in the same frame of the frame clock: the host's memory,
-	// valid until it draws or frees another (see Idle and UseGPU).
+	// valid until it draws or frees another (see Idle).
 	staged struct {
 		pix                   []byte
 		stride, width, height int
@@ -164,7 +150,13 @@ type surface struct {
 	input     platform.TextInputState
 	// lastKey is a copy of the last key press, which a context menu the
 	// key opens shows for.
-	lastKey ptr
+	lastKey      ptr
+	lastPointer  ptr
+	dragContext  ptr
+	dragRequest  *platform.DragRequest
+	dragError    error
+	dragCanceled bool
+	dataDrop     *gtkDataDrop
 }
 
 // GDK event masks of the drawing area.
@@ -175,11 +167,7 @@ func (w *window) createSurface() {
 	data := ptr(w.id)
 	s := &surface{w: w}
 	s.im = gtkIMMulticontextNew()
-	// MYGO_GPU=1 draws with OpenGL from the first frame, wherever GDK
-	// makes a context.
-	now := os.Getenv("MYGO_GPU") == "1" && !testLazyGL
-	s.newArea(gtkGLAreaNew != nil && os.Getenv("MYGO_GPU") != "0" && (now || testLazyGL || hasGPUDevice()))
-	s.lazy = s.gl && !now
+	s.newArea(gtkGLAreaNew != nil && os.Getenv("MYGO_GPU") != "0" && gpuGL())
 	connect(s.im, "commit", cbIMCommit, data)
 	connect(s.im, "preedit-changed", cbIMPreedit, data)
 	connect(s.im, "preedit-end", cbIMPreeditEnd, data)
@@ -245,6 +233,12 @@ func (w *window) contentWindow() ptr {
 }
 
 func (s *surface) destroy() {
+	s.cancelPendingDrop()
+	s.CancelDataDrag()
+	if s.lastPointer != 0 {
+		gdkEventFree(s.lastPointer)
+		s.lastPointer = 0
+	}
 	gtkIMContextSetClientWindow(s.im, 0)
 	gObjectUnref(s.im)
 	s.im = 0
@@ -365,39 +359,6 @@ func (s *surface) PresentDamage(pix []byte, stride, width, height int, damage []
 	}
 }
 
-// UseGPU gives the GtkGLArea its OpenGL context, where OpenGL draws on a
-// GPU, and reports whether it did. GtkGLArea makes it as it is realized,
-// so the area is realized anew. Without a GPU it stays without one.
-func (s *surface) UseGPU() bool {
-	if !s.lazy || s.w.closed || !gpuGL() {
-		return false
-	}
-	s.lazy = false
-	s.staged.pix = nil // the host frees it
-	if gtkWidgetGetRealized(s.area) {
-		// Input methods follow the input window, which realizing makes anew.
-		focused, mapped := gtkWidgetHasFocus(s.area), gtkWidgetGetMapped(s.area)
-		if focused {
-			gtkIMContextFocusOut(s.im)
-		}
-		gtkWidgetUnrealize(s.area)
-		gtkWidgetRealize(s.area)
-		if mapped {
-			gtkWidgetMap(s.area)
-		}
-		// Mapped, the new input window went over its siblings, as the
-		// windows of a hidden title bar's controls: they take the pointer.
-		if win := s.eventWindow(); win != gtkWidgetGetWindow(s.area) {
-			gdkWindowLower(win)
-		}
-		if focused {
-			gtkIMContextFocusIn(s.im)
-		}
-	}
-	gtkWidgetQueueDraw(s.area)
-	return gtkGLAreaGetError(s.area) == 0
-}
-
 // mallocTrim is glibc's malloc_trim, which other C libraries lack.
 var mallocTrim, _ = purego.Dlsym(purego.RTLD_DEFAULT, "malloc_trim")
 
@@ -487,10 +448,11 @@ func (s *surface) SetCursor(c platform.Cursor) {
 
 func (s *surface) SetTextInput(t platform.TextInputState) {
 	active, caret := t.Active, t.Caret
-	s.input = t
-	if s.textInput && !active {
+	if s.textInput && (!active || s.input.Client != t.Client) {
+		s.clientComposition.Reset()
 		gtkIMContextReset(s.im)
 	}
+	s.input = t
 	s.textInput, s.caret = active, caret
 	if active {
 		r := gdkRectangle{X: int32(caret.X), Y: int32(caret.Y), Width: max(int32(caret.W), 1), Height: int32(caret.H + 0.5)}
@@ -499,6 +461,9 @@ func (s *surface) SetTextInput(t platform.TextInputState) {
 }
 
 func (s *surface) send(ev platform.SurfaceEvent) bool {
+	if ev.Kind == platform.PointerDown || ev.Kind == platform.SurfaceBlur {
+		s.clientComposition.Reset()
+	}
 	if s.w.closed {
 		return false
 	}
@@ -520,6 +485,22 @@ func gdkMods(state uint32) platform.Modifiers {
 		m |= platform.ModSuper
 	}
 	return m
+}
+
+// modifierKeyval is the modifier a GDK keyval presses: Shift_L/R, Control_L/R,
+// Alt_L/R and Meta_L/R, Super_L/R and Hyper_L/R; 0 for other keys.
+func modifierKeyval(keyval uint32) platform.Modifiers {
+	switch keyval {
+	case 0xffe1, 0xffe2:
+		return platform.ModShift
+	case 0xffe3, 0xffe4:
+		return platform.ModCtrl
+	case 0xffe9, 0xffea, 0xffe7, 0xffe8:
+		return platform.ModAlt
+	case 0xffeb, 0xffec, 0xffed, 0xffee:
+		return platform.ModSuper
+	}
+	return 0
 }
 
 var gdkKeys = map[uint32]platform.Key{
@@ -604,13 +585,8 @@ func initSurfaceCallbacks() {
 	})
 	// The GtkGLArea's context: OpenGL 3.3, else OpenGL ES 3.0. One GDK
 	// cannot make leaves the area its error, so that it draws with cairo,
-	// as does the area until UseGPU, without the context GTK's own handler
-	// would make.
+	// without the context GTK's own handler would make.
 	cbAreaContext = purego.NewCallback(func(area, data ptr) ptr {
-		if s := b().surfaceOf(data); s != nil && s.lazy {
-			gSignalStopEmissionByName(area, cs("create-context"))
-			return 0
-		}
 		ctx, gerr := glContext(gtkWidgetGetWindow(area))
 		if gerr != 0 {
 			gtkGLAreaSetError(area, gerr)
@@ -687,12 +663,28 @@ func initSurfaceCallbacks() {
 		} else if !gtkWidgetHasFocus(s.area) {
 			gtkWidgetGrabFocus(s.area)
 		}
+		if kind == platform.PointerDown && button == 0 {
+			if s.lastPointer != 0 {
+				gdkEventFree(s.lastPointer)
+			}
+			s.lastPointer = gdkEventCopy(event)
+		}
 		s.send(platform.SurfaceEvent{Kind: kind, X: field[float64](event, 24), Y: field[float64](event, 32), Button: button, Mods: mods})
+		if kind == platform.PointerUp && button == 0 && s.dragRequest == nil && s.lastPointer != 0 {
+			gdkEventFree(s.lastPointer)
+			s.lastPointer = 0
+		}
 		return true
 	})
 	// GdkEventMotion: x 24, y 32, state 48.
 	cbSurfaceMotion = purego.NewCallback(func(widget, event, data ptr) bool {
 		if s := b().surfaceOf(data); s != nil {
+			if field[uint32](event, 48)&(1<<8) != 0 {
+				if s.lastPointer != 0 {
+					gdkEventFree(s.lastPointer)
+				}
+				s.lastPointer = gdkEventCopy(event)
+			}
 			s.send(platform.SurfaceEvent{Kind: platform.PointerMove, X: field[float64](event, 24), Y: field[float64](event, 32), Mods: gdkMods(field[uint32](event, 48))})
 		}
 		return false
@@ -739,6 +731,7 @@ func initSurfaceCallbacks() {
 		if field[int32](event, 0) == 9 { // GDK_KEY_RELEASE
 			kind = platform.KeyReleased
 		} else {
+			s.clientComposition.Reset()
 			if s.lastKey != 0 {
 				gdkEventFree(s.lastKey)
 			}
@@ -746,6 +739,18 @@ func initSurfaceCallbacks() {
 		}
 		if s.textInput && gtkIMContextFilterKeypress(s.im, event) {
 			return true
+		}
+		// A modifier key on its own: the state is the one before the
+		// event, so the key's own bit goes in or out.
+		if bit := modifierKeyval(field[uint32](event, 28)); bit != 0 {
+			state := gdkMods(field[uint32](event, 24))
+			if kind == platform.KeyPressed {
+				state |= bit
+			} else {
+				state &^= bit
+			}
+			s.send(platform.SurfaceEvent{Kind: platform.ModifiersChanged, Mods: state})
+			return false
 		}
 		k := keyvalKey(field[uint32](event, 28))
 		if k == platform.KeyUnknown {
@@ -770,6 +775,10 @@ func initSurfaceCallbacks() {
 	})
 	cbIMCommit = purego.NewCallback(func(im, str, data ptr) {
 		if s := b().surfaceOf(data); s != nil {
+			if c := s.input.Client; c != nil {
+				s.clientComposition.Replace(c, nil, goStr(str))
+				return
+			}
 			if text := goStr(str); text != "" {
 				s.send(platform.SurfaceEvent{Kind: platform.TextInput, Text: text})
 			}
@@ -784,10 +793,20 @@ func initSurfaceCallbacks() {
 		var cursor int32
 		gtkIMContextGetPreedit(s.im, &str, nil, &cursor)
 		text := takeStr(str)
+		if c := s.input.Client; c != nil {
+			s.clientComposition.Reset()
+			caret := platform.UTF16Len(string([]rune(text)[:min(int(cursor), len([]rune(text)))]))
+			c.SetMarkedText(nil, text, platform.TextRange{Start: caret, End: caret})
+			return
+		}
 		s.send(platform.SurfaceEvent{Kind: platform.TextComposition, Text: text, Caret: min(int(cursor), utf8.RuneCountInString(text))})
 	})
 	cbIMPreeditEnd = purego.NewCallback(func(im, data ptr) {
 		if s := b().surfaceOf(data); s != nil {
+			if c := s.input.Client; c != nil {
+				s.clientComposition.End(c)
+				return
+			}
 			s.send(platform.SurfaceEvent{Kind: platform.TextComposition})
 		}
 	})

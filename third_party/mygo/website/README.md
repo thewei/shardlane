@@ -18,6 +18,19 @@ directories keep their path (`plugins/fetch.md` is `/docs/plugins/fetch`),
 and links between pages, such as `bindings.md#events`, become links of the
 site. Lists of pages, `- [Title](page.md): what it covers`, become cards.
 
+The same build generates `/llms.txt`, an index of Markdown documentation,
+and `/llms-full.txt`, all pages combined. Append `.md` to a docs page's URL
+for its Markdown version: `/docs.md`, `/docs/ui.md`, or
+`/docs/plugins/fetch.md`. These downloads are also served during development.
+Links between Markdown pages point to their published URLs; links to other
+repository files point to GitHub. Docs pages advertise their Markdown version
+and the index through HTML link elements.
+
+Maintainer-only instructions can stay in the repository docs between
+`<!-- repository-only:start -->` and `<!-- repository-only:end -->` on
+separate lines. The website omits those blocks from the page, table of
+contents, search index and Markdown downloads; GitHub still renders their contents.
+
 Native UI's docs, in `docs/ui`, have a sidebar of their own, from the lists
 of `docs/ui/README.md` (the page at `/docs/ui`), and the header's UI link;
 the docs' sidebar leaves them out. A directory's `README.md` is the page of

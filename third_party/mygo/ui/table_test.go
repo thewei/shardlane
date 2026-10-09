@@ -9,17 +9,17 @@ import (
 )
 
 // tableView shows a table of files: name, kind and size.
-func tableView(s *ListState, cols []TableColumn, names []string) func(c *Context) {
-	return func(c *Context) {
-		Column(c).Fill().Padding(10).Children(func() {
-			Table(c, s, cols, len(names), func(row, col int) {
+func tableView(s *ListState, cols []TableColumn, names []string) func(c *context) {
+	return func(c *context) {
+		coreColumn(c).Fill().Padding(10).Children(func() {
+			coreTable(c, s, cols, len(names), func(row, col int) {
 				switch col {
 				case 0:
-					Text(c, names[row]).SingleLine()
+					coreText(c, names[row]).SingleLine()
 				case 1:
-					Text(c, "Document")
+					coreText(c, "Document")
 				case 2:
-					Textf(c, "%d KB", row+1)
+					coreTextf(c, "%d KB", row+1)
 				}
 			}).Grow(1)
 		})
@@ -31,9 +31,9 @@ func TestTableSort(t *testing.T) {
 	sel := -1
 	s := ListState{Sort: &sort, Selected: &sel}
 	cols := []TableColumn{{Title: "Name", Sortable: true}, {Title: "Kind", Width: 100}, {Title: "Size", Width: 80, Align: End, Sortable: true}}
-	tt := NewTester(tableView(&s, cols, []string{"a.txt", "b.txt"}), 500, 300)
+	tt := coreNewTester(tableView(&s, cols, []string{"a.txt", "b.txt"}), 500, 300)
 	tt.send(platform.SurfaceEvent{Kind: platform.AccessibilityOn})
-	if n := node(t, tt.h.access, platform.RoleColumnHeader, "Size"); n.States&platform.AccessSortAscending == 0 {
+	if n := accessNode(t, tt.h.access, platform.RoleColumnHeader, "Size"); n.States&platform.AccessSortAscending == 0 {
 		t.Errorf("the column sorted by: %+v", n)
 	}
 	tt.Click("Name")
@@ -45,10 +45,10 @@ func TestTableSort(t *testing.T) {
 		t.Fatalf("a second click on Name: %+v", sort)
 	}
 	tree := tt.h.access
-	if n := node(t, tree, platform.RoleColumnHeader, "Name"); n.States&platform.AccessSortDescending == 0 || n.Actions&platform.ActionPress == 0 {
+	if n := accessNode(t, tree, platform.RoleColumnHeader, "Name"); n.States&platform.AccessSortDescending == 0 || n.Actions&platform.ActionPress == 0 {
 		t.Errorf("Name, sorted descending: %+v", n)
 	}
-	if n := node(t, tree, platform.RoleColumnHeader, "Size"); n.States&(platform.AccessSortAscending|platform.AccessSortDescending) != 0 {
+	if n := accessNode(t, tree, platform.RoleColumnHeader, "Size"); n.States&(platform.AccessSortAscending|platform.AccessSortDescending) != 0 {
 		t.Errorf("Size, no longer sorted by: %+v", n)
 	}
 	// A column that does not sort.
@@ -62,13 +62,13 @@ func TestTableSort(t *testing.T) {
 func header(t *testing.T, tt *Tester, title string) platform.RectF {
 	t.Helper()
 	tt.send(platform.SurfaceEvent{Kind: platform.AccessibilityOn})
-	return node(t, tt.h.access, platform.RoleColumnHeader, title).Bounds
+	return accessNode(t, tt.h.access, platform.RoleColumnHeader, title).Bounds
 }
 
 func TestTableResize(t *testing.T) {
 	s := ListState{}
 	cols := []TableColumn{{Title: "Name"}, {Title: "Kind", Width: 100, MinWidth: 60}, {Title: "Size", Width: 80, Fixed: true}}
-	tt := NewTester(tableView(&s, cols, []string{"a.txt", "a much longer name.txt"}), 500, 300)
+	tt := coreNewTester(tableView(&s, cols, []string{"a.txt", "a much longer name.txt"}), 500, 300)
 	kind := header(t, tt, "Kind")
 	// Dragging the right edge of Kind's header.
 	edge := float32(kind.X+kind.W) - 2
@@ -114,7 +114,7 @@ func TestTableReorder(t *testing.T) {
 	sort := SortOrder{}
 	s := ListState{Sort: &sort}
 	cols := []TableColumn{{Title: "Name", Fixed: true}, {Title: "Kind", Width: 100, Sortable: true}, {Title: "Size", Width: 80}}
-	tt := NewTester(tableView(&s, cols, []string{"a.txt"}), 500, 300)
+	tt := coreNewTester(tableView(&s, cols, []string{"a.txt"}), 500, 300)
 	kind := header(t, tt, "Kind")
 	y := float32(kind.Y + kind.H/2)
 	// Kind dragged past the middle of Size.
@@ -153,7 +153,7 @@ func TestTableScrollsSideways(t *testing.T) {
 	for i := range names {
 		names[i] = "file"
 	}
-	tt := NewTester(tableView(&s, cols, names), 400, 300)
+	tt := coreNewTester(tableView(&s, cols, names), 400, 300)
 	if tt.HasText("Size") {
 		size := header(t, tt, "Size")
 		if size.X < 390 {
@@ -179,15 +179,15 @@ func TestEditableTextInTable(t *testing.T) {
 	sel, opened, renames := -1, -1, 0
 	s := ListState{Selected: &sel}
 	cols := []TableColumn{{Title: "Name"}, {Title: "Size", Width: 80}}
-	tt := NewTester(func(c *Context) {
-		Column(c).Fill().Padding(10).Children(func() {
-			if Table(c, &s, cols, len(names), func(row, col int) {
+	tt := coreNewTester(func(c *context) {
+		coreColumn(c).Fill().Padding(10).Children(func() {
+			if coreTable(c, &s, cols, len(names), func(row, col int) {
 				if col == 0 {
-					if EditableText(c, &names[row]).Changed() {
+					if coreEditableText(c, &names[row]).Changed() {
 						renames++
 					}
 				} else {
-					Text(c, "1 KB")
+					coreText(c, "1 KB")
 				}
 			}).Grow(1).Submitted() {
 				opened = sel
@@ -249,12 +249,12 @@ func TestEditableTextInTable(t *testing.T) {
 func TestEditableText(t *testing.T) {
 	title := "Untitled.md"
 	changes := 0
-	tt := NewTester(func(c *Context) {
-		Column(c).Gap(8).Children(func() {
-			if EditableText(c, &title).Changed() {
+	tt := coreNewTester(func(c *context) {
+		coreColumn(c).Gap(8).Children(func() {
+			if coreEditableText(c, &title).Changed() {
 				changes++
 			}
-			Button(c, "Other")
+			coreButton(c, "Other")
 		})
 	}, 400, 300)
 	r, _ := tt.Find("Untitled.md")

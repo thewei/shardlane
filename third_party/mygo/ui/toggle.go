@@ -14,7 +14,7 @@ const (
 // over when clicked, or with Space while it has the focus, which Changed
 // reports, and that assistive technology sees as a toggle button, pressed
 // while *on. Toggle is ToggleBase with the theme's look.
-func ToggleBase(c *Context, on *bool) *Element {
+func coreToggleBase(c *context, on *bool) *node {
 	return toggle(c, on, RoleToggleButton, "Toggle").Center()
 }
 
@@ -25,8 +25,8 @@ func ToggleBase(c *Context, on *bool) *Element {
 // Label:
 //
 //	ui.Toggle(c, &app.bold, "").Label("Bold").Children(func() { ui.Icon(c, boldIcon) })
-func Toggle(c *Context, on *bool, label string) *Element {
-	b := ToggleBase(c, on)
+func coreToggle(c *context, on *bool, label string) *node {
+	b := coreToggleBase(c, on)
 	styleButton(c, b, false)
 	if *on {
 		b.Background(pressedColor(c))
@@ -35,14 +35,14 @@ func Toggle(c *Context, on *bool, label string) *Element {
 		}
 	}
 	if label != "" {
-		b.Children(func() { Text(c, label).SingleLine() })
+		b.Children(func() { coreText(c, label).SingleLine() })
 	}
 	return b
 }
 
 // pressedColor is the face of a toggle that is on, and of the segment
 // chosen: raised from the track of a group, sunk elsewhere.
-func pressedColor(c *Context) Color {
+func pressedColor(c *context) Color {
 	t := c.theme
 	switch {
 	case c.buttons != segmentButtons:
@@ -55,9 +55,9 @@ func pressedColor(c *Context) Color {
 
 // segmentTrack creates the track of a ToggleGroup or Segmented, which
 // holds its segments.
-func segmentTrack(c *Context) *Element {
+func segmentTrack(c *context) *node {
 	t := c.theme
-	g := Row(c).Shrink(0).AlignItems(Stretch).Padding(t.Space(0.5)).Gap(t.Space(0.5)).
+	g := coreRow(c).Shrink(0).AlignItems(Stretch).Padding(t.Space(0.5)).Gap(t.Space(0.5)).
 		Radius(t.Radius).Background(t.Surface).Border(1, t.Border)
 	g.FocusGroup(Horizontal | Vertical)
 	return g
@@ -72,7 +72,7 @@ func segmentTrack(c *Context) *Element {
 //		ui.Toggle(c, &app.bold, "B")
 //		ui.Toggle(c, &app.italic, "I")
 //	}).Label("Style")
-func ToggleGroup(c *Context, fn func()) *Element {
+func coreToggleGroup(c *context, fn func()) *node {
 	g := segmentTrack(c)
 	g.widget = "ToggleGroup"
 	saved := c.buttons
@@ -92,8 +92,8 @@ func ToggleGroup(c *Context, fn func()) *Element {
 //			ui.Radio(c, &app.size, size, size)
 //		}
 //	}).Label("Size")
-func RadioGroup(c *Context, fn func()) *Element {
-	g := Column(c).Gap(c.theme.Space(2))
+func coreRadioGroup(c *context, fn func()) *node {
+	g := coreColumn(c).Gap(c.theme.Space(2))
 	g.widget, g.role = "RadioGroup", RoleRadioGroup
 	g.FocusGroup(Horizontal | Vertical)
 	g.groupSelects = true
@@ -103,10 +103,10 @@ func RadioGroup(c *Context, fn func()) *Element {
 
 // SegmentedParts are the parts of a segmented control without a look:
 // SegmentedBase makes its track, and Segment its segments.
-type SegmentedParts struct {
+type segmentedParts struct {
 	// Track holds the segments: build them in its children.
-	Track    *Element
-	c        *Context
+	Track    *node
+	c        *context
 	selected *int
 	n        int
 }
@@ -116,25 +116,27 @@ type SegmentedParts struct {
 // RadioGroup) whose radio buttons are the segments, built in Track with
 // Segment. Track's Changed reports a new choice. Segmented is
 // SegmentedBase with the theme's look.
-func SegmentedBase(c *Context, selected *int, n int) SegmentedParts {
-	g := Row(c).Shrink(0)
+func coreSegmentedBase(c *context, selected *int, n int) segmentedParts {
+	g := coreRow(c).Shrink(0)
 	g.widget, g.role = "Segmented", RoleRadioGroup
 	g.FocusGroup(Horizontal | Vertical)
 	g.groupSelects = true
 	if n > 0 {
 		*selected = max(0, min(*selected, n-1))
 	}
-	return SegmentedParts{Track: g, c: c, selected: selected, n: n}
+	return segmentedParts{Track: g, c: c, selected: selected, n: n}
 }
 
 // Segment creates segment i: a radio button choosing i. Style it from
 // whether i is the one chosen, and give it children.
-func (p SegmentedParts) Segment(i int) *Element {
-	s := RadioBase(p.c, p.selected, i).Center()
+func (p segmentedParts) Segment(i int) *node {
+	s := coreRadioBase(p.c, p.selected, i).Center()
 	s.segment = true
-	if s.st.changed {
-		p.Track.st.changed = true
-	}
+	s.afterInput(func() {
+		if s.Changed() {
+			p.Track.st.markChanged()
+		}
+	})
 	return s
 }
 
@@ -145,9 +147,9 @@ func (p SegmentedParts) Segment(i int) *Element {
 // name it with Label. For icons, build the segments with SegmentedBase.
 //
 //	ui.Segmented(c, &app.view, "List", "Grid").Label("View")
-func Segmented(c *Context, selected *int, labels ...string) *Element {
+func coreSegmented(c *context, selected *int, labels ...string) *node {
 	t := c.theme
-	parts := SegmentedBase(c, selected, len(labels))
+	parts := coreSegmentedBase(c, selected, len(labels))
 	g := parts.Track
 	g.AlignItems(Stretch).Padding(t.Space(0.5)).Gap(t.Space(0.5)).Radius(t.Radius).Background(t.Surface).Border(1, t.Border)
 	saved := c.buttons
@@ -159,7 +161,7 @@ func Segmented(c *Context, selected *int, labels ...string) *Element {
 			if i == *selected {
 				s.Background(pressedColor(c)).Shadow(0, 1, 2, 0, RGBA(0, 0, 0, 0.12))
 			}
-			s.Children(func() { Text(c, label).SingleLine() })
+			s.Children(func() { coreText(c, label).SingleLine() })
 		}
 	})
 	c.buttons = saved

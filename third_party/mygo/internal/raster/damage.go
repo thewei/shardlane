@@ -4,7 +4,6 @@ import (
 	"image"
 	"math"
 	"runtime"
-	"time"
 
 	"github.com/egoist/mygo/internal/scene"
 )
@@ -17,9 +16,6 @@ import (
 // in the middle of the display list redraws the boxes of the operations
 // that changed, clipped as they draw. Glyphs whose pixels changed in an
 // atlas, and images whose pixels changed, count as changed.
-//
-// Scenes shown without it, as the GPU draws them, are Skipped: it compares
-// the next scene with them, and draws what they changed with the next.
 type Renderer struct {
 	// Image holds the last scene drawn, in mem.
 	Image Image
@@ -28,12 +24,9 @@ type Renderer struct {
 	// d draws the bands of large damage.
 	d drawer
 	// valid tells that the last scene, of w×h pixels, is remembered to
-	// compare the next with. stale is where Image does not show it, as
-	// scenes were skipped, and redraw tells that it shows none of it.
+	// compare the next with.
 	valid   bool
 	w, h    int
-	stale   []image.Rectangle
-	redraw  bool
 	clear   scene.Color
 	ops     []scene.Op
 	glyphs  []scene.Glyph
@@ -45,8 +38,6 @@ type Renderer struct {
 	mask, color  atlasMark
 	damage       []image.Rectangle
 	clips        []image.Rectangle
-	// cpu is how long the cores took to draw the last scene (CPU).
-	cpu time.Duration
 }
 
 // atlasMark is the state of an atlas a scene drew from.
@@ -78,55 +69,16 @@ func (m *atlasMark) set(a *scene.Atlas) {
 // Render draws s, and returns the rectangles of Image it changed. s may
 // change once Render returns.
 func (r *Renderer) Render(s *scene.Scene) []image.Rectangle {
-	if r.whole(s) || r.blank(s) {
+	if r.whole(s) || r.Image.W != s.Width || r.Image.H != s.Height {
+		// A new size, or Image was released (Release).
 		r.resize(s.Width, s.Height)
 		r.damage = append(r.damage[:0], image.Rect(0, 0, s.Width, s.Height))
-	} else {
-		r.addStale(s)
 	}
-	r.cpu = 0
 	for _, d := range r.damage {
-		r.cpu += r.d.draw(&r.Image, s, d, r.next)
+		r.d.draw(&r.Image, s, d, r.next)
 	}
-	r.stale, r.redraw = r.stale[:0], false
 	r.remember(s)
 	return r.damage
-}
-
-// CPU returns how long the cores took to draw the last scene Rendered,
-// together: a large area draws on several cores at once, which takes the
-// CPU a multiple of the time drawing lasts.
-func (r *Renderer) CPU() time.Duration { return r.cpu }
-
-// Skip notes that s was shown without Render, as when the GPU drew it:
-// Changes compares the next scene with s, and the next Render draws what s
-// changed too. s may change once Skip returns.
-func (r *Renderer) Skip(s *scene.Scene) {
-	if r.whole(s) {
-		r.redraw = true
-	} else if !r.redraw {
-		for _, d := range r.damage {
-			r.stale = addRect(r.stale, d)
-		}
-	}
-	r.remember(s)
-}
-
-// blank reports whether Image shows nothing of the last scene that s can
-// be drawn over: it was skipped whole, or Image was released.
-func (r *Renderer) blank(s *scene.Scene) bool {
-	return r.redraw || r.Image.W != s.Width || r.Image.H != s.Height
-}
-
-// addStale adds to the damage where Image does not show the last scene,
-// with the effects of s reading their backdrops that meets.
-func (r *Renderer) addStale(s *scene.Scene) {
-	for _, d := range r.stale {
-		r.damage = addRect(r.damage, d)
-	}
-	if len(r.stale) > 0 {
-		r.addBackdrops(s)
-	}
 }
 
 // pixels is the memory of a Renderer's image (allocPixels).
@@ -151,29 +103,6 @@ func (r *Renderer) resize(w, h int) {
 func (r *Renderer) Release() {
 	r.mem.free()
 	*r = Renderer{}
-}
-
-// ReleaseImage frees the image, but keeps the last scene to compare the
-// next with (Changes): the next Render draws everything. Image must not be
-// used meanwhile.
-func (r *Renderer) ReleaseImage() {
-	r.mem.free()
-	r.mem, r.Image = nil, Image{}
-}
-
-// Changes returns how many pixels Render would draw for s, and how many
-// of them changed since the last scene, drawn or skipped.
-func (r *Renderer) Changes(s *scene.Scene) (draw, changed int) {
-	all := s.Width * s.Height
-	if r.whole(s) {
-		return all, all
-	}
-	changed = area(r.damage)
-	if r.blank(s) {
-		return all, changed
-	}
-	r.addStale(s)
-	return area(r.damage), changed
 }
 
 func area(rects []image.Rectangle) int {
@@ -398,8 +327,14 @@ func (r *Renderer) remember(s *scene.Scene) {
 	r.valid = true
 	r.w, r.h = s.Width, s.Height
 	r.clear = s.Clear
+	if len(r.ops) > len(s.Ops) {
+		clear(r.ops[len(s.Ops):])
+	}
 	r.ops = append(r.ops[:0], s.Ops...)
 	r.glyphs = append(r.glyphs[:0], s.Glyphs...)
+	if len(r.effects) > len(s.Effects) {
+		clear(r.effects[len(s.Effects):])
+	}
 	r.effects = append(r.effects[:0], s.Effects...)
 	r.bounds, r.next = r.next, r.bounds
 	r.versions = r.versions[:0]

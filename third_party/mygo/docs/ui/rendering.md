@@ -7,37 +7,24 @@ rectangles, borders, gradients and shadows from the distance to their
 edges, so they stay sharp at any size and scale, and text comes from a
 glyph atlas that only uploads what changes.
 
-On macOS, frames that change little, such as a clock ticking, typing or the
-pointer over a button, are drawn on the CPU, which redraws only what
-changed, and go to the screen without waking the GPU: they take less time
-than the GPU takes to start, and spare the memory Metal's driver holds for
-a couple of seconds after each frame it draws. Scrolling, resizing and
-animations of much of the window use the GPU, as do animations that change
-little but cost the CPU much to redraw, such as a dot pulsing over
-translucent layers, gradients and shadows at the display's rate: once
-drawing a burst of frames on the CPU takes more than a quarter of its
-time, the rest of the burst draws on the GPU, and the frame after a pause
-on the CPU again.
-
-On Linux, a window draws on the CPU until that costs too much, as when
-scrolling or animating much of a large window on a fast display, and only
-then loads OpenGL: Mesa, the driver, takes some 50 MB, which stay, about
-as much as the rest of a small app. Where OpenGL would not run on a GPU,
-as in virtual machines or in WSL (where `GALLIUM_DRIVER=d3d12` gives Mesa
-the GPU), Linux always draws on the CPU: about a millisecond for a whole
+With a GPU, every frame draws on it. On Linux, the first window of
+native UI loads OpenGL: Mesa, the driver, takes some 50 MB, which stay,
+about as much as the rest of a small app. Where OpenGL would not run on a
+GPU, as in virtual machines or in WSL (where `GALLIUM_DRIVER=d3d12` gives
+Mesa the GPU), Linux draws on the CPU: about a millisecond for a whole
 large window on a high-density display, on several cores, and less than a
 tenth of one for what typically changes, such as a button under the
 pointer, since it redraws, and has the compositor take, only that. Set
 `MYGO_GPU=0` to use the CPU renderer everywhere, for instance to compare,
-and on Linux `MYGO_GPU=1` to draw with OpenGL from the first frame, even
-where it runs on the CPU.
+and on Linux `MYGO_GPU=1` to draw with OpenGL even where it runs on the
+CPU.
 
 Set `MYGO_FRAME_STATS=1` to log each frame that takes longer than 8 ms, or
 `MYGO_FRAME_STATS=4` for another threshold in milliseconds (`all` logs
 every frame). Each line tells how long building the frame (and in how many
 passes), laying it out, painting and presenting it took, whether it was
-drawn on the CPU, on the GPU or in memory (where a window has no GPU
-renderer), what the process allocated and how many texts it laid out
+drawn on the GPU or in memory (where a window has no GPU renderer), what
+the process allocated and how many texts it laid out
 meanwhile, and whether the garbage collector ran, with the time goroutines
 spent helping it mark:
 
@@ -52,4 +39,4 @@ nothing.
 
 MyGo draws a frame only when something changes: input, `Invalidate`,
 `After`, or an animation that moves. An idle window draws nothing, and two
-seconds after its last frame it frees the frame it drew on the CPU.
+seconds after its last frame it frees the frame it drew in memory.

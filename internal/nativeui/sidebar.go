@@ -188,7 +188,7 @@ func (s *Shell) sidebarFilesView(c *ui.Context) {
 			s.gdSectionHeader(c, pal, "Unstaged Files", len(unstagedFiles), &s.unstagedOpen,
 				"Stage", gdActionPaths(&s.unstagedChoice, unstagedFiles), s.stageFiles)
 			if s.unstagedOpen && len(unstagedRows) > 0 {
-				list := s.gdChangedTreeList(c, pal, unstagedRows, &s.unstagedList, &s.unstagedListEl, &s.unstagedSelected,
+				list := s.gdChangedTreeList(c, pal, unstagedRows, &s.unstagedList, &s.unstagedSelected,
 					&s.unstagedChoice, gdViewUnstaged, func(row gitworkbench.FlatRow) { s.changesClickSide(row, gdViewUnstaged) })
 				list.Children(func() {
 					if len(unstagedRows) == 0 {
@@ -205,7 +205,7 @@ func (s *Shell) sidebarFilesView(c *ui.Context) {
 			s.gdSectionHeader(c, pal, "Staged Files", len(stagedFiles), &s.stagedOpen,
 				"Unstage", gdActionPaths(&s.stagedChoice, stagedFiles), s.unstageFiles)
 			if s.stagedOpen && len(stagedRows) > 0 {
-				list := s.gdChangedTreeList(c, pal, stagedRows, &s.stagedList, &s.stagedListEl, &s.stagedSelected,
+				list := s.gdChangedTreeList(c, pal, stagedRows, &s.stagedList, &s.stagedSelected,
 					&s.stagedChoice, gdViewStaged, func(row gitworkbench.FlatRow) { s.changesClickSide(row, gdViewStaged) })
 				list.Children(func() {
 					if len(stagedRows) == 0 {
@@ -250,7 +250,7 @@ func (s *Shell) commitsPane(c *ui.Context, pal *gdPalette) {
 		}
 	}
 
-	focused := s.commitsListEl != nil && s.commitsListEl.FocusWithin()
+	focused := s.commitsList.FocusWithin(c)
 	if s.git.commitsLoading && len(entries) == 0 {
 		ui.Column(c).Grow(1).Center().Padding(16).Children(func() {
 			ui.Spinner(c).Size(16, 16)
@@ -291,7 +291,6 @@ func (s *Shell) commitsPane(c *ui.Context, pal *gdPalette) {
 			})
 		})
 	}).Grow(1).MinHeight(0).Padding(4, 8).Gap(4)
-	s.commitsListEl = list
 	s.commitsList.Key = func(i int) any {
 		if i >= 0 && i < len(entries) {
 			return entries[i].Hash

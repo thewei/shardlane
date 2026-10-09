@@ -4,6 +4,7 @@ package e2e
 
 import (
 	"errors"
+	"testing"
 
 	"github.com/egoist/mygo"
 )
@@ -99,10 +100,11 @@ func compose(*mygo.Window, string, int, bool) bool             { return false }
 // Only Linux draws native UI in a GtkGLArea, nor waits to load the GPU's
 // driver.
 func glSurface(*mygo.Window) (string, []byte, int, int, bool) { return "", nil, 0, 0, false }
-func lazyGPU(bool) bool                                       { return false }
-func useGPU(*mygo.Window) bool                                { return false }
-func surfaceInputLowest(*mygo.Window) bool                    { return true }
+func memoryUI(*testing.T) bool                                { return false }
 func surfaceOnScreen(*mygo.Window) ([]byte, bool)             { return nil, false }
+
+// Only Windows reads the screen over native UI.
+func screenColor(*mygo.Window, float64, float64) (uint8, uint8, uint8, bool) { return 0, 0, 0, false }
 
 // Only macOS has key-value observing.
 func observe(*mygo.Window) (func(), bool) { return nil, false }

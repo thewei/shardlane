@@ -38,7 +38,7 @@ and builds its content. A top margin keeps the panel apart from the anchor,
 on either side:
 
 ```go
-ui.PopoverBase(c, anchor, &app.open, func(panel *ui.Element) {
+ui.PopoverBase(c, anchor, &app.open, func(panel ui.Element) {
 	panel.Margin(6, 0, 0, 0).Padding(8).Radius(12).Background(t.Background).Shadow(0, 8, 24, 0, ui.RGBA(0, 0, 0, 0.2))
 	app.filters(c)
 })
@@ -48,7 +48,7 @@ The panel goes elsewhere with `AttachTo`: to the right of the anchor, its
 middles lined up, and to the left where there is no room on the right:
 
 ```go
-ui.PopoverBase(c, anchor, &app.open, func(panel *ui.Element) {
+ui.PopoverBase(c, anchor, &app.open, func(panel ui.Element) {
 	panel.AttachTo(anchor, ui.AnchorRight, ui.AnchorLeft).Margin(0, 0, 0, 6)
 	app.details(c)
 })

@@ -11,11 +11,11 @@ func TestGridView(t *testing.T) {
 	const n = 10000
 	sel, opened, built := -1, -1, 0
 	s := GridState{Selected: &sel, Label: func(i int) string { return fmt.Sprintf("Photo %d", i) }}
-	tt := NewTester(func(c *Context) {
-		Column(c).Fill().Children(func() {
-			if GridView(c, &s, n, 100, 80, func(i int) {
+	tt := coreNewTester(func(c *context) {
+		coreColumn(c).Fill().Children(func() {
+			if coreGridView(c, &s, n, 100, 80, func(i int) {
 				built++
-				Textf(c, "Photo %d", i)
+				coreTextf(c, "Photo %d", i)
 			}).Grow(1).Submitted() {
 				opened = sel
 			}
@@ -54,7 +54,7 @@ func TestGridView(t *testing.T) {
 		t.Error("End did not show the last item")
 	}
 	// The cells share the width.
-	cell := node(t, func() *platform.AccessTree {
+	cell := accessNode(t, func() *platform.AccessTree {
 		tt.send(platform.SurfaceEvent{Kind: platform.AccessibilityOn})
 		return tt.h.access
 	}(), platform.RoleListItem, fmt.Sprintf("Photo %d", n-1))
@@ -63,7 +63,7 @@ func TestGridView(t *testing.T) {
 	}
 	// Assistive technology: a list of n items, the one chosen with the focus.
 	tree := tt.h.access
-	list := node(t, tree, platform.RoleList, "")
+	list := accessNode(t, tree, platform.RoleList, "")
 	if list.SetSize != n || list.States&platform.AccessSelectable == 0 || cell.PosInSet != n || cell.SetSize != n || cell.States&platform.AccessChecked == 0 || tree.Focus != cell.ID {
 		t.Errorf("the list %+v, the item %+v, the focus on %d", list, cell, tree.Focus)
 	}
@@ -74,9 +74,9 @@ func TestGridViewChoosesSeveral(t *testing.T) {
 	var chosen Selection[string]
 	names := []string{"a", "b", "c", "d", "e", "f", "g", "h"}
 	s := GridState{Selected: &sel, Selection: &chosen, Key: func(i int) any { return names[i] }}
-	tt := NewTester(func(c *Context) {
-		GridView(c, &s, len(names), 100, 60, func(i int) {
-			Text(c, names[i])
+	tt := coreNewTester(func(c *context) {
+		coreGridView(c, &s, len(names), 100, 60, func(i int) {
+			coreText(c, names[i])
 		}).Grow(1)
 	}, 448, 300)
 	click := func(mods Modifiers, name string) {
@@ -101,7 +101,7 @@ func TestGridViewChoosesSeveral(t *testing.T) {
 		t.Errorf("Cmd+A chose %d", chosen.Len())
 	}
 	tt.send(platform.SurfaceEvent{Kind: platform.AccessibilityOn})
-	if n := node(t, tt.h.access, platform.RoleList, ""); n.States&platform.AccessMultiselectable == 0 {
+	if n := accessNode(t, tt.h.access, platform.RoleList, ""); n.States&platform.AccessMultiselectable == 0 {
 		t.Errorf("the list %+v", n)
 	}
 }
@@ -109,9 +109,9 @@ func TestGridViewChoosesSeveral(t *testing.T) {
 func TestGridViewResizes(t *testing.T) {
 	sel := 13
 	s := GridState{Selected: &sel}
-	tt := NewTester(func(c *Context) {
-		GridView(c, &s, 100, 100, 80, func(i int) {
-			Textf(c, "Item %d", i)
+	tt := coreNewTester(func(c *context) {
+		coreGridView(c, &s, 100, 100, 80, func(i int) {
+			coreTextf(c, "Item %d", i)
 		}).Grow(1)
 	}, 448, 300)
 	if s.cols != 4 {

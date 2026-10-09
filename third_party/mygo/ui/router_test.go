@@ -145,26 +145,26 @@ func TestRouterView(t *testing.T) {
 	r := NewRouter("/")
 	r.Transition = TransitionNone
 	var note string
-	tt := NewTester(func(c *Context) {
-		Column(c).Fill().Children(func() {
-			Row(c).Children(func() {
-				BackButton(c, r)
-				ForwardButton(c, r)
+	tt := coreNewTester(func(c *context) {
+		coreColumn(c).Fill().Children(func() {
+			coreRow(c).Children(func() {
+				coreBackButton(c, r)
+				coreForwardButton(c, r)
 			})
-			r.View(c, func(rt *Route) {
+			r.coreView(c, func(rt *Route) {
 				switch {
 				case rt.Match("/"):
 					rt.Title("Home")
-					Text(c, "Welcome")
-					Link(c, "First note", "/notes/1")
-					Link(c, "Site", "https://example.com")
+					coreText(c, "Welcome")
+					coreLink(c, "First note", "/notes/1")
+					coreLink(c, "Site", "https://example.com")
 				case rt.Match("/notes/{id}"):
 					note = rt.Param("id")
 					rt.Title("Note " + note)
-					Text(c, "Note "+note)
-					Link(c, "Next", fmt.Sprint(atoi(note)+1))
+					coreText(c, "Note "+note)
+					coreLink(c, "Next", fmt.Sprint(atoi(note)+1))
 				default:
-					Text(c, "Not found")
+					coreText(c, "Not found")
 				}
 			})
 		})
@@ -220,10 +220,10 @@ func TestRouterView(t *testing.T) {
 		t.Fatalf("after choosing Home: %q", tt.Texts())
 	}
 	tt.send(platform.SurfaceEvent{Kind: platform.AccessibilityOn})
-	if n := node(t, tt.h.access, platform.RoleButton, "Back"); n.States&platform.AccessDisabled == 0 {
+	if n := accessNode(t, tt.h.access, platform.RoleButton, "Back"); n.States&platform.AccessDisabled == 0 {
 		t.Error("Back is not disabled at the start of the history")
 	}
-	node(t, tt.h.access, platform.RoleGroup, "Home")
+	accessNode(t, tt.h.access, platform.RoleGroup, "Home")
 	// Pages change from outside the frame, as after a menu item.
 	r.Push("/nowhere")
 	tt.Frame()
@@ -243,23 +243,23 @@ func atoi(s string) int {
 func TestRouterKeepsPages(t *testing.T) {
 	r := NewRouter("/list")
 	r.Transition = TransitionNone
-	var scroll *Element
-	tt := NewTester(func(c *Context) {
-		r.View(c, func(rt *Route) {
+	var scroll *node
+	tt := coreNewTester(func(c *context) {
+		r.coreView(c, func(rt *Route) {
 			switch {
 			case rt.Match("/list"):
-				scroll = Scroll(c).Grow(1)
+				scroll = coreScroll(c).Grow(1)
 				scroll.Children(func() {
 					for i := range 50 {
-						Textf(c, "Row %d", i)
+						coreTextf(c, "Row %d", i)
 					}
 				})
-				count := Local(scroll, "count", func() int { return 0 })
-				if Button(c, fmt.Sprintf("Clicked %d", *count)).Clicked() {
+				count := coreLocal(scroll, "count", func() int { return 0 })
+				if coreButton(c, fmt.Sprintf("Clicked %d", *count)).Clicked() {
 					*count++
 				}
 			default:
-				Text(c, "Page "+rt.Path())
+				coreText(c, "Page "+rt.Path())
 			}
 		})
 	}, 400, 300)
@@ -301,29 +301,29 @@ func TestRouterFocus(t *testing.T) {
 	r := NewRouter("/")
 	r.Transition = TransitionNone
 	var name string
-	tt := NewTester(func(c *Context) {
-		Row(c).Fill().Children(func() {
-			Column(c).Children(func() {
-				if Button(c, "Open settings").Clicked() {
+	tt := coreNewTester(func(c *context) {
+		coreRow(c).Fill().Children(func() {
+			coreColumn(c).Children(func() {
+				if coreButton(c, "Open settings").Clicked() {
 					r.Push("/settings")
 				}
 			})
-			r.View(c, func(rt *Route) {
+			r.coreView(c, func(rt *Route) {
 				switch {
 				case rt.Match("/"):
 					rt.Title("Home")
-					Button(c, "First")
-					Link(c, "Profile", "/profile")
+					coreButton(c, "First")
+					coreLink(c, "Profile", "/profile")
 				case rt.Match("/profile"):
 					rt.Title("Your profile")
-					TextInput(c, &name).AutoFocus()
+					coreTextInput(c, &name).AutoFocus()
 				case rt.Match("/settings"):
 					rt.Title("Settings")
-					Button(c, "Reset")
-					Link(c, "Fonts", "fonts")
+					coreButton(c, "Reset")
+					coreLink(c, "Fonts", "fonts")
 				case rt.Match("/fonts"):
 					rt.Title("Font settings")
-					Button(c, "Bigger")
+					coreButton(c, "Bigger")
 				}
 			})
 		})
@@ -390,15 +390,15 @@ func TestRouterFocus(t *testing.T) {
 	}
 	// Screen readers see the page, named by its title.
 	tt.send(platform.SurfaceEvent{Kind: platform.AccessibilityOn})
-	node(t, tt.h.access, platform.RoleGroup, "Font settings")
+	accessNode(t, tt.h.access, platform.RoleGroup, "Font settings")
 }
 
 func TestRouterTransition(t *testing.T) {
 	r := NewRouter("/notes")
 	var shortcuts int
-	tt := NewTester(func(c *Context) {
-		r.View(c, func(rt *Route) {
-			Text(c, "Page "+rt.Path())
+	tt := coreNewTester(func(c *context) {
+		r.coreView(c, func(rt *Route) {
+			coreText(c, "Page "+rt.Path())
 			if c.Shortcut(Cmd, KeyS) {
 				shortcuts++
 			}
@@ -483,8 +483,8 @@ func TestRouterTransition(t *testing.T) {
 }
 
 // children returns the children of an element.
-func (e *Element) children() []*Element {
-	var out []*Element
+func (e *node) children() []*node {
+	var out []*node
 	for ch := e.first; ch != nil; ch = ch.next {
 		out = append(out, ch)
 	}
@@ -494,17 +494,17 @@ func (e *Element) children() []*Element {
 func TestRouterNested(t *testing.T) {
 	outer, inner := NewRouter("/settings"), NewRouter("/general")
 	outer.Transition, inner.Transition = TransitionNone, TransitionNone
-	tt := NewTester(func(c *Context) {
-		outer.View(c, func(r *Route) {
+	tt := coreNewTester(func(c *context) {
+		outer.coreView(c, func(r *Route) {
 			switch {
 			case r.Match("/settings"):
-				Text(c, "Settings")
-				inner.View(c, func(r *Route) {
-					Text(c, "Section "+r.Path())
-					Button(c, "Inside "+r.Path())
+				coreText(c, "Settings")
+				inner.coreView(c, func(r *Route) {
+					coreText(c, "Section "+r.Path())
+					coreButton(c, "Inside "+r.Path())
 				})
 			default:
-				Text(c, "Elsewhere")
+				coreText(c, "Elsewhere")
 			}
 		})
 	}, 400, 300)
@@ -530,8 +530,8 @@ func TestRouterNested(t *testing.T) {
 }
 
 func TestAnnounce(t *testing.T) {
-	tt := NewTester(func(c *Context) {
-		if Button(c, "Save").Clicked() {
+	tt := coreNewTester(func(c *context) {
+		if coreButton(c, "Save").Clicked() {
 			c.Toast("Saved")
 			c.Announce("3 files saved")
 		}
@@ -556,9 +556,9 @@ func TestEditorLeavesHistoryKeys(t *testing.T) {
 	r := NewRouter("/a")
 	r.Transition = TransitionNone
 	text := ""
-	tt := NewTester(func(c *Context) {
-		r.View(c, func(rt *Route) {
-			TextInput(c, &text)
+	tt := coreNewTester(func(c *context) {
+		r.coreView(c, func(rt *Route) {
+			coreTextInput(c, &text)
 		})
 	}, 300, 200)
 	r.Push("/b")
@@ -577,53 +577,53 @@ func TestEditorLeavesHistoryKeys(t *testing.T) {
 
 func TestRouterLayouts(t *testing.T) {
 	r := NewRouter("/settings/general")
-	var outer, inner *Element
+	var outer, inner *node
 	var section, what string
-	tt := NewTester(func(c *Context) {
-		outer = r.View(c, func(rt *Route) {
+	tt := coreNewTester(func(c *context) {
+		outer = r.coreView(c, func(rt *Route) {
 			switch {
 			case rt.Match("/settings/{section...}"):
 				rt.Title("Settings")
-				Row(c).Grow(1).AlignItems(Stretch).Children(func() {
-					side := Column(c).Width(140)
+				coreRow(c).Grow(1).AlignItems(Stretch).Children(func() {
+					side := coreColumn(c).Width(140)
 					side.Children(func() {
-						clicks := Local(side, "clicks", func() int { return 0 })
-						if Button(c, fmt.Sprintf("Layout %d", *clicks)).Clicked() {
+						clicks := coreLocal(side, "clicks", func() int { return 0 })
+						if coreButton(c, fmt.Sprintf("Layout %d", *clicks)).Clicked() {
 							*clicks++
 						}
 						for _, s := range []string{"general", "fonts", "fonts/size"} {
-							if Button(c, "Go "+s).Clicked() {
+							if coreButton(c, "Go "+s).Clicked() {
 								r.Push("/settings/" + s)
 							}
 						}
 					})
-					inner = rt.View(c, func(rt *Route) {
+					inner = rt.coreView(c, func(rt *Route) {
 						section = rt.Param("section")
 						switch {
 						case rt.Match("/general"):
 							rt.Title("General")
-							Text(c, "General page")
+							coreText(c, "General page")
 						case rt.Match("/fonts"):
 							rt.Title("Fonts")
-							pg := rt.Page()
-							n := Local(pg, "n", func() int { return 0 })
-							if Button(c, fmt.Sprintf("Fonts %d", *n)).Clicked() {
+							pg := rt.corePage()
+							n := coreLocal(pg, "n", func() int { return 0 })
+							if coreButton(c, fmt.Sprintf("Fonts %d", *n)).Clicked() {
 								*n++
 							}
 						case rt.Match("/fonts/{what}"):
 							what = rt.Param("what")
 							rt.Title("Size")
-							Text(c, "Size page")
+							coreText(c, "Size page")
 						}
 					})
 				})
 			default:
 				rt.Title("Notes")
-				Text(c, "Notes page")
+				coreText(c, "Notes page")
 			}
 		})
 	}, 500, 300)
-	pages := func(e *Element) int { return len(e.children()) }
+	pages := func(e *node) int { return len(e.children()) }
 	settle := func() {
 		time.Sleep(300 * time.Millisecond)
 		tt.Frame()
@@ -688,5 +688,5 @@ func TestRouterLayouts(t *testing.T) {
 		}
 	}()
 	rt := &Route{router: r, entry: r.current(), rest: -1}
-	rt.View(&tt.rt.c, func(*Route) {})
+	rt.coreView(&tt.rt.c, func(*Route) {})
 }

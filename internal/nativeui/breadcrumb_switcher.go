@@ -45,7 +45,7 @@ func (s *Shell) breadcrumbRow(c *ui.Context) {
 		for i, segment := range segments {
 			segment := segment
 			last := i == len(segments)-1
-			var trigger *ui.Element
+			var trigger ui.Element
 			ui.Box(c).Shrink(0).Children(func() {
 				b := ui.ButtonBase(c).
 					Shrink(0).
@@ -89,7 +89,7 @@ func (s *Shell) breadcrumbRow(c *ui.Context) {
 }
 
 // crumbPopover lists the segment's siblings for quick switching.
-func (s *Shell) crumbPopover(c *ui.Context, anchor *ui.Element, index int, segment crumbSegment) {
+func (s *Shell) crumbPopover(c *ui.Context, anchor ui.Element, index int, segment crumbSegment) {
 	ui.Popover(c, anchor, &s.crumbOpen[index], func() {
 		sp := Spacing()
 		ui.Column(c).Width(300).MaxHeight(420).Padding(sp.S).Gap(1).Children(func() {
@@ -155,10 +155,10 @@ func (s *Shell) crumbPaneRows(c *ui.Context, tabID string) {
 
 // crumbItemRow is one switcher row: glyph (with the agent state dot at
 // its corner when bound), label, selected tint.
-func crumbItemRow(c *ui.Context, mark visualMark, label string, dot operationalState, selected bool) *ui.Element {
+func crumbItemRow(c *ui.Context, mark visualMark, label string, dot operationalState, selected bool) ui.Element {
 	t := c.Theme()
 	tokens := designTokens(t.Dark)
-	var row *ui.Element
+	var row ui.Element
 	ui.Box(c).Children(func() {
 		row = ui.ButtonBase(c).
 			FillWidth().

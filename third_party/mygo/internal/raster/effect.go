@@ -2,7 +2,6 @@ package raster
 
 import (
 	"runtime"
-	"time"
 
 	"github.com/egoist/mygo/internal/scene"
 )
@@ -61,9 +60,8 @@ const (
 // for.
 const texelWork = 64 << 10
 
-// read computes the backdrop b of dst, and returns how long the cores
-// took, together.
-func (bd *backdrop) read(dst *Image, b scene.Backdrop) time.Duration {
+// read computes the backdrop b of dst.
+func (bd *backdrop) read(dst *Image, b scene.Backdrop) {
 	img := &bd.img
 	img.Backdrop = b
 	img.W, img.H = b.Size()
@@ -73,40 +71,38 @@ func (bd *backdrop) read(dst *Image, b scene.Backdrop) time.Duration {
 	}
 	img.Pix, bd.tmp = img.Pix[:n], bd.tmp[:n]
 	if n == 0 {
-		return 0
+		return
 	}
 	bd.dst = dst
 	k := b.Down
-	busy := bd.run(averagePass, img.H, img.W*k*k)
+	bd.run(averagePass, img.H, img.W*k*k)
 	if b.Radius == 0 {
-		return busy
+		return
 	}
 	bd.weights = bd.weights[:0]
 	for i := 0; i <= b.Radius; i++ {
 		bd.weights = append(bd.weights, scene.BlurWeight(i, b.Sigma))
 	}
 	taps := 2*b.Radius + 1
-	busy += bd.run(rowsPass, img.H, img.W*taps)
-	return busy + bd.run(columnsPass, img.W, img.H*taps)
+	bd.run(rowsPass, img.H, img.W*taps)
+	bd.run(columnsPass, img.W, img.H*taps)
 }
 
 // run does lines 0 to n-1 of pass, each work texels times taps, on
-// several cores when they are worth it, and returns how long the cores
-// took, together.
-func (bd *backdrop) run(pass, n, work int) time.Duration {
-	start := time.Now()
+// several cores when they are worth it.
+func (bd *backdrop) run(pass, n, work int) {
 	bd.pass = pass
 	workers := max(min(runtime.GOMAXPROCS(0), n*work/texelWork, maxWorkers), 1)
 	if workers == 1 {
 		for i := range n {
 			bd.line(0, i)
 		}
-		return time.Since(start)
+		return
 	}
 	if bd.lines.do == nil {
 		bd.lines.do = bd.line
 	}
-	return bd.lines.run(workers, n)
+	bd.lines.run(workers, n)
 }
 
 // line does line i of the pass.

@@ -2,8 +2,8 @@
 
 The glass plugin draws Liquid Glass in native UI, the material of macOS 26
 and later: what is under an element shows through it, frosted, bent near
-its edges as through the rim of a lens, and lit along its rim, over a soft
-shadow. It also draws macOS's scroll edges, which content scrolling under
+its edges as through the rim of a lens, and lit along its hairline rim. It
+also draws macOS's scroll edges, which content scrolling under
 a bar fades or frosts under ([Scroll edges](#scroll-edges)), and blurs
 what is under an element without the glass, evenly or fading along a
 gradient ([Blur](#blur)). MyGo draws them with the plugin's shaders, on
@@ -171,15 +171,18 @@ with the optics of the open-source reproductions of Liquid Glass:
   white to 100% in light mode, and to 15% and 51% in dark mode, keeping
   its colors. The clear glass adds an eighth to it.
 - **The light.** The rim is lit where it faces up or down and shaded where
-  it faces the sides, within a DIP of the edge.
+  it faces the sides, within a pixel of the edge: a hairline, as AppKit's.
+- **No shadow.** Neither `NSGlassEffectView` nor a button of the glass
+  bezel casts one: the pane's edge is its rim alone.
 
 ## Performance
 
 Each pane reads what is under it, averages and blurs it, then draws with
 its own shader: a few small passes on the GPU, and a pane changes when
 anything under it does, as content scrolling under a bar. When a window
-draws on the CPU, as [Rendering](../ui/rendering.md) describes, a change
-under a pane redraws the pane and what its blur reaches around it. A
+draws on the CPU, without a GPU, as [Rendering](../ui/rendering.md)
+describes, a change under a pane redraws the pane and what its blur
+reaches around it. A
 progressive blur does this for each of its steps, where each shows: on
 the CPU, a strip of 1360×176 pixels blurred by 24 takes 9 ms on an M5
 fading, 1.7 evenly, and on the GPU a few small passes for each step.

@@ -214,10 +214,12 @@ The apps run where they are, but to ship them to users, sign them: see
 - The examples in the repository:
   - with web pages: `examples/hello` (the smallest app), `examples/todo`
     (typed services and events, persistence, dialogs, menus, several
-    windows), `examples/frameless` (a custom title bar),
-    `examples/vibrancy` (a translucent sidebar under an inset title bar)
-    and `examples/native` (menus, a tray icon, dialogs, notifications, a
+    windows), `examples/frameless` (a custom title bar) and
+    `examples/native` (menus, a tray icon, dialogs, notifications, a
     global shortcut, the clipboard and dark mode);
-  - with native UI: `examples/counter-native` (a counter with a test of its
-    view) and `examples/gallery` (a tour of the toolkit: layout, widgets,
-    text editing, a list of ten thousand rows, drawing and overlays).
+  - with native UI: `examples/clipboard` (copying and dragging text, HTML,
+    lazy JSON, and file lists), `examples/counter-native` (a counter with a test of its
+    view), `examples/vibrancy` (a translucent sidebar under an inset title
+    bar, its material picked in it) and `examples/gallery` (a tour of the
+    toolkit: layout, widgets, text editing, a list of ten thousand rows,
+    drawing and overlays).

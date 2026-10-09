@@ -284,7 +284,11 @@ func (b *Backend) menuCommand(cmd uint16, w *window) {
 	if w != nil && editRole(w, e.role) {
 		return
 	}
-	b.h.MenuItemClicked(e.uid)
+	if w != nil {
+		w.h.MenuItemClicked(e.uid)
+	} else {
+		b.h.MenuItemClicked(e.uid)
+	}
 }
 
 func (b *Backend) focusedWindow() *window {

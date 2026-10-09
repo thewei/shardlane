@@ -36,6 +36,9 @@ const listSearch = 1000
 // knows of the heights of its rows, kept in the app's state. Give each
 // List a ListState of its own; set its fields before building the List.
 type ListState struct {
+	// Handle names this list independently of its per-pass node.
+	Handle
+
 	// Key returns an identity for the item row i shows, such as its ID:
 	// comparable, and unique among the rows. Without it, a row is its
 	// index. With it, the state of a row (focus, text being edited, …)
@@ -187,12 +190,62 @@ func (s *ListState) AtEnd() bool {
 	return s.atEnd
 }
 
+// Focused reports whether the List, Table or Outline using s has
+// the keyboard focus. Call it from the view, after building the list or
+// while building its rows. It returns false when s was not built in the
+// current pass of c, including when the list is hidden.
+func (s *ListState) coreFocused(c *context) bool { return s.current(c).Focused() }
+
+// FocusWithin reports whether the list or one of its descendants has the
+// keyboard focus, with the same lifetime as Focused. Row builders can use
+// it before List returns, without saving an Element from an earlier frame.
+func (s *ListState) coreFocusWithin(c *context) bool { return s.current(c).FocusWithin() }
+
+// Focus gives the list the keyboard focus and reports whether it was
+// built in the current pass of c. A pending focus request can wait until
+// a hidden list returns:
+//
+//	if app.focusFiles && app.files.Focus(c) {
+//		app.focusFiles = false
+//	}
+//
+// Call it after building the list, or while building its rows.
+func (s *ListState) coreFocus(c *context) bool {
+	e := s.current(c)
+	if e == nil {
+		return false
+	}
+	e.Focus()
+	return true
+}
+
+// Shortcut reports whether mods+key was pressed while the list or one of
+// its descendants had the focus, as Element.Shortcut does. Call it after
+// building the list, or while building its rows. A list not built in the
+// current pass of c registers and handles no shortcuts.
+func (s *ListState) coreShortcut(c *context, mods Modifiers, key Key) bool {
+	return s.current(c).Shortcut(mods, key)
+}
+
+// current resolves the focus owner of this pass before reading an arena
+// pointer: an absent list's old slot may now hold an unrelated element.
+func (s *ListState) current(c *context) *node {
+	if s == nil || c == nil || c.rt == nil || c.rt.closed || !c.rt.inFrame {
+		return nil
+	}
+	f := &s.frame
+	if f.c != c || f.frame != c.rt.frame || f.pass != c.rt.pass {
+		return nil
+	}
+	return f.owner
+}
+
 // listFrame is what a List built in the frame, for laying it out.
 type listFrame struct {
-	c *Context
-	e *Element
+	c *context
+	e *node
 	// owner takes the focus and reports choices: the list, or its Table.
-	owner *Element
+	owner *node
 	s     *ListState
 	n     int
 	row   func(i int)
@@ -216,7 +269,7 @@ type listFrame struct {
 type listRow struct {
 	i   int
 	key any
-	e   *Element
+	e   *node
 	y   float64
 }
 
@@ -246,11 +299,11 @@ type rowBuild struct {
 // chooses rows, and pins the headers of sections. Gap spaces the rows,
 // Padding pads the content, scrolling with it, and Justify(End) puts rows
 // that do not fill the list at its bottom, as a chat's first messages.
-func List(c *Context, s *ListState, n int, row func(i int)) *Element {
-	e := Scroll(c)
+func coreList(c *context, s *ListState, n int, row func(i int)) *node {
+	e := coreScroll(c)
 	e.widget, e.role = "List", RoleList
 	if s == nil {
-		s = Local(e, "list", func() ListState { return ListState{} })
+		s = coreLocal(e, "list", func() ListState { return ListState{} })
 	}
 	buildList(c, e, e, s, n, row, plainList)
 	return e
@@ -271,7 +324,7 @@ const (
 	gridList
 )
 
-func buildList(c *Context, e, owner *Element, s *ListState, n int, row func(i int), kind listKind) {
+func buildList(c *context, e, owner *node, s *ListState, n int, row func(i int), kind listKind) {
 	flat, tree := kind == tableList || kind == treeTableList, kind == treeList || kind == treeTableList
 	rt := c.rt
 	f := &s.frame
@@ -284,6 +337,7 @@ func buildList(c *Context, e, owner *Element, s *ListState, n int, row func(i in
 		s.editables, s.editablesNow = s.editablesNow, false
 	}
 	e.list, owner.rowsOf = f, f
+	wrapElement(owner).Bind(&s.Handle)
 	s.sync(e, n)
 	if s.cursor() != nil && owner == e {
 		e.Focusable()
@@ -306,18 +360,12 @@ func buildList(c *Context, e, owner *Element, s *ListState, n int, row func(i in
 			}
 		}
 	})
-	// The keys after the clicks on the rows, which came first: a letter
-	// typed right after a click goes on from the row clicked. A choice
-	// they move builds the rows again.
-	if s.cursor() != nil {
-		f.navigate()
-	}
-	f.reorder()
+	owner.onValueInput(listInput)
 }
 
 // sync follows what changed since the last frame: rows added or removed,
 // items moving, the user or the app scrolling.
-func (s *ListState) sync(e *Element, n int) {
+func (s *ListState) sync(e *node, n int) {
 	st, rt := e.st, e.c.rt
 	if !s.started {
 		s.started = true
@@ -413,7 +461,7 @@ func (s *ListState) find(k any, near, n int) (int, bool) {
 
 // plan returns the row the place starts from and the rows to build, as far
 // as the heights known tell where the place puts them.
-func (s *ListState) plan(e *Element, n int) (a, first, last int) {
+func (s *ListState) plan(e *node, n int) (a, first, last int) {
 	if n == 0 {
 		return 0, 0, 0
 	}
@@ -449,13 +497,13 @@ func (s *ListState) plan(e *Element, n int) (a, first, last int) {
 }
 
 // build builds row i in the list.
-func (f *listFrame) build(i int) *Element {
+func (f *listFrame) build(i int) *node {
 	c, s := f.c, f.s
 	var key any = i
 	if s.Key != nil {
 		key = s.Key(i)
 	}
-	w := Box(c).Key(key).Shrink(0)
+	w := coreBox(c).Key(key).Shrink(0)
 	w.listRow, w.rowIndex = true, i
 	if s.Label != nil {
 		w.Label(s.Label(i))
@@ -473,21 +521,14 @@ func (f *listFrame) build(i int) *Element {
 		w.Role(RoleListItem)
 	}
 	prev := f.rb
-	f.rb = rowBuild{f: f, i: i, key: key}
+	f.rb = rowBuild{f: f, i: i, key: key, clicked: w.st.clicks > 0 && w.st.clickMods == 0, double: w.st.doubleClicks > 0}
 	rb := &f.rb
 	if sel := s.cursor(); sel != nil && !f.isHeader(i) {
 		t := c.theme
 		w.flags |= flagClickable | flagHover | flagChoosable
 		rb.chosen = f.chosen(i, key)
-		if w.Clicked() {
-			rb.clicked = w.ClickModifiers() == 0
-			f.click(i, w.ClickModifiers())
-			f.owner.Focus()
-		}
-		if w.DoubleClicked() {
-			rb.double = true
-			f.owner.st.submitted = true
-		}
+		*valueBinding[listRowInput](w) = listRowInput{f: f, i: i}
+		w.onValueInput(listRowValueInput)
 		on := f.chosen(i, key)
 		w.Selected(on)
 		switch r := t.Radius; {
@@ -506,7 +547,7 @@ func (f *listFrame) build(i int) *Element {
 		default:
 			w.Radius(r)
 		}
-		w.styleFn = func(w *Element) {
+		w.styleFn = func(w *node) {
 			if w.checked != 2 && w.Hovered() {
 				w.bg = t.SurfaceHover
 			}
@@ -538,7 +579,7 @@ func (f *listFrame) build(i int) *Element {
 // buildLate builds row i while the list lays out, as the view would have:
 // with the theme it built the list with, and its input forgotten once the
 // frame is laid out (layoutTree).
-func (f *listFrame) buildLate(i int) *Element {
+func (f *listFrame) buildLate(i int) *node {
 	c := f.c
 	parent, theme := c.parent, c.theme
 	c.parent, c.theme = f.e, f.theme
@@ -691,7 +732,7 @@ func (f *listFrame) chosen(i int, k any) bool {
 
 // changed reports a new choice.
 func (f *listFrame) changed() {
-	f.owner.st.changed = true
+	f.owner.st.markChanged()
 	f.c.rt.consumed = true
 }
 
@@ -870,7 +911,7 @@ func (f *listFrame) navigate() {
 		s.editKey, s.editAsked = f.key(*sel), true
 		s.ScrollIntoView(*sel)
 	case enter && in:
-		o.st.submitted = true
+		o.st.markSubmitted()
 	}
 	to := -1
 	switch key {
@@ -949,7 +990,7 @@ func (f *listFrame) typed(text string) int {
 
 // focusedRow returns the row holding the keyboard focus in the last
 // frame, where it is now.
-func (s *ListState) focusedRow(e *Element, n int) (int, bool) {
+func (s *ListState) focusedRow(e *node, n int) (int, bool) {
 	rt := e.c.rt
 	if rt.focused == 0 || len(s.rows) == 0 {
 		return 0, false
@@ -978,7 +1019,7 @@ func (s *ListState) focusedRow(e *Element, n int) (int, bool) {
 // sets the size of the content and the offset. Without rows, what else was
 // built in the list shows, as a scroll container's content: a message that
 // it is empty, say.
-func (e *Element) layoutList(w, h float32) {
+func (e *node) layoutList(w, h float32) {
 	f := e.list
 	s, n := f.s, f.n
 	hs := &s.heights
@@ -1174,7 +1215,7 @@ func (e *Element) layoutList(w, h float32) {
 		first, last = a, a-1
 	}
 	inset := padTop - f.rows[f.at[first]].y
-	var pinned *Element
+	var pinned *node
 	if s.Header != nil && last >= first {
 		pinned = e.pinHeader(first, hi, top)
 	}
@@ -1182,15 +1223,15 @@ func (e *Element) layoutList(w, h float32) {
 	// Lay the rows out in order, as they show, Tab moves and assistive
 	// technology reads, then what else was built above them, which lies
 	// over the rows.
-	var extras []*Element
+	var extras []*node
 	for ch := e.first; ch != nil; ch = ch.next {
 		if !ch.listRow && ch.flags&flagAbsolute != 0 {
 			extras = append(extras, ch)
 		}
 	}
 	slices.SortFunc(f.rows, func(a, b listRow) int { return a.i - b.i })
-	var prev *Element
-	link := func(ch *Element) {
+	var prev *node
+	link := func(ch *node) {
 		ch.next = nil
 		if prev == nil {
 			e.first = ch
@@ -1225,7 +1266,7 @@ func (e *Element) layoutList(w, h float32) {
 // relayoutList lays the list out anew scrolled to y, as revealing its
 // row ch asks, from where the heights known put ch: the rows around it
 // are built, and the frame shows no gap.
-func (e *Element) relayoutList(ch *Element, y float64) {
+func (e *node) relayoutList(ch *node, y float64) {
 	f := e.list
 	if f.n == 0 {
 		e.st.scrollTo(e.st.scrollX, y)
@@ -1243,7 +1284,7 @@ func (e *Element) relayoutList(ch *Element, y float64) {
 
 // remember keeps where the list is for the next frame, and builds another
 // for a view that read where it was.
-func (s *ListState) remember(e *Element, first, last int, atEnd bool, scroll float64) {
+func (s *ListState) remember(e *node, first, last int, atEnd bool, scroll float64) {
 	f, n := e.list, e.list.n
 	if s.read && (first != s.first || last != s.last || atEnd != s.atEnd) {
 		e.c.rt.animating = true
@@ -1279,7 +1320,7 @@ func (s *ListState) remember(e *Element, first, last int, atEnd bool, scroll flo
 // pinHeader moves the header of the section of row first, the first in
 // view, to the top of the list, below which the next header pushes it,
 // and returns it if it moved.
-func (e *Element) pinHeader(first, hi int, top float64) *Element {
+func (e *node) pinHeader(first, hi int, top float64) *node {
 	f := e.list
 	s := f.s
 	hh := s.headerAbove(first, f.n)

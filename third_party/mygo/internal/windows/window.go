@@ -95,14 +95,16 @@ func (b *Backend) NewWindow(o *platform.WindowOptions, h platform.WindowHandler)
 		htmlFor: map[string]string{}, calls: map[int]func(string, error){},
 	}
 	w.hiddenTitleBar = !o.Frameless && (o.TitleBarStyle == "hidden" || o.TitleBarStyle == "hiddenInset")
-	// A page with a material behind it needs a window without a redirection
-	// bitmap, whose opaque surface would cover the system backdrop. GDI
-	// draws nothing there: the controls of a hidden title bar show through
-	// DirectComposition (compositor.go), and the menus open in a popup
-	// (barless). Where DirectComposition is unavailable, the window keeps
-	// its bitmap: its controls show, and the material does not. The style
-	// is the window's for life: Windows neither adds it nor removes it later.
-	w.noRedirect = o.Vibrancy != "" && !o.Surface && systemBackdrops() && (!w.hiddenTitleBar || b.composition() != nil)
+	// A page or native UI with a material behind it needs a window without
+	// a redirection bitmap, whose opaque surface would cover the system
+	// backdrop. GDI draws nothing there: the controls of a hidden title bar
+	// and the frames of native UI show through DirectComposition
+	// (compositor.go, and the renderer's swap chain), and the menus open in
+	// a popup (barless). Where DirectComposition is unavailable, the window
+	// keeps its bitmap: what it shows shows, and the material does not. The
+	// style is the window's for life: Windows neither adds it nor removes it
+	// later.
+	w.noRedirect = o.Vibrancy != "" && systemBackdrops() && (!w.hiddenTitleBar && !o.Surface || b.composition() != nil)
 	var owner uintptr
 	if p, ok := o.Parent.(*window); ok && p != nil && !p.closed {
 		w.parent, owner = p, p.hwnd

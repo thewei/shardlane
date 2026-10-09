@@ -97,6 +97,35 @@ func TestPackagingArgs(t *testing.T) {
 	}
 }
 
+func TestSetFinderFlagsUsesSystemXattr(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("needs macOS")
+	}
+	shadowDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(shadowDir, "xattr"), []byte("#!/bin/sh\nexit 64\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", shadowDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	if got, err := exec.LookPath("xattr"); err != nil || got != filepath.Join(shadowDir, "xattr") {
+		t.Fatalf("shadow xattr = %q, %v", got, err)
+	}
+
+	path := filepath.Join(t.TempDir(), "flags")
+	if err := os.WriteFile(path, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := setFinderFlags(path, finderHasCustomIcon); err != nil {
+		t.Fatal(err)
+	}
+	out, err := exec.Command("/usr/bin/xattr", "-px", "com.apple.FinderInfo", path).Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := strings.Join(strings.Fields(string(out)), ""), "0000000000000000040000000000000000000000000000000000000000000000"; got != want {
+		t.Errorf("FinderInfo = %q, want %q", got, want)
+	}
+}
+
 // TestBuildDMG builds a disk image of a minimal app with hdiutil.
 func TestBuildDMG(t *testing.T) {
 	if runtime.GOOS != "darwin" || testing.Short() {

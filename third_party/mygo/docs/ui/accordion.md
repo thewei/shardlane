@@ -20,12 +20,12 @@ For one section open at a time, close the others as one opens:
 ```go
 for i, s := range sections {
 	open := app.section == i
-	if ui.AccordionItem(c, s.Title, &open, s.Build).Changed() {
+	ui.AccordionItem(c, s.Title, &open, s.Build).OnChange(func() {
 		app.section = -1
 		if open {
 			app.section = i
 		}
-	}
+	})
 }
 ```
 

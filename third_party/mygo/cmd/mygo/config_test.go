@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"regexp"
@@ -14,21 +15,45 @@ import (
 
 func TestTSConfig(t *testing.T) {
 	for _, rt := range []string{"bun", "node"} {
-		t.Run(rt, func(t *testing.T) {
-			defer func(r []string) { configRuntimes = r }(configRuntimes)
-			configRuntimes = []string{rt}
-			if _, err := configRuntime(); err != nil {
+		t.Run(rt, func(t *testing.T) { testTSConfig(t, rt) })
+		if runtime.GOOS != "windows" {
+			continue
+		}
+		// npm installs commands on Windows as batch files, whose command
+		// line cmd.exe parses.
+		t.Run(rt+".cmd", func(t *testing.T) {
+			path, err := exec.LookPath(rt)
+			if err != nil {
 				t.Skip(err)
 			}
 			dir := t.TempDir()
-			write := func(name, content string) {
-				t.Helper()
-				if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {
-					t.Fatal(err)
-				}
+			if err := os.WriteFile(filepath.Join(dir, rt+".cmd"), []byte("@\""+path+"\" %*\r\n"), 0o755); err != nil {
+				t.Fatal(err)
 			}
-			write("package.json", `{"name": "demo", "type": "module", "version": "2.3.4"}`)
-			write(tsConfig, `import pkg from "./package.json" with { type: "json" };
+			t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+			if p, _ := exec.LookPath(rt); !strings.EqualFold(filepath.Ext(p), ".cmd") {
+				t.Fatalf("%s resolves to %s", rt, p)
+			}
+			testTSConfig(t, rt)
+		})
+	}
+}
+
+func testTSConfig(t *testing.T, rt string) {
+	defer func(r []string) { configRuntimes = r }(configRuntimes)
+	configRuntimes = []string{rt}
+	if _, err := configRuntime(); err != nil {
+		t.Skip(err)
+	}
+	dir := t.TempDir()
+	write := func(name, content string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("package.json", `{"name": "demo", "type": "module", "version": "2.3.4"}`)
+	write(tsConfig, `import pkg from "./package.json" with { type: "json" };
 
 interface Env {
   command: string;
@@ -44,58 +69,56 @@ export default async ({ command }: Env) => ({
   macos: { infoPlist: { NSCameraUsageDescription: "Scan documents." } },
 });
 `)
-			defer func() { running = "" }()
-			running = "dev"
-			c, err := loadConfig(dir)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if c.Name != "TS App" || c.Version != "2.3.4" || c.DevURL != "http://localhost:5173" || len(c.FileAssociations) != 1 ||
-				c.MacOS.InfoPlist["NSCameraUsageDescription"] != "Scan documents." || c.configName() != tsConfig {
-				t.Errorf("config: %+v", c)
-			}
-			running = "build"
-			if c, err := loadConfig(dir); err != nil || c.DevURL != "" || c.Identifier != "com.mygo.tsapp" {
-				t.Errorf("build config: %+v, %v", c, err)
-			}
+	defer func() { running = "" }()
+	running = "dev"
+	c, err := loadConfig(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Name != "TS App" || c.Version != "2.3.4" || c.DevURL != "http://localhost:5173" || len(c.FileAssociations) != 1 ||
+		c.MacOS.InfoPlist["NSCameraUsageDescription"] != "Scan documents." || c.configName() != tsConfig {
+		t.Errorf("config: %+v", c)
+	}
+	running = "build"
+	if c, err := loadConfig(dir); err != nil || c.DevURL != "" || c.Identifier != "com.mygo.tsapp" {
+		t.Errorf("build config: %+v, %v", c, err)
+	}
 
-			for content, want := range map[string]string{
-				`export default { devUrl: "ftp://example.com" }`: tsConfig + `: devUrl "ftp://example.com" is not an http(s) URL`,
-				`export default 42`:                    "not a configuration object",
-				`export default {`:                     tsConfig + ": ",
-				`throw new Error("no config for you")`: "no config for you",
-			} {
-				write(tsConfig, content)
-				if _, err := loadConfig(dir); err == nil || !strings.Contains(err.Error(), want) {
-					t.Errorf("%s: got %v, want %q", content, err, want)
-				}
-			}
+	for content, want := range map[string]string{
+		`export default { devUrl: "ftp://example.com" }`: tsConfig + `: devUrl "ftp://example.com" is not an http(s) URL`,
+		`export default 42`:                    "not a configuration object",
+		`export default {`:                     tsConfig + ": ",
+		`throw new Error("no config for you")`: "no config for you",
+	} {
+		write(tsConfig, content)
+		if _, err := loadConfig(dir); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("%s: got %v, want %q", content, err, want)
+		}
+	}
 
-			write(tsConfig, `export default {}`)
-			write(jsonConfig, `{}`)
-			if _, err := loadConfig(dir); err == nil || !strings.Contains(err.Error(), "keep one") {
-				t.Errorf("both configurations: %v", err)
-			}
-			os.Remove(filepath.Join(dir, jsonConfig))
+	write(tsConfig, `export default {}`)
+	write(jsonConfig, `{}`)
+	if _, err := loadConfig(dir); err == nil || !strings.Contains(err.Error(), "keep one") {
+		t.Errorf("both configurations: %v", err)
+	}
+	os.Remove(filepath.Join(dir, jsonConfig))
 
-			// defineConfig of mygo-cli, which projects depend on.
-			modules := filepath.Join(dir, "node_modules")
-			os.Mkdir(modules, 0o755)
-			cli, _ := filepath.Abs(filepath.Join("..", "..", "packages", "cli"))
-			if err := os.Symlink(cli, filepath.Join(modules, "mygo-cli")); err != nil {
-				if runtime.GOOS == "windows" {
-					t.Skipf("no symbolic links: %v", err)
-				}
-				t.Fatal(err)
-			}
-			write(tsConfig, `import { defineConfig } from "mygo-cli";
+	// defineConfig of mygo-cli, which projects depend on.
+	modules := filepath.Join(dir, "node_modules")
+	os.Mkdir(modules, 0o755)
+	cli, _ := filepath.Abs(filepath.Join("..", "..", "packages", "cli"))
+	if err := os.Symlink(cli, filepath.Join(modules, "mygo-cli")); err != nil {
+		if runtime.GOOS == "windows" {
+			t.Skipf("no symbolic links: %v", err)
+		}
+		t.Fatal(err)
+	}
+	write(tsConfig, `import { defineConfig } from "mygo-cli";
 
 export default defineConfig({ name: "Defined", out: "build" });
 `)
-			if c, err := loadConfig(dir); err != nil || c.Name != "Defined" || c.Out != "build" {
-				t.Errorf("defineConfig: %+v, %v", c, err)
-			}
-		})
+	if c, err := loadConfig(dir); err != nil || c.Name != "Defined" || c.Out != "build" {
+		t.Errorf("defineConfig: %+v, %v", c, err)
 	}
 }
 

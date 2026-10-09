@@ -8,6 +8,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/egoist/mygo/internal/platform"
+	"github.com/egoist/mygo/transfer"
 )
 
 // Hooks for tests of native UI with input methods, file drops and
@@ -105,6 +106,46 @@ func TestDropFiles(handle uintptr, x, y float64, paths []string) (over, dropped 
 	s.send(platform.SurfaceEvent{Kind: platform.FileDragLeave})
 	return over, s.dropFiles(x, y, paths)
 }
+
+// TestMoveSurfacePointer sends real XTEST motion to the surface, including
+// during GTK's native drag tracker. It is unavailable outside X11.
+func TestMoveSurfacePointer(handle uintptr, x, y float64) bool {
+	s := surfaceByHandle(handle)
+	if s == nil {
+		return false
+	}
+	var origin func(ptr, *int32, *int32) int32
+	if !bind(libGDK, &origin, "gdk_window_get_origin") {
+		return false
+	}
+	var ox, oy int32
+	origin(s.eventWindow(), &ox, &oy)
+	scale := float64(gtkWidgetGetScaleFactor(s.area))
+	return TestMovePointer(int((float64(ox)+x)*scale), int((float64(oy)+y)*scale))
+}
+
+func TestDataDragReady(handle uintptr) bool {
+	s := surfaceByHandle(handle)
+	return s != nil && s.lastPointer != 0
+}
+
+// TestStartSerializedDrag simulates another application: the source uses
+// GTK's production providers with no token in MyGo's local registry.
+func TestStartSerializedDrag(handle uintptr, d transfer.Data, ops transfer.Operation, done func(transfer.Result)) bool {
+	s := surfaceByHandle(handle)
+	if s == nil || s.lastPointer == 0 {
+		return false
+	}
+	s.StartDataDrag(platform.DragRequest{Data: d.Snapshot(), Operations: ops, X: 30, Y: 30, Done: done})
+	return true
+}
+func TestCancelDataDrag(handle uintptr) {
+	if s := surfaceByHandle(handle); s != nil {
+		s.CancelDataDrag()
+	}
+}
+
+func TestDataDragResources() int { return len(gtkDataSources) }
 
 // TestAccessNode is an element of native UI as assistive technology reads
 // it through ATK: the name of its role, its name, and its value.

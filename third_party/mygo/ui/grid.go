@@ -46,10 +46,10 @@ type gridCell struct {
 //			ui.Image(c, p).AspectRatio(1).Fit(ui.Cover)
 //		}
 //	})
-func Grid(c *Context) *Element { return Box(c).Grid() }
+func coreGrid(c *context) *node { return coreBox(c).Grid() }
 
 // Grid lays the children out in a grid, as the function Grid does.
-func (e *Element) Grid() *Element {
+func (e *node) Grid() *node {
 	if e.row && e.align == Center {
 		e.align = alignAuto // as Row set it
 	}
@@ -58,7 +58,7 @@ func (e *Element) Grid() *Element {
 }
 
 // Columns gives the grid n columns of equal width, Fr(1) each.
-func (e *Element) Columns(n int) *Element {
+func (e *node) Columns(n int) *node {
 	e.cols = e.cols[:0]
 	for range n {
 		e.cols = append(e.cols, Fr(1))
@@ -67,7 +67,7 @@ func (e *Element) Columns(n int) *Element {
 }
 
 // Rows gives the grid n rows of equal height, Fr(1) each.
-func (e *Element) Rows(n int) *Element {
+func (e *node) Rows(n int) *node {
 	e.rows = e.rows[:0]
 	for range n {
 		e.rows = append(e.rows, Fr(1))
@@ -78,14 +78,14 @@ func (e *Element) Rows(n int) *Element {
 // ColumnTracks sets the grid's columns, as a sidebar and the rest:
 //
 //	ui.Grid(c).ColumnTracks(ui.Fixed(220), ui.Fr(1))
-func (e *Element) ColumnTracks(tracks ...Track) *Element {
+func (e *node) ColumnTracks(tracks ...Track) *node {
 	e.cols = append(e.cols[:0], tracks...)
 	return e
 }
 
 // RowTracks sets the grid's first rows; those it adds after fit their
 // content.
-func (e *Element) RowTracks(tracks ...Track) *Element {
+func (e *node) RowTracks(tracks ...Track) *node {
 	e.rows = append(e.rows[:0], tracks...)
 	return e
 }
@@ -93,29 +93,29 @@ func (e *Element) RowTracks(tracks ...Track) *Element {
 // JustifyItems places the children of a grid in their cells horizontally:
 // Stretch (the default), Start, Center or End. AlignItems places them
 // vertically.
-func (e *Element) JustifyItems(a Align) *Element { e.justifyItems = a; return e }
+func (e *node) JustifyItems(a Align) *node { e.justifyItems = a; return e }
 
 // JustifySelf places the element in its grid cell horizontally, overriding
 // its grid's JustifyItems.
-func (e *Element) JustifySelf(a Align) *Element { e.justifySelf = a; return e }
+func (e *node) JustifySelf(a Align) *node { e.justifySelf = a; return e }
 
 // ColumnStart puts the element in column n of its grid, counting from 1.
-func (e *Element) ColumnStart(n int) *Element { e.cell.col = int16(max(n, 1)); return e }
+func (e *node) ColumnStart(n int) *node { e.cell.col = int16(max(n, 1)); return e }
 
 // RowStart puts the element in row n of its grid, counting from 1.
-func (e *Element) RowStart(n int) *Element { e.cell.row = int16(max(n, 1)); return e }
+func (e *node) RowStart(n int) *node { e.cell.row = int16(max(n, 1)); return e }
 
 // ColumnSpan makes the element span n columns of its grid, or, for a
 // negative n, every column from its start to the grid's last, as a header
 // across a grid does.
-func (e *Element) ColumnSpan(n int) *Element { e.cell.colSpan = int16(n); return e }
+func (e *node) ColumnSpan(n int) *node { e.cell.colSpan = int16(n); return e }
 
 // RowSpan makes the element span n rows of its grid, or, for a negative n,
 // every row from its start to the last the grid sets.
-func (e *Element) RowSpan(n int) *Element { e.cell.rowSpan = int16(n); return e }
+func (e *node) RowSpan(n int) *node { e.cell.rowSpan = int16(n); return e }
 
 type gridItem struct {
-	e                *Element
+	e                *node
 	col, row         int // from 0
 	colSpan, rowSpan int
 }
@@ -137,7 +137,7 @@ type gridScratch struct {
 
 // gridPlace places the in-flow children of a grid in its cells, in the
 // scratch, and returns them with the number of columns and rows.
-func gridPlace(e *Element, s *gridScratch) (items []gridItem, nc, nr int) {
+func gridPlace(e *node, s *gridScratch) (items []gridItem, nc, nr int) {
 	first := len(s.items)
 	nc = max(len(e.cols), 1)
 	for c := e.first; c != nil; c = c.next {
@@ -394,7 +394,7 @@ func sizeTracks(tracks []Track, n int, avail, gap float32, cs []contrib, minCont
 
 // gridColumns sizes the columns of a grid placed in items, with room avail
 // in a content box cw wide (both inf when unknown), in the scratch.
-func gridColumns(e *Element, s *gridScratch, items []gridItem, nc int, avail, cw float32, minContent bool) []float32 {
+func gridColumns(e *node, s *gridScratch, items []gridItem, nc int, avail, cw float32, minContent bool) []float32 {
 	first, cfirst := len(s.f), len(s.cs)
 	for range 2 * nc {
 		s.f = append(s.f, 0)
@@ -423,7 +423,7 @@ func gridColumns(e *Element, s *gridScratch, items []gridItem, nc int, avail, cw
 
 // gridIntrinsic returns the max-content or min-content width of a grid's
 // content box.
-func gridIntrinsic(e *Element, maxContent bool) float32 {
+func gridIntrinsic(e *node, maxContent bool) float32 {
 	s := &e.c.rt.grid
 	firstItem, firstF := len(s.items), len(s.f)
 	defer func() { s.items, s.f = s.items[:firstItem], s.f[:firstF] }()
@@ -440,7 +440,7 @@ func gridIntrinsic(e *Element, maxContent bool) float32 {
 // cw×ch (inf when unknown) and returns the size its tracks take. With
 // commit it gives the children their boxes (relative to e) and lays them
 // out in turn.
-func gridLayout(e *Element, cw, ch float32, commit bool) (usedW, usedH float32) {
+func gridLayout(e *node, cw, ch float32, commit bool) (usedW, usedH float32) {
 	s := &e.c.rt.grid
 	firstItem, firstF, firstC := len(s.items), len(s.f), len(s.cs)
 	defer func() { s.items, s.f, s.cs = s.items[:firstItem], s.f[:firstF], s.cs[:firstC] }()
@@ -537,7 +537,7 @@ func gridLayout(e *Element, cw, ch float32, commit bool) (usedW, usedH float32) 
 }
 
 // gridJustify returns how an item goes in its cell horizontally.
-func gridJustify(e, c *Element) Align {
+func gridJustify(e, c *node) Align {
 	if c.justifySelf != alignAuto {
 		return c.justifySelf
 	}
@@ -552,7 +552,7 @@ func gridJustify(e, c *Element) Align {
 // included: its own size, or the area less its margins when it
 // stretches, placed as a says or as its automatic margins (indexes ms and
 // me of its margins) take the room left.
-func gridPlaceIn(c *Element, area float32, size length, margins float32, ms, me int, a Align, cb float32, natural func(avail float32) float32, clamp func(v, cb float32) float32) (float32, float32) {
+func gridPlaceIn(c *node, area float32, size length, margins float32, ms, me int, a Align, cb float32, natural func(avail float32) float32, clamp func(v, cb float32) float32) (float32, float32) {
 	autoS, autoE := isAuto(c.margin[ms]), isAuto(c.margin[me])
 	var v float32
 	if l, ok := size.resolve(base(cb)); ok {

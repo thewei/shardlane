@@ -208,6 +208,7 @@ func initCallbacks() {
 		initDownloadCallbacks()
 		initMenuCallbacks()
 		initSystemCallbacks()
+		initClipboardCallbacks()
 	})
 }
 

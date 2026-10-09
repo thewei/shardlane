@@ -84,8 +84,8 @@ func (s *Shell) pinnedItemsView(c *ui.Context) {
 			mark = visualMark{svg: iconPin}
 		}
 		selected := paneID == s.selectedPaneID
-		var row *ui.Element
-		ui.Box(c).Key("pin:" + paneID).Children(func() {
+		var row ui.Element
+		ui.Box(c.Key("pin:" + paneID)).Children(func() {
 			row = ui.ButtonBase(c).
 				FillWidth().
 				Height(30).

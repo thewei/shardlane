@@ -1,5 +1,7 @@
 package ui
 
+import "github.com/egoist/mygo/transfer"
+
 // Elements drag values to others within a window: Drag makes an element
 // the source of a value, which a press moving a few DIPs starts dragging,
 // with a copy of the element following the pointer; Drop and DragOver make
@@ -20,8 +22,9 @@ type valueDrag struct {
 	offX     float32
 	offY     float32
 	over     uint64
-	elem     *Element
+	elem     *node
 	canceled bool
+	native   bool
 }
 
 // Drag makes the element the source of value, dragged within the window
@@ -29,20 +32,22 @@ type valueDrag struct {
 // element follows the pointer, and the element taking the value under it
 // gets it when the pointer is released (Drop). A press dragging is no
 // click. Dragging reports the drag.
-func (e *Element) Drag(value any) *Element {
+func (e *node) Drag(value any) *node {
 	e.flags |= flagDraggable | flagHover
 	e.st.dragValue = value
 	if d := e.c.rt.drag; d != nil && d.src == e.id {
 		d.elem = e
 		// The value as the frame has it, as of rows that moved.
-		d.value = value
+		if !d.native {
+			d.value = value
+		}
 	}
 	return e
 }
 
 // dragFrom makes the element the source of a value that value returns as
 // the drag starts, as the rows chosen in a list.
-func (e *Element) dragFrom(value func() any) *Element {
+func (e *node) dragFrom(value func() any) *node {
 	e.flags |= flagDraggable | flagHover
 	e.st.dragFn = value
 	if d := e.c.rt.drag; d != nil && d.src == e.id {
@@ -52,7 +57,7 @@ func (e *Element) dragFrom(value func() any) *Element {
 }
 
 // Dragging reports whether the element is dragging its value (Drag).
-func (e *Element) Dragging() bool {
+func (e *node) Dragging() bool {
 	d := e.c.rt.drag
 	return d != nil && d.src == e.id && !d.canceled
 }
@@ -63,7 +68,7 @@ func (e *Element) Dragging() bool {
 //	if f, ok := ui.Drop[*File](folder); ok {
 //		app.move(f, dir)
 //	}
-func Drop[T any](e *Element) (T, bool) {
+func coreDrop[T any](e *node) (T, bool) {
 	var zero T
 	e.flags |= flagValueDrop
 	e.st.accepts = func(v any) bool { _, ok := v.(T); return ok }
@@ -77,10 +82,14 @@ func Drop[T any](e *Element) (T, bool) {
 // DragOver makes e take values of type T dragged within the window, as
 // Drop does, and returns the value dragged over it, for showing it would
 // take it.
-func DragOver[T any](e *Element) (T, bool) {
+func coreDragOver[T any](e *node) (T, bool) {
 	var zero T
 	e.flags |= flagValueDrop
 	e.st.accepts = func(v any) bool { _, ok := v.(T); return ok }
+	if in := e.c.rt.incoming; in != nil && e.c.rt.dataOver == e.id {
+		v, ok := in.Local.(T)
+		return v, ok
+	}
 	d := e.c.rt.drag
 	if d == nil || d.canceled || d.over != e.id {
 		return zero, false
@@ -103,7 +112,7 @@ func (rt *engine) valueTarget(x, y float32, value any) uint64 {
 // far enough, and follows the element under it.
 func (rt *engine) dragMove(x, y float32) {
 	s := rt.pressed
-	if s == nil || rt.pressButton != 0 || (s.dragValue == nil && s.dragFn == nil) {
+	if s == nil || rt.pressButton != 0 || (s.dragValue == nil && s.dragFn == nil && s.dataSource == nil) {
 		return
 	}
 	d := rt.drag
@@ -116,11 +125,40 @@ func (rt *engine) dragMove(x, y float32) {
 		if s.dragFn != nil {
 			value = s.dragFn()
 		}
-		if value == nil {
+		if value == nil && s.dataSource == nil {
 			return
 		}
 		d = &valueDrag{src: s.id, value: value, offX: s.pressX, offY: s.pressY}
 		rt.drag = d
+		if src := s.dataSource; src != nil {
+			d.native = true
+			options := src.options
+			if options.Preview == nil {
+				options.Preview, options.Hotspot = rt.dataPreview(s)
+			}
+			done := options.Done
+			options.Done = func(result transfer.Result) {
+				rt.drag = nil
+				if p := rt.pressed; p != nil {
+					p.pressed = false
+					rt.pressed = nil
+				}
+				rt.clearDataOver()
+				if !rt.closed {
+					rt.requestFrame()
+				}
+				if done != nil {
+					done(result)
+				}
+			}
+			if err := rt.host.startDataDrag(src.data(), value, options, x, y); err != nil {
+				options.Done(transfer.Result{Err: err})
+			}
+			return
+		}
+	}
+	if d.native {
+		return
 	}
 	if d.canceled {
 		return
@@ -136,6 +174,9 @@ func (rt *engine) dragEnd() bool {
 	if d == nil {
 		return false
 	}
+	if d.native {
+		return true
+	}
 	rt.drag = nil
 	if !d.canceled {
 		if t := rt.states[rt.valueTarget(rt.pointerX, rt.pointerY, d.value)]; t != nil {
@@ -150,6 +191,10 @@ func (rt *engine) dragEnd() bool {
 // dragCancel gives up the drag, as Escape does.
 func (rt *engine) dragCancel() bool {
 	if d := rt.drag; d != nil && !d.canceled {
+		if d.native {
+			rt.host.cancelDataDrag()
+			return true
+		}
 		d.canceled, d.over = true, 0
 		rt.requestFrame()
 		return true
@@ -161,7 +206,7 @@ func (rt *engine) dragCancel() bool {
 // is dragged near one of its edges, faster nearer to it.
 func (rt *engine) dragScroll() {
 	d := rt.drag
-	if d == nil || d.canceled {
+	if d == nil || d.canceled || d.native {
 		return
 	}
 	const edge = 32
@@ -190,7 +235,7 @@ func (rt *engine) dragScroll() {
 // pointer, above the rest.
 func (rt *engine) paintDrag(p *Painter, w, h float32) {
 	d := rt.drag
-	if d == nil || d.canceled || d.elem == nil || d.elem.c == nil {
+	if d == nil || d.canceled || d.native || d.elem == nil || d.elem.c == nil {
 		return
 	}
 	e := d.elem
@@ -223,7 +268,7 @@ func itoa(n int) string {
 }
 
 // shift moves an element and those inside it by (dx, dy).
-func shift(e *Element, dx, dy float32) {
+func shift(e *node, dx, dy float32) {
 	e.x, e.y = e.x+dx, e.y+dy
 	for i := range e.frags {
 		e.frags[i].X += dx

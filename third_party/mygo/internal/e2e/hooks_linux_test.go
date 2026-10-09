@@ -3,6 +3,7 @@
 package e2e
 
 import (
+	"testing"
 	"time"
 
 	"github.com/egoist/mygo"
@@ -228,29 +229,18 @@ func glSurface(w *mygo.Window) (how string, pix []byte, width, height int, suppo
 	return how, pix, width, height, true
 }
 
-// lazyGPU makes the windows of native UI created from now on draw in
-// memory until they ask for the GPU, with MYGO_GPU=1 too.
-func lazyGPU(on bool) bool {
-	mygo.RunOnMain(func() { linux.TestLazyGL(on) })
+// memoryUI has the windows of native UI created from now on draw in
+// memory, in a GtkDrawingArea, as without a GPU.
+func memoryUI(t *testing.T) bool {
+	t.Setenv("MYGO_GPU", "0")
 	return true
-}
-
-// surfaceInputLowest reports whether the input window of a window's
-// GtkGLArea is below the windows of its hidden title bar's controls.
-func surfaceInputLowest(w *mygo.Window) (ok bool) {
-	mygo.RunOnMain(func() { ok = linux.TestSurfaceInputLowest(w.NativeHandle()) })
-	return ok
-}
-
-// useGPU asks a window of native UI for the GPU, as its content does once
-// drawing in memory costs too much.
-func useGPU(w *mygo.Window) (ok bool) {
-	mygo.RunOnMain(func() { ok = linux.TestUseGPU(w.NativeHandle()) })
-	return ok
 }
 
 // surfaceOnScreen returns, as a PNG, what the display shows of a window's
 // native UI.
+// Only Windows reads the screen over native UI.
+func screenColor(*mygo.Window, float64, float64) (uint8, uint8, uint8, bool) { return 0, 0, 0, false }
+
 func surfaceOnScreen(w *mygo.Window) (png []byte, supported bool) {
 	mygo.RunOnMain(func() { png = linux.TestSurfaceOnScreen(w.NativeHandle()) })
 	return png, true

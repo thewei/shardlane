@@ -3,7 +3,6 @@ package raster
 import (
 	"sync"
 	"sync/atomic"
-	"time"
 )
 
 // A team does a piece of work on several cores: the goroutine asking for
@@ -19,7 +18,6 @@ type team struct {
 
 	parts int
 	next  atomic.Int32
-	busy  atomic.Int64
 	wg    sync.WaitGroup
 	// shares are what the helpers of a run get, a member each.
 	shares [maxWorkers]share
@@ -37,14 +35,11 @@ var (
 	hiring  sync.Mutex
 )
 
-// run does parts parts of the work on members cores at most, and returns
-// how long the cores took, together: on several cores, a multiple of how
-// long it lasted.
-func (t *team) run(members, parts int) time.Duration {
+// run does parts parts of the work on members cores at most.
+func (t *team) run(members, parts int) {
 	members = max(min(members, parts, maxWorkers), 1)
 	t.parts = parts
 	t.next.Store(0)
-	t.busy.Store(0)
 	hire(members - 1)
 	t.wg.Add(members - 1)
 	for m := 1; m < members; m++ {
@@ -53,16 +48,13 @@ func (t *team) run(members, parts int) time.Duration {
 	}
 	t.work(0)
 	t.wg.Wait()
-	return time.Duration(t.busy.Load())
 }
 
 // work does parts until none is left.
 func (t *team) work(member int) {
-	began := time.Now()
 	for p := int(t.next.Add(1)) - 1; p < t.parts; p = int(t.next.Add(1)) - 1 {
 		t.do(member, p)
 	}
-	t.busy.Add(int64(time.Since(began)))
 }
 
 // hire starts helpers until there are n.

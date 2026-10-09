@@ -52,7 +52,7 @@ var inspIcons = sync.OnceValue(func() (icons struct{ pick, close, warn, arrow *S
 
 // buildInspector builds the panel, right of the content appW wide, in a
 // window w×h.
-func (rt *engine) buildInspector(c *Context, appW, w, h float32) {
+func (rt *engine) buildInspector(c *context, appW, w, h float32) {
 	in := &rt.insp
 	in.shown, in.changed = in.sum, false
 	if in.opened == nil {
@@ -80,7 +80,7 @@ func (rt *engine) buildInspector(c *Context, appW, w, h float32) {
 	c.theme, c.parent = t, c.root
 	defer func() { c.theme, c.parent = saved, savedParent }()
 
-	panel := Column(c).Key(inspectorKey)
+	panel := coreColumn(c).Key(inspectorKey)
 	in.panel = panel.id
 	panel.Absolute().Left(appW).Top(0).Width(w-appW).Height(h).Background(pal.bg).
 		BorderWidth(0, 0, 0, 1).BorderColor(pal.border).FontSize(12).TextColor(pal.text).Label("Developer tools")
@@ -96,7 +96,7 @@ func (rt *engine) buildInspector(c *Context, appW, w, h float32) {
 			if in.split == 0 {
 				in.split = max(h*0.55, 120)
 			}
-			SplitVertical(c, &in.split, func() { in.treePane(c, rt) }, func() { in.sidebar(c) }).Grow(1).MinHeight(0)
+			coreSplitVertical(c, &in.split, func() { in.treePane(c, rt) }, func() { in.sidebar(c) }).Grow(1).MinHeight(0)
 		}
 	})
 	if panel.Shortcut(Cmd, KeyF) {
@@ -105,8 +105,8 @@ func (rt *engine) buildInspector(c *Context, appW, w, h float32) {
 }
 
 // resizer is the panel's left edge, which the pointer drags to resize it.
-func (in *inspector) resizer(c *Context) {
-	edge := Box(c).Absolute().Left(-3).Top(0).Width(6).FillHeight().Cursor(CursorResizeEW)
+func (in *inspector) resizer(c *context) {
+	edge := coreBox(c).Absolute().Left(-3).Top(0).Width(6).FillHeight().Cursor(CursorResizeEW)
 	if dx, _, ok := edge.Dragged(); ok && dx != 0 {
 		in.width = max(in.width-dx, 260)
 	}
@@ -114,16 +114,16 @@ func (in *inspector) resizer(c *Context) {
 
 // toolbar builds the bar at the top of the panel: the picker, the tabs
 // and the close button.
-func (in *inspector) toolbar(c *Context, rt *engine) {
+func (in *inspector) toolbar(c *context, rt *engine) {
 	pal := &in.pal
 	icons := inspIcons()
-	Row(c).Height(30).Shrink(0).PaddingX(4).AlignItems(Center).Background(pal.toolbar).
+	coreRow(c).Height(30).Shrink(0).PaddingX(4).AlignItems(Center).Background(pal.toolbar).
 		BorderWidth(0, 0, 1, 0).BorderColor(pal.border).Children(func() {
 		pick := in.iconButton(c, icons.pick, in.picking, "Select an element in the window to inspect it")
 		if pick.Clicked() {
 			in.picking, in.hovered, in.tab = !in.picking, 0, inspElements
 		}
-		Box(c).Width(1).Height(16).MarginX(4).Background(pal.border)
+		coreBox(c).Width(1).Height(16).MarginX(4).Background(pal.border)
 		issues := "Issues"
 		if n := len(rt.warnings); n > 0 {
 			issues = fmt.Sprintf("Issues %d", n)
@@ -133,12 +133,12 @@ func (in *inspector) toolbar(c *Context, rt *engine) {
 				in.tab = i
 			}
 		}
-		Spacer(c)
+		coreSpacer(c)
 		if n := len(rt.warnings); n > 0 {
-			badge := Row(c).Gap(3).PaddingX(6).AlignItems(Center).Cursor(CursorPointer).Label(fmt.Sprintf("%d issues", n))
+			badge := coreRow(c).Gap(3).PaddingX(6).AlignItems(Center).Cursor(CursorPointer).Label(fmt.Sprintf("%d issues", n))
 			badge.Children(func() {
-				Icon(c, icons.warn).FontSize(13).TextColor(pal.warn)
-				Text(c, fmt.Sprint(n)).FontSize(11).TextColor(pal.muted)
+				coreIcon(c, icons.warn).FontSize(13).TextColor(pal.warn)
+				coreText(c, fmt.Sprint(n)).FontSize(11).TextColor(pal.muted)
 			})
 			if badge.Clicked() {
 				in.tab = inspIssues
@@ -153,9 +153,9 @@ func (in *inspector) toolbar(c *Context, rt *engine) {
 // iconButton builds a button of the toolbar showing icon, in the accent
 // color while on. It takes no focus, so as not to take it from the
 // content.
-func (in *inspector) iconButton(c *Context, icon *SVG, on bool, label string) *Element {
+func (in *inspector) iconButton(c *context, icon *SVG, on bool, label string) *node {
 	pal := &in.pal
-	b := Box(c).Size(26, 24).Radius(4).Center().Label(label).Role(RoleButton).Tooltip(label)
+	b := coreBox(c).Size(26, 24).Radius(4).Center().Label(label).Role(RoleButton).Tooltip(label)
 	color := pal.muted
 	switch {
 	case on:
@@ -164,15 +164,15 @@ func (in *inspector) iconButton(c *Context, icon *SVG, on bool, label string) *E
 		color = pal.text
 		b.Background(pal.hover)
 	}
-	b.Children(func() { Icon(c, icon).FontSize(16).TextColor(color) })
+	b.Children(func() { coreIcon(c, icon).FontSize(16).TextColor(color) })
 	return b
 }
 
 // tab0 builds a tab of a bar height high, underlined in the accent color
 // while selected.
-func (in *inspector) tab0(c *Context, label string, selected bool, height float32) *Element {
+func (in *inspector) tab0(c *context, label string, selected bool, height float32) *node {
 	pal := &in.pal
-	t := Box(c).Height(height).PaddingX(10).Center().Label(label).Role(RoleTab)
+	t := coreBox(c).Height(height).PaddingX(10).Center().Label(label).Role(RoleTab)
 	t.checked = 1
 	color := pal.muted
 	switch {
@@ -184,14 +184,14 @@ func (in *inspector) tab0(c *Context, label string, selected bool, height float3
 		color = pal.text
 		t.Background(pal.hover)
 	}
-	t.Children(func() { Text(c, label).TextColor(color).SingleLine() })
+	t.Children(func() { coreText(c, label).TextColor(color).SingleLine() })
 	return t
 }
 
 // treePane builds the tree of elements, with its find bar and the
 // breadcrumbs of the element chosen.
-func (in *inspector) treePane(c *Context, rt *engine) {
-	Column(c).Fill().Children(func() {
+func (in *inspector) treePane(c *context, rt *engine) {
+	coreColumn(c).Fill().Children(func() {
 		in.find(c)
 		in.tree(c, rt)
 		in.breadcrumbs(c)
@@ -228,7 +228,7 @@ func (in *inspector) treeRows() {
 }
 
 // tree builds the tree of elements as markup, Chrome's Elements panel.
-func (in *inspector) tree(c *Context, rt *engine) {
+func (in *inspector) tree(c *context, rt *engine) {
 	in.treeRows()
 	if in.reveal && in.selected != 0 {
 		in.reveal = false
@@ -253,10 +253,10 @@ func (in *inspector) tree(c *Context, rt *engine) {
 		return strings.TrimSpace(n.name + " " + clip(n.text, 40))
 	}
 	hovered := uint64(0)
-	list := List(c, &in.list, len(in.rows), func(i int) {
+	list := coreList(c, &in.list, len(in.rows), func(i int) {
 		r := in.rows[i]
 		n := &in.nodes[r.node]
-		row := Row(c).Height(20).Padding(0, 6, 0, float32(n.depth)*14+4).AlignItems(Center)
+		row := coreRow(c).Height(20).Padding(0, 6, 0, float32(n.depth)*14+4).AlignItems(Center)
 		if row.Hovered() {
 			hovered = n.id
 		}
@@ -266,9 +266,11 @@ func (in *inspector) tree(c *Context, rt *engine) {
 		row.Children(func() { in.treeRow(c, r, n) })
 	}).Grow(1).MinHeight(0).PaddingY(2).FocusRing(false).Label("Elements")
 	in.listID = list.id
-	if list.Changed() && in.row >= 0 && in.row < len(in.rows) {
-		in.choose(in.nodes[in.rows[in.row].node].id)
-	}
+	list.afterInput(func() {
+		if list.Changed() && in.row >= 0 && in.row < len(in.rows) {
+			in.choose(in.nodes[in.rows[in.row].node].id)
+		}
+	})
 	// Left closes the node chosen, else goes to the node around it; Right
 	// opens it, else goes into it.
 	left, right := list.Shortcut(0, KeyLeft), list.Shortcut(0, KeyRight)
@@ -303,11 +305,11 @@ func (in *inspector) rowOf(id uint64) int {
 }
 
 // treeRow builds the markup of row r, of node n.
-func (in *inspector) treeRow(c *Context, r inspRow, n *inspNode) {
+func (in *inspector) treeRow(c *context, r inspRow, n *inspNode) {
 	pal := &in.pal
 	if !r.close && n.kids {
 		open := in.isOpen(n)
-		arrow := Icon(c, inspIcons().arrow).FontSize(10).TextColor(pal.muted).Margin(0, 2, 0, 0).Cursor(CursorDefault)
+		arrow := coreIcon(c, inspIcons().arrow).FontSize(10).TextColor(pal.muted).Margin(0, 2, 0, 0).Cursor(CursorDefault)
 		if open {
 			arrow.Rotate(90)
 		}
@@ -316,7 +318,7 @@ func (in *inspector) treeRow(c *Context, r inspRow, n *inspNode) {
 			in.setOpen(r.node, !open, arrow.ClickModifiers()&Alt != 0)
 		}
 	} else {
-		Box(c).Width(12).Shrink(0)
+		coreBox(c).Width(12).Shrink(0)
 	}
 	tag := func(s string) Span { return Span{Text: s, Color: pal.tag} }
 	var spans []Span
@@ -345,31 +347,33 @@ func (in *inspector) treeRow(c *Context, r inspRow, n *inspNode) {
 			spans = append(spans, tag("></"+n.name+">"))
 		}
 	}
-	RichText(c, spans...).Font("monospace").FontSize(11.5).SingleLine().Ellipsis("…").Shrink(1).MinWidth(0)
+	coreRichText(c, spans...).Font("monospace").FontSize(11.5).SingleLine().Ellipsis("…").Shrink(1).MinWidth(0)
 	if !r.close && n.hasTrans {
-		Text(c, "transition").Font("monospace").FontSize(10).TextColor(pal.muted).Padding(0, 4).Margin(0, 0, 0, 6).
+		coreText(c, "transition").Font("monospace").FontSize(10).TextColor(pal.muted).Padding(0, 4).Margin(0, 0, 0, 6).
 			Radius(3).Border(1, pal.border).Shrink(0)
 	}
 }
 
 // find builds the find bar of the tree (Cmd+F), which finds elements by
 // their tag, text, label or key.
-func (in *inspector) find(c *Context) {
+func (in *inspector) find(c *context) {
 	in.findMatches()
 	before := in.query
-	bar := FindBar(c, &in.finding, &in.query, len(in.matches), &in.match)
-	if in.query != before {
-		// Typed: the first match of the new query, which the bar counts in
-		// the next pass.
-		in.findMatches()
-		in.match = 0
-		c.rt.consumed = true
-	}
-	if (bar.Changed() || in.query != before) && len(in.matches) > 0 {
-		in.match = max(0, min(in.match, len(in.matches)-1))
-		in.choose(in.nodes[in.matches[in.match]].id)
-		in.reveal = true
-	}
+	bar := coreFindBar(c, &in.finding, &in.query, len(in.matches), &in.match)
+	bar.afterInput(func() {
+		if in.query != before {
+			// Typed: the first match of the new query, which the bar counts in
+			// the next pass.
+			in.findMatches()
+			in.match = 0
+			c.rt.consumed = true
+		}
+		if (bar.Changed() || in.query != before) && len(in.matches) > 0 {
+			in.match = max(0, min(in.match, len(in.matches)-1))
+			in.choose(in.nodes[in.matches[in.match]].id)
+			in.reveal = true
+		}
+	})
 }
 
 // findMatches lists the nodes whose tag, text, label or key holds the
@@ -391,7 +395,7 @@ func (in *inspector) findMatches() {
 
 // breadcrumbs builds the path of the element chosen, from the root, whose
 // elements a click chooses.
-func (in *inspector) breadcrumbs(c *Context) {
+func (in *inspector) breadcrumbs(c *context) {
 	pal := &in.pal
 	var path []int32
 	for i := in.nodeOf(in.selected); i >= 0; i = in.nodes[i].parent {
@@ -400,12 +404,12 @@ func (in *inspector) breadcrumbs(c *Context) {
 	if len(path) == 0 {
 		return
 	}
-	Row(c).Height(24).Shrink(0).Background(pal.toolbar).BorderWidth(1, 0, 0, 0).BorderColor(pal.border).Children(func() {
-		ScrollHorizontal(c).TrackScroll(&in.crumbs).Grow(1).MinWidth(0).Children(func() {
-			Row(c).Gap(1).PaddingX(4).FillHeight().AlignItems(Center).Children(func() {
+	coreRow(c).Height(24).Shrink(0).Background(pal.toolbar).BorderWidth(1, 0, 0, 0).BorderColor(pal.border).Children(func() {
+		coreScrollHorizontal(c).TrackScroll(&in.crumbs).Grow(1).MinWidth(0).Children(func() {
+			coreRow(c).Gap(1).PaddingX(4).FillHeight().AlignItems(Center).Children(func() {
 				for k := len(path) - 1; k >= 0; k-- {
 					n := &in.nodes[path[k]]
-					crumb := Box(c).Key(n.key).PaddingX(6).PaddingY(2).Radius(3).Label(n.name)
+					crumb := coreBox(c).Key(n.key).PaddingX(6).PaddingY(2).Radius(3).Label(n.name)
 					switch {
 					case k == 0:
 						crumb.Background(pal.selected)
@@ -413,7 +417,7 @@ func (in *inspector) breadcrumbs(c *Context) {
 						crumb.Background(pal.hover)
 						in.hovered = n.id
 					}
-					crumb.Children(func() { Text(c, n.name).Font("monospace").FontSize(11).TextColor(pal.tag).SingleLine() })
+					crumb.Children(func() { coreText(c, n.name).Font("monospace").FontSize(11).TextColor(pal.tag).SingleLine() })
 					if crumb.Clicked() {
 						in.choose(n.id)
 						in.reveal = true
@@ -426,19 +430,19 @@ func (in *inspector) breadcrumbs(c *Context) {
 
 // sidebar builds the tabs below the tree: Styles, Computed and
 // Properties of the element chosen.
-func (in *inspector) sidebar(c *Context) {
+func (in *inspector) sidebar(c *context) {
 	pal := &in.pal
-	Column(c).Fill().Children(func() {
-		Row(c).Height(26).Shrink(0).PaddingX(4).Background(pal.toolbar).BorderWidth(0, 0, 1, 0).BorderColor(pal.border).Children(func() {
+	coreColumn(c).Fill().Children(func() {
+		coreRow(c).Height(26).Shrink(0).PaddingX(4).Background(pal.toolbar).BorderWidth(0, 0, 1, 0).BorderColor(pal.border).Children(func() {
 			for i, label := range []string{"Styles", "Computed", "Properties"} {
 				if in.tab0(c, label, in.side == i, 26).Clicked() {
 					in.side = i
 				}
 			}
 		})
-		Scroll(c).Grow(1).MinHeight(0).TrackScroll(&in.sideScroll).Children(func() {
+		coreScroll(c).Grow(1).MinHeight(0).TrackScroll(&in.sideScroll).Children(func() {
 			if in.sel.name == "" {
-				Text(c, "Choose an element in the tree, or pick one in the window.").TextColor(pal.muted).Padding(12)
+				coreText(c, "Choose an element in the tree, or pick one in the window.").TextColor(pal.muted).Padding(12)
 				return
 			}
 			switch in.side {
@@ -454,46 +458,46 @@ func (in *inspector) sidebar(c *Context) {
 }
 
 // mono creates a line of monospaced spans, as the panes show declarations.
-func mono(c *Context, spans ...Span) *Element {
-	return RichText(c, spans...).Font("monospace").FontSize(11.5)
+func mono(c *context, spans ...Span) *node {
+	return coreRichText(c, spans...).Font("monospace").FontSize(11.5)
 }
 
 // decl builds declaration d: its property in color name, a colon, and its
 // value, after a swatch of its color.
-func (in *inspector) decl(c *Context, d inspDecl, name Color) {
+func (in *inspector) decl(c *context, d inspDecl, name Color) {
 	pal := &in.pal
 	if !d.swatch {
 		// One text, so that the space after the colon stays.
 		mono(c, Span{Text: d.name, Color: name}, Span{Text: ": " + d.value + ";", Color: pal.text}).Selectable()
 		return
 	}
-	Row(c).AlignItems(Center).Children(func() {
+	coreRow(c).AlignItems(Center).Children(func() {
 		mono(c, Span{Text: d.name, Color: name}, Span{Text: ":", Color: pal.text}).Shrink(0)
-		Box(c).Size(10, 10).Margin(0, 4, 0, 6).Border(1, pal.border).Background(d.color).Shrink(0)
+		coreBox(c).Size(10, 10).Margin(0, 4, 0, 6).Border(1, pal.border).Background(d.color).Shrink(0)
 		mono(c, Span{Text: d.value + ";", Color: pal.text}).Shrink(1).MinWidth(0).Selectable()
 	})
 }
 
 // stylesPane lists the element's styles as CSS rules: its own, then
 // those it inherits, as Chrome's Styles tab.
-func (in *inspector) stylesPane(c *Context) {
+func (in *inspector) stylesPane(c *context) {
 	pal := &in.pal
 	for i, r := range in.sel.rules {
 		if r.inherited {
-			Row(c).Padding(4, 10).Background(pal.toolbar).Children(func() {
-				RichText(c, Span{Text: "Inherited from ", Color: pal.muted}, Span{Text: r.selector, Color: pal.tag, Font: "monospace"}).FontSize(11)
+			coreRow(c).Padding(4, 10).Background(pal.toolbar).Children(func() {
+				coreRichText(c, Span{Text: "Inherited from ", Color: pal.muted}, Span{Text: r.selector, Color: pal.tag, Font: "monospace"}).FontSize(11)
 			})
 		}
-		Column(c).Padding(6, 10, 8).Gap(1).BorderWidth(0, 0, 1, 0).BorderColor(pal.border).Children(func() {
-			Row(c).AlignItems(Center).Children(func() {
+		coreColumn(c).Padding(6, 10, 8).Gap(1).BorderWidth(0, 0, 1, 0).BorderColor(pal.border).Children(func() {
+			coreRow(c).AlignItems(Center).Children(func() {
 				mono(c, Span{Text: r.selector, Color: pal.text}, Span{Text: " {", Color: pal.text})
-				Spacer(c)
+				coreSpacer(c)
 				if i == 0 && in.sel.source != "" {
-					Text(c, shortSource(in.sel.source)).FontSize(11).TextColor(pal.muted).Underline().
+					coreText(c, shortSource(in.sel.source)).FontSize(11).TextColor(pal.muted).Underline().
 						SingleLine().Ellipsis("…").Shrink(1).MinWidth(0).Tooltip(in.sel.source)
 				}
 			})
-			Column(c).Padding(0, 0, 0, 16).Gap(1).Children(func() {
+			coreColumn(c).Padding(0, 0, 0, 16).Gap(1).Children(func() {
 				for _, d := range r.decls {
 					in.decl(c, d, pal.prop)
 				}
@@ -505,7 +509,7 @@ func (in *inspector) stylesPane(c *Context) {
 
 // computedPane shows the box model of the element and its computed values,
 // as Chrome's Computed tab.
-func (in *inspector) computedPane(c *Context) {
+func (in *inspector) computedPane(c *context) {
 	pal := &in.pal
 	d := &in.sel
 	side := func(v float32) string {
@@ -520,33 +524,33 @@ func (in *inspector) computedPane(c *Context) {
 	ink := Hex("#202124")
 	var layer func(name string, bg, line Color, dashed bool, sides [4]float32, inner func())
 	layer = func(name string, bg, line Color, dashed bool, sides [4]float32, inner func()) {
-		b := Column(c).Background(bg).Border(1, line).AlignItems(Stretch).FontSize(11).TextColor(ink)
+		b := coreColumn(c).Background(bg).Border(1, line).AlignItems(Stretch).FontSize(11).TextColor(ink)
 		if dashed {
 			b.BorderStyle(BorderDashed)
 		}
 		b.Children(func() {
-			Text(c, name).FontSize(10).TextColor(ink.Alpha(0.7)).Attach(AnchorTopLeft, AnchorTopLeft).Left(4).Top(2)
-			Text(c, side(sides[0])).TextAlign(Center).MarginY(3)
-			Row(c).AlignItems(Center).Children(func() {
-				Text(c, side(sides[3])).Width(30).TextAlign(Center).Shrink(0)
-				Column(c).Grow(1).Children(inner)
-				Text(c, side(sides[1])).Width(30).TextAlign(Center).Shrink(0)
+			coreText(c, name).FontSize(10).TextColor(ink.Alpha(0.7)).Attach(AnchorTopLeft, AnchorTopLeft).Left(4).Top(2)
+			coreText(c, side(sides[0])).TextAlign(Center).MarginY(3)
+			coreRow(c).AlignItems(Center).Children(func() {
+				coreText(c, side(sides[3])).Width(30).TextAlign(Center).Shrink(0)
+				coreColumn(c).Grow(1).Children(inner)
+				coreText(c, side(sides[1])).Width(30).TextAlign(Center).Shrink(0)
 			})
-			Text(c, side(sides[2])).TextAlign(Center).MarginY(3)
+			coreText(c, side(sides[2])).TextAlign(Center).MarginY(3)
 		})
 	}
-	Column(c).Padding(12).Children(func() {
+	coreColumn(c).Padding(12).Children(func() {
 		layer("margin", Hex("#f9cc9d"), Hex("#333333"), true, d.margin, func() {
 			layer("border", Hex("#fddd9b"), Hex("#000000"), false, d.border, func() {
 				layer("padding", Hex("#c3d08b"), Hex("#808080"), true, d.padding, func() {
-					Column(c).Background(Hex("#8cb6c0")).Border(1, Hex("#808080")).Padding(6, 4).Center().Children(func() {
-						Text(c, num(d.w)+" × "+num(d.h)).FontSize(11).TextColor(ink).SingleLine()
+					coreColumn(c).Background(Hex("#8cb6c0")).Border(1, Hex("#808080")).Padding(6, 4).Center().Children(func() {
+						coreText(c, num(d.w)+" × "+num(d.h)).FontSize(11).TextColor(ink).SingleLine()
 					})
 				})
 			})
 		})
 	})
-	Column(c).Padding(0, 10, 10).Gap(1).Children(func() {
+	coreColumn(c).Padding(0, 10, 10).Gap(1).Children(func() {
 		for _, dc := range d.computed {
 			in.decl(c, dc, pal.prop)
 		}
@@ -555,11 +559,11 @@ func (in *inspector) computedPane(c *Context) {
 
 // propertiesPane lists what the element is, its state, and what
 // assistive technology sees of it.
-func (in *inspector) propertiesPane(c *Context) {
+func (in *inspector) propertiesPane(c *context) {
 	pal := &in.pal
 	for _, s := range in.sel.props {
-		Column(c).Padding(6, 10, 8).Gap(2).BorderWidth(0, 0, 1, 0).BorderColor(pal.border).Children(func() {
-			Text(c, s.title).Bold().FontSize(11).Margin(0, 0, 2, 0)
+		coreColumn(c).Padding(6, 10, 8).Gap(2).BorderWidth(0, 0, 1, 0).BorderColor(pal.border).Children(func() {
+			coreText(c, s.title).Bold().FontSize(11).Margin(0, 0, 2, 0)
 			for _, d := range s.rows {
 				color := pal.text
 				switch {
@@ -568,7 +572,7 @@ func (in *inspector) propertiesPane(c *Context) {
 				case d.value == "true", d.value == "false":
 					color = pal.lit
 				}
-				Row(c).Padding(0, 0, 0, 8).Children(func() {
+				coreRow(c).Padding(0, 0, 0, 8).Children(func() {
 					mono(c, Span{Text: d.name, Color: pal.tag}, Span{Text: ": ", Color: pal.text}, Span{Text: d.value, Color: color}).
 						Shrink(1).MinWidth(0).Selectable()
 				})
@@ -588,7 +592,7 @@ var (
 // performance builds the Performance tab: how long the last frames took to
 // build, lay out and paint, against the time between two refreshes of the
 // display.
-func (in *inspector) performance(c *Context) {
+func (in *inspector) performance(c *context) {
 	pal := &in.pal
 	hz := in.hz
 	budget := time.Duration(float64(time.Second) / float64(hz))
@@ -600,12 +604,12 @@ func (in *inspector) performance(c *Context) {
 		total += d
 		slowest = max(slowest, d)
 	}
-	Scroll(c).Grow(1).MinHeight(0).Padding(12).Gap(12).Children(func() {
-		Row(c).Gap(16).Wrap().Children(func() {
+	coreScroll(c).Grow(1).MinHeight(0).Padding(12).Gap(12).Children(func() {
+		coreRow(c).Gap(16).Wrap().Children(func() {
 			stat := func(label, value string) {
-				Column(c).Gap(2).Children(func() {
-					Text(c, label).FontSize(11).TextColor(pal.muted)
-					Text(c, value).FontSize(18).FontWeight(600).FontFeatures("tnum")
+				coreColumn(c).Gap(2).Children(func() {
+					coreText(c, label).FontSize(11).TextColor(pal.muted)
+					coreText(c, value).FontSize(18).FontWeight(600).FontFeatures("tnum")
 				})
 			}
 			last := in.times[0] + in.times[1] + in.times[2]
@@ -619,21 +623,21 @@ func (in *inspector) performance(c *Context) {
 			stat("Display", num(hz)+" Hz")
 			stat("Elements", fmt.Sprint(in.elements))
 		})
-		Box(c).Height(150).Shrink(0).Radius(4).Border(1, pal.border).Draw(func(p *Painter, r Rect) { in.paintFrames(p, r) })
-		Row(c).Gap(14).Wrap().Children(func() {
+		coreBox(c).Height(150).Shrink(0).Radius(4).Border(1, pal.border).Draw(func(p *Painter, r Rect) { in.paintFrames(p, r) })
+		coreRow(c).Gap(14).Wrap().Children(func() {
 			for _, l := range []struct {
 				name  string
 				color Color
 				d     time.Duration
 			}{{"Build", inspBuild, in.times[0]}, {"Layout", inspLayout, in.times[1]}, {"Paint", inspPaint, in.times[2]}} {
-				Row(c).Gap(6).AlignItems(Center).Children(func() {
-					Box(c).Size(10, 10).Radius(2).Background(l.color)
-					Text(c, l.name+" "+ms(l.d)+" ms").FontSize(11).FontFeatures("tnum")
+				coreRow(c).Gap(6).AlignItems(Center).Children(func() {
+					coreBox(c).Size(10, 10).Radius(2).Background(l.color)
+					coreText(c, l.name+" "+ms(l.d)+" ms").FontSize(11).FontFeatures("tnum")
 				})
 			}
-			Text(c, fmt.Sprintf("— %s ms, a frame at %s Hz", ms(budget), num(hz))).FontSize(11).TextColor(pal.muted)
+			coreText(c, fmt.Sprintf("— %s ms, a frame at %s Hz", ms(budget), num(hz))).FontSize(11).TextColor(pal.muted)
 		})
-		Text(c, "Frames happen only when something changes: input, an update, or motion. "+
+		coreText(c, "Frames happen only when something changes: input, an update, or motion. "+
 			"Set MYGO_FRAME_STATS to log slow frames.").FontSize(11).TextColor(pal.muted)
 	})
 }
@@ -669,17 +673,17 @@ func (in *inspector) paintFrames(p *Painter, r Rect) {
 }
 
 // issues builds the Issues tab: the warnings, latest first.
-func (in *inspector) issues(c *Context, rt *engine) {
+func (in *inspector) issues(c *context, rt *engine) {
 	pal := &in.pal
-	Scroll(c).Grow(1).MinHeight(0).TrackScroll(&in.issuesScroll).Children(func() {
+	coreScroll(c).Grow(1).MinHeight(0).TrackScroll(&in.issuesScroll).Children(func() {
 		if len(rt.warnings) == 0 {
-			Text(c, "No issues so far.").TextColor(pal.muted).Padding(12)
+			coreText(c, "No issues so far.").TextColor(pal.muted).Padding(12)
 			return
 		}
 		for i := len(rt.warnings) - 1; i >= 0; i-- {
-			Row(c).Padding(8, 10).Gap(8).BorderWidth(0, 0, 1, 0).BorderColor(pal.border).Children(func() {
-				Icon(c, inspIcons().warn).FontSize(14).TextColor(pal.warn).Shrink(0)
-				Text(c, rt.warnings[i]).FontSize(11.5).Grow(1).MinWidth(0).Selectable()
+			coreRow(c).Padding(8, 10).Gap(8).BorderWidth(0, 0, 1, 0).BorderColor(pal.border).Children(func() {
+				coreIcon(c, inspIcons().warn).FontSize(14).TextColor(pal.warn).Shrink(0)
+				coreText(c, rt.warnings[i]).FontSize(11.5).Grow(1).MinWidth(0).Selectable()
 			})
 		}
 	})

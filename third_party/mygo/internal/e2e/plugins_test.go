@@ -16,6 +16,7 @@ import (
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/plugins/fetch"
+	"github.com/egoist/mygo/plugins/sqlite"
 	"github.com/egoist/mygo/plugins/websocket"
 )
 
@@ -25,12 +26,14 @@ const pluginsPage = `<!doctype html><html><head>
 <script type="importmap">{"imports": {
   "mygo-runtime": "/js/runtime.js",
   "@mygo-plugins/fetch": "/js/fetch.js",
+  "@mygo-plugins/sqlite": "/js/sqlite.js",
   "@mygo-plugins/websocket": "/js/websocket.js"
 }}</script>
 <script type="module">
 import { fetch } from "@mygo-plugins/fetch";
+import { open } from "@mygo-plugins/sqlite";
 import { WebSocket } from "@mygo-plugins/websocket";
-window.plugins = { fetch, WebSocket };
+window.plugins = { fetch, WebSocket, open };
 </script></head><body>plugins</body></html>`
 
 // A request of the page that the page aborted.
@@ -41,7 +44,7 @@ var held = make(chan struct{}, 1)
 
 // usePlugins adds the plugins and serves their test page.
 func usePlugins(mux *http.ServeMux) {
-	mygo.Use(fetch.Plugin, websocket.Plugin)
+	mygo.Use(fetch.Plugin, websocket.Plugin, sqlite.Plugin)
 	mux.HandleFunc("/plugins.html", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		io.WriteString(w, pluginsPage)
@@ -49,6 +52,7 @@ func usePlugins(mux *http.ServeMux) {
 	for name, path := range map[string]string{
 		"runtime":   "../../packages/runtime/dist/index.js",
 		"fetch":     "../../plugins/fetch/dist/index.js",
+		"sqlite":    "../../plugins/sqlite/dist/index.js",
 		"websocket": "../../plugins/websocket/dist/index.js",
 	} {
 		mux.HandleFunc("/js/"+name+".js", func(w http.ResponseWriter, r *http.Request) {
@@ -141,7 +145,7 @@ func readClientFrame(br *bufio.Reader) (byte, []byte, error) {
 }
 
 func TestPlugins(t *testing.T) {
-	for _, dist := range []string{"../../packages/runtime/dist", "../../plugins/fetch/dist", "../../plugins/websocket/dist"} {
+	for _, dist := range []string{"../../packages/runtime/dist", "../../plugins/fetch/dist", "../../plugins/websocket/dist", "../../plugins/sqlite/dist"} {
 		if _, err := os.Stat(dist); err != nil {
 			t.Skip("the JavaScript packages are not built; run bun run build")
 		}
@@ -207,5 +211,66 @@ func TestPlugins(t *testing.T) {
 	})`, "ws"+strings.TrimPrefix(srv.URL, "http")+"/ws"))
 	if want := "secret:hi:1000:true"; err != nil || got != want {
 		t.Errorf("WebSocket: %q, %v; want %q", got, err, want)
+	}
+}
+
+// TestSQLitePlugin exercises the built client through the real IPC transport:
+// parameters, int64/BLOB values, rollback and page-owned connection cleanup.
+func TestSQLitePlugin(t *testing.T) {
+	for _, dist := range []string{"../../packages/runtime/dist", "../../plugins/fetch/dist", "../../plugins/websocket/dist", "../../plugins/sqlite/dist"} {
+		if _, err := os.Stat(dist); err != nil {
+			t.Skip("run bun run build first")
+		}
+	}
+	w := newWindow(t, mygo.WindowOptions{Hidden: true})
+	if err := w.Page().LoadURL("app://localhost/plugins.html"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, w, "window.plugins")
+	got, err := mygo.EvalAs[string](w.Page(), `(async () => {
+        const db = await plugins.open(":memory:");
+        await db.execute("CREATE TABLE items(id INTEGER PRIMARY KEY, title TEXT, bytes BLOB)");
+        const big = 9223372036854775807n;
+        const inserted = await db.execute("INSERT INTO items VALUES (?, ?, ?)", [big, "中文🙂", new Uint8Array([0, 255])]);
+        let rolledBack = false;
+        try {
+            await db.transaction([
+                { sql: "INSERT INTO items VALUES (1, 'rollback', NULL)" },
+                { sql: "INSERT INTO items VALUES (?, 'duplicate', NULL)", params: [big] },
+            ]);
+        } catch { rolledBack = true; }
+        const result = await db.query("SELECT id, title, bytes FROM items");
+        await db.close();
+        return [String(inserted.lastInsertId), rolledBack, result.rows.length,
+            String(result.rows[0][0]), result.rows[0][1], [...result.rows[0][2]].join(",")].join(":");
+    })()`)
+	if want := "9223372036854775807:true:1:9223372036854775807:中文🙂:0,255"; err != nil || got != want {
+		t.Fatalf("SQLite: %q, %v; want %q", got, err, want)
+	}
+	// Retain just the old handle across a navigation: the new page's context
+	// must not be able to use the connection of the page it replaced.
+	id, err := mygo.EvalAs[string](w.Page(), `(async () => {
+        window.sqliteDB = await plugins.open(":memory:");
+        return window.sqliteDB.id;
+    })()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	other := newWindow(t, mygo.WindowOptions{Hidden: true})
+	if err := other.Page().LoadURL("app://localhost/plugins.html"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, other, "window.plugins")
+	got, err = mygo.EvalAs[string](other.Page(), fmt.Sprintf(`mygo.call("plugin:sqlite.Query", %q, "SELECT 1", []).then(() => "allowed", e => e.message)`, id))
+	if err != nil || !strings.Contains(got, "another window") {
+		t.Fatalf("SQLite ownership: %q %v", got, err)
+	}
+	if err := w.Page().LoadURL("app://localhost/plugins.html"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, w, "window.plugins && !window.sqliteDB")
+	got, err = mygo.EvalAs[string](w.Page(), fmt.Sprintf(`mygo.call("plugin:sqlite.Query", %q, "SELECT 1", []).then(() => "allowed", e => e.message)`, id))
+	if err != nil || !strings.Contains(got, "closed") {
+		t.Fatalf("SQLite after navigation: %q %v", got, err)
 	}
 }

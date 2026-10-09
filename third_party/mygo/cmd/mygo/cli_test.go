@@ -238,6 +238,33 @@ func TestTemplate(t *testing.T) {
 	}
 }
 
+func TestTemplateSkills(t *testing.T) {
+	for _, tmpl := range []string{webTemplate, nativeTemplate} {
+		t.Run(tmpl, func(t *testing.T) {
+			dir := t.TempDir()
+			if err := writeTemplate(dir, tmpl, templateData{Name: "Demo", Slug: "demo"}); err != nil {
+				t.Fatal(err)
+			}
+			for _, name := range []string{"SKILL.md", "agents/openai.yaml"} {
+				path := ".agents/skills/mygo-maintenance/" + name
+				want, err := templateFS.ReadFile("template/shared/" + path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				got, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(path)))
+				if err != nil {
+					t.Fatal(err)
+				}
+				// In particular, the skill's {{.Dir}} example is literal
+				// Markdown, not a Go template to evaluate.
+				if !bytes.Equal(got, want) {
+					t.Errorf("%s: shared skill content changed during scaffolding", path)
+				}
+			}
+		})
+	}
+}
+
 // TestNativeTemplate writes the template of native UI, which has no
 // frontend, and builds its app and runs its test against this checkout.
 func TestNativeTemplate(t *testing.T) {

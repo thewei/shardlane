@@ -14,13 +14,13 @@ func sincos(deg float32) (float32, float32) {
 
 // CollapsibleParts are the parts of a collapsible without a look: its
 // Trigger shows and hides what Panel builds.
-type CollapsibleParts struct {
+type collapsibleParts struct {
 	// Trigger is a button opening and closing the collapsible when
 	// clicked, or with Enter or Space while it has the focus, which
 	// Changed reports, and that assistive technology sees as a disclosure,
 	// expanded while open. Give it children.
-	Trigger  *Element
-	c        *Context
+	Trigger  *node
+	c        *context
 	open     *bool
 	progress float32
 }
@@ -28,37 +28,35 @@ type CollapsibleParts struct {
 // CollapsibleBase creates a collapsible without a look, open while *open:
 // its Trigger, and below it the panel Panel builds. Collapsible is
 // CollapsibleBase with the theme's look.
-func CollapsibleBase(c *Context, open *bool) CollapsibleParts {
-	tr := Row(c).Focusable().Shrink(0)
+func coreCollapsibleBase(c *context, open *bool) collapsibleParts {
+	tr := coreRow(c).Focusable().Shrink(0)
 	tr.flags |= flagClickable | flagHover
 	tr.widget, tr.role = "Collapsible", RoleDisclosure
-	if tr.Clicked() {
-		*open = !*open
-		tr.st.changed = true
-	}
+	*valueBinding[*bool](tr) = open
+	tr.onValueInput(toggleInput)
 	tr.expanded = *open
 	p := tr.Animate("open", b2f(*open), 200*time.Millisecond)
-	return CollapsibleParts{Trigger: tr, c: c, open: open, progress: p}
+	return collapsibleParts{Trigger: tr, c: c, open: open, progress: p}
 }
 
 // Progress returns how far the collapsible is open, from 0 closed to 1
 // open, moving between them as it opens and closes: draw its arrow from
 // it. It moves at once where the desktop asks for less motion.
-func (p CollapsibleParts) Progress() float32 { return p.progress }
+func (p collapsibleParts) Progress() float32 { return p.progress }
 
 // Panel builds fn in the panel of the collapsible while it is open, and as
 // it opens and closes, when the panel grows and shrinks with Progress,
 // clipping what fn built. It returns the column holding what fn builds,
 // to style, and nil while the collapsible is closed.
-func (p CollapsibleParts) Panel(fn func()) *Element {
+func (p collapsibleParts) Panel(fn func()) *node {
 	if !*p.open && p.progress == 0 {
 		return nil
 	}
 	c := p.c
-	clip := Column(c).Shrink(0)
-	var inner *Element
+	clip := coreColumn(c).Shrink(0)
+	var inner *node
 	clip.Children(func() {
-		inner = Column(c).Shrink(0)
+		inner = coreColumn(c).Shrink(0)
 		inner.Children(fn)
 	})
 	if p.progress < 1 {
@@ -77,26 +75,28 @@ func (p CollapsibleParts) Panel(fn func()) *Element {
 //	ui.Collapsible(c, "Advanced", &app.advanced, func() {
 //		ui.Checkbox(c, &app.verbose, "Verbose logging")
 //	})
-func Collapsible(c *Context, label string, open *bool, fn func()) *Element {
+func coreCollapsible(c *context, label string, open *bool, fn func()) *node {
 	t := c.theme
-	root := Column(c).Shrink(0)
+	root := coreColumn(c).Shrink(0)
 	root.widget = "Collapsible"
 	root.Children(func() {
-		p := CollapsibleBase(c, open)
+		p := coreCollapsibleBase(c, open)
 		tr := p.Trigger.AlignSelf(Start).AlignItems(Center).Gap(t.Space(1)).
 			Padding(t.Space(1), t.Space(2), t.Space(1), t.Space(0.5)).Radius(t.Radius)
-		tr.styleFn = func(tr *Element) {
+		tr.styleFn = func(tr *node) {
 			if tr.Hovered() {
 				tr.bg = t.SurfaceHover
 			}
 		}
 		tr.Children(func() {
 			disclosureArrow(c, 90*p.Progress())
-			Text(c, label).SingleLine()
+			coreText(c, label).SingleLine()
 		})
-		if tr.st.changed {
-			root.st.changed = true
-		}
+		tr.afterInput(func() {
+			if tr.Changed() {
+				root.st.markChanged()
+			}
+		})
 		if panel := p.Panel(fn); panel != nil {
 			// Below the label.
 			panel.Padding(t.Space(1), 0, t.Space(1), t.Space(5.5)).Gap(t.Space(2))
@@ -107,9 +107,9 @@ func Collapsible(c *Context, label string, open *bool, fn func()) *Element {
 
 // disclosureArrow draws the arrow of a disclosure: pointing right, turned
 // by deg degrees clockwise.
-func disclosureArrow(c *Context, deg float32) *Element {
+func disclosureArrow(c *context, deg float32) *node {
 	t := c.theme
-	return Box(c).Size(t.Space(4), t.Space(4)).Shrink(0).Draw(func(p *Painter, r Rect) {
+	return coreBox(c).Size(t.Space(4), t.Space(4)).Shrink(0).Draw(func(p *Painter, r Rect) {
 		cx, cy, d := r.X+r.W/2, r.Y+r.H/2, r.W/8
 		at := rotate(cx, cy, deg)
 		var path Path
@@ -144,11 +144,11 @@ type accordionBuild struct {
 //			}
 //		}
 //	}
-func Accordion(c *Context, fn func()) *Element {
+func coreAccordion(c *context, fn func()) *node {
 	t := c.theme
-	a := Column(c).Radius(t.Radius).Border(1, t.Border).Clip()
+	a := coreColumn(c).Radius(t.Radius).Border(1, t.Border).Clip()
 	a.widget = "Accordion"
-	last := Local(a, "headers", func() []uint64 { return nil })
+	last := coreLocal(a, "headers", func() []uint64 { return nil })
 	saved := c.accordion
 	ab := &accordionBuild{last: *last}
 	c.accordion = ab
@@ -161,24 +161,24 @@ func Accordion(c *Context, fn func()) *Element {
 // AccordionItem creates a section of an Accordion: a header showing title,
 // which a click opens and closes, as do Enter and Space, and below it what
 // fn builds while *open is true. Changed reports a click.
-func AccordionItem(c *Context, title string, open *bool, fn func()) *Element {
+func coreAccordionItem(c *context, title string, open *bool, fn func()) *node {
 	t := c.theme
 	ab := c.accordion
 	if ab == nil {
 		ab = &accordionBuild{}
 	}
-	item := Column(c).Shrink(0)
+	item := coreColumn(c).Shrink(0)
 	item.widget = "AccordionItem"
 	if len(ab.headers) > 0 {
 		item.BorderWidth(1, 0, 0, 0).BorderColor(t.Border)
 	}
 	item.Children(func() {
-		p := CollapsibleBase(c, open)
+		p := coreCollapsibleBase(c, open)
 		tr := p.Trigger.AlignItems(Center).Gap(t.Space(2)).Padding(t.Space(2.5), t.Space(3))
 		tr.flags |= flagOwnRing
 		ab.headers = append(ab.headers, tr.id)
 		accordionKeys(c, tr, ab)
-		tr.styleFn = func(tr *Element) {
+		tr.styleFn = func(tr *node) {
 			if tr.Hovered() {
 				tr.bg = t.SurfaceHover
 			}
@@ -190,12 +190,14 @@ func AccordionItem(c *Context, title string, open *bool, fn func()) *Element {
 			}
 		})
 		tr.Children(func() {
-			Text(c, title).Grow(1).FontWeight(500)
+			coreText(c, title).Grow(1).FontWeight(500)
 			disclosureArrow(c, 90+180*p.Progress())
 		})
-		if tr.st.changed {
-			item.st.changed = true
-		}
+		tr.afterInput(func() {
+			if tr.Changed() {
+				item.st.markChanged()
+			}
+		})
 		if panel := p.Panel(fn); panel != nil {
 			panel.Padding(0, t.Space(3), t.Space(3)).Gap(t.Space(2))
 		}
@@ -205,7 +207,7 @@ func AccordionItem(c *Context, title string, open *bool, fn func()) *Element {
 
 // accordionKeys moves the focus from an accordion's header to the others
 // with the arrows, Home and End.
-func accordionKeys(c *Context, tr *Element, ab *accordionBuild) {
+func accordionKeys(c *context, tr *node, ab *accordionBuild) {
 	at := slices.Index(ab.last, tr.id)
 	if at < 0 {
 		return

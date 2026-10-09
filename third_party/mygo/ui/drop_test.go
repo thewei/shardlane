@@ -10,14 +10,14 @@ import (
 func TestFileDrops(t *testing.T) {
 	var dropped []string
 	over := false
-	tt := NewTester(func(c *Context) {
-		Column(c).Fill().Children(func() {
-			zone := Box(c).Size(200, 100)
+	tt := coreNewTester(func(c *context) {
+		coreColumn(c).Fill().Children(func() {
+			zone := coreBox(c).Size(200, 100)
 			if files := zone.DroppedFiles(); files != nil {
 				dropped = append(dropped, files...)
 			}
 			over = zone.FileDragOver()
-			Box(c).Size(200, 100)
+			coreBox(c).Size(200, 100)
 		})
 	}, 300, 300)
 	if tt.send2(platform.SurfaceEvent{Kind: platform.FileDragOver, X: 50, Y: 150}) || over {

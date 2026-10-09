@@ -63,12 +63,12 @@ of the app above does:
 ```go
 func (app *notesApp) sidebar(c *ui.Context) {
 	page := app.router.Path()
-	if ui.Sidebar(c, &page, func() {
+	ui.Sidebar(c, &page, func() {
 		ui.SidebarItem(c, "/notes", nil, "Notes")
 		ui.SidebarItem(c, "/files", nil, "Files")
-	}).Width(220).Changed() {
+	}).Width(220).OnChange(func() {
 		app.router.Push(page)
-	}
+	})
 }
 
 // In a page:

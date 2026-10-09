@@ -12,9 +12,9 @@ package ui
 //	}
 //
 // Changed reports a new choice.
-func Tabs(c *Context, selected *int, labels ...string) *Element {
+func coreTabs(c *context, selected *int, labels ...string) *node {
 	t := c.theme
-	tabs := TabsBase(c, selected, len(labels))
+	tabs := coreTabsBase(c, selected, len(labels))
 	list := tabs.List.Gap(t.Space(1))
 	list.Children(func() {
 		for i, label := range labels {
@@ -24,7 +24,7 @@ func Tabs(c *Context, selected *int, labels ...string) *Element {
 			if on {
 				tab.TextColor(t.Text).FontWeight(600)
 			}
-			tab.styleFn = func(tab *Element) {
+			tab.styleFn = func(tab *node) {
 				if !on && tab.Hovered() {
 					tab.ts.color = t.Text
 				}
@@ -38,7 +38,7 @@ func Tabs(c *Context, selected *int, labels ...string) *Element {
 					p.FocusRing(r, [4]float32{t.Radius, t.Radius, t.Radius, t.Radius})
 				}
 			})
-			tab.Children(func() { Text(c, label).SingleLine() })
+			tab.Children(func() { coreText(c, label).SingleLine() })
 		}
 	})
 	return list

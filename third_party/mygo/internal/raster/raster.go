@@ -9,7 +9,6 @@ import (
 	"math"
 	"runtime"
 	"slices"
-	"time"
 
 	"github.com/egoist/mygo/internal/scene"
 )
@@ -100,19 +99,17 @@ const (
 
 // draw draws the pixels of s within area into dst, with the renderers of
 // d.rs, made as needed, leaving out the operations whose bounds (opBounds)
-// miss the band drawn. It returns how long the cores took, together: on
-// several cores, a multiple of how long drawing lasted.
+// miss the band drawn.
 //
 // Each effect is readied (EffectPixels.Begin) before its pixels, and one
 // reading its backdrop reads pixels other bands draw: the operations up to
 // each effect in the area are drawn first, then its backdrop is read
 // (d.bd), then the effect and the operations up to the next. The area
 // holds the backdrops of the effects in it (Renderer.diff).
-func (d *drawer) draw(dst *Image, s *scene.Scene, area image.Rectangle, bounds []image.Rectangle) time.Duration {
+func (d *drawer) draw(dst *Image, s *scene.Scene, area image.Rectangle, bounds []image.Rectangle) {
 	area = area.Intersect(image.Rect(0, 0, dst.W, dst.H))
 	// px draws operation from, an effect over the backdrop b.
 	from, px, b := 0, scene.EffectPixels(nil), (*scene.BackdropImage)(nil)
-	var busy time.Duration
 	for i := range s.Ops {
 		op := &s.Ops[i]
 		if op.Kind != scene.OpEffect || int(op.Start) >= len(s.Effects) || !bounds[i].Overlaps(area) {
@@ -123,28 +120,26 @@ func (d *drawer) draw(dst *Image, s *scene.Scene, area image.Rectangle, bounds [
 		if next == nil {
 			continue
 		}
-		busy += d.drawOps(dst, s, area, bounds, from, i, px, b)
+		d.drawOps(dst, s, area, bounds, from, i, px, b)
 		b = nil
 		if fx.Effect.Backdrop {
-			busy += d.bd.read(dst, scene.BackdropOf(op.Rect, fx.Blur, dst.W, dst.H))
+			d.bd.read(dst, scene.BackdropOf(op.Rect, fx.Blur, dst.W, dst.H))
 			b = &d.bd.img
 		}
 		next.Begin(fx, op.Rect, scene.FitRadii(op.Rect, op.Radii))
 		from, px = i, next
 	}
-	return busy + d.drawOps(dst, s, area, bounds, from, len(s.Ops), px, b)
+	d.drawOps(dst, s, area, bounds, from, len(s.Ops), px, b)
 }
 
 // drawOps draws operations from to to of s within area, as draw does,
 // over the pixels the operations before them drew, or over the scene's
 // clear color from the first; px draws operation from when it is an
-// effect, over the backdrop b. It returns how long the cores took,
-// together.
-func (d *drawer) drawOps(dst *Image, s *scene.Scene, area image.Rectangle, bounds []image.Rectangle, from, to int, px scene.EffectPixels, b *scene.BackdropImage) time.Duration {
+// effect, over the backdrop b.
+func (d *drawer) drawOps(dst *Image, s *scene.Scene, area image.Rectangle, bounds []image.Rectangle, from, to int, px scene.EffectPixels, b *scene.BackdropImage) {
 	if from >= to && from > 0 {
-		return 0
+		return
 	}
-	start := time.Now()
 	rows := bandRows
 	if px != nil {
 		rows = effectRows
@@ -156,15 +151,14 @@ func (d *drawer) drawOps(dst *Image, s *scene.Scene, area image.Rectangle, bound
 	}
 	if n == 1 {
 		d.rs[0].render(dst, s, area, bounds, from, to, px, b)
-		return time.Since(start)
+		return
 	}
 	d.job = bandJob{dst, s, area, bounds, from, to, rows, px, b}
 	if d.bands.do == nil {
 		d.bands.do = d.band
 	}
-	busy := d.bands.run(n, bands)
+	d.bands.run(n, bands)
 	d.job = bandJob{}
-	return busy
 }
 
 // bandJob is what the bands of drawOps draw: operations from to to of s
@@ -990,6 +984,9 @@ func (r *renderer) glyphs(op *scene.Op) {
 		gx, gy := int(math.Round(float64(g.X))), int(math.Round(float64(g.Y)))
 		x0, y0 := max(gx, r.x0), max(gy, r.y0)
 		x1, y1 := min(gx+int(g.UW), r.x1), min(gy+int(g.VH), r.y1)
+		if x0 >= x1 || y0 >= y1 {
+			continue
+		}
 		tint := g.Color.Premul(1)
 		alpha := float32(g.Color.A) / 255
 		contrast, boost := text.Contrast, float32(0)
@@ -1000,6 +997,10 @@ func (r *renderer) glyphs(op *scene.Op) {
 			boost = scene.ThinBoost
 		}
 		correct := contrast != 0 || boost != 0 || text.GammaRatios != [4]float32{}
+		if !g.Colored && !g.Subpixel && pt == nil && !correct && g.Color.A == 255 {
+			r.maskOpaque(atlas, g, gx, gy, image.Rect(x0, y0, x1, y1))
+			continue
+		}
 		for y := y0; y < y1; y++ {
 			row := r.dst.Pix[y*r.dst.Stride:]
 			cl, ch := r.clipSolid(y)
@@ -1049,6 +1050,43 @@ func (r *renderer) glyphs(op *scene.Op) {
 			}
 		}
 	}
+}
+
+// maskOpaque draws ordinary opaque text with 8-bit coverage. Integer
+// blending avoids converting every destination channel to and from
+// floats; rounded clip edges still use the general coverage calculation.
+func (r *renderer) maskOpaque(a *scene.Atlas, g scene.Glyph, gx, gy int, box image.Rectangle) {
+	c := g.Color
+	for y := box.Min.Y; y < box.Max.Y; y++ {
+		cl, ch := r.clipSolid(y)
+		at := (int(g.V)+y-gy)*a.W + int(g.U) + box.Min.X - gx
+		masks := a.Pix[at : at+box.Dx()]
+		row := r.dst.Pix[y*r.dst.Stride+4*box.Min.X:][:4*box.Dx()]
+		for i, m := range masks {
+			if m == 0 {
+				continue
+			}
+			p := row[4*i : 4*i+4]
+			if x := box.Min.X + i; x < cl || x >= ch {
+				blend(p, c.Premul(1), r.clipCoverage(x, y)*(float32(m)/255))
+				continue
+			}
+			if m == 255 {
+				p[0], p[1], p[2], p[3] = c.B, c.G, c.R, 255
+				continue
+			}
+			weight := uint32(m)
+			p[0] = mixMask(c.B, p[0], weight)
+			p[1] = mixMask(c.G, p[1], weight)
+			p[2] = mixMask(c.R, p[2], weight)
+			p[3] = over(m, p[3], 255-weight)
+		}
+	}
+}
+
+func mixMask(src, dst byte, coverage uint32) byte {
+	v := uint32(src)*coverage + uint32(dst)*(255-coverage) + 128
+	return byte((v + v>>8) >> 8)
 }
 
 func (r *renderer) image(op *scene.Op) {

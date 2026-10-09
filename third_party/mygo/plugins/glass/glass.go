@@ -1,7 +1,7 @@
 // Package glass draws Liquid Glass in native UI, as macOS 26 and later
 // draw it (AppKit's NSGlassEffectView), on every platform: what the
 // elements under it painted shows through, blurred, bent near its edges as
-// through the rim of a lens, and lit along its rim, over a soft shadow.
+// through the rim of a lens, and lit along its hairline rim.
 // MyGo's renderers draw it with shaders of this package, on the GPU or the
 // CPU, so it looks the same everywhere.
 //
@@ -63,7 +63,7 @@ type pressed struct {
 // BuildMaterial follows the press of an interactive glass's element: the
 // glass grows as it is pressed and shrinks back as it is let go, within
 // 150 ms, as AppKit's does.
-func (g Glass) BuildMaterial(e *ui.Element) ui.Material {
+func (g Glass) BuildMaterial(e ui.Element) ui.Material {
 	if !g.Interactive {
 		return g
 	}
@@ -74,8 +74,7 @@ func (g Glass) BuildMaterial(e *ui.Element) ui.Material {
 	return pressed{g, e.Animate(pressKey{}, target, 150*time.Millisecond)}
 }
 
-// PaintMaterial paints the glass over box, rounded by radii, with its
-// shadow.
+// PaintMaterial paints the glass over box, rounded by radii.
 func (g Glass) PaintMaterial(p *ui.Painter, box ui.Rect, radii [4]float32) {
 	paint(p, box, radii, g)
 }
@@ -111,14 +110,12 @@ func (g Glass) String() string {
 }
 
 // Paint paints a pane of glass shaped as r rounded by radius, in a
-// drawing (Element.Draw), over what the painter painted before it, with
-// its shadow.
+// drawing (Element.Draw), over what the painter painted before it.
 func Paint(p *ui.Painter, r ui.Rect, radius float32, g Glass) {
 	paint(p, r, [4]float32{radius, radius, radius, radius}, g)
 }
 
-// paint paints a pane of glass over box, rounded by radii, with its
-// shadow.
+// paint paints a pane of glass over box, rounded by radii.
 //
 // Its material follows macOS 27's, measured from NSGlassEffectView: the
 // regular one maps black to 54% and white to 100% in light mode, and to
@@ -126,7 +123,8 @@ func Paint(p *ui.Painter, r ui.Rect, radius float32, g Glass) {
 // blur more, up to 10 DIPs; the bezel curves the last 36 DIPs of the
 // pane, at most half of it, and bends what shows through by up to 1.6
 // times that, mirroring what is inside it, as AppKit's do; light comes
-// from above and below.
+// from above and below, along a rim a pixel wide, and the pane casts no
+// shadow, as NSGlassEffectView's and the glass bezel's do not.
 func paint(p *ui.Painter, box ui.Rect, radii [4]float32, g Glass) {
 	if box.W <= 0 || box.H <= 0 {
 		return
@@ -138,19 +136,16 @@ func paint(p *ui.Painter, box ui.Rect, radii [4]float32, g Glass) {
 		bezel:      bezel * s,
 		refraction: 1.6 * bezel * s,
 		rim:        0.35,
-		rimWidth:   s,
+		rimWidth:   1,
 		light:      math.Pi / 2,
 	}
-	shade := ui.RGBA(0, 0, 0, 0.13)
 	switch {
 	case g.Style == Clear:
 		mat.blur = s
 		mat.low, mat.high, mat.curve, mat.saturation = 0.125, 1.082, 1, 1
-		shade = ui.RGBA(0, 0, 0, 0.07)
 	case p.Theme().Dark:
 		mat.blur = min(max(m*0.035, 1), 10) * s
 		mat.low, mat.high, mat.curve, mat.saturation = 0.15, 0.51, 2, 2.2
-		shade = ui.RGBA(0, 0, 0, 0.3)
 	default:
 		mat.blur = min(max(m*0.035, 1), 10) * s
 		mat.low, mat.high, mat.curve, mat.saturation = 0.541, 1, 1.2, 1
@@ -160,8 +155,5 @@ func paint(p *ui.Painter, box ui.Rect, radii [4]float32, g Glass) {
 		mat.tint[3] *= 0.88
 		mat.wideTint[3] *= 0.88
 	}
-	// The shadow grows with the pane, softly, and below it.
-	sh := min(20, m/4)
-	p.Shadow(box, max(radii[0], radii[1], radii[2], radii[3]), 0, 0.3*sh, 2*sh, 0, shade)
 	p.Effect(Effect, box, radii, mat.blur, mat.params())
 }

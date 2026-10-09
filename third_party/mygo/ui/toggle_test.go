@@ -31,15 +31,15 @@ func tabs(tt *Tester, mods Modifiers, n int, labels ...string) []string {
 func TestFocusGroupIsOneTabStop(t *testing.T) {
 	bold := false
 	labels := []string{"Before", "Cut", "Bold", "Paste", "After"}
-	tt := NewTester(func(c *Context) {
-		Column(c).Padding(10).Gap(8).Children(func() {
-			Button(c, "Before")
-			Toolbar(c, func() {
-				Button(c, "Cut")
-				Toggle(c, &bold, "Bold")
-				Button(c, "Paste")
+	tt := coreNewTester(func(c *context) {
+		coreColumn(c).Padding(10).Gap(8).Children(func() {
+			coreButton(c, "Before")
+			coreToolbar(c, func() {
+				coreButton(c, "Cut")
+				coreToggle(c, &bold, "Bold")
+				coreButton(c, "Paste")
 			}).Label("Edit")
-			Button(c, "After")
+			coreButton(c, "After")
 		})
 	}, 500, 300)
 	if got := tabs(tt, 0, 4, labels...); !slices.Equal(got, []string{"Before", "Cut", "After", "Before"}) {
@@ -68,12 +68,12 @@ func TestFocusGroupIsOneTabStop(t *testing.T) {
 
 func TestFocusGroupLeavesKeysToWhatTakesThem(t *testing.T) {
 	name, volume := "abc", 0.5
-	tt := NewTester(func(c *Context) {
-		Toolbar(c, func() {
-			Button(c, "Cut")
-			TextInput(c, &name).Label("Name").Width(100)
-			Slider(c, &volume, 0, 1).Label("Volume").Width(100)
-			Button(c, "Paste")
+	tt := coreNewTester(func(c *context) {
+		coreToolbar(c, func() {
+			coreButton(c, "Cut")
+			coreTextInput(c, &name).Label("Name").Width(100)
+			coreSlider(c, &volume, 0, 1).Label("Volume").Width(100)
+			coreButton(c, "Paste")
 		})
 	}, 600, 200)
 	tt.Key(0, KeyTab)
@@ -86,7 +86,7 @@ func TestFocusGroupLeavesKeysToWhatTakesThem(t *testing.T) {
 		t.Error("Left in the input left it")
 	}
 	tt.send(platform.SurfaceEvent{Kind: platform.AccessibilityOn})
-	tt.rt.focused = node(t, tt.h.access, platform.RoleSlider, "Volume").ID
+	tt.rt.focused = accessNode(t, tt.h.access, platform.RoleSlider, "Volume").ID
 	tt.Frame()
 	tt.Key(0, KeyRight)
 	if !tt.Focused("Volume") || volume <= 0.5 {
@@ -97,15 +97,15 @@ func TestFocusGroupLeavesKeysToWhatTakesThem(t *testing.T) {
 func TestRadioGroupArrowsChoose(t *testing.T) {
 	size := "Medium"
 	labels := []string{"Before", "Small", "Medium", "Large", "After"}
-	tt := NewTester(func(c *Context) {
-		Column(c).Padding(10).Gap(8).Children(func() {
-			Button(c, "Before")
-			RadioGroup(c, func() {
+	tt := coreNewTester(func(c *context) {
+		coreColumn(c).Padding(10).Gap(8).Children(func() {
+			coreButton(c, "Before")
+			coreRadioGroup(c, func() {
 				for _, s := range []string{"Small", "Medium", "Large"} {
-					Radio(c, &size, s, s)
+					coreRadio(c, &size, s, s)
 				}
 			}).Label("Size")
-			Button(c, "After")
+			coreButton(c, "After")
 		})
 	}, 400, 300)
 	// Tab goes to the one chosen.
@@ -125,7 +125,7 @@ func TestRadioGroupArrowsChoose(t *testing.T) {
 		t.Errorf("Tab went to %q", got[0])
 	}
 	tt.send(platform.SurfaceEvent{Kind: platform.AccessibilityOn})
-	g := node(t, tt.h.access, platform.RoleRadioGroup, "Size")
+	g := accessNode(t, tt.h.access, platform.RoleRadioGroup, "Size")
 	n := 0
 	for _, x := range tt.h.access.Nodes {
 		if x.Role == platform.RoleRadio && tt.h.access.Nodes[x.Parent].ID == g.ID {
@@ -139,8 +139,8 @@ func TestRadioGroupArrowsChoose(t *testing.T) {
 
 func TestToggle(t *testing.T) {
 	bold, changes := false, 0
-	tt := NewTester(func(c *Context) {
-		if Toggle(c, &bold, "Bold").Changed() {
+	tt := coreNewTester(func(c *context) {
+		if coreToggle(c, &bold, "Bold").Changed() {
 			changes++
 		}
 	}, 300, 200)
@@ -149,7 +149,7 @@ func TestToggle(t *testing.T) {
 		t.Fatalf("a click: bold %v, %d changes", bold, changes)
 	}
 	tt.send(platform.SurfaceEvent{Kind: platform.AccessibilityOn})
-	n := node(t, tt.h.access, platform.RoleToggleButton, "Bold")
+	n := accessNode(t, tt.h.access, platform.RoleToggleButton, "Bold")
 	if n.States&platform.AccessChecked == 0 {
 		t.Errorf("pressed, it reads %+v", n)
 	}
@@ -161,8 +161,8 @@ func TestToggle(t *testing.T) {
 
 func TestSegmented(t *testing.T) {
 	view, changes := 0, 0
-	tt := NewTester(func(c *Context) {
-		if Segmented(c, &view, "List", "Grid", "Columns").Label("View").Changed() {
+	tt := coreNewTester(func(c *context) {
+		if coreSegmented(c, &view, "List", "Grid", "Columns").Label("View").Changed() {
 			changes++
 		}
 	}, 400, 200)
@@ -175,8 +175,8 @@ func TestSegmented(t *testing.T) {
 		t.Errorf("Right chose %d", view)
 	}
 	tt.send(platform.SurfaceEvent{Kind: platform.AccessibilityOn})
-	node(t, tt.h.access, platform.RoleRadioGroup, "View")
-	if n := node(t, tt.h.access, platform.RoleRadio, "Columns"); n.States&platform.AccessChecked == 0 {
+	accessNode(t, tt.h.access, platform.RoleRadioGroup, "View")
+	if n := accessNode(t, tt.h.access, platform.RoleRadio, "Columns"); n.States&platform.AccessChecked == 0 {
 		t.Errorf("Columns reads %+v", n)
 	}
 }
@@ -184,11 +184,11 @@ func TestSegmented(t *testing.T) {
 func TestTabsAreOneTabStop(t *testing.T) {
 	tab := 1
 	labels := []string{"Before", "One", "Two", "Three", "After"}
-	tt := NewTester(func(c *Context) {
-		Column(c).Gap(8).Children(func() {
-			Button(c, "Before")
-			Tabs(c, &tab, "One", "Two", "Three")
-			Button(c, "After")
+	tt := coreNewTester(func(c *context) {
+		coreColumn(c).Gap(8).Children(func() {
+			coreButton(c, "Before")
+			coreTabs(c, &tab, "One", "Two", "Three")
+			coreButton(c, "After")
 		})
 	}, 400, 200)
 	if got := tabs(tt, 0, 3, labels...); !slices.Equal(got, []string{"Before", "Two", "After"}) {
@@ -200,14 +200,14 @@ func TestToolbarOverflows(t *testing.T) {
 	clicked := ""
 	italic := false
 	names := []string{"Alpha", "Bravo", "Charlie", "Delta", "Echo"}
-	tt := NewTester(func(c *Context) {
-		Toolbar(c, func() {
+	tt := coreNewTester(func(c *context) {
+		coreToolbar(c, func() {
 			for _, n := range names {
-				if Button(c, n).Clicked() {
+				if coreButton(c, n).Clicked() {
 					clicked = n
 				}
 			}
-			Toggle(c, &italic, "Italic")
+			coreToggle(c, &italic, "Italic")
 		}).Fill()
 	}, 260, 100)
 	// What does not fit goes into the menu, from the last.
@@ -258,16 +258,16 @@ func TestToolbarOverflows(t *testing.T) {
 
 func TestToolbarAccessibility(t *testing.T) {
 	bold := true
-	tt := NewTester(func(c *Context) {
-		Toolbar(c, func() {
-			ToggleGroup(c, func() {
-				Toggle(c, &bold, "Bold")
+	tt := coreNewTester(func(c *context) {
+		coreToolbar(c, func() {
+			coreToggleGroup(c, func() {
+				coreToggle(c, &bold, "Bold")
 			}).Label("Style")
 		}).Label("Format")
 	}, 400, 100)
 	tt.send(platform.SurfaceEvent{Kind: platform.AccessibilityOn})
-	tb := node(t, tt.h.access, platform.RoleToolbar, "Format")
-	b := node(t, tt.h.access, platform.RoleToggleButton, "Bold")
+	tb := accessNode(t, tt.h.access, platform.RoleToolbar, "Format")
+	b := accessNode(t, tt.h.access, platform.RoleToggleButton, "Bold")
 	if b.States&platform.AccessChecked == 0 {
 		t.Errorf("Bold reads %+v", b)
 	}
@@ -280,10 +280,10 @@ func TestToolbarAccessibility(t *testing.T) {
 
 func TestToolbarEntersAtItsFirst(t *testing.T) {
 	bold := true
-	tt := NewTester(func(c *Context) {
-		Toolbar(c, func() {
-			Button(c, "Cut")
-			Toggle(c, &bold, "Bold")
+	tt := coreNewTester(func(c *context) {
+		coreToolbar(c, func() {
+			coreButton(c, "Cut")
+			coreToggle(c, &bold, "Bold")
 		})
 	}, 400, 100)
 	tt.Key(0, KeyTab)

@@ -52,11 +52,11 @@ receiver, the value of your own type that holds the state. A field such as
 `app.volume` or a method such as `app.save()` is one you declare on that
 type, as `counter` declares `n`; [Views](views.md) says more.
 
-`mygo init -template native my-app` starts a project of native UI (see
-[the CLI](../cli.md#mygo-init)). In a clone of the repository,
-`examples/counter-native` is a counter with a test of its view
-(`go run ./examples/counter-native`), and `go run ./examples/gallery`
-tours what the toolkit does.
+`mygo init -template native my-app` starts a native UI project (see
+[the CLI](../cli.md#mygo-init)). The [counter example](../../examples/counter-native)
+includes a view test, and the [gallery](../../examples/gallery) shows the
+controls and layouts.
+
 
 One app can have windows of both kinds. Native UI suits tools, settings,
 inspectors and utilities, and apps that must start instantly; a web page
@@ -66,8 +66,8 @@ UI as they read other apps (see [Accessibility](accessibility.md)).
 
 ## Guides
 
-- [Views](views.md): the view, a function of your state, events as
-  questions, keys, and changing the state from other goroutines.
+- [Views](views.md): build lifetimes, event queries and callbacks, keys,
+  and changing the state from other goroutines.
 - [Layout](layout.md): rows and columns, sizes, spacing, alignment and
   positioning.
 - [Text](text.md): text and its style, rich text, links within sentences,
@@ -97,6 +97,9 @@ UI as they read other apps (see [Accessibility](accessibility.md)).
 - [Inspector](inspector.md): the elements of a window, their boxes and
   styles, and the time frames take, beside the content.
 - [Rendering](rendering.md): how MyGo draws, on the GPU or the CPU.
+- [Migration](migration.md): element values, persistent handles, focus
+  bindings and source migration.
+- [Performance](performance.md): measured frame costs and retained memory.
 
 ## Actions
 
@@ -128,6 +131,8 @@ UI as they read other apps (see [Accessibility](accessibility.md)).
 
 - [Text input](text-input.md): text on one line or several, with selection,
   undo, the clipboard and input methods.
+- [Text-input primitives](text-input-client.md): application-owned text,
+  native composition and queries, and retained geometry for custom controls.
 - [Number input](number-input.md): a number in a range, typed or stepped.
 - [Search field](search-field.md): a field for searching, which Escape
   clears.

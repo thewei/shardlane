@@ -76,7 +76,7 @@ type toast struct {
 // A message already showing shows anew; others stack above it, three at
 // most. It shows for as long as the pointer rests on it. Screen readers
 // read it out. It is AddToast with message as the ID and the title.
-func (c *Context) Toast(message string) {
+func (c *context) Toast(message string) {
 	c.AddToast(Toast{ID: message, Title: message})
 }
 
@@ -87,7 +87,7 @@ func (c *Context) Toast(message string) {
 //
 //	app.trash(note)
 //	c.ToastAction("Note deleted", "Undo", func() { app.restore(note) })
-func (c *Context) ToastAction(message, label string, action func()) {
+func (c *context) ToastAction(message, label string, action func()) {
 	c.AddToast(Toast{ID: message, Title: message, Timeout: actionToastTime, Action: label, OnAction: action})
 }
 
@@ -101,7 +101,7 @@ func (c *Context) ToastAction(message, label string, action func()) {
 // Adding a toast with the ID of one showing changes that toast, which
 // shows anew. Toasts show with the theme's look, unless the view builds
 // them with ToastViewportBase.
-func (c *Context) AddToast(t Toast) string {
+func (c *context) AddToast(t Toast) string {
 	rt := c.rt
 	rt.nextToast++
 	if t.ID == "" {
@@ -123,7 +123,7 @@ func (c *Context) AddToast(t Toast) string {
 
 // CloseToast closes the toast with id, or every toast when id is empty,
 // and runs their OnClose.
-func (c *Context) CloseToast(id string) {
+func (c *context) CloseToast(id string) {
 	rt := c.rt
 	var closed []func()
 	kept := rt.toasts[:0]
@@ -183,7 +183,7 @@ func (rt *engine) pauseToasts(paused bool, now time.Time) {
 // are those showing, the newest three, oldest first. Call it once in the
 // view, wherever. Toasts in the bottom right corner:
 //
-//	ui.ToastViewportBase(c, func(viewport *ui.Element, toasts []ui.Toast) {
+//	ui.ToastViewportBase(c, func(viewport ui.Element, toasts []ui.Toast) {
 //		viewport.Padding(16).AlignItems(ui.End).Gap(8)
 //		for _, t := range toasts {
 //			toast := ui.ToastBase(c, t)
@@ -199,13 +199,13 @@ func (rt *engine) pauseToasts(paused bool, now time.Time) {
 // keyboard focus is in it, or the window is in the background. viewport
 // stays while no toast shows, for the last one to go with an exit
 // transition. It returns viewport.
-func ToastViewportBase(c *Context, fn func(viewport *Element, toasts []Toast)) *Element {
+func coreToastViewportBase(c *context, fn func(viewport *node, toasts []Toast)) *node {
 	return toastViewport(c, true, fn)
 }
 
 // toastViewport is ToastViewportBase, which builds no viewport while no
 // toast shows unless keep.
-func toastViewport(c *Context, keep bool, fn func(viewport *Element, toasts []Toast)) *Element {
+func toastViewport(c *context, keep bool, fn func(viewport *node, toasts []Toast)) *node {
 	rt := c.rt
 	if rt.toastFrame == rt.frame && rt.toastPass == rt.pass {
 		return nil
@@ -240,9 +240,9 @@ func toastViewport(c *Context, keep bool, fn func(viewport *Element, toasts []To
 		list = append(list, ts.Toast)
 	}
 	rt.toastList = list
-	var viewport *Element
-	Overlay(c, func() {
-		viewport = Column(c).Absolute().Left(0).Top(0).Right(0).Bottom(0).Justify(End).PassThrough()
+	var viewport *node
+	coreOverlay(c, func() {
+		viewport = coreColumn(c).Absolute().Left(0).Top(0).Right(0).Bottom(0).Justify(End).PassThrough()
 		rt.pauseToasts(viewport.Hovered() || viewport.FocusWithin() || !rt.windowFocused, now)
 		viewport.Children(func() { fn(viewport, list) })
 	})
@@ -266,21 +266,21 @@ func toastViewport(c *Context, keep bool, fn func(viewport *Element, toasts []To
 
 // ToastParts are the parts of a toast without a look, which ToastBase
 // makes.
-type ToastParts struct {
+type toastParts struct {
 	// Root is the toast, which assistive technology sees as a status, and
 	// which Escape closes while the keyboard focus is in it. Give it
 	// children.
-	Root      *Element
-	c         *Context
+	Root      *node
+	c         *context
 	id        string
 	age, left time.Duration
 }
 
 // ToastBase creates the toast t without a look, in the viewport of
 // ToastViewportBase.
-func ToastBase(c *Context, t Toast) ToastParts {
+func coreToastBase(c *context, t Toast) toastParts {
 	rt := c.rt
-	p := ToastParts{c: c, id: t.ID}
+	p := toastParts{c: c, id: t.ID}
 	var key any = t.ID
 	if i := rt.toastIndex(t.ID); i >= 0 {
 		ts := &rt.toasts[i]
@@ -289,7 +289,7 @@ func ToastBase(c *Context, t Toast) ToastParts {
 			p.left = life - p.age
 		}
 	}
-	p.Root = Box(c).Key(key).Role(RoleStatus)
+	p.Root = coreBox(c).Key(key).Role(RoleStatus)
 	// It takes the pointer, which stops the time resting on it.
 	p.Root.flags |= flagHover
 	if p.Root.Shortcut(0, KeyEscape) {
@@ -302,13 +302,13 @@ func ToastBase(c *Context, t Toast) ToastParts {
 // that shows until it is closed. It does not move while the time of the
 // toasts stops; ask for frames with Context.AnimationFrame to draw it
 // moving.
-func (p ToastParts) Left() time.Duration { return p.left }
+func (p toastParts) Left() time.Duration { return p.left }
 
 // ActionButton creates a button without a look, as ButtonBase does, that
 // runs the toast's OnAction and closes it. Give it children, as the
 // toast's Action.
-func (p ToastParts) ActionButton() *Element {
-	b := ButtonBase(p.c)
+func (p toastParts) ActionButton() *node {
+	b := coreButtonBase(p.c)
 	if b.Clicked() {
 		if i := p.c.rt.toastIndex(p.id); i >= 0 {
 			if action := p.c.rt.toasts[i].OnAction; action != nil {
@@ -322,8 +322,8 @@ func (p ToastParts) ActionButton() *Element {
 
 // CloseButton creates a button without a look, as ButtonBase does, that
 // closes the toast. Give it children, and a Label when they are not text.
-func (p ToastParts) CloseButton() *Element {
-	b := ButtonBase(p.c)
+func (p toastParts) CloseButton() *node {
+	b := coreButtonBase(p.c)
 	if b.Clicked() {
 		p.c.CloseToast(p.id)
 	}
@@ -332,13 +332,13 @@ func (p ToastParts) CloseButton() *Element {
 
 // buildToasts builds the toasts with the theme's look, unless the view
 // built them with ToastViewportBase.
-func (rt *engine) buildToasts(c *Context) {
+func (rt *engine) buildToasts(c *context) {
 	t := c.theme
 	fill, text := t.inverse()
-	toastViewport(c, false, func(viewport *Element, toasts []Toast) {
+	toastViewport(c, false, func(viewport *node, toasts []Toast) {
 		viewport.Bottom(t.Space(6)).AlignItems(Center).Gap(t.Space(2))
 		for _, ts := range toasts {
-			p := ToastBase(c, ts)
+			p := coreToastBase(c, ts)
 			box := p.Root.Row().AlignItems(Center).Gap(t.Space(4)).Padding(t.Space(2.5), t.Space(4)).Radius(t.Space(2)).MaxWidth(c.w - t.Space(12)).
 				Background(fill).TextColor(text)
 			box.Shadow(0, 6, 20, 0, RGBA(0, 0, 0, 0.25))
@@ -359,23 +359,23 @@ func (rt *engine) buildToasts(c *Context) {
 			box.Opacity(opacity)
 			box.Children(func() {
 				if ts.Description == "" {
-					Text(c, ts.Title)
+					coreText(c, ts.Title)
 				} else {
-					Column(c).Shrink(1).Gap(t.Space(0.5)).Children(func() {
-						Text(c, ts.Title).FontWeight(600)
-						Text(c, ts.Description).TextColor(text.Alpha(0.75))
+					coreColumn(c).Shrink(1).Gap(t.Space(0.5)).Children(func() {
+						coreText(c, ts.Title).FontWeight(600)
+						coreText(c, ts.Description).TextColor(text.Alpha(0.75))
 					})
 				}
 				if ts.Action == "" {
 					return
 				}
 				b := p.ActionButton().Padding(t.Space(1), t.Space(2.5)).Radius(t.Radius).TextColor(t.Accent.Mix(text, 0.35)).FontWeight(600)
-				b.styleFn = func(b *Element) {
+				b.styleFn = func(b *node) {
 					if b.Hovered() {
 						b.bg = text.Alpha(0.12)
 					}
 				}
-				b.Children(func() { Text(c, ts.Action) })
+				b.Children(func() { coreText(c, ts.Action) })
 			})
 		}
 	})

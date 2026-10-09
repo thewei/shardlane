@@ -258,7 +258,7 @@ func (s *Shell) titlebarActivity(c *ui.Context, k *gorexColors) {
 		total = summary.NeedsAttention + summary.ReviewPending + summary.Working
 	}
 
-	var anchor *ui.Element
+	var anchor ui.Element
 	ui.Box(c).Size(gorexIconBtn+3, gorexIconBtn+1).Children(func() {
 		// The trigger's accessible label carries the actionable summary
 		// when there is one ("1 attention · 1 review"), the plain name

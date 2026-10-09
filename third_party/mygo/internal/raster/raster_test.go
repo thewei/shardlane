@@ -98,6 +98,27 @@ func TestRenderText(t *testing.T) {
 	}
 }
 
+// Opaque mask text must blend as the floating-point path does, including
+// over translucent destinations. Rounding differs by at most one byte.
+func TestOpaqueMaskCoverage(t *testing.T) {
+	colors := []scene.Color{{A: 255}, {R: 255, G: 255, B: 255, A: 255}, {R: 37, G: 99, B: 235, A: 255}}
+	for _, c := range colors {
+		for m := range 256 {
+			for dst := range 256 {
+				p := [4]byte{byte(dst), byte(dst), byte(dst), byte(dst)}
+				want := p
+				blend(want[:], c.Premul(1), float32(m)/255)
+				p[0], p[1], p[2], p[3] = mixMask(c.B, p[0], uint32(m)), mixMask(c.G, p[1], uint32(m)), mixMask(c.R, p[2], uint32(m)), over(byte(m), p[3], uint32(255-m))
+				for i := range p {
+					if d := int(p[i]) - int(want[i]); d < -1 || d > 1 {
+						t.Fatalf("color %+v, mask %d, destination %d: %v, want %v", c, m, dst, p, want)
+					}
+				}
+			}
+		}
+	}
+}
+
 // BenchmarkRenderFullFrame renders a frame of 1600×1000 pixels with twenty
 // tall rounded boxes on the CPU.
 func BenchmarkRenderFullFrame(b *testing.B) {

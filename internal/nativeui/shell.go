@@ -190,7 +190,6 @@ type Shell struct {
 	// changes panel state.
 	changes         changesPanelState
 	changesList     ui.ListState
-	changesListEl   *ui.Element
 	changesSelected int
 	changesTree     *gitworkbench.TreeNode
 	// sidebarFiles is the left sidebar's Godiff Files state while the
@@ -199,11 +198,9 @@ type Shell struct {
 	// hold the rows picked with Cmd/Shift-click for the pane's Stage or
 	// Unstage action, keyed by path.
 	unstagedList     ui.ListState
-	unstagedListEl   *ui.Element
 	unstagedSelected int
 	unstagedChoice   ui.Selection[string]
 	stagedList       ui.ListState
-	stagedListEl     *ui.Element
 	stagedSelected   int
 	stagedChoice     ui.Selection[string]
 	stagedPaneHeight float32
@@ -212,7 +209,6 @@ type Shell struct {
 	// commitsMode shows the All Commits pane instead of the split panes.
 	commitsMode     bool
 	commitsList     ui.ListState
-	commitsListEl   *ui.Element
 	commitsSelected int
 	// repo bar menus (diff-mode top bar).
 	tagsMenuOpen      bool

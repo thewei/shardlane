@@ -1,6 +1,7 @@
 package text
 
 import (
+	"image"
 	"math"
 	"runtime"
 	"slices"
@@ -8,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/egoist/mygo/internal/scene"
 	"golang.org/x/image/font/gofont/goregular"
 )
 
@@ -210,6 +212,7 @@ func (s *System) maskPixel(g GlyphImage) byte {
 
 func TestMaskLastsOnceDrawnAgain(t *testing.T) {
 	s := newSystem()
+	width := s.MaskAtlas.W
 	var calls int
 	s.BeginFrame()
 	first := s.Mask(1, square(8, 7, &calls))
@@ -247,13 +250,16 @@ func TestMaskLastsOnceDrawnAgain(t *testing.T) {
 			t.Fatalf("frame %d: %+v", i, g)
 		}
 	}
-	if s.MaskAtlas.W != 1024 {
+	if s.MaskAtlas.W != width {
 		t.Errorf("the atlas grew to %d", s.MaskAtlas.W)
 	}
 }
 
 func TestMakeRoom(t *testing.T) {
 	s := newSystem()
+	// Room for several old masks, so the test exercises eviction and
+	// repacking rather than the small atlas's first growth.
+	s.MaskAtlas = scene.NewAtlas(1, 1024, 1024)
 	var calls int
 	// Fill the lasting rows with masks of earlier frames.
 	var old []uint64
@@ -303,6 +309,30 @@ func TestMakeRoom(t *testing.T) {
 		t.Error("kept a mask the frame did not draw")
 	}
 	s.EndFrame()
+}
+
+// Thin masks can need a much wider or taller atlas without taking much
+// area: one MakeRoom must accommodate them, whatever the starting size.
+func TestMakeRoomForLongMasks(t *testing.T) {
+	for _, size := range []image.Point{{X: 2000, Y: 3}, {X: 3, Y: 2000}} {
+		s := newSystem()
+		s.BeginFrame()
+		draw := func() (int, int, []byte) {
+			pix := make([]byte, size.X*size.Y)
+			for i := range pix {
+				pix[i] = 123
+			}
+			return size.X, size.Y, pix
+		}
+		if s.Mask(1, draw).OK || !s.Full() {
+			t.Fatal("the long mask fit the initial atlas")
+		}
+		s.MakeRoom()
+		if g := s.Mask(1, draw); !g.OK || s.maskPixel(g) != 123 || s.Full() {
+			t.Fatalf("mask %v still does not fit after making room: %+v", size, g)
+		}
+		s.EndFrame()
+	}
 }
 
 func TestRightToLeft(t *testing.T) {

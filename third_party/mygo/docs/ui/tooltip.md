@@ -35,7 +35,7 @@ its margins keeping it apart from the element:
 ```go
 b := ui.Button(c, "").Label("Share").Description("Share with others")
 b.Children(func() { ui.Icon(c, share) })
-ui.TooltipBase(c, b, func(tip *ui.Element) {
+ui.TooltipBase(c, b, func(tip ui.Element) {
 	tip.AttachTo(b, ui.AnchorRight, ui.AnchorLeft).Margin(0, 0, 0, 6)
 	tip.Padding(4, 8).Radius(6).Background(ink).TextColor(paper)
 	tip.Children(func() {

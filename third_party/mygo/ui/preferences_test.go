@@ -7,7 +7,7 @@ import (
 
 func TestThemeFollowsTheAccent(t *testing.T) {
 	var theme *Theme
-	tt := NewTester(func(c *Context) { theme = c.Theme() }, 200, 100)
+	tt := coreNewTester(func(c *context) { theme = c.Theme() }, 200, 100)
 	if theme.Accent != LightTheme().Accent {
 		t.Fatalf("without an accent of the desktop: %v", theme.Accent)
 	}
@@ -33,7 +33,7 @@ func TestThemeFollowsTheAccent(t *testing.T) {
 func TestThemeFollowsContrastAndTextSize(t *testing.T) {
 	var theme *Theme
 	var prefs Preferences
-	tt := NewTester(func(c *Context) { theme, prefs = c.Theme(), c.Preferences() }, 200, 100)
+	tt := coreNewTester(func(c *context) { theme, prefs = c.Theme(), c.Preferences() }, 200, 100)
 	if prefs.TextScale != 1 || prefs.HighContrast || prefs.ReduceMotion {
 		t.Fatalf("by default: %+v", prefs)
 	}
@@ -50,8 +50,8 @@ func TestThemeFollowsContrastAndTextSize(t *testing.T) {
 func TestAnimateWithoutMotion(t *testing.T) {
 	target := float32(0)
 	var got float32
-	tt := NewTester(func(c *Context) {
-		got = Box(c).Size(10, 10).Animate("x", target, time.Second)
+	tt := coreNewTester(func(c *context) {
+		got = coreBox(c).Size(10, 10).Animate("x", target, time.Second)
 	}, 200, 100)
 	target = 1
 	tt.Frame()
@@ -68,7 +68,7 @@ func TestAnimateWithoutMotion(t *testing.T) {
 
 func TestOwnThemeIgnoresPreferences(t *testing.T) {
 	var accent Color
-	tt := NewTester(func(c *Context) {
+	tt := coreNewTester(func(c *context) {
 		c.SetTheme(LightTheme())
 		accent = c.Theme().Accent
 	}, 200, 100)

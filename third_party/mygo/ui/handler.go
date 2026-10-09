@@ -70,7 +70,7 @@ type InputEvent struct {
 // It is for widgets that need every key as it is pressed, such as a
 // terminal; most widgets ask about their input as they are built instead
 // (Clicked, Shortcut, Dragged).
-func (e *Element) HandleInput(fn func(ev InputEvent) bool) *Element {
+func (e *node) HandleInput(fn func(ev InputEvent) bool) *node {
 	e.inputFn = fn
 	return e
 }
@@ -79,7 +79,7 @@ func (e *Element) HandleInput(fn func(ev InputEvent) bool) *Element {
 // while it has the keyboard focus, with their composition at r, the caret,
 // relative to the element's box: candidate windows show there. Its
 // InputText and Compose events (HandleInput) bring the text.
-func (e *Element) TextCaret(r Rect) *Element {
+func (e *node) TextCaret(r Rect) *node {
 	e.caret, e.takesText = r, true
 	return e
 }

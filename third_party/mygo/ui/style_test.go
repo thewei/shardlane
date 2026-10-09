@@ -11,9 +11,9 @@ import (
 
 // boxes lays out view in a window w×h and returns the boxes of the
 // labeled elements.
-func boxes(t *testing.T, view func(c *Context), w, h int, labels ...string) map[string]Rect {
+func boxes(t *testing.T, view func(c *context), w, h int, labels ...string) map[string]Rect {
 	t.Helper()
-	tt := NewTester(view, w, h)
+	tt := coreNewTester(view, w, h)
 	out := map[string]Rect{}
 	for _, l := range labels {
 		r, ok := tt.Find(l)
@@ -40,13 +40,13 @@ func TestGrid(t *testing.T) {
 		return out
 	}
 	t.Run("equal columns and spans", func(t *testing.T) {
-		b := boxes(t, func(c *Context) {
-			Grid(c).Columns(3).Gap(10).Padding(5).Width(320).Children(func() {
-				Box(c).Height(20).Label("a")
-				Box(c).Height(40).Label("b").ColumnSpan(2)
-				Box(c).Height(10).Label("c").ColumnSpan(-1)
-				Box(c).Height(10).Label("d").ColumnStart(3).RowStart(3)
-				Box(c).Height(10).Label("e")
+		b := boxes(t, func(c *context) {
+			coreGrid(c).Columns(3).Gap(10).Padding(5).Width(320).Children(func() {
+				coreBox(c).Height(20).Label("a")
+				coreBox(c).Height(40).Label("b").ColumnSpan(2)
+				coreBox(c).Height(10).Label("c").ColumnSpan(-1)
+				coreBox(c).Height(10).Label("d").ColumnStart(3).RowStart(3)
+				coreBox(c).Height(10).Label("e")
 			})
 		}, 400, 300, cells(5)...)
 		// 310 DIPs of content and two gaps: columns of 96.67.
@@ -65,12 +65,12 @@ func TestGrid(t *testing.T) {
 		}
 	})
 	t.Run("tracks", func(t *testing.T) {
-		b := boxes(t, func(c *Context) {
-			Grid(c).ColumnTracks(Fixed(100), FitContent(), Fr(1), Fr(2)).GapX(10).Width(500).Children(func() {
-				Box(c).Height(10).Label("a")
-				Box(c).Size(60, 10).Label("b")
-				Box(c).Height(10).Label("c")
-				Box(c).Height(10).Label("d")
+		b := boxes(t, func(c *context) {
+			coreGrid(c).ColumnTracks(Fixed(100), FitContent(), Fr(1), Fr(2)).GapX(10).Width(500).Children(func() {
+				coreBox(c).Height(10).Label("a")
+				coreBox(c).Size(60, 10).Label("b")
+				coreBox(c).Height(10).Label("c")
+				coreBox(c).Height(10).Label("d")
 			})
 		}, 600, 100, cells(4)...)
 		// 500 - 100 - 60 - 30 of gaps leaves 310 for 3fr.
@@ -81,11 +81,11 @@ func TestGrid(t *testing.T) {
 		}
 	})
 	t.Run("alignment in cells", func(t *testing.T) {
-		b := boxes(t, func(c *Context) {
-			Grid(c).Columns(2).RowTracks(Fixed(50)).Width(200).JustifyItems(Center).AlignItems(End).Children(func() {
-				Box(c).Size(20, 10).Label("a")
-				Box(c).Size(20, 10).Label("b").JustifySelf(Start).AlignSelf(Start)
-				Box(c).Size(20, 10).Label("c").Margin(0, Auto)
+		b := boxes(t, func(c *context) {
+			coreGrid(c).Columns(2).RowTracks(Fixed(50)).Width(200).JustifyItems(Center).AlignItems(End).Children(func() {
+				coreBox(c).Size(20, 10).Label("a")
+				coreBox(c).Size(20, 10).Label("b").JustifySelf(Start).AlignSelf(Start)
+				coreBox(c).Size(20, 10).Label("c").Margin(0, Auto)
 			})
 		}, 300, 200, cells(3)...)
 		for k, w := range map[string]Rect{"a": {40, 40, 20, 10}, "b": {100, 0, 20, 10}, "c": {40, 50, 20, 10}} {
@@ -96,17 +96,17 @@ func TestGrid(t *testing.T) {
 	})
 	t.Run("fit content and stretch", func(t *testing.T) {
 		var w float32
-		b := boxes(t, func(c *Context) {
-			Row(c).Children(func() {
-				g := Grid(c).ColumnTracks(FitContent(), FitContent()).Label("grid").Children(func() {
-					Box(c).Size(30, 10).Label("a")
-					Box(c).Size(50, 10).Label("b")
+		b := boxes(t, func(c *context) {
+			coreRow(c).Children(func() {
+				g := coreGrid(c).ColumnTracks(FitContent(), FitContent()).Label("grid").Children(func() {
+					coreBox(c).Size(30, 10).Label("a")
+					coreBox(c).Size(50, 10).Label("b")
 				})
 				w = g.Bounds().W
 			})
-			Grid(c).ColumnTracks(FitContent(), FitContent()).Width(200).Children(func() {
-				Box(c).Height(10).MinWidth(30).Label("c")
-				Box(c).Height(10).MinWidth(50).Label("d")
+			coreGrid(c).ColumnTracks(FitContent(), FitContent()).Width(200).Children(func() {
+				coreBox(c).Height(10).MinWidth(30).Label("c")
+				coreBox(c).Height(10).MinWidth(50).Label("d")
 			})
 		}, 300, 200, "grid", "a", "b", "c", "d")
 		if b["grid"].W != 80 || b["b"].X != 30 {
@@ -119,12 +119,12 @@ func TestGrid(t *testing.T) {
 		_ = w
 	})
 	t.Run("rows grow with content", func(t *testing.T) {
-		b := boxes(t, func(c *Context) {
-			Column(c).Children(func() {
-				Grid(c).Columns(2).GapY(4).Label("grid").Children(func() {
-					Text(c, "one")
-					Text(c, strings.Repeat("word ", 30))
-					Box(c).Height(25).Label("x")
+		b := boxes(t, func(c *context) {
+			coreColumn(c).Children(func() {
+				coreGrid(c).Columns(2).GapY(4).Label("grid").Children(func() {
+					coreText(c, "one")
+					coreText(c, strings.Repeat("word ", 30))
+					coreBox(c).Height(25).Label("x")
 				})
 			})
 		}, 200, 400, "grid", "x", "one")
@@ -136,11 +136,11 @@ func TestGrid(t *testing.T) {
 
 func TestFlexOptions(t *testing.T) {
 	t.Run("gaps and align content", func(t *testing.T) {
-		b := boxes(t, func(c *Context) {
-			Row(c).Wrap().Size(100, 100).GapX(10).GapY(6).AlignContent(Center).AlignItems(Start).Children(func() {
-				Box(c).Size(40, 10).Label("a")
-				Box(c).Size(40, 10).Label("b")
-				Box(c).Size(40, 10).Label("c")
+		b := boxes(t, func(c *context) {
+			coreRow(c).Wrap().Size(100, 100).GapX(10).GapY(6).AlignContent(Center).AlignItems(Start).Children(func() {
+				coreBox(c).Size(40, 10).Label("a")
+				coreBox(c).Size(40, 10).Label("b")
+				coreBox(c).Size(40, 10).Label("c")
 			})
 		}, 200, 200, "a", "b", "c")
 		// Two lines of 10 and a gap of 6: 74 left, 37 above.
@@ -151,10 +151,10 @@ func TestFlexOptions(t *testing.T) {
 		}
 	})
 	t.Run("stretched lines", func(t *testing.T) {
-		b := boxes(t, func(c *Context) {
-			Row(c).Wrap().Size(100, 100).AlignContent(Stretch).AlignItems(Stretch).Children(func() {
-				Box(c).Width(60).Label("a")
-				Box(c).Width(60).Label("b")
+		b := boxes(t, func(c *context) {
+			coreRow(c).Wrap().Size(100, 100).AlignContent(Stretch).AlignItems(Stretch).Children(func() {
+				coreBox(c).Width(60).Label("a")
+				coreBox(c).Width(60).Label("b")
 			})
 		}, 200, 200, "a", "b")
 		if b["a"].H != 50 || b["b"].Y != 50 {
@@ -162,18 +162,18 @@ func TestFlexOptions(t *testing.T) {
 		}
 	})
 	t.Run("reverse", func(t *testing.T) {
-		b := boxes(t, func(c *Context) {
-			Row(c).Reverse().Width(100).Gap(10).Children(func() {
-				Box(c).Size(20, 10).Label("a").Margin(0, 5, 0, 0)
-				Box(c).Size(20, 10).Label("b")
+		b := boxes(t, func(c *context) {
+			coreRow(c).Reverse().Width(100).Gap(10).Children(func() {
+				coreBox(c).Size(20, 10).Label("a").Margin(0, 5, 0, 0)
+				coreBox(c).Size(20, 10).Label("b")
 			})
-			Column(c).Reverse().Height(100).Children(func() {
-				Box(c).Size(20, 10).Label("c")
-				Box(c).Size(20, 10).Label("d")
+			coreColumn(c).Reverse().Height(100).Children(func() {
+				coreBox(c).Size(20, 10).Label("c")
+				coreBox(c).Size(20, 10).Label("d")
 			})
-			Row(c).WrapReverse().Size(50, 40).AlignItems(Start).Children(func() {
-				Box(c).Size(30, 10).Label("e")
-				Box(c).Size(30, 10).Label("f")
+			coreRow(c).WrapReverse().Size(50, 40).AlignItems(Start).Children(func() {
+				coreBox(c).Size(30, 10).Label("e")
+				coreBox(c).Size(30, 10).Label("f")
 			})
 		}, 200, 300, "a", "b", "c", "d", "e", "f")
 		want := map[string]Rect{
@@ -188,15 +188,15 @@ func TestFlexOptions(t *testing.T) {
 		}
 	})
 	t.Run("auto margins", func(t *testing.T) {
-		b := boxes(t, func(c *Context) {
-			Column(c).Width(200).Children(func() {
-				Box(c).Size(50, 10).Margin(0, Auto).Label("centered")
-				Row(c).Height(40).Children(func() {
-					Box(c).Size(20, 10).Label("left")
-					Box(c).Size(20, 10).Margin(Auto, 0, Auto, Auto).Label("right")
+		b := boxes(t, func(c *context) {
+			coreColumn(c).Width(200).Children(func() {
+				coreBox(c).Size(50, 10).Margin(0, Auto).Label("centered")
+				coreRow(c).Height(40).Children(func() {
+					coreBox(c).Size(20, 10).Label("left")
+					coreBox(c).Size(20, 10).Margin(Auto, 0, Auto, Auto).Label("right")
 				})
 			})
-			Box(c).Absolute().Left(0).Right(0).Top(100).Size(40, 40).Margin(0, Auto).Label("abs")
+			coreBox(c).Absolute().Left(0).Right(0).Top(100).Size(40, 40).Margin(0, Auto).Label("abs")
 		}, 200, 200, "centered", "left", "right", "abs")
 		for k, w := range map[string]Rect{"centered": {75, 0, 50, 10}, "left": {0, 25, 20, 10}, "right": {180, 25, 20, 10}, "abs": {80, 100, 40, 40}} {
 			if !nearRect(b[k], w) {
@@ -205,14 +205,14 @@ func TestFlexOptions(t *testing.T) {
 		}
 	})
 	t.Run("relative offsets and percentages", func(t *testing.T) {
-		b := boxes(t, func(c *Context) {
-			Row(c).Width(200).Children(func() {
-				Box(c).Size(20, 20).Top(5).Left(3).Label("moved")
-				Box(c).Size(20, 20).Label("next")
-				Box(c).BasisPercent(25).Height(20).Label("quarter")
-				Box(c).Grow(1).MaxWidthPercent(10).Height(20).Label("tenth")
+		b := boxes(t, func(c *context) {
+			coreRow(c).Width(200).Children(func() {
+				coreBox(c).Size(20, 20).Top(5).Left(3).Label("moved")
+				coreBox(c).Size(20, 20).Label("next")
+				coreBox(c).BasisPercent(25).Height(20).Label("quarter")
+				coreBox(c).Grow(1).MaxWidthPercent(10).Height(20).Label("tenth")
 			})
-			Box(c).Absolute().LeftPercent(50).TopPercent(50).Size(10, 10).Label("half")
+			coreBox(c).Absolute().LeftPercent(50).TopPercent(50).Size(10, 10).Label("half")
 		}, 200, 200, "moved", "next", "quarter", "tenth", "half")
 		for k, w := range map[string]Rect{"moved": {3, 5, 20, 20}, "next": {20, 0, 20, 20}, "quarter": {40, 0, 50, 20}, "tenth": {90, 0, 20, 20}, "half": {100, 100, 10, 10}} {
 			if !nearRect(b[k], w) {
@@ -223,11 +223,11 @@ func TestFlexOptions(t *testing.T) {
 	t.Run("absolute in the padding box", func(t *testing.T) {
 		// As in CSS, insets are measured from inside the border, whatever
 		// the padding, and percentages from the padding box's size.
-		b := boxes(t, func(c *Context) {
-			Box(c).Size(36, 20).Border(1, RGB(0, 0, 0)).Padding(5).Children(func() {
-				Box(c).Absolute().Left(3).Top(3).Size(14, 14).Label("start")
-				Box(c).Absolute().Right(3).Bottom(3).Size(4, 4).Label("end")
-				Box(c).Absolute().LeftPercent(50).TopPercent(50).Size(2, 2).Label("half")
+		b := boxes(t, func(c *context) {
+			coreBox(c).Size(36, 20).Border(1, RGB(0, 0, 0)).Padding(5).Children(func() {
+				coreBox(c).Absolute().Left(3).Top(3).Size(14, 14).Label("start")
+				coreBox(c).Absolute().Right(3).Bottom(3).Size(4, 4).Label("end")
+				coreBox(c).Absolute().LeftPercent(50).TopPercent(50).Size(2, 2).Label("half")
 			})
 		}, 200, 200, "start", "end", "half")
 		for k, w := range map[string]Rect{"start": {4, 4, 14, 14}, "end": {28, 12, 4, 4}, "half": {18, 10, 2, 2}} {
@@ -241,11 +241,11 @@ func TestFlexOptions(t *testing.T) {
 func TestBorderWidths(t *testing.T) {
 	red := RGB(220, 0, 0)
 	var inner Rect
-	tt := NewTester(func(c *Context) {
-		Box(c).Size(100, 60).Background(RGB(255, 255, 255)).BorderWidth(2, 0, 6, 10).BorderColor(red).Padding(4).Children(func() {
-			Box(c).Fill().Label("inner")
+	tt := coreNewTester(func(c *context) {
+		coreBox(c).Size(100, 60).Background(RGB(255, 255, 255)).BorderWidth(2, 0, 6, 10).BorderColor(red).Padding(4).Children(func() {
+			coreBox(c).Fill().Label("inner")
 		})
-		Box(c).Size(100, 60).Margin(10, 0, 0, 0).Border(2, red).BorderStyle(BorderDashed)
+		coreBox(c).Size(100, 60).Margin(10, 0, 0, 0).Border(2, red).BorderStyle(BorderDashed)
 	}, 120, 200)
 	inner, _ = tt.Find("inner")
 	if !nearRect(inner, Rect{14, 6, 82, 44}) {
@@ -278,12 +278,12 @@ func TestBorderWidths(t *testing.T) {
 
 func TestPaints(t *testing.T) {
 	blue, yellow := RGB(0, 0, 255), RGB(255, 255, 0)
-	tt := NewTester(func(c *Context) {
-		Box(c).Size(100, 20).Gradient(blue, yellow, 90)
-		Box(c).Size(100, 20).LinearGradient(LinearGradient{From: blue, To: yellow, Angle: 90, Oklab: true})
-		Box(c).Size(100, 20).LinearGradient(LinearGradient{From: blue, To: yellow, Angle: 90, Start: 0.5, End: 0.6})
-		Box(c).Size(100, 20).Background(RGB(255, 255, 255)).Stripes(RGB(0, 0, 0), 4, 4, 0)
-		Box(c).Size(40, 20).Draw(func(p *Painter, r Rect) {
+	tt := coreNewTester(func(c *context) {
+		coreBox(c).Size(100, 20).Gradient(blue, yellow, 90)
+		coreBox(c).Size(100, 20).LinearGradient(LinearGradient{From: blue, To: yellow, Angle: 90, Oklab: true})
+		coreBox(c).Size(100, 20).LinearGradient(LinearGradient{From: blue, To: yellow, Angle: 90, Start: 0.5, End: 0.6})
+		coreBox(c).Size(100, 20).Background(RGB(255, 255, 255)).Stripes(RGB(0, 0, 0), 4, 4, 0)
+		coreBox(c).Size(40, 20).Draw(func(p *Painter, r Rect) {
 			var path Path
 			path.MoveTo(r.X, r.Y).LineTo(r.X+r.W, r.Y).LineTo(r.X+r.W, r.Y+r.H).LineTo(r.X, r.Y+r.H).Close()
 			p.FillPathGradient(&path, LinearGradient{From: blue, To: yellow, Angle: 90})
@@ -332,26 +332,26 @@ func TestTextDecorations(t *testing.T) {
 	}
 	for _, tc := range []struct {
 		name string
-		view func(c *Context)
+		view func(c *context)
 		test func(n int, rows map[int]bool) bool
 	}{
-		{"underline color", func(c *Context) {
-			Text(c, "Hello").Underline().DecorationColor(red).Label("t")
+		{"underline color", func(c *context) {
+			coreText(c, "Hello").Underline().DecorationColor(red).Label("t")
 		}, func(n int, rows map[int]bool) bool { return n > 10 && len(rows) == 1 }},
-		{"thick strikethrough", func(c *Context) {
-			Text(c, "Hello").Strikethrough().DecorationColor(red).DecorationThickness(3).Label("t")
+		{"thick strikethrough", func(c *context) {
+			coreText(c, "Hello").Strikethrough().DecorationColor(red).DecorationThickness(3).Label("t")
 		}, func(n int, rows map[int]bool) bool { return len(rows) == 3 }},
-		{"wavy underline", func(c *Context) {
-			Text(c, "Hello world").WavyUnderline().DecorationColor(red).Label("t")
+		{"wavy underline", func(c *context) {
+			coreText(c, "Hello world").WavyUnderline().DecorationColor(red).Label("t")
 		}, func(n int, rows map[int]bool) bool { return len(rows) >= 2 }},
-		{"background", func(c *Context) {
-			Text(c, "Hello").TextBackground(red).Label("t")
+		{"background", func(c *context) {
+			coreText(c, "Hello").TextBackground(red).Label("t")
 		}, func(n int, rows map[int]bool) bool { return n > 100 }},
-		{"spans", func(c *Context) {
-			RichText(c, Span{Text: "plain "}, Span{Text: "found", Background: red}, Span{Text: " typo", WavyUnderline: true, DecorationColor: red}).Label("t")
+		{"spans", func(c *context) {
+			coreRichText(c, Span{Text: "plain "}, Span{Text: "found", Background: red}, Span{Text: " typo", WavyUnderline: true, DecorationColor: red}).Label("t")
 		}, func(n int, rows map[int]bool) bool { return n > 50 }},
 	} {
-		tt := NewTester(tc.view, 300, 60)
+		tt := coreNewTester(tc.view, 300, 60)
 		r, _ := tt.Find("t")
 		if n, rows := reds(tt.Image(), Rect{r.X, r.Y, r.W, r.H + 4}); !tc.test(n, rows) {
 			t.Errorf("%s: %d red pixels on %d rows", tc.name, n, len(rows))
@@ -360,11 +360,11 @@ func TestTextDecorations(t *testing.T) {
 }
 
 func TestTextOptions(t *testing.T) {
-	b := boxes(t, func(c *Context) {
-		Column(c).Width(60).AlignItems(Start).Children(func() {
-			Text(c, "one\ntwo").FixedLineHeight(30).Label("fixed")
-			Text(c, "a long line of words").NoWrap().Label("nowrap")
-			Text(c, "a long line of words").Label("wraps")
+	b := boxes(t, func(c *context) {
+		coreColumn(c).Width(60).AlignItems(Start).Children(func() {
+			coreText(c, "one\ntwo").FixedLineHeight(30).Label("fixed")
+			coreText(c, "a long line of words").NoWrap().Label("nowrap")
+			coreText(c, "a long line of words").Label("wraps")
 		})
 	}, 300, 300, "fixed", "nowrap", "wraps")
 	if b["fixed"].H != 60 {
@@ -375,21 +375,62 @@ func TestTextOptions(t *testing.T) {
 	}
 }
 
+// Even when a button grows, its centered label takes its intrinsic width.
+// That width must fit the whole label, including kerned runs such as "11".
+func TestButtonLabelsAtIntrinsicWidth(t *testing.T) {
+	for _, family := range []string{"sans-serif", "monospace"} {
+		t.Run(family, func(t *testing.T) {
+			var buttons []*node
+			tt := coreNewTester(func(c *context) {
+				buttons = buttons[:0]
+				coreRow(c).Gap(2).Children(func() {
+					for _, label := range []string{"1911", "2011", "2111", "2211", "2012", "2011-04-17", "11", "11:30"} {
+						buttons = append(buttons, coreButton(c, label).Font(family).FontSize(12).Grow(1).Height(28))
+					}
+				})
+			}, 1000, 100)
+			check := func() {
+				for _, button := range buttons {
+					label := button.first
+					l := label.tl
+					if l == nil {
+						t.Fatalf("button label %q has no layout", label.text)
+					}
+					if len(l.Lines) != 1 || l.Truncated || l.Lines[0].End != len(l.Runes) {
+						t.Errorf("button label %q at width %g: %d lines, truncated %v", label.text, label.w, len(l.Lines), l.Truncated)
+					}
+				}
+			}
+			// Grow gives every button the same width. Leave enough room
+			// for the widest label in the font this machine uses.
+			var widest float32
+			for _, button := range buttons {
+				widest = max(widest, intrinsic(button, true))
+			}
+			width := int(math.Ceil(float64(widest)*float64(len(buttons))+2*float64(len(buttons)-1))) + 1
+			tt.SetSize(width, 100)
+			check()
+			tt.SetSize(width+160, 100)
+			check()
+		})
+	}
+}
+
 func TestInvisible(t *testing.T) {
 	clicked := false
-	b := boxes(t, func(c *Context) {
-		Row(c).Children(func() {
-			if ButtonBase(c).Size(40, 20).Invisible().Children(func() { Text(c, "hidden") }).Clicked() {
+	b := boxes(t, func(c *context) {
+		coreRow(c).Children(func() {
+			if coreButtonBase(c).Size(40, 20).Invisible().Children(func() { coreText(c, "hidden") }).Clicked() {
 				clicked = true
 			}
-			Box(c).Size(10, 10).Label("after")
+			coreBox(c).Size(10, 10).Label("after")
 		})
 	}, 100, 100, "after")
 	if b["after"].X != 40 {
 		t.Errorf("an invisible element gave up its room: %v", b["after"])
 	}
-	tt := NewTester(func(c *Context) {
-		if ButtonBase(c).Size(40, 20).Invisible().Background(RGB(255, 0, 0)).Children(func() { Text(c, "hidden") }).Clicked() {
+	tt := coreNewTester(func(c *context) {
+		if coreButtonBase(c).Size(40, 20).Invisible().Background(RGB(255, 0, 0)).Children(func() { coreText(c, "hidden") }).Clicked() {
 			clicked = true
 		}
 	}, 100, 100)
@@ -406,9 +447,9 @@ func TestInvisible(t *testing.T) {
 }
 
 func TestClipOneWay(t *testing.T) {
-	img := Render(func(c *Context) {
-		Box(c).Size(50, 50).Margin(20).ClipX().Children(func() {
-			Box(c).Size(100, 100).Margin(-10, 0, 0, -10).Background(RGB(255, 0, 0))
+	img := coreRender(func(c *context) {
+		coreBox(c).Size(50, 50).Margin(20).ClipX().Children(func() {
+			coreBox(c).Size(100, 100).Margin(-10, 0, 0, -10).Background(RGB(255, 0, 0))
 		})
 	}, 150, 150, 1)
 	red := func(x, y int) bool { c := img.RGBAAt(x, y); return c.R == 255 && c.G == 0 }
@@ -421,11 +462,11 @@ func TestClipOneWay(t *testing.T) {
 }
 
 func TestScrollBoth(t *testing.T) {
-	var sc *Element
+	var sc *node
 	var content Rect
-	tt := NewTester(func(c *Context) {
-		sc = ScrollBoth(c).Size(100, 100).Children(func() {
-			Box(c).Size(400, 300).Draw(func(p *Painter, r Rect) { content = r })
+	tt := coreNewTester(func(c *context) {
+		sc = coreScrollBoth(c).Size(100, 100).Children(func() {
+			coreBox(c).Size(400, 300).Draw(func(p *Painter, r Rect) { content = r })
 		})
 	}, 200, 200)
 	tt.Scroll(50, 50, 30, 40)
@@ -449,11 +490,11 @@ func TestScrollBoth(t *testing.T) {
 }
 
 func TestScrollbarInsets(t *testing.T) {
-	var sc *Element
+	var sc *node
 	var content Rect
-	tt := NewTester(func(c *Context) {
-		sc = Scroll(c).Size(100, 200).ScrollbarInsets(50, 4, 10).Children(func() {
-			Box(c).Size(100, 800).Draw(func(p *Painter, r Rect) { content = r })
+	tt := coreNewTester(func(c *context) {
+		sc = coreScroll(c).Size(100, 200).ScrollbarInsets(50, 4, 10).Children(func() {
+			coreBox(c).Size(100, 800).Draw(func(p *Painter, r Rect) { content = r })
 		})
 	}, 200, 200)
 	tt.Move(50, 100)
@@ -486,16 +527,16 @@ func TestScrollbarInsets(t *testing.T) {
 
 func TestScrollContentShrinks(t *testing.T) {
 	long := true
-	var top *Element
-	tt := NewTester(func(c *Context) {
-		Column(c).Fill().Children(func() {
-			if Button(c, "Switch").Clicked() {
+	var top *node
+	tt := coreNewTester(func(c *context) {
+		coreColumn(c).Fill().Children(func() {
+			if coreButton(c, "Switch").Clicked() {
 				long = !long
 			}
-			Scroll(c).Grow(1).Children(func() {
-				top = Box(c).Height(20).Shrink(0)
+			coreScroll(c).Grow(1).Children(func() {
+				top = coreBox(c).Height(20).Shrink(0)
 				if long {
-					Box(c).Height(1000).Shrink(0)
+					coreBox(c).Height(1000).Shrink(0)
 				}
 			})
 		})
@@ -528,8 +569,8 @@ func TestEasingAndLoop(t *testing.T) {
 		t.Errorf("bounce: %v %v %v", b(0.25), b(0.5), b(0.75))
 	}
 	var values []float32
-	tt := NewTester(func(c *Context) {
-		e := Box(c)
+	tt := coreNewTester(func(c *context) {
+		e := coreBox(c)
 		values = append(values, e.Loop("spin", 50*time.Millisecond, Linear))
 	}, 50, 50)
 	time.Sleep(20 * time.Millisecond)
@@ -549,8 +590,8 @@ func TestEasingAndLoop(t *testing.T) {
 func TestIconRotates(t *testing.T) {
 	bar := MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect x="0" y="10" width="24" height="4"/></svg>`))
 	draw := func(deg float32) *image.RGBA {
-		return Render(func(c *Context) {
-			Icon(c, bar).FontSize(40).TextColor(RGB(0, 0, 0)).Rotate(deg)
+		return coreRender(func(c *context) {
+			coreIcon(c, bar).FontSize(40).TextColor(RGB(0, 0, 0)).Rotate(deg)
 		}, 60, 60, 1)
 	}
 	dark := func(img *image.RGBA, x, y int) bool { return img.RGBAAt(x, y).R < 100 }
@@ -569,9 +610,9 @@ func TestImageFitsAndGray(t *testing.T) {
 		src.Pix[i], src.Pix[i+3] = 255, 255 // red
 	}
 	bm := NewBitmap(src)
-	img := Render(func(c *Context) {
-		Image(c, bm).Size(50, 50).Fit(ScaleDown)
-		Image(c, bm).Size(50, 50).Fit(Contain).Grayscale()
+	img := coreRender(func(c *context) {
+		coreImage(c, bm).Size(50, 50).Fit(ScaleDown)
+		coreImage(c, bm).Size(50, 50).Fit(Contain).Grayscale()
 	}, 50, 100, 1)
 	if c := img.RGBAAt(25, 25); c.R != 255 || c.G != 0 {
 		t.Errorf("the center of a picture scaled down: %v", c)
@@ -586,9 +627,9 @@ func TestImageFitsAndGray(t *testing.T) {
 
 func TestMeasureAndDrawText(t *testing.T) {
 	var mw, mh, dw, dh float32
-	img := Render(func(c *Context) {
+	img := coreRender(func(c *context) {
 		mw, mh = c.MeasureText(0, Span{Text: "Total", Weight: 700, Size: 20})
-		Box(c).Fill().Draw(func(p *Painter, r Rect) {
+		coreBox(c).Fill().Draw(func(p *Painter, r Rect) {
 			dw, dh = p.RichText(10, 10, 0, Span{Text: "Total", Weight: 700, Size: 20, Color: RGB(255, 0, 0)})
 		})
 	}, 200, 60, 1)
@@ -609,9 +650,9 @@ func TestMeasureAndDrawText(t *testing.T) {
 }
 
 func TestDebugAndCursors(t *testing.T) {
-	tt := NewTester(func(c *Context) {
-		Column(c).Fill().Debug().Children(func() {
-			Box(c).Size(40, 40).Margin(10).Padding(5).Cursor(CursorNone).Label("box")
+	tt := coreNewTester(func(c *context) {
+		coreColumn(c).Fill().Debug().Children(func() {
+			coreBox(c).Size(40, 40).Margin(10).Padding(5).Cursor(CursorNone).Label("box")
 		})
 	}, 100, 100)
 	r, _ := tt.Find("box")
@@ -635,14 +676,14 @@ func TestThemeUnits(t *testing.T) {
 
 func TestReviewedEdges(t *testing.T) {
 	// Stops at one place make a hard edge.
-	img := Render(func(c *Context) {
-		Box(c).Size(100, 10).LinearGradient(LinearGradient{From: RGB(255, 0, 0), To: RGB(0, 0, 255), Angle: 90, Start: 0.5, End: 0.5})
+	img := coreRender(func(c *context) {
+		coreBox(c).Size(100, 10).LinearGradient(LinearGradient{From: RGB(255, 0, 0), To: RGB(0, 0, 255), Angle: 90, Start: 0.5, End: 0.5})
 		// A 20×20 bitmap shows at 20×20 DIPs, as its Image lays out.
 		src := image.NewRGBA(image.Rect(0, 0, 20, 20))
 		for i := 0; i < len(src.Pix); i += 4 {
 			src.Pix[i+1], src.Pix[i+3] = 255, 255
 		}
-		Image(c, NewBitmap(src)).Size(60, 60).Fit(NaturalSize)
+		coreImage(c, NewBitmap(src)).Size(60, 60).Fit(NaturalSize)
 	}, 100, 100, 2)
 	if l, r := img.RGBAAt(90, 10), img.RGBAAt(110, 10); l.R != 255 || r.B != 255 {
 		t.Errorf("a hard stop: %v and %v", l, r)
@@ -661,8 +702,8 @@ func TestReviewedEdges(t *testing.T) {
 
 	// An element that turns invisible gives up the focus.
 	hide, clicks := false, 0
-	tt := NewTester(func(c *Context) {
-		b := ButtonBase(c).Size(40, 20).Label("b")
+	tt := coreNewTester(func(c *context) {
+		b := coreButtonBase(c).Size(40, 20).Label("b")
 		if hide {
 			b.Invisible()
 		}

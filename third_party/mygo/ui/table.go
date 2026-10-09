@@ -139,25 +139,25 @@ type tableDrag struct {
 //	}).Grow(1).Submitted() {
 //		app.open(files[app.file])
 //	}
-func Table(c *Context, s *ListState, columns []TableColumn, n int, cell func(row, col int)) *Element {
+func coreTable(c *context, s *ListState, columns []TableColumn, n int, cell func(row, col int)) *node {
 	return table(c, s, columns, n, cell, tableList)
 }
 
 // table creates a Table, or with kind treeTableList an OutlineTable.
-func table(c *Context, s *ListState, columns []TableColumn, n int, cell func(row, col int), kind listKind) *Element {
+func table(c *context, s *ListState, columns []TableColumn, n int, cell func(row, col int), kind listKind) *node {
 	t := c.theme
 	// The height of the header, and the least of the rows.
 	tableRow := t.Space(8)
-	table := Column(c).Role(RoleTable).Focusable().Clip()
+	table := coreColumn(c).Role(RoleTable).Focusable().Clip()
 	table.widget = "Table"
 	if kind == treeTableList {
 		table.widget, table.role = "OutlineTable", RoleTree
 	}
 	table.flags |= flagOwnRing
 	if s == nil {
-		s = Local(table, "rows", func() ListState { return ListState{} })
+		s = coreLocal(table, "rows", func() ListState { return ListState{} })
 	}
-	drag := Local(table, "drag", func() tableDrag { return tableDrag{} })
+	drag := coreLocal(table, "drag", func() tableDrag { return tableDrag{} })
 	layout := &s.Columns
 	order := layout.arrange(columns)
 	// The least width of the rows: the columns', those sharing the room
@@ -172,13 +172,13 @@ func table(c *Context, s *ListState, columns []TableColumn, n int, cell func(row
 		}
 	}
 	// fitting are the cells of the column fitting its cells.
-	var fitting []*Element
+	var fitting []*node
 	// cells builds a row's cells, with fill building the content of each.
-	cells := func(role Role, fill func(col int)) []*Element {
-		boxes := make([]*Element, 0, len(order))
+	cells := func(role Role, fill func(col int)) []*node {
+		boxes := make([]*node, 0, len(order))
 		for _, j := range order {
 			col := &columns[j]
-			box := Row(c).Padding(t.Space(1.5), t.Space(2.5)).AlignItems(Center).Shrink(0).Clip().Role(role)
+			box := coreRow(c).Padding(t.Space(1.5), t.Space(2.5)).AlignItems(Center).Shrink(0).Clip().Role(role)
 			if w, ok := layout.width(col); ok {
 				box.Width(w)
 			} else {
@@ -198,14 +198,14 @@ func table(c *Context, s *ListState, columns []TableColumn, n int, cell func(row
 		}
 		return boxes
 	}
-	var list *Element
+	var list *node
 	table.Children(func() {
 		// The header, which scrolls sideways with the rows.
-		head := Row(c).Height(tableRow).Shrink(0).AlignItems(Stretch).Role(RoleRow).Clip()
+		head := coreRow(c).Height(tableRow).Shrink(0).AlignItems(Stretch).Role(RoleRow).Clip()
 		head.Children(func() {
 			heads := cells(RoleColumnHeader, func(j int) {
 				col := &columns[j]
-				Text(c, col.Title).SingleLine().FontWeight(600).TextColor(t.TextMuted)
+				coreText(c, col.Title).SingleLine().FontWeight(600).TextColor(t.TextMuted)
 				if s.Sort != nil && col.Sortable && s.Sort.Column == col.id() {
 					sortArrow(c, s.Sort.Descending)
 				}
@@ -214,16 +214,16 @@ func table(c *Context, s *ListState, columns []TableColumn, n int, cell func(row
 				tableHeader(c, table, heads[k], &columns[j], s, drag, heads, order, columns)
 			}
 		})
-		Divider(c)
+		coreDivider(c)
 		// The rows are a List's, whose choice the table takes the focus
 		// and the keys for.
-		list = Scroll(c).Grow(1).Role(RoleNone)
+		list = coreScroll(c).Grow(1).Role(RoleNone)
 		list.widget = "List"
 		list.flags |= flagScrollX
 		list.rowMinW = least
 		head.followX = list
 		buildList(c, list, table, s, n, func(i int) {
-			row := Row(c).MinHeight(tableRow).AlignItems(Stretch)
+			row := coreRow(c).MinHeight(tableRow).AlignItems(Stretch)
 			// The list's element holding the row is the row.
 			row.Role(RoleNone)
 			if s.Header != nil && s.Header(i) {
@@ -234,7 +234,7 @@ func table(c *Context, s *ListState, columns []TableColumn, n int, cell func(row
 			if s.cursor() == nil {
 				// Chosen rows show the pointer over them already.
 				row.flags |= flagHover
-				row.styleFn = func(row *Element) {
+				row.styleFn = func(row *node) {
 					if row.Hovered() {
 						row.bg = t.SurfaceHover
 					}
@@ -258,7 +258,7 @@ func table(c *Context, s *ListState, columns []TableColumn, n int, cell func(row
 
 // tableHeader makes a column's header sort the rows when clicked, move the
 // column when dragged, and resize it from its right edge.
-func tableHeader(c *Context, table, h *Element, col *TableColumn, s *ListState, drag *tableDrag, heads []*Element, order []int, columns []TableColumn) {
+func tableHeader(c *context, table, h *node, col *TableColumn, s *ListState, drag *tableDrag, heads []*node, order []int, columns []TableColumn) {
 	t := c.theme
 	id := col.id()
 	if s.Sort != nil && col.Sortable {
@@ -270,7 +270,7 @@ func tableHeader(c *Context, table, h *Element, col *TableColumn, s *ListState, 
 			h.sort = 0
 		}
 		h.flags |= flagClickable | flagHover
-		h.styleFn = func(h *Element) {
+		h.styleFn = func(h *node) {
 			if h.Hovered() {
 				h.bg = t.SurfaceHover
 			}
@@ -297,14 +297,16 @@ func tableHeader(c *Context, table, h *Element, col *TableColumn, s *ListState, 
 			h.st.clicks = 0
 		}
 	}
-	if s.Sort != nil && col.Sortable && h.Clicked() {
-		if s.Sort.Column == id {
-			s.Sort.Descending = !s.Sort.Descending
-		} else {
-			*s.Sort = SortOrder{Column: id}
+	h.afterInput(func() {
+		if s.Sort != nil && col.Sortable && h.Clicked() {
+			if s.Sort.Column == id {
+				s.Sort.Descending = !s.Sort.Descending
+			} else {
+				*s.Sort = SortOrder{Column: id}
+			}
+			table.st.markChanged()
 		}
-		table.st.changed = true
-	}
+	})
 	if col.Fixed {
 		return
 	}
@@ -312,7 +314,7 @@ func tableHeader(c *Context, table, h *Element, col *TableColumn, s *ListState, 
 	// double click.
 	grip := t.Space(2)
 	h.Children(func() {
-		edge := Box(c).Absolute().Top(0).Bottom(0).Right(0).Width(grip).Cursor(CursorResizeEW).Role(RoleNone)
+		edge := coreBox(c).Absolute().Top(0).Bottom(0).Right(0).Width(grip).Cursor(CursorResizeEW).Role(RoleNone)
 		edge.flags |= flagHover
 		if edge.DoubleClicked() {
 			drag.fit = id
@@ -361,7 +363,7 @@ func (s *ListState) setWidth(col *TableColumn, w float32) {
 
 // moveColumn moves the column being dragged past a neighbor whose middle
 // it passed, keeping it under the pointer.
-func moveColumn(c *Context, s *ListState, drag *tableDrag, heads []*Element, order []int, columns []TableColumn) {
+func moveColumn(c *context, s *ListState, drag *tableDrag, heads []*node, order []int, columns []TableColumn) {
 	at := slices.IndexFunc(order, func(j int) bool { return columns[j].id() == drag.id })
 	if at < 0 {
 		return
@@ -400,7 +402,7 @@ func moveColumn(c *Context, s *ListState, drag *tableDrag, heads []*Element, ord
 // the cells built in the frame and the header.
 type tableFit struct {
 	id     string
-	cells  []*Element
+	cells  []*node
 	layout *TableLayout
 	drag   *tableDrag
 	done   bool
@@ -430,9 +432,9 @@ func (tf *tableFit) apply() {
 }
 
 // sortArrow draws the arrow of the column the rows are sorted by.
-func sortArrow(c *Context, descending bool) {
+func sortArrow(c *context, descending bool) {
 	t := c.theme
-	Box(c).Size(t.Space(2.5), t.Space(2.5)).Shrink(0).Margin(0, 0, 0, t.Space(1)).Draw(func(p *Painter, r Rect) {
+	coreBox(c).Size(t.Space(2.5), t.Space(2.5)).Shrink(0).Margin(0, 0, 0, t.Space(1)).Draw(func(p *Painter, r Rect) {
 		var path Path
 		if descending {
 			path.MoveTo(r.X+r.W*0.1, r.Y+r.H*0.3).LineTo(r.X+r.W*0.5, r.Y+r.H*0.7).LineTo(r.X+r.W*0.9, r.Y+r.H*0.3)
@@ -452,7 +454,7 @@ func abs(v float32) float32 {
 
 // Selected shows the element as chosen among its siblings, in the accent
 // color, as a row of a list, and tells assistive technology it is.
-func (e *Element) Selected(on bool) *Element {
+func (e *node) Selected(on bool) *node {
 	if !on {
 		e.checked = 1
 		return e

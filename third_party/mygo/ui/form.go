@@ -5,7 +5,7 @@ import "github.com/egoist/mygo/internal/text"
 // formBuild is a Form being built: the boxes of its fields' labels, which
 // its layout makes as wide as the widest.
 type formBuild struct {
-	labels  []*Element
+	labels  []*node
 	aligned bool
 }
 
@@ -13,7 +13,7 @@ type formBuild struct {
 // control and the texts below it, and the control, which the label names
 // and the texts describe.
 type fieldParts struct {
-	label, content, control *Element
+	label, content, control *node
 }
 
 // Form creates a column of the fields that fn builds (Field, Fieldset),
@@ -25,8 +25,8 @@ type fieldParts struct {
 //		ui.Field(c, "Name", func() { ui.TextInput(c, &app.name) })
 //		ui.Field(c, "Size", func() { ui.Select(c, &app.size, sizes) })
 //	})
-func Form(c *Context, fn func()) *Element {
-	f := Column(c).Gap(c.theme.Space(3))
+func coreForm(c *context, fn func()) *node {
+	f := coreColumn(c).Gap(c.theme.Space(3))
 	f.widget = "Form"
 	fb := &formBuild{}
 	f.form = fb
@@ -66,26 +66,26 @@ func (fb *formBuild) alignLabels() {
 //
 // The control is the first element fn builds that takes the focus, or a
 // group of them, such as a RadioGroup.
-func Field(c *Context, label string, fn func()) *Element {
+func coreField(c *context, label string, fn func()) *node {
 	t := c.theme
 	fp := &fieldParts{}
-	var f *Element
+	var f *node
 	if c.form != nil {
-		f = Row(c).Gap(t.Space(3)).AlignItems(Start)
+		f = coreRow(c).Gap(t.Space(3)).AlignItems(Start)
 		f.baselines = true
 	} else {
-		f = Column(c).Gap(t.Space(1.5))
+		f = coreColumn(c).Gap(t.Space(1.5))
 	}
 	f.widget, f.field = "Field", fp
 	f.Children(func() {
 		if c.form != nil {
-			box := Row(c).Justify(End).Shrink(0)
+			box := coreRow(c).Justify(End).Shrink(0)
 			c.form.labels = append(c.form.labels, box)
-			box.Children(func() { fp.label = Text(c, label) })
+			box.Children(func() { fp.label = coreText(c, label) })
 		} else {
-			fp.label = Text(c, label).FontWeight(500)
+			fp.label = coreText(c, label).FontWeight(500)
 		}
-		fp.content = Column(c).Gap(t.Space(1.5))
+		fp.content = coreColumn(c).Gap(t.Space(1.5))
 		if c.form != nil {
 			fp.content.Grow(1).MinWidth(0) // the rest of the row
 		}
@@ -112,7 +112,7 @@ func Field(c *Context, label string, fn func()) *Element {
 		}
 		c.rt.consumed = true
 	}
-	l.styleFn = func(l *Element) {
+	l.styleFn = func(l *node) {
 		if ctrl.IsDisabled() && !l.IsDisabled() {
 			l.Opacity(0.5)
 		}
@@ -122,7 +122,7 @@ func Field(c *Context, label string, fn func()) *Element {
 
 // fieldControl returns the control of a field: the first element inside e
 // that takes the focus, or a group of them.
-func fieldControl(e *Element) *Element {
+func fieldControl(e *node) *node {
 	for ch := e.first; ch != nil; ch = ch.next {
 		switch ch.role {
 		case RoleRadioGroup, RoleToolbar, RoleList, RoleTable, RoleTree, RoleTabList:
@@ -140,13 +140,13 @@ func fieldControl(e *Element) *Element {
 
 // focusIn returns what a click on the label of a field focuses: its
 // control, or in a group of them, the one chosen, else the first.
-func focusIn(e *Element) *Element {
+func focusIn(e *node) *node {
 	if e.flags&(flagFocusable|flagEditable) != 0 {
 		return e
 	}
-	var first, chosen *Element
-	var walk func(e *Element)
-	walk = func(e *Element) {
+	var first, chosen *node
+	var walk func(e *node)
+	walk = func(e *node) {
 		for ch := e.first; ch != nil && chosen == nil; ch = ch.next {
 			if ch.flags&flagFocusable != 0 && !ch.disabled() {
 				if first == nil {
@@ -168,7 +168,7 @@ func focusIn(e *Element) *Element {
 
 // namesItself reports whether a control has a name of its own, as a
 // check box with its own text has, rather than a value.
-func namesItself(e *Element) bool {
+func namesItself(e *node) bool {
 	if e.label != "" {
 		return true
 	}
@@ -183,7 +183,7 @@ func namesItself(e *Element) bool {
 
 // nameOf returns the name an element gives another (nameFrom): its Label,
 // or the text it is.
-func (e *Element) nameOf() string {
+func (e *node) nameOf() string {
 	if e.label == "" && e.kind == kindText {
 		return e.text
 	}
@@ -197,17 +197,17 @@ func (e *Element) nameOf() string {
 //	ui.Fieldset(c, "Shipping", func() {
 //		ui.Field(c, "Address", func() { ui.TextInput(c, &app.address) })
 //	})
-func Fieldset(c *Context, legend string, fn func()) *Element {
+func coreFieldset(c *context, legend string, fn func()) *node {
 	t := c.theme
 	above := c.parent != nil && c.parent.nchild > 0
-	g := Column(c).Gap(t.Space(3)).Shrink(0)
+	g := coreColumn(c).Gap(t.Space(3)).Shrink(0)
 	g.widget, g.role, g.label = "Fieldset", RoleGroup, legend
 	if above {
 		// Apart from what is above, as a section.
 		g.Margin(t.Space(3), 0, 0, 0)
 	}
 	g.Children(func() {
-		Text(c, legend).FontWeight(600)
+		coreText(c, legend).FontWeight(600)
 		fn()
 	})
 	return g
@@ -216,7 +216,7 @@ func Fieldset(c *Context, legend string, fn func()) *Element {
 // Description tells assistive technology more about the element than its
 // name, as help text it reads after it. On a Field, the text shows below
 // the control, and describes it.
-func (e *Element) Description(s string) *Element {
+func (e *node) Description(s string) *node {
 	if s == "" {
 		return e
 	}
@@ -229,7 +229,7 @@ func (e *Element) Description(s string) *Element {
 // technology reads with it; an empty msg leaves it valid. On a Field, the
 // message shows below the control in the theme's Danger color, and marks
 // the control, whose border text inputs draw in that color.
-func (e *Element) Error(msg string) *Element {
+func (e *node) Error(msg string) *node {
 	if msg == "" {
 		return e
 	}
@@ -242,14 +242,14 @@ func (e *Element) Error(msg string) *Element {
 
 // fieldText shows s below the control of a field, and returns the element
 // it describes: the control, or e.
-func (e *Element) fieldText(s string, color Color) *Element {
+func (e *node) fieldText(s string, color Color) *node {
 	f := e.field
 	if f == nil {
 		return e
 	}
 	c := e.c
 	f.content.Children(func() {
-		Text(c, s).TextColor(color).FontSize(c.theme.FontSize - 1)
+		coreText(c, s).TextColor(color).FontSize(c.theme.FontSize - 1)
 	})
 	if f.control != nil {
 		return f.control
@@ -270,7 +270,7 @@ func joinDescription(a, b string) string {
 // inputBorder is the border of the box of a text input: the theme's
 // Danger while the input is not valid, its Accent while it has the focus,
 // darker while the pointer is over the box.
-func inputBorder(t *Theme, box, in *Element) {
+func inputBorder(t *Theme, box, in *node) {
 	switch {
 	case in.invalid:
 		box.borderC = t.Danger
@@ -286,7 +286,7 @@ func inputBorder(t *Theme, box, in *Element) {
 // those whose first line is higher. A child without text, as a switch,
 // takes the baseline a line of the others' text centered on its first
 // control would have.
-func alignBaselines(e *Element) {
+func alignBaselines(e *node) {
 	var ascent, descent float32
 	for ch := e.first; ch != nil && ascent == 0; ch = ch.next {
 		if l := firstLine(ch); l != nil && ch.flags&flagAbsolute == 0 {
@@ -296,7 +296,7 @@ func alignBaselines(e *Element) {
 	if ascent == 0 {
 		return
 	}
-	at := func(ch *Element) (float32, bool) {
+	at := func(ch *node) (float32, bool) {
 		if b, ok := firstBaseline(ch); ok {
 			return b, true
 		}
@@ -324,7 +324,7 @@ func alignBaselines(e *Element) {
 
 // firstLine returns the first line of text in the element, as last laid
 // out, or nil.
-func firstLine(e *Element) *text.Line {
+func firstLine(e *node) *text.Line {
 	if e.flags&flagInvisible != 0 {
 		return nil
 	}
@@ -353,7 +353,7 @@ func firstLine(e *Element) *text.Line {
 // firstControl returns the top and the height of the first element inside
 // e, or e itself, that takes the focus, is clicked or holds nothing,
 // relative to e's top.
-func firstControl(e *Element) (y, h float32, ok bool) {
+func firstControl(e *node) (y, h float32, ok bool) {
 	if e.flags&(flagFocusable|flagEditable|flagClickable) != 0 || e.first == nil {
 		return 0, e.h, e.h > 0
 	}
@@ -370,7 +370,7 @@ func firstControl(e *Element) (y, h float32, ok bool) {
 // firstBaseline returns how far below the element's top the baseline of
 // its first line of text is, as last laid out, and false for an element
 // without text.
-func firstBaseline(e *Element) (float32, bool) {
+func firstBaseline(e *node) (float32, bool) {
 	if e.flags&flagInvisible != 0 {
 		return 0, false
 	}

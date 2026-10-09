@@ -9,6 +9,7 @@ import (
 	"unsafe"
 
 	"github.com/egoist/mygo/internal/platform"
+	"github.com/egoist/mygo/transfer"
 )
 
 // Clipboard (NSPasteboard).
@@ -30,13 +31,7 @@ func (clipboard) ReadText() string {
 	return s
 }
 
-func (clipboard) WriteText(text string) {
-	withPool(func() {
-		pb := pasteboard()
-		send(pb, "clearContents")
-		send(pb, "setString:forType:", uintptr(nsString(text)), uintptr(nsString(utString)))
-	})
-}
+func (c clipboard) WriteText(text string) { _ = c.WriteData(transfer.TextData(text), nil) }
 
 func (clipboard) ReadHTML() string {
 	var s string
@@ -44,12 +39,8 @@ func (clipboard) ReadHTML() string {
 	return s
 }
 
-func (clipboard) WriteHTML(markup string) {
-	withPool(func() {
-		pb := pasteboard()
-		send(pb, "clearContents")
-		send(pb, "setString:forType:", uintptr(nsString(markup)), uintptr(nsString(utHTML)))
-	})
+func (c clipboard) WriteHTML(markup string) {
+	_ = c.WriteData(transfer.New(transfer.NewItem(transfer.Bytes(transfer.HTML, []byte(markup)), transfer.Bytes(transfer.Text, []byte(markup)))), nil)
 }
 
 func (clipboard) ReadImage() []byte {
@@ -70,22 +61,27 @@ func (clipboard) ReadImage() []byte {
 	return out
 }
 
-func (clipboard) WriteImage(png []byte) error {
+func (c clipboard) WriteImage(png []byte) error {
 	var err error
 	withPool(func() {
 		img := autorelease(send(send(class("NSImage"), "alloc"), "initWithData:", uintptr(nsData(png))))
 		if img == 0 {
 			err = errInvalidImage
-			return
 		}
-		pb := pasteboard()
-		send(pb, "clearContents")
-		send(pb, "setData:forType:", uintptr(nsData(png)), uintptr(nsString(utPNG)))
 	})
-	return err
+	if err != nil {
+		return err
+	}
+	return c.WriteData(transfer.New(transfer.NewItem(transfer.Bytes(transfer.PNG, png))), nil)
 }
-
-func (clipboard) Clear() { send(pasteboard(), "clearContents") }
+func (clipboard) Clear() {
+	withPool(func() {
+		send(pasteboard(), "clearContents")
+		if s := macClipboard; s != nil {
+			s.release()
+		}
+	})
+}
 
 func (clipboard) AvailableFormats() []string {
 	var out []string

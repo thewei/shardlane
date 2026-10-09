@@ -15,7 +15,10 @@ import (
 // Bun, or Node.js 22.6 and later, which strip the types. A loader imports
 // the file, awaits its default export, calls it with the command when it is
 // a function, and writes the configuration as JSON, which then goes through
-// the same checks as mygo.json.
+// the same checks as mygo.json. The runtime reads the loader from its
+// standard input, not from a command line argument: on Windows, npm
+// installs commands as batch files (bun.cmd), and cmd.exe ends their
+// command line at the loader's first line break.
 
 // running is the mygo command running, which a configuration exporting a
 // function gets.
@@ -54,7 +57,7 @@ func evalTSConfig(root, file string) ([]byte, error) {
 	cmd.Dir = root
 	cmd.Env = append(os.Environ(), "MYGO_CONFIG_FILE="+file, "MYGO_CONFIG_OUT="+out.Name(), "MYGO_CONFIG_COMMAND="+running)
 	// What the configuration prints must not mix with mygo's own output.
-	cmd.Stdout, cmd.Stderr = os.Stderr, &stderr
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = strings.NewReader(configLoader), os.Stderr, &stderr
 	if err := cmd.Run(); err != nil {
 		if msg := strings.TrimSpace(stderr.String()); msg != "" {
 			return nil, errors.New(msg)
@@ -62,10 +65,15 @@ func evalTSConfig(root, file string) ([]byte, error) {
 		return nil, fmt.Errorf("%s: %w", cmd.Args[0], err)
 	}
 	os.Stderr.Write(stderr.Bytes())
-	return os.ReadFile(out.Name())
+	data, err := os.ReadFile(out.Name())
+	if err == nil && len(data) == 0 {
+		err = fmt.Errorf("%s exited without writing the configuration", cmd.Args[0])
+	}
+	return data, err
 }
 
-// configRuntime returns the command that runs configLoader.
+// configRuntime returns the command that runs configLoader, given on its
+// standard input.
 func configRuntime() (*exec.Cmd, error) {
 	for _, name := range configRuntimes {
 		path, err := exec.LookPath(name)
@@ -73,10 +81,10 @@ func configRuntime() (*exec.Cmd, error) {
 			continue
 		}
 		if name == "bun" {
-			return exec.Command(path, "-e", configLoader), nil
+			return exec.Command(path, "run", "-"), nil
 		}
 		if flags, ok := nodeTypeScriptFlags(path); ok {
-			return exec.Command(path, append(flags, "--input-type=module", "-e", configLoader)...), nil
+			return exec.Command(path, append(flags, "--input-type=module", "-")...), nil
 		}
 	}
 	return nil, errors.New("evaluating " + tsConfig + " needs Bun (https://bun.sh) or Node.js 22.6 or later")

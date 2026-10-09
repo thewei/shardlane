@@ -32,8 +32,8 @@ func TestBitmapShowsSmallerSmoothly(t *testing.T) {
 	// Stripes of 4 pixels, whose middles a GPU's samples, one in 8 pixels,
 	// fall on: all white.
 	bm := NewBitmap(stripedImage(512, 512, 4, 2))
-	tt := NewTester(func(c *Context) {
-		Image(c, bm).Size(64, 64).Fit(FillBox)
+	tt := coreNewTester(func(c *context) {
+		coreImage(c, bm).Size(64, 64).Fit(FillBox)
 	}, 100, 100)
 	// Every pixel shows as many black stripes as white: gray, not stripes
 	// of its own.

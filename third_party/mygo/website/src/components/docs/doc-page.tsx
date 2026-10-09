@@ -30,6 +30,10 @@ export function docHead(doc: Doc | null | undefined) {
       { property: "og:title", content: title },
       { property: "og:description", content: doc.description },
     ],
+    links: [
+      { rel: "alternate", type: "text/markdown", href: (doc.slug ? `/docs/${doc.slug}` : "/docs") + ".md" },
+      { rel: "describedby", href: "/llms.txt" },
+    ],
   }
 }
 

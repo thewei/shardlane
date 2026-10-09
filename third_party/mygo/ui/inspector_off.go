@@ -22,8 +22,8 @@ func (in *inspector) repainted(time.Duration)                                   
 func (in *inspector) noteSource()                                                   {}
 func (in *inspector) noteKey(uint64, any)                                           {}
 func (in *inspector) pointer(*engine, platform.SurfaceEvent, float32, float32) bool { return false }
-func (in *inspector) snapshot(*engine, *Element)                                    {}
+func (in *inspector) snapshot(*engine, *node)                                       {}
 func (in *inspector) paintHighlight(*engine, *Painter, float32)                     {}
 func (rt *engine) toggleInspector()                                                 {}
 func (rt *engine) inspectKey(Modifiers, Key) bool                                   { return false }
-func (rt *engine) buildInspector(*Context, float32, float32, float32)               {}
+func (rt *engine) buildInspector(*context, float32, float32, float32)               {}

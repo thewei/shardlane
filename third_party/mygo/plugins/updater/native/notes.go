@@ -84,7 +84,7 @@ func (n *notesStyle) blocks(c *ui.Context, blocks []markdown.Block, tight bool, 
 // relative to the text.
 var headingSizes = [...]float32{16.0 / 13, 14.0 / 13, 1}
 
-func (n *notesStyle) block(c *ui.Context, b markdown.Block, depth int) *ui.Element {
+func (n *notesStyle) block(c *ui.Context, b markdown.Block, depth int) ui.Element {
 	t := n.t
 	switch b.Kind {
 	case markdown.Heading:
@@ -133,7 +133,7 @@ func (n *notesStyle) block(c *ui.Context, b markdown.Block, depth int) *ui.Eleme
 
 // paragraph builds the text of a paragraph or heading, which the user may
 // select.
-func paragraph(c *ui.Context, t *ui.Theme, inlines []markdown.Inline) *ui.Element {
+func paragraph(c *ui.Context, t *ui.Theme, inlines []markdown.Inline) ui.Element {
 	return ui.RichText(c).Children(func() { buildInlines(c, t, inlines) }).Selectable()
 }
 

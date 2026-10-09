@@ -27,13 +27,13 @@ func (s *counter) view(c *ui.Context) {
 	ui.Column(c).Fill().Center().Gap(16).Children(func() {
 		ui.Textf(c, "%d", s.n).FontSize(56).Bold()
 		ui.Row(c).Gap(8).Children(func() {
-			if ui.Button(c, "−").Label("Decrement").Width(44).Clicked() {
+			if ui.Button(c.Key("decrement"), "−").Label("Decrement").Width(44).Clicked() {
 				s.n--
 			}
-			if ui.Button(c, "Reset").Disabled(s.n == 0).Clicked() {
+			if ui.Button(c.Key("reset"), "Reset").Disabled(s.n == 0).Clicked() {
 				s.n = 0
 			}
-			if ui.PrimaryButton(c, "+").Label("Increment").Width(44).Clicked() {
+			if ui.PrimaryButton(c.Key("increment"), "+").Label("Increment").Width(44).Clicked() {
 				s.n++
 			}
 		})

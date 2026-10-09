@@ -14,10 +14,10 @@ func TestContextMenu(t *testing.T) {
 		locked       = true
 		rightClicked int
 	)
-	view := func(c *Context) {
-		Column(c).Fill().Padding(20).Gap(10).Children(func() {
-			row := Row(c).Padding(8).Children(func() {
-				Text(c, "Report.pdf")
+	view := func(c *context) {
+		coreColumn(c).Fill().Padding(20).Gap(10).Children(func() {
+			row := coreRow(c).Padding(8).Children(func() {
+				coreText(c, "Report.pdf")
 			})
 			row.ContextMenu(func(m *Menu) {
 				if m.Item("Open").Shortcut(Cmd, KeyO).Chosen() {
@@ -39,13 +39,13 @@ func TestContextMenu(t *testing.T) {
 				}
 			})
 			// Without a context menu, a right-click is the box's.
-			if Box(c).Size(60, 30).Label("plain").RightClicked() {
+			if coreBox(c).Size(60, 30).Label("plain").RightClicked() {
 				rightClicked++
 			}
-			Text(c, map[bool]string{false: "loose", true: "pinned"}[pinned])
+			coreText(c, map[bool]string{false: "loose", true: "pinned"}[pinned])
 		})
 	}
-	tt := NewTester(view, 400, 300)
+	tt := coreNewTester(view, 400, 300)
 	if tt.Menu() != nil {
 		t.Fatalf("a menu shows before any click: %q", tt.Menu())
 	}
@@ -111,10 +111,10 @@ func TestContextMenu(t *testing.T) {
 
 func TestInnermostContextMenu(t *testing.T) {
 	var got string
-	view := func(c *Context) {
-		card := Column(c).Padding(20).Children(func() {
-			Text(c, "Card")
-			Button(c, "Share").ContextMenu(func(m *Menu) {
+	view := func(c *context) {
+		card := coreColumn(c).Padding(20).Children(func() {
+			coreText(c, "Card")
+			coreButton(c, "Share").ContextMenu(func(m *Menu) {
 				if m.Item("Copy Link").Chosen() {
 					got = "Copy Link"
 				}
@@ -126,7 +126,7 @@ func TestInnermostContextMenu(t *testing.T) {
 			}
 		})
 	}
-	tt := NewTester(view, 400, 300)
+	tt := coreNewTester(view, 400, 300)
 	tt.RightClick("Share")
 	if m := tt.Menu(); !slices.Equal(m, []string{"Copy Link"}) {
 		t.Fatalf("the button's menu is %q", m)
@@ -143,17 +143,17 @@ func TestInnermostContextMenu(t *testing.T) {
 
 func TestContextMenuFromTheKeyboard(t *testing.T) {
 	var chosen int
-	view := func(c *Context) {
-		Column(c).Padding(20).Gap(8).Children(func() {
-			Button(c, "First")
-			Button(c, "Second").ContextMenu(func(m *Menu) {
+	view := func(c *context) {
+		coreColumn(c).Padding(20).Gap(8).Children(func() {
+			coreButton(c, "First")
+			coreButton(c, "Second").ContextMenu(func(m *Menu) {
 				if m.Item("Duplicate").Chosen() {
 					chosen++
 				}
 			})
 		})
 	}
-	tt := NewTester(view, 400, 300)
+	tt := coreNewTester(view, 400, 300)
 	tt.Key(0, KeyTab)
 	tt.Key(0, KeyContextMenu)
 	if tt.Menu() != nil {
@@ -176,9 +176,9 @@ func TestContextMenuFromTheKeyboard(t *testing.T) {
 
 func TestTextInputContextMenu(t *testing.T) {
 	value := "hello world"
-	tt := NewTester(func(c *Context) {
-		Column(c).Padding(20).Children(func() {
-			TextInput(c, &value).Label("Name")
+	tt := coreNewTester(func(c *context) {
+		coreColumn(c).Padding(20).Children(func() {
+			coreTextInput(c, &value).Label("Name")
 		})
 	}, 400, 200)
 	r, ok := tt.Find("Name")
@@ -245,22 +245,22 @@ type sortView struct {
 	disabled bool
 }
 
-func (s *sortView) view(c *Context) {
-	Column(c).Padding(20).Gap(10).AlignItems(Start).Children(func() {
-		MenuButton(c, "Sort by", func(m *Menu) {
+func (s *sortView) view(c *context) {
+	coreColumn(c).Padding(20).Gap(10).AlignItems(Start).Children(func() {
+		coreMenuButton(c, "Sort by", func(m *Menu) {
 			for _, by := range []string{"Name", "Date", "Size"} {
 				if m.Item(by).Checked(s.sort == by).Chosen() {
 					s.sort = by
 				}
 			}
 		}).Disabled(s.disabled)
-		Button(c, "Other")
+		coreButton(c, "Other")
 	})
 }
 
 func TestMenuButton(t *testing.T) {
 	s := &sortView{sort: "Name"}
-	tt := NewTester(s.view, 400, 300)
+	tt := coreNewTester(s.view, 400, 300)
 	// The menu opens as the button goes down, below it.
 	r, _ := tt.Find("Sort by")
 	tt.Press(r.X+r.W/2, r.Y+r.H/2)
@@ -304,9 +304,9 @@ func TestMenuButton(t *testing.T) {
 
 func TestMenuButtonAccessibility(t *testing.T) {
 	s := &sortView{sort: "Name"}
-	tt := NewTester(s.view, 400, 300)
+	tt := coreNewTester(s.view, 400, 300)
 	tt.send(platform.SurfaceEvent{Kind: platform.AccessibilityOn})
-	n := node(t, tt.h.access, platform.RoleMenuButton, "Sort by")
+	n := accessNode(t, tt.h.access, platform.RoleMenuButton, "Sort by")
 	if n.Actions&platform.ActionPress == 0 || n.States&platform.AccessFocusable == 0 {
 		t.Errorf("the menu button: %+v", n)
 	}
@@ -318,8 +318,8 @@ func TestMenuButtonAccessibility(t *testing.T) {
 
 func TestMenuAndContextMenuOfOneElement(t *testing.T) {
 	var chosen []string
-	tt := NewTester(func(c *Context) {
-		Box(c).Size(100, 40).Label("Both").Menu(func(m *Menu) {
+	tt := coreNewTester(func(c *context) {
+		coreBox(c).Size(100, 40).Label("Both").Menu(func(m *Menu) {
 			if m.Item("From the menu").Chosen() {
 				chosen = append(chosen, "menu")
 			}

@@ -59,7 +59,7 @@ func (s *Shell) changesToolView(c *ui.Context) {
 		// chooses no rows beyond the opened file, so no multi-selection.
 		tree := s.currentChangesTree(snap)
 		rows := gitworkbench.Flatten(tree, s.git.collapsedDirs)
-		list := s.gdChangedTreeList(c, pal, rows, &s.changesList, &s.changesListEl, &s.changesSelected,
+		list := s.gdChangedTreeList(c, pal, rows, &s.changesList, &s.changesSelected,
 			nil, gdViewCombined, s.changesClick)
 		list.Children(func() {
 			if len(rows) == 0 {
@@ -80,7 +80,7 @@ func (s *Shell) changesToolView(c *ui.Context) {
 // hold their own list state over the same tree data). onClick receives the
 // activated row. choice, when not nil, lets Cmd-click and Shift-click choose
 // several rows, held by path in the caller's selection.
-func (s *Shell) gdChangedTreeList(c *ui.Context, pal *gdPalette, rows []gitworkbench.FlatRow, state *ui.ListState, el **ui.Element, selected *int, choice *ui.Selection[string], pane gdViewSide, onClick func(gitworkbench.FlatRow)) *ui.Element {
+func (s *Shell) gdChangedTreeList(c *ui.Context, pal *gdPalette, rows []gitworkbench.FlatRow, state *ui.ListState, selected *int, choice *ui.Selection[string], pane gdViewSide, onClick func(gitworkbench.FlatRow)) ui.Element {
 	if choice != nil {
 		// Rows identified by path: the choice and the list's place follow
 		// their files as rows come and go.
@@ -96,9 +96,8 @@ func (s *Shell) gdChangedTreeList(c *ui.Context, pal *gdPalette, rows []gitworkb
 		if i < 0 || i >= len(rows) {
 			return
 		}
-		s.renderChangesRow(c, pal, rows[i], *el, pane, choice)
+		s.renderChangesRow(c, pal, rows[i], state, pane, choice)
 	}).Grow(1).MinHeight(0).Padding(3, 8).Gap(3)
-	*el = list
 	// A plain click opens the file: the list replaced the choice with that
 	// one row. Choice-growing clicks (Cmd, Shift) stay preview-free.
 	if changed := list.Changed(); changed && *selected >= 0 && *selected < len(rows) {
@@ -146,9 +145,9 @@ func (s *Shell) currentChangesTree(snap *gitworkbench.ChangesSnapshot) *gitworkb
 
 // renderChangesRow draws one compact Godiff tree row:
 // chevron · icon · name · +N -N · status letter (GWB-141..143).
-// listEl is the owning list, for the focused-selection tint. choice is the
+// state is the owning list, for the focused-selection tint. choice is the
 // pane's multi-selection, whose rows tint like an extended selection.
-func (s *Shell) renderChangesRow(c *ui.Context, pal *gdPalette, row gitworkbench.FlatRow, listEl *ui.Element, pane gdViewSide, choice *ui.Selection[string]) {
+func (s *Shell) renderChangesRow(c *ui.Context, pal *gdPalette, row gitworkbench.FlatRow, state *ui.ListState, pane gdViewSide, choice *ui.Selection[string]) {
 	t := c.Theme()
 	node := row.Node
 
@@ -160,7 +159,7 @@ func (s *Shell) renderChangesRow(c *ui.Context, pal *gdPalette, row gitworkbench
 	if !node.Dir && node.File != nil {
 		selected = node.Path == s.surface.diff.SelectedPath
 	}
-	focused := listEl != nil && listEl.FocusWithin()
+	focused := state.FocusWithin(c)
 
 	r := ui.Row(c).Height(28).Padding(0, 8, 0, 6+float32(row.Depth)*TreeIndentWidth).Gap(5).Radius(6).MinWidth(0)
 	textColor := t.Text

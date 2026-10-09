@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/egoist/mygo/internal/platform"
+	"github.com/egoist/mygo/transfer"
 )
 
 // ErrNoReply makes Window.CallAsyncFunction never call back, like a
@@ -27,14 +28,20 @@ type Backend struct {
 	wake   chan struct{}
 	quit   chan struct{}
 
-	mu        sync.Mutex
-	windows   []*Window
-	appMenu   *platform.Menu
-	updates   []*platform.MenuItem
-	hotkeys   map[int]string
-	clipboard string
-	theme     string
-	prefs     platform.Preferences
+	mu               sync.Mutex
+	windows          []*Window
+	appMenu          *platform.Menu
+	updates          []*platform.MenuItem
+	hotkeys          map[int]string
+	clipboard        transfer.Data
+	clipboardRelease func()
+	// ClipboardError injects a failed write while preserving existing ownership.
+	ClipboardError error
+	// ClipboardDuringFlush simulates a toolkit pumping a nested event loop
+	// after releasing providers but before its storage operation returns.
+	ClipboardDuringFlush func()
+	theme                string
+	prefs                platform.Preferences
 	// Watching reports whether power events were asked for, Awake counts the
 	// KeepAwake calls not released yet.
 	Watching bool
@@ -179,6 +186,9 @@ func (b *Backend) MenuUpdates() []*platform.MenuItem {
 
 // ClickMenuItem simulates choosing a menu item.
 func (b *Backend) ClickMenuItem(id int) { b.h.MenuItemClicked(id) }
+
+// ClickMenuItem simulates choosing an item of this window's menu.
+func (w *Window) ClickMenuItem(id int) { w.H.MenuItemClicked(id) }
 
 func (b *Backend) SetApplicationMenu(m *platform.Menu) {
 	b.mu.Lock()
@@ -614,22 +624,75 @@ func (d dialogs) ShowMessageBox(_ platform.Window, _ *platform.MessageBoxOptions
 
 type clipboard struct{ b *Backend }
 
-func (c clipboard) ReadText() string {
-	c.b.mu.Lock()
-	defer c.b.mu.Unlock()
-	return c.b.clipboard
+func (c clipboard) ReadText() string   { b, _ := c.b.clipboard.Read(transfer.Text); return string(b) }
+func (c clipboard) WriteText(s string) { _ = c.WriteData(transfer.TextData(s), nil) }
+func (c clipboard) ReadHTML() string   { b, _ := c.b.clipboard.Read(transfer.HTML); return string(b) }
+func (c clipboard) WriteHTML(s string) {
+	_ = c.WriteData(transfer.New(transfer.NewItem(transfer.Bytes(transfer.HTML, []byte(s)))), nil)
 }
-func (c clipboard) WriteText(s string) {
-	c.b.mu.Lock()
-	c.b.clipboard = s
-	c.b.mu.Unlock()
+func (c clipboard) ReadImage() []byte { b, _ := c.b.clipboard.Read(transfer.PNG); return b }
+func (c clipboard) WriteImage(b []byte) error {
+	return c.WriteData(transfer.New(transfer.NewItem(transfer.Bytes(transfer.PNG, b))), nil)
 }
-func (clipboard) ReadHTML() string           { return "" }
-func (clipboard) WriteHTML(string)           {}
-func (clipboard) ReadImage() []byte          { return nil }
-func (clipboard) WriteImage([]byte) error    { return nil }
-func (c clipboard) Clear()                   { c.WriteText("") }
-func (clipboard) AvailableFormats() []string { return nil }
+func (c clipboard) Clear() { _ = c.WriteData(transfer.Data{}, nil) }
+func (c clipboard) AvailableFormats() []string {
+	var out []string
+	for _, f := range c.Formats() {
+		out = append(out, string(f))
+	}
+	return out
+}
+func (c clipboard) Formats() []transfer.Format { return c.b.clipboard.Formats() }
+func (c clipboard) ReadData(formats []transfer.Format) (transfer.Data, error) {
+	if len(formats) == 0 {
+		formats = c.Formats()
+		if len(formats) == 0 {
+			return transfer.Data{}, nil
+		}
+	}
+	return c.b.clipboard.Materialize(formats)
+}
+func (c clipboard) WriteData(d transfer.Data, released func()) error {
+	if c.b.ClipboardError != nil {
+		return c.b.ClipboardError
+	}
+	previous := c.b.clipboardRelease
+	c.b.clipboard, c.b.clipboardRelease = d, released
+	if previous != nil {
+		previous()
+	}
+	if len(d.Formats()) == 0 {
+		c.release()
+	}
+	return nil
+}
+func (c clipboard) release() {
+	if fn := c.b.clipboardRelease; fn != nil {
+		c.b.clipboardRelease = nil
+		fn()
+	}
+}
+func (c clipboard) Flush() error {
+	if len(c.Formats()) == 0 {
+		return nil
+	}
+	d, err := c.ReadData(nil)
+	if err != nil {
+		return err
+	}
+	c.b.clipboard = d
+	c.release()
+	if fn := c.b.ClipboardDuringFlush; fn != nil {
+		fn()
+	}
+	return nil
+}
+func (c clipboard) Close() {
+	if c.b.clipboardRelease != nil {
+		c.b.clipboard = transfer.Data{}
+		c.release()
+	}
+}
 
 type shell struct{}
 
@@ -715,17 +778,36 @@ type Surface struct {
 	// Scale is the device pixels per DIP.
 	Scale float64
 
-	mu        sync.Mutex
-	requests  int
-	frames    int
-	pixels    []byte
-	pixW      int
-	pixH      int
-	cursor    platform.Cursor
-	textInput platform.TextInputState
-	access    *platform.AccessTree
-	accessN   int
-	rate      float64
+	mu          sync.Mutex
+	requests    int
+	frames      int
+	pixels      []byte
+	pixW        int
+	pixH        int
+	cursor      platform.Cursor
+	textInput   platform.TextInputState
+	access      *platform.AccessTree
+	accessN     int
+	rate        float64
+	dataDrag    *platform.DragRequest
+	dropFormats []transfer.Format
+}
+
+func (s *Surface) StartDataDrag(r platform.DragRequest) { s.dataDrag = &r }
+func (s *Surface) CancelDataDrag()                      { s.FinishDataDrag(transfer.Result{Canceled: true}) }
+func (s *Surface) SetDropFormats(f []transfer.Format) {
+	s.dropFormats = append([]transfer.Format(nil), f...)
+}
+
+// DataDrag returns the active native-source request. Main thread only.
+func (s *Surface) DataDrag() *platform.DragRequest { return s.dataDrag }
+
+// FinishDataDrag delivers the native source's result once. Main thread only.
+func (s *Surface) FinishDataDrag(r transfer.Result) {
+	if d := s.dataDrag; d != nil {
+		s.dataDrag = nil
+		d.Done(r)
+	}
 }
 
 func (s *Surface) Native() platform.SurfaceNative { return platform.SurfaceNative{} }

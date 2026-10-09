@@ -23,10 +23,10 @@ type treeBuild struct {
 //		})
 //		ui.TreeItem(c, "go.mod", nil, nil)
 //	})
-func Tree(c *Context, fn func()) *Element {
-	tree := Column(c).Role(RoleTree)
+func coreTree(c *context, fn func()) *node {
+	tree := coreColumn(c).Role(RoleTree)
 	tree.widget = "Tree"
-	last := Local(tree, "items", func() []uint64 { return nil })
+	last := coreLocal(tree, "items", func() []uint64 { return nil })
 	saved := c.tree
 	tb := &treeBuild{last: *last}
 	c.tree = tb
@@ -41,7 +41,7 @@ func Tree(c *Context, fn func()) *Element {
 // is true; nil children, or a nil open, makes a leaf. A click on its arrow
 // opens or closes it; Clicked reports a click elsewhere on it, or Enter,
 // for choosing it, which Selected shows.
-func TreeItem(c *Context, label string, open *bool, children func()) *Element {
+func coreTreeItem(c *context, label string, open *bool, children func()) *node {
 	t := c.theme
 	tb := c.tree
 	if tb == nil {
@@ -52,7 +52,7 @@ func TreeItem(c *Context, label string, open *bool, children func()) *Element {
 		parent = tb.parents[n-1]
 	}
 	branch := children != nil && open != nil
-	item := Row(c).Height(t.Space(7)).Gap(t.Space(0.5)).AlignItems(Center).Padding(0, t.Space(2), 0, t.Space(1+4*float32(tb.depth))).Focusable().Shrink(0).Role(RoleTreeItem)
+	item := coreRow(c).Height(t.Space(7)).Gap(t.Space(0.5)).AlignItems(Center).Padding(0, t.Space(2), 0, t.Space(1+4*float32(tb.depth))).Focusable().Shrink(0).Role(RoleTreeItem)
 	item.widget = "TreeItem"
 	item.flags |= flagClickable | flagHover | flagOwnRing
 	tb.items = append(tb.items, item.id)
@@ -96,7 +96,7 @@ func TreeItem(c *Context, label string, open *bool, children func()) *Element {
 	}
 	expanded := branch && *open
 	item.expanded, item.expandable, item.level = expanded, branch, tb.depth+1
-	item.styleFn = func(item *Element) {
+	item.styleFn = func(item *node) {
 		if item.checked != 2 && item.Hovered() {
 			item.bg = t.SurfaceHover
 		}
@@ -108,7 +108,7 @@ func TreeItem(c *Context, label string, open *bool, children func()) *Element {
 	})
 	item.Radius(t.Radius)
 	item.Children(func() {
-		arrow := Box(c).Size(t.Space(4), t.Space(4)).Shrink(0).Role(RoleNone)
+		arrow := coreBox(c).Size(t.Space(4), t.Space(4)).Shrink(0).Role(RoleNone)
 		if branch {
 			arrow.flags |= flagClickable
 			if arrow.Clicked() {
@@ -125,7 +125,7 @@ func TreeItem(c *Context, label string, open *bool, children func()) *Element {
 				p.StrokePath(&path, 1.5, arrowColor(t, item))
 			})
 		}
-		Text(c, label).SingleLine()
+		coreText(c, label).SingleLine()
 	})
 	if expanded {
 		tb.parents = append(tb.parents, item.id)

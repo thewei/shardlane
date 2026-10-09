@@ -7,12 +7,12 @@ import (
 
 func TestTrackScroll(t *testing.T) {
 	var s ScrollState
-	var top *Element
+	var top *node
 	seen := float32(-1)
-	tt := NewTester(func(c *Context) {
+	tt := coreNewTester(func(c *context) {
 		seen = s.Y
-		Scroll(c).Fill().TrackScroll(&s).Children(func() {
-			top = Box(c).Height(1000).Shrink(0)
+		coreScroll(c).Fill().TrackScroll(&s).Children(func() {
+			top = coreBox(c).Height(1000).Shrink(0)
 		})
 	}, 200, 200)
 	if s.Y != 0 || s.MaxY != 800 || s.MaxX != 0 {
@@ -47,15 +47,15 @@ func TestTrackScroll(t *testing.T) {
 func TestTrackScrollSettles(t *testing.T) {
 	var s ScrollState
 	long := true
-	tt := NewTester(func(c *Context) {
+	tt := coreNewTester(func(c *context) {
 		// Built from the state before the layout keeps the offset within
 		// the content: the next frame builds from the kept one.
 		if s.Y > 0 {
-			Text(c, "Back to top")
+			coreText(c, "Back to top")
 		}
-		Scroll(c).Grow(1).TrackScroll(&s).Children(func() {
+		coreScroll(c).Grow(1).TrackScroll(&s).Children(func() {
 			if long {
-				Box(c).Height(1000).Shrink(0)
+				coreBox(c).Height(1000).Shrink(0)
 			}
 		})
 	}, 200, 200)
@@ -74,14 +74,14 @@ func TestTrackScrollSettles(t *testing.T) {
 func TestTrackScrollFollowsTheEnd(t *testing.T) {
 	var s ScrollState
 	lines, builds := 10, 0
-	tt := NewTester(func(c *Context) {
+	tt := coreNewTester(func(c *context) {
 		builds++
 		if s.Y >= s.MaxY {
 			s.Y = math.MaxFloat32
 		}
-		Scroll(c).Fill().TrackScroll(&s).Children(func() {
+		coreScroll(c).Fill().TrackScroll(&s).Children(func() {
 			for range lines {
-				Box(c).Height(50).Shrink(0)
+				coreBox(c).Height(50).Shrink(0)
 			}
 		})
 	}, 200, 200)
@@ -109,10 +109,10 @@ func TestTrackScrollFollowsTheEnd(t *testing.T) {
 func TestTrackScrollPerPage(t *testing.T) {
 	pages := map[string]*ScrollState{"a": {}, "b": {}}
 	page := "a"
-	var top *Element
-	tt := NewTester(func(c *Context) {
-		Scroll(c).Fill().TrackScroll(pages[page]).Children(func() {
-			top = Box(c).Height(1000).Shrink(0)
+	var top *node
+	tt := coreNewTester(func(c *context) {
+		coreScroll(c).Fill().TrackScroll(pages[page]).Children(func() {
+			top = coreBox(c).Height(1000).Shrink(0)
 		})
 	}, 200, 200)
 	tt.Move(100, 100)
@@ -131,8 +131,8 @@ func TestTrackScrollPerPage(t *testing.T) {
 
 func TestTrackScrollList(t *testing.T) {
 	var s ScrollState
-	tt := NewTester(func(c *Context) {
-		List(c, nil, 1000, func(i int) { Textf(c, "Row %d", i).Height(20) }).Fill().TrackScroll(&s)
+	tt := coreNewTester(func(c *context) {
+		coreList(c, nil, 1000, func(i int) { coreTextf(c, "Row %d", i).Height(20) }).Fill().TrackScroll(&s)
 	}, 200, 200)
 	// The frame that scrolls builds the rows it shows.
 	s.Y = 500 * 20
@@ -149,15 +149,15 @@ func TestTrackScrollList(t *testing.T) {
 
 func TestScrollIntoView(t *testing.T) {
 	n, show := 2, -1
-	rows := map[int]*Element{}
-	tt := NewTester(func(c *Context) {
-		Scroll(c).Fill().Children(func() {
+	rows := map[int]*node{}
+	tt := coreNewTester(func(c *context) {
+		coreScroll(c).Fill().Children(func() {
 			for i := range n {
 				h := float32(100)
 				if i == 7 {
 					h = 400
 				}
-				rows[i] = Box(c).Height(h).Shrink(0)
+				rows[i] = coreBox(c).Height(h).Shrink(0)
 				if i == show {
 					rows[i].ScrollIntoView()
 					show = -1
@@ -192,13 +192,13 @@ func TestScrollIntoView(t *testing.T) {
 
 func TestScrollIntoViewNested(t *testing.T) {
 	show := false
-	var row *Element
-	tt := NewTester(func(c *Context) {
-		Scroll(c).Fill().Children(func() {
-			Box(c).Height(300).Shrink(0)
-			Scroll(c).Height(150).Shrink(0).Children(func() {
+	var row *node
+	tt := coreNewTester(func(c *context) {
+		coreScroll(c).Fill().Children(func() {
+			coreBox(c).Height(300).Shrink(0)
+			coreScroll(c).Height(150).Shrink(0).Children(func() {
 				for i := range 10 {
-					r := Box(c).Height(50).Shrink(0)
+					r := coreBox(c).Height(50).Shrink(0)
 					if i == 8 {
 						row = r
 						if show {
@@ -219,15 +219,15 @@ func TestScrollIntoViewNested(t *testing.T) {
 }
 
 func TestTabScrollsTheFocusIntoView(t *testing.T) {
-	var button *Element
-	tt := NewTester(func(c *Context) {
-		Scroll(c).Fill().Children(func() {
-			Box(c).Height(300).Shrink(0)
-			Scroll(c).Height(150).Shrink(0).Children(func() {
-				Box(c).Height(400).Shrink(0)
-				button = Button(c, "Deep")
+	var button *node
+	tt := coreNewTester(func(c *context) {
+		coreScroll(c).Fill().Children(func() {
+			coreBox(c).Height(300).Shrink(0)
+			coreScroll(c).Height(150).Shrink(0).Children(func() {
+				coreBox(c).Height(400).Shrink(0)
+				button = coreButton(c, "Deep")
 			})
-			Box(c).Height(1000).Shrink(0)
+			coreBox(c).Height(1000).Shrink(0)
 		})
 	}, 200, 200)
 	tt.Key(0, KeyTab)

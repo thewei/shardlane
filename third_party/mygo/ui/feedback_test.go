@@ -9,10 +9,10 @@ import (
 
 func TestToastAction(t *testing.T) {
 	notes, undone := 3, 0
-	tt := NewTester(func(c *Context) {
-		Column(c).Fill().Padding(20).Children(func() {
-			Textf(c, "%d notes", notes)
-			if Button(c, "Delete").Clicked() {
+	tt := coreNewTester(func(c *context) {
+		coreColumn(c).Fill().Padding(20).Children(func() {
+			coreTextf(c, "%d notes", notes)
+			if coreButton(c, "Delete").Clicked() {
 				notes--
 				c.ToastAction("Note deleted", "Undo", func() {
 					notes++
@@ -27,8 +27,8 @@ func TestToastAction(t *testing.T) {
 	}
 	// Assistive technology reads the toast, and reaches its button.
 	tt.send(platform.SurfaceEvent{Kind: platform.AccessibilityOn})
-	node(t, tt.h.access, platform.RoleStatus, "Note deleted")
-	node(t, tt.h.access, platform.RoleButton, "Undo")
+	accessNode(t, tt.h.access, platform.RoleStatus, "Note deleted")
+	accessNode(t, tt.h.access, platform.RoleButton, "Undo")
 	// The time stops while the pointer rests on the toast.
 	r, _ := tt.Find("Note deleted")
 	tt.Move(r.X+r.W/2, r.Y+r.H/2)
@@ -44,10 +44,10 @@ func TestToastAction(t *testing.T) {
 func TestCheckboxGroup(t *testing.T) {
 	mail, calendar := false, false
 	changes := 0
-	tt := NewTester(func(c *Context) {
-		if CheckboxGroup(c, "Notifications", func() {
-			Checkbox(c, &mail, "Mail")
-			Checkbox(c, &calendar, "Calendar")
+	tt := coreNewTester(func(c *context) {
+		if coreCheckboxGroup(c, "Notifications", func() {
+			coreCheckbox(c, &mail, "Mail")
+			coreCheckbox(c, &calendar, "Calendar")
 		}).Changed() {
 			changes++
 		}
@@ -58,7 +58,7 @@ func TestCheckboxGroup(t *testing.T) {
 	}
 	tt.Click("Mail")
 	tt.send(platform.SurfaceEvent{Kind: platform.AccessibilityOn})
-	if n := node(t, tt.h.access, platform.RoleCheckBox, "Notifications"); n.States&platform.AccessMixed == 0 {
+	if n := accessNode(t, tt.h.access, platform.RoleCheckBox, "Notifications"); n.States&platform.AccessMixed == 0 {
 		t.Fatalf("with one of two: %+v", n)
 	}
 	// Mixed, a click checks them all; all, it checks none.
@@ -70,14 +70,14 @@ func TestCheckboxGroup(t *testing.T) {
 	if mail || calendar {
 		t.Errorf("Space with all checked: %v %v", mail, calendar)
 	}
-	node(t, tt.h.access, platform.RoleGroup, "Notifications")
+	accessNode(t, tt.h.access, platform.RoleGroup, "Notifications")
 }
 
 func TestBreadcrumbs(t *testing.T) {
 	path := []string{"Macintosh HD", "Users", "ada", "Documents"}
 	chosen := -1
-	tt := NewTester(func(c *Context) {
-		Breadcrumbs(c, path, &chosen).Label("Path")
+	tt := coreNewTester(func(c *context) {
+		coreBreadcrumbs(c, path, &chosen).Label("Path")
 	}, 500, 100)
 	tt.Click("Users")
 	if chosen != 1 {
@@ -88,8 +88,8 @@ func TestBreadcrumbs(t *testing.T) {
 		t.Errorf("a click on the last item: %d", chosen)
 	}
 	tt.send(platform.SurfaceEvent{Kind: platform.AccessibilityOn})
-	node(t, tt.h.access, platform.RoleGroup, "Path")
-	node(t, tt.h.access, platform.RoleLink, "ada")
+	accessNode(t, tt.h.access, platform.RoleGroup, "Path")
+	accessNode(t, tt.h.access, platform.RoleLink, "ada")
 	for _, n := range tt.h.access.Nodes {
 		if n.Role == platform.RoleLink && n.Label == "Documents" {
 			t.Error("the last item is a link")
@@ -99,9 +99,9 @@ func TestBreadcrumbs(t *testing.T) {
 
 func TestAlertDialog(t *testing.T) {
 	open, deleted, canceled := true, 0, 0
-	tt := NewTester(func(c *Context) {
-		Button(c, "Behind")
-		switch AlertDialog(c, &open, "Delete Notes?", "You can't undo this.", "Cancel", "Delete") {
+	tt := coreNewTester(func(c *context) {
+		coreButton(c, "Behind")
+		switch coreAlertDialog(c, &open, "Delete Notes?", "You can't undo this.", "Cancel", "Delete") {
 		case 0:
 			canceled++
 		case 1:
@@ -109,14 +109,14 @@ func TestAlertDialog(t *testing.T) {
 		}
 	}, 500, 400)
 	tt.send(platform.SurfaceEvent{Kind: platform.AccessibilityOn})
-	if n := node(t, tt.h.access, platform.RoleAlertDialog, "Delete Notes?"); n.Description != "You can't undo this." {
+	if n := accessNode(t, tt.h.access, platform.RoleAlertDialog, "Delete Notes?"); n.Description != "You can't undo this." {
 		t.Errorf("the alert: %+v", n)
 	}
 	if !tt.Focused("Delete") {
 		t.Fatal("the default button has no focus")
 	}
 	// Assistive technology sees what is in the alert, the focus with it.
-	if n := node(t, tt.h.access, platform.RoleButton, "Delete"); tt.h.access.Focus != n.ID {
+	if n := accessNode(t, tt.h.access, platform.RoleButton, "Delete"); tt.h.access.Focus != n.ID {
 		t.Errorf("the focus on %d, not the default button", tt.h.access.Focus)
 	}
 	// A click outside does nothing.
@@ -152,15 +152,15 @@ func TestFindBar(t *testing.T) {
 		}
 		return n
 	}
-	tt := NewTester(func(c *Context) {
-		Column(c).Fill().Children(func() {
+	tt := coreNewTester(func(c *context) {
+		coreColumn(c).Fill().Children(func() {
 			if c.Shortcut(Cmd, KeyF) {
 				open = true
 			}
-			if FindBar(c, &open, &query, count(), &current).Changed() {
+			if coreFindBar(c, &open, &query, count(), &current).Changed() {
 				moves++
 			}
-			Text(c, text).Padding(10)
+			coreText(c, text).Padding(10)
 		})
 	}, 600, 300)
 	tt.Key(Cmd, KeyF)
@@ -213,5 +213,5 @@ func TestFindBar(t *testing.T) {
 	if !tt.HasText("No matches") {
 		t.Errorf("no matches: %q", tt.Texts())
 	}
-	node(t, tt.h.access, platform.RoleStatus, "No matches")
+	accessNode(t, tt.h.access, platform.RoleStatus, "No matches")
 }

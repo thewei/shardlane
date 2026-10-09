@@ -3,7 +3,10 @@
 // other's internals.
 package surface
 
-import "github.com/egoist/mygo/internal/platform"
+import (
+	"github.com/egoist/mygo/internal/platform"
+	"github.com/egoist/mygo/transfer"
+)
 
 // Conn is a window's side of the connection. Package mygo fills it before
 // calling Content.AttachContent; the content sets the hooks it handles.
@@ -18,6 +21,10 @@ type Conn struct {
 	// TitleBarDoubleClicked does what a double click on a title bar does.
 	StartDrag             func()
 	TitleBarDoubleClicked func()
+	// StartDataDrag connects a UI source to the core's process-local
+	// registry. local never leaves the process.
+	StartDataDrag  func(transfer.Data, any, transfer.DragOptions, float64, float64) error
+	CancelDataDrag func()
 	// IsDark reports the system's dark appearance, and Preferences the
 	// settings of the desktop that controls follow, which ThemeChanged
 	// tells changes of as well.

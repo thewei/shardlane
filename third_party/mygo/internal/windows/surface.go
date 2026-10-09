@@ -82,6 +82,7 @@ const (
 	iaceDefault          = 0x0010
 	niCompositionStr     = 0x0015
 	cpsComplete          = 0x0001
+	cpsCancel            = 0x0004
 	rdwInvalidate        = 0x0001
 	rdwUpdateNow         = 0x0100
 	spiGetWheelScrollLns = 0x0068
@@ -111,8 +112,9 @@ type candidateForm struct {
 }
 
 type surface struct {
-	w    *window
-	hwnd uintptr
+	clientComposition platform.InputComposition
+	w                 *window
+	hwnd              uintptr
 
 	paintDC  uintptr
 	tracking bool
@@ -130,6 +132,12 @@ type surface struct {
 	reconvert  *[2]int // the runes a reconversion replaces
 	dropTarget uintptr // IDropTarget
 	access     *uiaTree
+	dragSource *oleDragSource
+
+	// comp shows the frames drawn in memory in a window without a
+	// redirection bitmap, where GDI cannot (compositor.go); nil while none
+	// shows.
+	comp *compositor
 }
 
 func registerSurfaceClass() {
@@ -172,7 +180,24 @@ func (s *surface) dpi() int { return dpiOf(s.w.hwnd) }
 
 func (s *surface) toDIP(v int32) float64 { return float64(v) * 96 / float64(s.dpi()) }
 
-func (s *surface) Native() platform.SurfaceNative { return platform.SurfaceNative{HWND: s.hwnd} }
+// Native returns the surface's window, which a GPU renderer is about to
+// draw into: in a window without a redirection bitmap, it composes the
+// window from then on, and the frames drawn in memory let go of it.
+func (s *surface) Native() platform.SurfaceNative {
+	s.freeComp()
+	return platform.SurfaceNative{HWND: s.hwnd, Composed: s.w.noRedirect}
+}
+
+// ShowsMaterial reports whether the window shows its material behind the
+// content: it has one, and no redirection bitmap to cover it.
+func (s *surface) ShowsMaterial() bool { return s.w.noRedirect && s.w.vibrancy != "" }
+
+func (s *surface) freeComp() {
+	if s.comp != nil {
+		s.comp.free()
+		s.comp = nil
+	}
+}
 
 func (s *surface) Size() (float64, float64, float64) {
 	var r rect
@@ -199,6 +224,19 @@ func (s *surface) RefreshRate() float64 {
 
 func (s *surface) PresentPixels(pix []byte, stride, width, height int) {
 	if len(pix) < stride*height || width == 0 || height == 0 {
+		return
+	}
+	if s.w.noRedirect {
+		// GDI draws nothing in a window without a redirection bitmap: the
+		// frame shows through DirectComposition, with its alpha.
+		if s.comp == nil {
+			s.comp = newCompositor(s.w.b, s.hwnd)
+		}
+		px := s.comp.pixels(width * height)
+		for y := range height {
+			copy(px[y*width:(y+1)*width], unsafe.Slice((*uint32)(unsafe.Pointer(&pix[y*stride])), width))
+		}
+		s.comp.show(px, int32(width), int32(height))
 		return
 	}
 	dc := s.paintDC
@@ -254,6 +292,14 @@ func cursorHandle(c platform.Cursor) uintptr {
 
 func (s *surface) SetTextInput(t platform.TextInputState) {
 	active, caret := t.Active, t.Caret
+	if s.input.Active && s.input.Client != t.Client {
+		s.clientComposition.Reset()
+		if himc, _, _ := procImmGetContext.Call(s.hwnd); himc != 0 {
+			procImmNotifyIME.Call(himc, niCompositionStr, cpsCancel, 0)
+			procImmReleaseContext.Call(s.hwnd, himc)
+		}
+		s.reconvert = nil
+	}
 	s.input = t
 	if active != s.ime {
 		s.ime = active
@@ -292,10 +338,22 @@ func (s *surface) placeIME() {
 }
 
 func (s *surface) send(ev platform.SurfaceEvent) bool {
+	if ev.Kind == platform.PointerDown || ev.Kind == platform.SurfaceBlur {
+		s.clientComposition.Reset()
+	}
 	if s.w.closed {
 		return false
 	}
 	return s.w.h.SurfaceEvent(ev)
+}
+
+// modifierKey is whether the virtual key vk is Shift, Ctrl, Alt or a Windows key.
+func modifierKey(vk uintptr) bool {
+	switch vk {
+	case vkShift, vkControl, vkMenu, vkLWin, vkRWin, 0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5:
+		return true
+	}
+	return false
 }
 
 func mods() platform.Modifiers {
@@ -445,13 +503,20 @@ func (s *surface) message(hwnd uintptr, m uint32, wp, lp uintptr) (uintptr, bool
 		s.send(platform.SurfaceEvent{Kind: platform.SurfaceBlur})
 		return 0, true
 	case wmKeyDown, wmSysKeyDown:
+		s.clientComposition.Reset()
 		s.keyTaken = false
+		if modifierKey(wp) {
+			s.send(platform.SurfaceEvent{Kind: platform.ModifiersChanged, Mods: mods()})
+		}
 		if k := vkKey(wp); k != platform.KeyUnknown {
 			s.keyTaken = s.send(platform.SurfaceEvent{Kind: platform.KeyPressed, Key: k, Mods: mods(), Repeat: lp&(1<<30) != 0})
 		}
 		// Alt+F4, Alt+Space and F10 keep working.
 		return 0, m == wmKeyDown
 	case wmKeyUp, wmSysKeyUp:
+		if modifierKey(wp) {
+			s.send(platform.SurfaceEvent{Kind: platform.ModifiersChanged, Mods: mods()})
+		}
 		if k := vkKey(wp); k != platform.KeyUnknown {
 			s.send(platform.SurfaceEvent{Kind: platform.KeyReleased, Key: k, Mods: mods()})
 		}
@@ -511,6 +576,10 @@ func (s *surface) message(hwnd uintptr, m uint32, wp, lp uintptr) (uintptr, bool
 		return 0, true
 	case wmImeEndComp:
 		s.reconvert = nil
+		if c := s.input.Client; c != nil {
+			s.clientComposition.End(c)
+			return 0, true
+		}
 		s.send(platform.SurfaceEvent{Kind: platform.TextComposition})
 		return 0, true
 	case wmImeChar:
@@ -520,8 +589,10 @@ func (s *surface) message(hwnd uintptr, m uint32, wp, lp uintptr) (uintptr, bool
 	case wmGetObject:
 		return s.getObject(wp, lp)
 	case wmDestroy:
+		s.CancelDataDrag()
 		s.destroyAccess()
 		s.revokeFileDrops()
+		s.freeComp()
 		delete(s.w.b.surfaces, hwnd)
 		return 0, true
 	}

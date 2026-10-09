@@ -19,8 +19,7 @@ import (
 // in memory, which redraws what changed; and once a window has a GL
 // context, GTK composites the window with OpenGL, so the choice is made
 // before: with a context GDK makes for a window that never shows, as the
-// surfaces' would be. Making it loads the driver for good, so the probe
-// waits until a surface asks for the GPU (UseGPU).
+// surfaces' would be, as the first window of native UI is made.
 
 var glProbe struct {
 	device, probe  sync.Once

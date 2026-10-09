@@ -13,39 +13,39 @@ import (
 // the settings of bases.
 
 func TestAccessStatesOfYourOwn(t *testing.T) {
-	tt := NewTester(func(c *Context) {
-		Column(c).AlignItems(Start).Children(func() {
-			Text(c, "Settings").Role(RoleHeading).Level(2)
-			Box(c).Size(20, 20).Focusable().Role(RoleCheckBox).Label("All").Mixed()
-			Box(c).Size(20, 20).Focusable().Role(RolePopUpButton).Label("Date").Expanded(true).Value("May 4")
-			Box(c).Size(80, 20).Focusable().Role(RoleSlider).Label("Rating").Range(0, 5, 3)
-			menu := Column(c).Focusable().Role(RoleMenu).Label("Edit").AutoFocus()
+	tt := coreNewTester(func(c *context) {
+		coreColumn(c).AlignItems(Start).Children(func() {
+			coreText(c, "Settings").Role(RoleHeading).Level(2)
+			coreBox(c).Size(20, 20).Focusable().Role(RoleCheckBox).Label("All").Mixed()
+			coreBox(c).Size(20, 20).Focusable().Role(RolePopUpButton).Label("Date").Expanded(true).Value("May 4")
+			coreBox(c).Size(80, 20).Focusable().Role(RoleSlider).Label("Rating").Range(0, 5, 3)
+			menu := coreColumn(c).Focusable().Role(RoleMenu).Label("Edit").AutoFocus()
 			menu.Children(func() {
-				Text(c, "Cut").Role(RoleMenuItem)
-				bold := Text(c, "Bold").Role(RoleMenuItemCheckBox).Checked(true)
-				Text(c, "Left").Role(RoleMenuItemRadio).Checked(false)
+				coreText(c, "Cut").Role(RoleMenuItem)
+				bold := coreText(c, "Bold").Role(RoleMenuItemCheckBox).Checked(true)
+				coreText(c, "Left").Role(RoleMenuItemRadio).Checked(false)
 				menu.ActiveDescendant(bold)
 			})
 		})
 	}, 300, 300)
 	tt.send(platform.SurfaceEvent{Kind: platform.AccessibilityOn})
 	tree := tt.h.access
-	if h := node(t, tree, platform.RoleHeading, "Settings"); h.Level != 2 {
+	if h := accessNode(t, tree, platform.RoleHeading, "Settings"); h.Level != 2 {
 		t.Errorf("heading level %d", h.Level)
 	}
-	if all := node(t, tree, platform.RoleCheckBox, "All"); all.States&platform.AccessMixed == 0 {
+	if all := accessNode(t, tree, platform.RoleCheckBox, "All"); all.States&platform.AccessMixed == 0 {
 		t.Errorf("the check box is not mixed: %b", all.States)
 	}
-	if date := node(t, tree, platform.RolePopUpButton, "Date"); date.States&platform.AccessExpanded == 0 || date.Value != "May 4" {
+	if date := accessNode(t, tree, platform.RolePopUpButton, "Date"); date.States&platform.AccessExpanded == 0 || date.Value != "May 4" {
 		t.Errorf("pop-up button: %+v", date)
 	}
-	if r := node(t, tree, platform.RoleSlider, "Rating"); r.Min != 0 || r.Max != 5 || r.Now != 3 {
+	if r := accessNode(t, tree, platform.RoleSlider, "Rating"); r.Min != 0 || r.Max != 5 || r.Now != 3 {
 		t.Errorf("slider range %v..%v at %v", r.Min, r.Max, r.Now)
 	}
-	menu := node(t, tree, platform.RoleMenu, "Edit")
-	node(t, tree, platform.RoleMenuItem, "Cut")
-	bold := node(t, tree, platform.RoleMenuItemCheckBox, "Bold")
-	left := node(t, tree, platform.RoleMenuItemRadio, "Left")
+	menu := accessNode(t, tree, platform.RoleMenu, "Edit")
+	accessNode(t, tree, platform.RoleMenuItem, "Cut")
+	bold := accessNode(t, tree, platform.RoleMenuItemCheckBox, "Bold")
+	left := accessNode(t, tree, platform.RoleMenuItemRadio, "Left")
 	if bold.States&platform.AccessChecked == 0 || left.States&platform.AccessChecked != 0 {
 		t.Errorf("menu items checked: bold %b, left %b", bold.States, left.States)
 	}
@@ -60,8 +60,8 @@ func TestAccessStatesOfYourOwn(t *testing.T) {
 
 func TestReadOnlyInput(t *testing.T) {
 	text, readOnly := "hello", true
-	tt := NewTester(func(c *Context) {
-		TextInputBase(c, &text).Width(100).Label("name").ReadOnly(readOnly)
+	tt := coreNewTester(func(c *context) {
+		coreTextInputBase(c, &text).Width(100).Label("name").ReadOnly(readOnly)
 	}, 200, 50)
 	tt.Click("name")
 	tt.Key(0, KeyEnd)
@@ -80,7 +80,7 @@ func TestReadOnlyInput(t *testing.T) {
 		t.Errorf("copied %q", got)
 	}
 	tt.send(platform.SurfaceEvent{Kind: platform.AccessibilityOn})
-	field := node(t, tt.h.access, platform.RoleTextField, "name")
+	field := accessNode(t, tt.h.access, platform.RoleTextField, "name")
 	if field.States&platform.AccessReadOnly == 0 || field.Actions&platform.ActionSetValue != 0 {
 		t.Errorf("assistive technology sees %+v", field)
 	}
@@ -102,8 +102,8 @@ func TestReadOnlyInput(t *testing.T) {
 func TestComposing(t *testing.T) {
 	text, composing := "", false
 	submitted := 0
-	tt := NewTester(func(c *Context) {
-		in := TextInputBase(c, &text).Width(100).Label("name")
+	tt := coreNewTester(func(c *context) {
+		in := coreTextInputBase(c, &text).Width(100).Label("name")
 		composing = in.Composing()
 		if in.Submitted() {
 			submitted++
@@ -126,18 +126,18 @@ func TestComposing(t *testing.T) {
 func TestOpenURLOutcome(t *testing.T) {
 	var outcome error
 	calls := 0
-	tt := NewTester(func(c *Context) {
-		if ButtonBase(c).Size(40, 20).Label("go").Clicked() {
+	tt := coreNewTester(func(c *context) {
+		if coreButtonBase(c).Size(40, 20).Label("go").Clicked() {
 			c.OpenURLThen("x-unknown://a", func(err error) {
 				outcome = err
 				calls++
 			})
 		}
-		if ButtonBase(c).Size(40, 20).Label("plain").Clicked() {
+		if coreButtonBase(c).Size(40, 20).Label("plain").Clicked() {
 			c.OpenURL("https://example.com")
 		}
 		if outcome != nil {
-			Text(c, "Couldn't open the link")
+			coreText(c, "Couldn't open the link")
 		}
 	}, 200, 100)
 	tt.Click("go")
@@ -158,19 +158,19 @@ func TestOpenURLOutcome(t *testing.T) {
 func TestPopoverLightDismiss(t *testing.T) {
 	open, inner := false, true
 	behind := 0
-	tt := NewTester(func(c *Context) {
-		Row(c).Padding(10).Gap(100).AlignItems(Start).Children(func() {
-			more := ButtonBase(c).Size(60, 20).Label("more")
+	tt := coreNewTester(func(c *context) {
+		coreRow(c).Padding(10).Gap(100).AlignItems(Start).Children(func() {
+			more := coreButtonBase(c).Size(60, 20).Label("more")
 			if more.Clicked() {
 				open = !open
 			}
-			if ButtonBase(c).Size(60, 20).Label("behind").Clicked() {
+			if coreButtonBase(c).Size(60, 20).Label("behind").Clicked() {
 				behind++
 			}
-			PopoverBase(c, more, &open, func(panel *Element) {
-				ButtonBase(c).Size(80, 20).Label("rename")
-				sub := ButtonBase(c).Size(80, 20).Label("submenu")
-				PopoverBase(c, sub, &inner, func(*Element) { ButtonBase(c).Size(40, 20).Label("deep") })
+			corePopoverBase(c, more, &open, func(panel *node) {
+				coreButtonBase(c).Size(80, 20).Label("rename")
+				sub := coreButtonBase(c).Size(80, 20).Label("submenu")
+				corePopoverBase(c, sub, &inner, func(*node) { coreButtonBase(c).Size(40, 20).Label("deep") })
 			})
 		})
 	}, 400, 300)
@@ -210,15 +210,15 @@ func TestPopoverLightDismiss(t *testing.T) {
 func TestAttachTo(t *testing.T) {
 	var at, self Anchor
 	right := false
-	tt := NewTester(func(c *Context) {
-		b := ButtonBase(c).Size(40, 20).Label("anchor").Absolute().Top(100)
+	tt := coreNewTester(func(c *context) {
+		b := coreButtonBase(c).Size(40, 20).Label("anchor").Absolute().Top(100)
 		if right {
 			b.Left(350)
 		} else {
 			b.Left(100)
 		}
-		Overlay(c, func() {
-			Box(c).Size(60, 30).Label("panel").AttachTo(b, at, self).Margin(4, 0, 0, 0)
+		coreOverlay(c, func() {
+			coreBox(c).Size(60, 30).Label("panel").AttachTo(b, at, self).Margin(4, 0, 0, 0)
 		})
 	}, 400, 300)
 	find := func() Rect {
@@ -261,23 +261,23 @@ func TestAttachTo(t *testing.T) {
 
 func TestModalOverlayOfYourOwn(t *testing.T) {
 	open := false
-	tt := NewTester(func(c *Context) {
-		Column(c).AlignItems(Start).Children(func() {
-			if ButtonBase(c).Size(60, 20).Label("open").Clicked() {
+	tt := coreNewTester(func(c *context) {
+		coreColumn(c).AlignItems(Start).Children(func() {
+			if coreButtonBase(c).Size(60, 20).Label("open").Clicked() {
 				open = true
 			}
-			ButtonBase(c).Size(60, 20).Label("outside")
+			coreButtonBase(c).Size(60, 20).Label("outside")
 		})
 		if open {
-			Overlay(c, func() {
-				back := Box(c).Absolute().Left(0).Top(0).Right(0).Bottom(0).Center().Modal()
+			coreOverlay(c, func() {
+				back := coreBox(c).Absolute().Left(0).Top(0).Right(0).Bottom(0).Center().Modal()
 				if back.OverlayShortcut(0, KeyEscape) {
 					open = false
 				}
 				back.Children(func() {
-					Row(c).Role(RoleDialog).Label("Rename").Children(func() {
-						ButtonBase(c).Size(60, 20).Label("ok")
-						ButtonBase(c).Size(60, 20).Label("cancel")
+					coreRow(c).Role(RoleDialog).Label("Rename").Children(func() {
+						coreButtonBase(c).Size(60, 20).Label("ok")
+						coreButtonBase(c).Size(60, 20).Label("cancel")
 					})
 				})
 			})
@@ -308,10 +308,10 @@ func TestModalOverlayOfYourOwn(t *testing.T) {
 func TestSliderBaseSettings(t *testing.T) {
 	v, h := 0.0, 0.0
 	disabled := false
-	tt := NewTester(func(c *Context) {
-		Row(c).Gap(20).AlignItems(Start).Children(func() {
-			SliderBase(c, &v, 0, 100).Size(20, 100).Label("v").Vertical().Step(10)
-			SliderBase(c, &h, 0, 100).Size(100, 20).Label("h").Step(25).Disabled(disabled)
+	tt := coreNewTester(func(c *context) {
+		coreRow(c).Gap(20).AlignItems(Start).Children(func() {
+			coreSliderBase(c, &v, 0, 100).Size(20, 100).Label("v").Vertical().Step(10)
+			coreSliderBase(c, &h, 0, 100).Size(100, 20).Label("h").Step(25).Disabled(disabled)
 		})
 	}, 300, 200)
 	r, _ := tt.Find("v")
@@ -334,7 +334,7 @@ func TestSliderBaseSettings(t *testing.T) {
 		t.Errorf("Right and Page Up by steps of 25 from 50: %v", h)
 	}
 	tt.send(platform.SurfaceEvent{Kind: platform.AccessibilityOn})
-	if n := node(t, tt.h.access, platform.RoleSlider, "v"); n.States&platform.AccessVertical == 0 {
+	if n := accessNode(t, tt.h.access, platform.RoleSlider, "v"); n.States&platform.AccessVertical == 0 {
 		t.Error("the vertical slider is not vertical to assistive technology")
 	}
 	disabled = true
@@ -351,16 +351,16 @@ func TestSliderBaseSettings(t *testing.T) {
 func TestSelectHighlight(t *testing.T) {
 	size := "S"
 	jump := false
-	tt := NewTester(func(c *Context) {
-		sel := SelectBase(c, &size)
+	tt := coreNewTester(func(c *context) {
+		sel := coreSelectBase(c, &size)
 		sel.Trigger.Size(60, 20).Label("size")
 		if jump {
 			sel.Highlight("L")
 			jump = false
 		}
-		sel.Popup(func(panel *Element) {
+		sel.Popup(func(panel *node) {
 			for _, s := range []string{"S", "M", "L"} {
-				sel.Item(s).Size(60, 20).Children(func() { Text(c, s) })
+				sel.Item(s).Size(60, 20).Children(func() { coreText(c, s) })
 			}
 		})
 	}, 200, 200)
@@ -375,8 +375,8 @@ func TestSelectHighlight(t *testing.T) {
 
 func TestDisabledStepper(t *testing.T) {
 	v := 5.0
-	tt := NewTester(func(c *Context) {
-		Stepper(c, &v, 0, 10, 1).Label("count").Disabled(true)
+	tt := coreNewTester(func(c *context) {
+		coreStepper(c, &v, 0, 10, 1).Label("count").Disabled(true)
 	}, 100, 100)
 	r, _ := tt.Find("count")
 	tt.ClickAt(r.X+r.W/2, r.Y+4)
@@ -410,8 +410,8 @@ func TestPathsLookTheSameWhateverDrewBefore(t *testing.T) {
 		p.FillPath(&path, RGB(0, 0, 0))
 	}
 	render := func(before bool) *image.RGBA {
-		return Render(func(c *Context) {
-			Box(c).Fill().Background(RGB(255, 255, 255)).Draw(func(p *Painter, r Rect) {
+		return coreRender(func(c *context) {
+			coreBox(c).Fill().Background(RGB(255, 255, 255)).Draw(func(p *Painter, r Rect) {
 				if before {
 					shape(p, 3.1, 3.1)
 				}
@@ -432,19 +432,19 @@ func TestPathsLookTheSameWhateverDrewBefore(t *testing.T) {
 // TestDrawer builds the drawer of the overlays guide.
 func TestDrawer(t *testing.T) {
 	drawer := false
-	tt := NewTester(func(c *Context) {
+	tt := coreNewTester(func(c *context) {
 		th := c.Theme()
-		if ButtonBase(c).Size(60, 20).Label("filters").Clicked() {
+		if coreButtonBase(c).Size(60, 20).Label("filters").Clicked() {
 			drawer = true
 		}
 		if drawer {
-			Overlay(c, func() {
-				back := Row(c).Absolute().Left(0).Top(0).Right(0).Bottom(0).Justify(End).
+			coreOverlay(c, func() {
+				back := coreRow(c).Absolute().Left(0).Top(0).Right(0).Bottom(0).Justify(End).
 					Background(RGBA(0, 0, 0, 0.3)).Modal()
 				back.Children(func() {
-					panel := Column(c).Width(120).FillHeight().Padding(16).Background(th.Background).
+					panel := coreColumn(c).Width(120).FillHeight().Padding(16).Background(th.Background).
 						Role(RoleDialog).Label("Filters").Children(func() {
-						ButtonBase(c).Size(60, 20).Label("apply")
+						coreButtonBase(c).Size(60, 20).Label("apply")
 					})
 					if panel.PressedOutside() || back.OverlayShortcut(0, KeyEscape) {
 						drawer = false
@@ -472,12 +472,12 @@ func TestDrawer(t *testing.T) {
 // moves with it in the same frame.
 func TestPopoverScrollsWithItsAnchor(t *testing.T) {
 	open := true
-	tt := NewTester(func(c *Context) {
-		Scroll(c).Fill().Children(func() {
-			Column(c).Height(1000).AlignItems(Start).Children(func() {
-				Box(c).Height(100)
-				b := ButtonBase(c).Size(60, 20).Label("anchor")
-				PopoverBase(c, b, &open, func(panel *Element) { Box(c).Size(40, 20).Label("panel") })
+	tt := coreNewTester(func(c *context) {
+		coreScroll(c).Fill().Children(func() {
+			coreColumn(c).Height(1000).AlignItems(Start).Children(func() {
+				coreBox(c).Height(100)
+				b := coreButtonBase(c).Size(60, 20).Label("anchor")
+				corePopoverBase(c, b, &open, func(panel *node) { coreBox(c).Size(40, 20).Label("panel") })
 			})
 		})
 	}, 200, 300)
@@ -495,11 +495,11 @@ func TestPopoverScrollsWithItsAnchor(t *testing.T) {
 // Escape registers after the inner one's: Escape closes the inner first.
 func TestEscapeClosesTheInnerPopover(t *testing.T) {
 	outer, inner := true, true
-	tt := NewTester(func(c *Context) {
-		b := ButtonBase(c).Size(60, 20).Label("more")
-		PopoverBase(c, b, &outer, func(*Element) {
-			sub := ButtonBase(c).Size(60, 20).Label("sub")
-			PopoverBase(c, sub, &inner, func(*Element) { Box(c).Size(40, 20) })
+	tt := coreNewTester(func(c *context) {
+		b := coreButtonBase(c).Size(60, 20).Label("more")
+		corePopoverBase(c, b, &outer, func(*node) {
+			sub := coreButtonBase(c).Size(60, 20).Label("sub")
+			corePopoverBase(c, sub, &inner, func(*node) { coreBox(c).Size(40, 20) })
 		})
 	}, 300, 300)
 	tt.Key(0, KeyEscape)
@@ -514,15 +514,15 @@ func TestEscapeClosesTheInnerPopover(t *testing.T) {
 
 // TestAttachToInlineText attaches a card below a link inside a paragraph.
 func TestAttachToInlineText(t *testing.T) {
-	tt := NewTester(func(c *Context) {
-		var link *Element
-		Text(c, "").Width(300).Children(func() {
-			Text(c, "Read the ")
-			link = Link(c, "guide", "https://example.com")
-			Text(c, " first.")
+	tt := coreNewTester(func(c *context) {
+		var link *node
+		coreText(c, "").Width(300).Children(func() {
+			coreText(c, "Read the ")
+			link = coreLink(c, "guide", "https://example.com")
+			coreText(c, " first.")
 		})
-		Overlay(c, func() {
-			Box(c).Size(80, 40).Label("card").AttachTo(link, AnchorBottomLeft, AnchorTopLeft)
+		coreOverlay(c, func() {
+			coreBox(c).Size(80, 40).Label("card").AttachTo(link, AnchorBottomLeft, AnchorTopLeft)
 		})
 	}, 400, 200)
 	tt.Frame()
@@ -538,15 +538,15 @@ func TestAttachToInlineText(t *testing.T) {
 func TestRangeSteps(t *testing.T) {
 	a, b, s, low, high := 50.0, 50.0, 5.0, 10.0, 90.0
 	stars := 3
-	tt := NewTester(func(c *Context) {
-		Column(c).AlignItems(Start).Children(func() {
-			Slider(c, &a, 0, 200).Label("plain")
-			SliderBase(c, &b, 0, 100).Size(100, 20).Label("stepped").Step(5)
-			Stepper(c, &s, 0, 10, 0.5).Label("stepper")
-			RangeSlider(c, &low, &high, 0, 100, 10).Label("price")
-			Rating(c, &stars, 5).Label("stars")
-			Box(c).Size(80, 20).Focusable().Role(RoleSlider).Label("custom").Range(0, 1, 0.5).Step(0.25)
-			Progress(c, 0.5).Label("progress")
+	tt := coreNewTester(func(c *context) {
+		coreColumn(c).AlignItems(Start).Children(func() {
+			coreSlider(c, &a, 0, 200).Label("plain")
+			coreSliderBase(c, &b, 0, 100).Size(100, 20).Label("stepped").Step(5)
+			coreStepper(c, &s, 0, 10, 0.5).Label("stepper")
+			coreRangeSlider(c, &low, &high, 0, 100, 10).Label("price")
+			coreRating(c, &stars, 5).Label("stars")
+			coreBox(c).Size(80, 20).Focusable().Role(RoleSlider).Label("custom").Range(0, 1, 0.5).Step(0.25)
+			coreProgress(c, 0.5).Label("progress")
 		})
 	}, 400, 400)
 	tt.send(platform.SurfaceEvent{Kind: platform.AccessibilityOn})
@@ -564,8 +564,24 @@ func TestRangeSteps(t *testing.T) {
 		{platform.RoleSlider, "custom", 0.25},
 		{platform.RoleProgress, "progress", 0},
 	} {
-		if n := node(t, tree, c.role, c.label); n.Step != c.step {
+		if n := accessNode(t, tree, c.role, c.label); n.Step != c.step {
 			t.Errorf("%s: step %v, want %v", c.label, n.Step, c.step)
 		}
+	}
+}
+
+// GTK reads the clipboard in a nested event loop, which may draw a frame
+// while the paste is being applied: the frame must not apply it again.
+func TestPasteDuringFrame(t *testing.T) {
+	text := ""
+	tt := coreNewTester(func(c *context) {
+		coreTextInputBase(c, &text).Width(100).Label("name")
+	}, 200, 50)
+	tt.Click("name")
+	tt.SetClipboard("ab")
+	tt.h.reading = tt.Frame
+	tt.Command("paste")
+	if text != "ab" {
+		t.Fatalf("pasted %q", text)
 	}
 }

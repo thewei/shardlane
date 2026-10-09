@@ -105,7 +105,7 @@ func (s *Shell) sessionSelector(c *ui.Context) {
 		workspaceLabel = active.DisplayName
 	}
 
-	var selector *ui.Element
+	var selector ui.Element
 	ui.Box(c).Grow(1).Children(func() {
 		selector = ui.ButtonBase(c).
 			FillWidth().

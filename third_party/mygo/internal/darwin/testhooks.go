@@ -10,6 +10,8 @@ import (
 
 	"github.com/ebitengine/purego"
 	"github.com/ebitengine/purego/objc"
+	"github.com/egoist/mygo/internal/platform"
+	"github.com/egoist/mygo/transfer"
 )
 
 // The functions in this file drive native UI the way a user would, for the
@@ -419,7 +421,11 @@ func TestInputClient(handle uintptr) (selected [2]int, document string) {
 	withPool(func() {
 		doc, _, _ := w.surface.document()
 		var actual nsRange
-		document = stringOf(w.surface.substring(nsRange{Length: uint(units(doc))}, &actual))
+		length := uint(units(doc))
+		if w.surface.input.Client != nil {
+			length = 1<<31 - 1
+		}
+		document = stringOf(w.surface.substring(nsRange{Length: length}, &actual))
 	})
 	return [2]int{int(r.Location), int(r.Length)}, document
 }
@@ -429,6 +435,7 @@ var (
 	testDragInfo id
 	testDragAt   NSPoint
 	testDragPB   id
+	testDragMask uint = 1
 )
 
 // TestDropFiles drags files over (x, y), in points from the top-left
@@ -445,13 +452,14 @@ func TestDropFiles(handle uintptr, x, y float64, paths []string) (over, dropped 
 		classDef("MyGoTestDraggingInfo", "NSObject", nil, []objc.MethodDef{
 			method("draggingLocation", func(self id, _ objc.SEL) NSPoint { return testDragAt }),
 			method("draggingPasteboard", func(self id, _ objc.SEL) id { return testDragPB }),
-			method("draggingSourceOperationMask", func(self id, _ objc.SEL) uint { return 1 }),
+			method("draggingSourceOperationMask", func(self id, _ objc.SEL) uint { return testDragMask }),
 		})
 		testDragInfo = send(send(class("MyGoTestDraggingInfo"), "alloc"), "init")
 		testDragPB = retain(send(class("NSPasteboard"), "pasteboardWithUniqueName"))
 	})
 	withPool(func() {
 		content := msgRect(send(w.win, "contentView"), sel("frame"))
+		testDragMask = 1
 		testDragAt = NSPoint{x, content.Size.Height - y}
 		send(testDragPB, "clearContents")
 		var urls []id
@@ -469,6 +477,38 @@ func TestDropFiles(handle uintptr, x, y float64, paths []string) (over, dropped 
 		dropped = sendBool(v, "prepareForDragOperation:", uintptr(testDragInfo)) && sendBool(v, "performDragOperation:", uintptr(testDragInfo))
 	})
 	return over, dropped
+}
+
+// TestDropData exercises native source pasteboard providers and the
+// destination protocol with serialized data (no core session token).
+func TestDropData(handle uintptr, x, y float64, data transfer.Data, operations transfer.Operation) (operation transfer.Operation, dropped bool) {
+	w := theBackend.byNSWindow[id(handle)]
+	if w == nil || w.surface == nil {
+		return
+	}
+	TestDropFiles(handle, -1, -1, nil)
+	withPool(func() {
+		testDragMask = macOperations(operations)
+		content := msgRect(send(w.win, "contentView"), sel("frame"))
+		testDragAt = NSPoint{x, content.Size.Height - y}
+		src := &macDataSource{r: platform.DragRequest{Data: data.Snapshot()}}
+		defer func() {
+			send(testDragPB, "clearContents")
+			for _, p := range src.providers {
+				delete(macDragProviders, p)
+				release(p)
+			}
+		}()
+		send(testDragPB, "clearContents")
+		send(testDragPB, "writeObjects:", uintptr(nsArray(src.pasteboardItems()...)))
+		v := w.surface.view
+		operation = goOperations(uint(send(v, "draggingEntered:", uintptr(testDragInfo))))
+		if operation != transfer.None {
+			dropped = sendBool(v, "performDragOperation:", uintptr(testDragInfo))
+		}
+		send(v, "draggingExited:", uintptr(testDragInfo))
+	})
+	return
 }
 
 // TestAccessNode is an element of native UI as assistive technology reads

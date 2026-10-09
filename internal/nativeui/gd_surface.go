@@ -117,9 +117,8 @@ func (s *Shell) gdDiffList(c *ui.Context, pal *gdPalette) {
 	// The sheet is gone (2026-10-06): the files' cards sit on the gorex
 	// card that hosts the surface; only the bands above file headers keep
 	// the paper color, masking the lines that scroll under them.
-	list := ui.List(c, &s.git.gdList, len(s.git.gdRows), func(i int) { s.gdDiffRow(c, pal, i) }).
+	ui.List(c, &s.git.gdList, len(s.git.gdRows), func(i int) { s.gdDiffRow(c, pal, i) }).
 		Grow(1).MinHeight(0).Padding(0, 12, 24).Label("Changes")
-	s.git.gdListEl = list
 
 	// The file at the top follows the scrolling, and the tree with it.
 	if first, _ := s.git.gdList.Visible(); first >= 0 && first < len(s.git.gdRows) && s.git.gdRows[first].kind != gdRowEnd {
@@ -193,7 +192,7 @@ func (s *Shell) gdDiffRow(c *ui.Context, pal *gdPalette, i int) {
 }
 
 // gdCard is a row inside a file's card, between its sides.
-func (s *Shell) gdCard(c *ui.Context, pal *gdPalette) *ui.Element {
+func (s *Shell) gdCard(c *ui.Context, pal *gdPalette) ui.Element {
 	return ui.Row(c).Background(pal.codeBg).BorderWidth(0, 1, 0, 1).BorderColor(pal.cardBorder)
 }
 
@@ -237,7 +236,7 @@ func (s *Shell) gdFileHeader(c *ui.Context, pal *gdPalette, idx int, f *gdFile) 
 	// The band above the header spaces the cards, and hides the lines
 	// scrolling under it while it is pinned.
 	band := ui.Column(c).Padding(12, 0, 0, 0).Background(pal.appBg)
-	var h *ui.Element
+	var h ui.Element
 	band.Children(func() {
 		h = ui.Row(c).Height(46).Padding(0, 8, 0, 6).Gap(8).Background(pal.headerBg).Border(1, pal.cardBorder)
 	})
@@ -246,7 +245,7 @@ func (s *Shell) gdFileHeader(c *ui.Context, pal *gdPalette, idx int, f *gdFile) 
 	} else {
 		h.Radius(gdCardRadius, gdCardRadius, 0, 0)
 	}
-	if idx == s.git.gdCurrent && s.git.gdListEl != nil && s.git.gdListEl.FocusWithin() {
+	if idx == s.git.gdCurrent && s.git.gdList.FocusWithin(c) {
 		h.Border(1, t.Accent.Alpha(0.6))
 	}
 	h.ContextMenu(func(m *ui.Menu) {
@@ -751,7 +750,7 @@ func gdDirName(path string) (dir, name string) {
 }
 
 // gdIconButton is a button showing an icon alone, as in a toolbar.
-func gdIconButton(c *ui.Context, svg *ui.SVG, tip string) *ui.Element {
+func gdIconButton(c *ui.Context, svg *ui.SVG, tip string) ui.Element {
 	t := c.Theme()
 	b := ui.ButtonBase(c).Size(28, 28).Radius(7).Center().Label(tip).Tooltip(tip).TextColor(t.TextMuted)
 	if b.Pressed() {
@@ -874,7 +873,8 @@ func (s *Shell) gdLayoutControl(c *ui.Context, pal *gdPalette) {
 func (s *Shell) gdShortcuts(c *ui.Context) {
 	typing := s.git.gdTyping
 	s.git.gdTyping = false
-	if typing || s.git.gdListEl == nil {
+	if typing || s.git.root == "" || s.gitSnapshot() == nil {
+		// No diff list is up to move within (empty panel / still loading).
 		return
 	}
 	if c.Shortcut(0, ui.KeyJ) || c.Shortcut(ui.Ctrl, ui.KeyDown) {

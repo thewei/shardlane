@@ -12,9 +12,9 @@ import (
 )
 
 // clockTester returns a tester whose frames happen at the time it sets.
-func clockTester(view func(c *Context), w, h int) (*Tester, *time.Time) {
+func clockTester(view func(c *context), w, h int) (*Tester, *time.Time) {
 	now := time.Unix(1_000_000, 0)
-	tt := NewTester(view, w, h)
+	tt := coreNewTester(view, w, h)
 	tt.rt.clock = func() time.Time { return now }
 	tt.Frame()
 	return tt, &now
@@ -32,11 +32,11 @@ func at(t *testing.T, tt *Tester, s string) Rect {
 
 func TestTransitionMovesElements(t *testing.T) {
 	order := []string{"A", "B"}
-	tt, now := clockTester(func(c *Context) {
-		Column(c).Children(func() {
+	tt, now := clockTester(func(c *context) {
+		coreColumn(c).Children(func() {
 			for _, s := range order {
-				Row(c).Key(s).Height(20).Transition(ElementTransition{Duration: 200 * time.Millisecond, Ease: Linear}).Children(func() {
-					Text(c, s)
+				coreRow(c).Key(s).Height(20).Transition(ElementTransition{Duration: 200 * time.Millisecond, Ease: Linear}).Children(func() {
+					coreText(c, s)
 				})
 			}
 		})
@@ -69,13 +69,13 @@ func TestTransitionMovesElements(t *testing.T) {
 
 func TestTransitionResizesAndLaysOutContent(t *testing.T) {
 	wide := false
-	tt, now := clockTester(func(c *Context) {
+	tt, now := clockTester(func(c *context) {
 		w := float32(100)
 		if wide {
 			w = 300
 		}
-		Box(c).Width(w).Height(40).Transition(ElementTransition{Size: true, Ease: Linear}).Children(func() {
-			Text(c, "Right").AlignSelf(End)
+		coreBox(c).Width(w).Height(40).Transition(ElementTransition{Size: true, Ease: Linear}).Children(func() {
+			coreText(c, "Right").AlignSelf(End)
 		})
 	}, 400, 100)
 	if x := at(t, tt, "Right"); x.X+x.W > 101 {
@@ -99,10 +99,10 @@ func TestTransitionResizesAndLaysOutContent(t *testing.T) {
 func TestTransitionEntersAndExits(t *testing.T) {
 	items := []string{"One", "Two"}
 	motion := ElementTransition{Ease: Linear, Enter: &Motion{Collapse: true}, Exit: &Motion{Collapse: true}}
-	tt, now := clockTester(func(c *Context) {
-		Column(c).Children(func() {
+	tt, now := clockTester(func(c *context) {
+		coreColumn(c).Children(func() {
 			for _, s := range items {
-				Row(c).Key(s).Height(30).Transition(motion).Children(func() { Text(c, s) })
+				coreRow(c).Key(s).Height(30).Transition(motion).Children(func() { coreText(c, s) })
 			}
 		})
 	}, 200, 200)
@@ -121,7 +121,7 @@ func TestTransitionEntersAndExits(t *testing.T) {
 
 	items = []string{"New", "One", "Two"}
 	tt.Frame()
-	row := func(s string) *Element {
+	row := func(s string) *node {
 		for e := tt.rt.c.root.first.first; e != nil; e = e.next {
 			if e.first != nil && e.first.text == s {
 				return e
@@ -147,7 +147,7 @@ func TestTransitionEntersAndExits(t *testing.T) {
 	// siblings and takes no input.
 	items = []string{"New", "Two"}
 	tt.Frame()
-	var ghost *Element
+	var ghost *node
 	for e := tt.rt.c.root.first.first; e != nil; e = e.next {
 		if e.leaving != 0 {
 			ghost = e
@@ -207,8 +207,8 @@ func TestTransitionEntersAndExits(t *testing.T) {
 
 func TestTransitionFadesColors(t *testing.T) {
 	bg := RGB(0, 0, 255)
-	tt, now := clockTester(func(c *Context) {
-		Box(c).Size(50, 50).Background(bg).Transition(ElementTransition{Colors: true, Ease: Linear})
+	tt, now := clockTester(func(c *context) {
+		coreBox(c).Size(50, 50).Background(bg).Transition(ElementTransition{Colors: true, Ease: Linear})
 	}, 100, 100)
 	pixel := func() color.RGBA { return tt.Image().RGBAAt(25, 25) }
 	if p := pixel(); p.B != 255 {
@@ -230,9 +230,9 @@ func TestTransitionFadesColors(t *testing.T) {
 
 func TestTransitionWithoutMotion(t *testing.T) {
 	x := float32(0)
-	tt, now := clockTester(func(c *Context) {
-		Box(c).Size(100, 100).Children(func() {
-			Text(c, "Moving").Absolute().Left(x).Transition(ElementTransition{})
+	tt, now := clockTester(func(c *context) {
+		coreBox(c).Size(100, 100).Children(func() {
+			coreText(c, "Moving").Absolute().Left(x).Transition(ElementTransition{})
 		})
 	}, 300, 200)
 	tt.SetPreferences(Preferences{ReduceMotion: true})
@@ -259,11 +259,11 @@ func TestTransitionWithoutMotion(t *testing.T) {
 
 func TestDuplicateKeys(t *testing.T) {
 	clicks := 0
-	view := func(c *Context) {
-		Column(c).Children(func() {
+	view := func(c *context) {
+		coreColumn(c).Children(func() {
 			for _, s := range []string{"First", "Second"} {
-				Row(c).Key("same").Children(func() {
-					if Button(c, s).Clicked() {
+				coreRow(c).Key("same").Children(func() {
+					if coreButton(c, s).Clicked() {
 						clicks++
 					}
 				})
@@ -277,7 +277,7 @@ func TestDuplicateKeys(t *testing.T) {
 				t.Errorf("tests do not panic on a duplicate key: %q", msg)
 			}
 		}()
-		NewTester(view, 200, 100)
+		coreNewTester(view, 200, 100)
 	}()
 
 	// Apps log it once, and the inspector lists it.
@@ -297,15 +297,15 @@ func TestDuplicateKeys(t *testing.T) {
 
 func TestDividers(t *testing.T) {
 	red := RGB(255, 0, 0)
-	tt := NewTester(func(c *Context) {
-		Column(c).Width(100).Gap(10).Dividers(2, red).Children(func() {
+	tt := coreNewTester(func(c *context) {
+		coreColumn(c).Width(100).Gap(10).Dividers(2, red).Children(func() {
 			for range 3 {
-				Box(c).Height(20)
+				coreBox(c).Height(20)
 			}
 		})
-		Row(c).Height(20).Gap(10).Dividers(1, red).Children(func() {
-			Box(c).Width(30)
-			Box(c).Width(30)
+		coreRow(c).Height(20).Gap(10).Dividers(1, red).Children(func() {
+			coreBox(c).Width(30)
+			coreBox(c).Width(30)
 		})
 	}, 200, 200)
 	img := tt.Image()
@@ -330,8 +330,8 @@ func TestDividers(t *testing.T) {
 
 func TestListDividers(t *testing.T) {
 	red := RGB(255, 0, 0)
-	tt := NewTester(func(c *Context) {
-		List(c, nil, 3, func(i int) { Box(c).Height(20) }).Height(100).Dividers(1, red)
+	tt := coreNewTester(func(c *context) {
+		coreList(c, nil, 3, func(i int) { coreBox(c).Height(20) }).Height(100).Dividers(1, red)
 	}, 200, 100)
 	img := tt.Image()
 	for _, y := range []int{20, 40} {
@@ -345,11 +345,11 @@ func TestListDividers(t *testing.T) {
 }
 
 func TestAttach(t *testing.T) {
-	tt := NewTester(func(c *Context) {
-		Box(c).Size(100, 60).Margin(20).Padding(5).Children(func() {
-			Text(c, "Badge").Size(20, 10).Attach(AnchorTopRight, AnchorCenter)
-			Text(c, "Corner").Size(30, 10).Attach(AnchorBottomRight, AnchorBottomRight).Right(4).Bottom(4)
-			Text(c, "Middle").Size(40, 10).Attach(AnchorCenter, AnchorCenter)
+	tt := coreNewTester(func(c *context) {
+		coreBox(c).Size(100, 60).Margin(20).Padding(5).Children(func() {
+			coreText(c, "Badge").Size(20, 10).Attach(AnchorTopRight, AnchorCenter)
+			coreText(c, "Corner").Size(30, 10).Attach(AnchorBottomRight, AnchorBottomRight).Right(4).Bottom(4)
+			coreText(c, "Middle").Size(40, 10).Attach(AnchorCenter, AnchorCenter)
 		})
 	}, 300, 200)
 	for _, c := range []struct {
@@ -368,18 +368,18 @@ func TestAttach(t *testing.T) {
 
 func TestTransitionResizesAList(t *testing.T) {
 	open := true
-	tt, now := clockTester(func(c *Context) {
-		Row(c).Fill().Children(func() {
+	tt, now := clockTester(func(c *context) {
+		coreRow(c).Fill().Children(func() {
 			w := float32(0)
 			if open {
 				w = 200
 			}
-			Column(c).Width(w).FillHeight().ClipX().Transition(ElementTransition{Size: true, Ease: Linear}).Children(func() {
-				List(c, nil, 1000, func(i int) {
-					Text(c, fmt.Sprintf("Row %d", i)).Padding(4)
+			coreColumn(c).Width(w).FillHeight().ClipX().Transition(ElementTransition{Size: true, Ease: Linear}).Children(func() {
+				coreList(c, nil, 1000, func(i int) {
+					coreText(c, fmt.Sprintf("Row %d", i)).Padding(4)
 				}).Grow(1)
 			})
-			Text(c, "Main").Grow(1)
+			coreText(c, "Main").Grow(1)
 		})
 	}, 600, 300)
 	if !tt.HasText("Row 0") {
@@ -408,7 +408,7 @@ func TestTransitionResizesAList(t *testing.T) {
 
 // lenientTester is NewTester as an app's window is: duplicate keys only
 // log.
-func lenientTester(view func(c *Context), width, height int) *Tester {
+func lenientTester(view func(c *context), width, height int) *Tester {
 	h := &headless{w: float32(width), h: float32(height), scale: 1}
 	t := &Tester{rt: newRuntime(view, h), h: h}
 	t.rt.collect = true

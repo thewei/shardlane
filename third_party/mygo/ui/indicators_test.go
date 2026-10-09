@@ -10,11 +10,11 @@ import (
 )
 
 func TestSpinner(t *testing.T) {
-	tt := NewTester(func(c *Context) {
-		Spinner(c).Label("Loading")
+	tt := coreNewTester(func(c *context) {
+		coreSpinner(c).Label("Loading")
 	}, 200, 100)
 	tt.send(platform.SurfaceEvent{Kind: platform.AccessibilityOn})
-	if n := node(t, tt.h.access, platform.RoleProgress, "Loading"); n.Now >= n.Min {
+	if n := accessNode(t, tt.h.access, platform.RoleProgress, "Loading"); n.Now >= n.Min {
 		t.Errorf("the spinner is not of unknown length: %+v", n)
 	}
 	if !tt.rt.redraw || tt.rt.repaintDue.IsZero() {
@@ -25,12 +25,12 @@ func TestSpinner(t *testing.T) {
 func TestMeter(t *testing.T) {
 	levels := &MeterLevels{Warning: 70, Critical: 90}
 	battery := &MeterLevels{Warning: 20, Critical: 10}
-	tt := NewTester(func(c *Context) {
-		Column(c).Gap(10).Padding(10).Children(func() {
-			Meter(c, 50, 0, 100, levels).Width(100).Label("Fine")
-			Meter(c, 80, 0, 100, levels).Width(100).Label("Warning")
-			Meter(c, 95, 0, 100, levels).Width(100).Label("Critical")
-			Meter(c, 15, 0, 100, battery).Width(100).Label("Battery")
+	tt := coreNewTester(func(c *context) {
+		coreColumn(c).Gap(10).Padding(10).Children(func() {
+			coreMeter(c, 50, 0, 100, levels).Width(100).Label("Fine")
+			coreMeter(c, 80, 0, 100, levels).Width(100).Label("Warning")
+			coreMeter(c, 95, 0, 100, levels).Width(100).Label("Critical")
+			coreMeter(c, 15, 0, 100, battery).Width(100).Label("Battery")
 		})
 	}, 200, 200)
 	tt.send(platform.SurfaceEvent{Kind: platform.AccessibilityOn})
@@ -40,7 +40,7 @@ func TestMeter(t *testing.T) {
 		name  string
 		color Color
 	}{{"Fine", th.Success}, {"Warning", th.Warning}, {"Critical", th.Danger}, {"Battery", th.Warning}} {
-		n := node(t, tt.h.access, platform.RoleMeter, want.name)
+		n := accessNode(t, tt.h.access, platform.RoleMeter, want.name)
 		if n.Min != 0 || n.Max != 100 {
 			t.Errorf("%s: %+v", want.name, n)
 		}
@@ -60,13 +60,13 @@ func nearColor(got color.RGBA, want Color) bool {
 
 func TestRating(t *testing.T) {
 	stars, changes := 0, 0
-	tt := NewTester(func(c *Context) {
-		if Rating(c, &stars, 5).Label("Rating").Changed() {
+	tt := coreNewTester(func(c *context) {
+		if coreRating(c, &stars, 5).Label("Rating").Changed() {
 			changes++
 		}
 	}, 300, 100)
 	tt.send(platform.SurfaceEvent{Kind: platform.AccessibilityOn})
-	r := node(t, tt.h.access, platform.RoleSlider, "Rating").Bounds
+	r := accessNode(t, tt.h.access, platform.RoleSlider, "Rating").Bounds
 	// Five stars of 16.25 DIPs, two DIPs apart, at the start of the row.
 	star := float32(18.25)
 	tt.ClickAt(float32(r.X)+star*2.5, float32(r.Y+r.H/2))
@@ -84,18 +84,18 @@ func TestRating(t *testing.T) {
 		t.Fatalf("Right twice: %d", stars)
 	}
 	tt.Key(0, KeyEnd)
-	if n := node(t, tt.h.access, platform.RoleSlider, "Rating"); stars != 5 || n.Now != 5 || n.Max != 5 || n.Actions&platform.ActionIncrement == 0 {
+	if n := accessNode(t, tt.h.access, platform.RoleSlider, "Rating"); stars != 5 || n.Now != 5 || n.Max != 5 || n.Actions&platform.ActionIncrement == 0 {
 		t.Errorf("End: %d, %+v", stars, n)
 	}
 }
 
 func TestStepper(t *testing.T) {
 	v := 5.0
-	tt := NewTester(func(c *Context) {
-		Stepper(c, &v, 0, 10, 0.5).Label("Copies")
+	tt := coreNewTester(func(c *context) {
+		coreStepper(c, &v, 0, 10, 0.5).Label("Copies")
 	}, 200, 200)
 	tt.send(platform.SurfaceEvent{Kind: platform.AccessibilityOn})
-	n := node(t, tt.h.access, platform.RoleStepper, "Copies")
+	n := accessNode(t, tt.h.access, platform.RoleStepper, "Copies")
 	b := n.Bounds
 	up := func() (float32, float32) { return float32(b.X + b.W/2), float32(b.Y + b.H/4) }
 	tt.ClickAt(up())
@@ -116,7 +116,7 @@ func TestStepper(t *testing.T) {
 		t.Errorf("past the top: %v", v)
 	}
 	// Assistive technology steps it.
-	n = node(t, tt.h.access, platform.RoleStepper, "Copies")
+	n = accessNode(t, tt.h.access, platform.RoleStepper, "Copies")
 	if n.Max != 10 || n.Actions&platform.ActionDecrement == 0 {
 		t.Fatalf("the stepper: %+v", n)
 	}
@@ -136,11 +136,11 @@ func TestStepper(t *testing.T) {
 
 func TestStepSlider(t *testing.T) {
 	v := 20.0
-	tt := NewTester(func(c *Context) {
-		StepSlider(c, &v, 0, 100, 25).Width(220).Label("Quality")
+	tt := coreNewTester(func(c *context) {
+		coreStepSlider(c, &v, 0, 100, 25).Width(220).Label("Quality")
 	}, 300, 100)
 	tt.send(platform.SurfaceEvent{Kind: platform.AccessibilityOn})
-	r := node(t, tt.h.access, platform.RoleSlider, "Quality").Bounds
+	r := accessNode(t, tt.h.access, platform.RoleSlider, "Quality").Bounds
 	// 10 DIPs of padding on each side, 200 of track: 60% is 60, 50 nearest.
 	tt.ClickAt(float32(r.X)+10+120, float32(r.Y+10))
 	if v != 50 {
@@ -157,17 +157,17 @@ func TestStepSlider(t *testing.T) {
 
 func TestRangeSlider(t *testing.T) {
 	low, high := 20.0, 80.0
-	tt := NewTester(func(c *Context) {
-		RangeSlider(c, &low, &high, 0, 100, 10).Width(220).Label("Price")
+	tt := coreNewTester(func(c *context) {
+		coreRangeSlider(c, &low, &high, 0, 100, 10).Width(220).Label("Price")
 	}, 300, 100)
 	tt.send(platform.SurfaceEvent{Kind: platform.AccessibilityOn})
-	minimum := node(t, tt.h.access, platform.RoleSlider, "Price minimum")
-	maximum := node(t, tt.h.access, platform.RoleSlider, "Price maximum")
+	minimum := accessNode(t, tt.h.access, platform.RoleSlider, "Price minimum")
+	maximum := accessNode(t, tt.h.access, platform.RoleSlider, "Price maximum")
 	if minimum.Now != 20 || maximum.Now != 80 {
 		t.Fatalf("the knobs: %+v, %+v", minimum, maximum)
 	}
 	// A press on the track moves the nearest knob.
-	r := node(t, tt.h.access, platform.RoleGroup, "Price").Bounds
+	r := accessNode(t, tt.h.access, platform.RoleGroup, "Price").Bounds
 	tt.ClickAt(float32(r.X)+10+200*0.68, float32(r.Y+10))
 	if high != 70 || low != 20 {
 		t.Fatalf("a click at 68%%: %v to %v", low, high)
@@ -185,17 +185,17 @@ func TestRangeSlider(t *testing.T) {
 }
 
 func TestAvatar(t *testing.T) {
-	tt := NewTester(func(c *Context) {
-		Row(c).Gap(8).Children(func() {
-			Avatar(c, "Ada Lovelace", nil)
-			Avatar(c, "grace", nil)
+	tt := coreNewTester(func(c *context) {
+		coreRow(c).Gap(8).Children(func() {
+			coreAvatar(c, "Ada Lovelace", nil)
+			coreAvatar(c, "grace", nil)
 		})
 	}, 200, 100)
 	if !tt.HasText("AL") || !tt.HasText("G") {
 		t.Errorf("initials: %q", tt.Texts())
 	}
 	tt.send(platform.SurfaceEvent{Kind: platform.AccessibilityOn})
-	node(t, tt.h.access, platform.RoleImage, "Ada Lovelace")
+	accessNode(t, tt.h.access, platform.RoleImage, "Ada Lovelace")
 }
 
 func TestInitials(t *testing.T) {
@@ -220,7 +220,7 @@ func TestInitials(t *testing.T) {
 	h.Write([]byte("Ada Lovelace"))
 	want := hslColor(float64(h.Sum32()%360), 0.45, 0.55)
 	var got Color
-	NewTester(func(c *Context) { got = Avatar(c, "Ada Lovelace", nil).bg }, 100, 100)
+	coreNewTester(func(c *context) { got = coreAvatar(c, "Ada Lovelace", nil).bg }, 100, 100)
 	if got != want {
 		t.Errorf("Avatar's color is %v, want %v", got, want)
 	}

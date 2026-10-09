@@ -10,6 +10,8 @@ JavaScript package whose functions call them. The app uses the Go half with
   with no CORS, any header, streamed bodies and cancellation.
 - [WebSocket](plugins/websocket.md): a `WebSocket` whose connections Go
   makes, with headers on the handshake.
+- [SQLite](plugins/sqlite.md): local databases, parameterized queries and
+  atomic transactions, using SQLite's C engine compiled with Zig, without cgo.
 - [Updater](plugins/updater.md): an update window in the manner of
   Sparkle, which checks for updates and offers to install them. It is all
   Go, and its window is a web page or, for apps of native UI, native UI.

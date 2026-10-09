@@ -25,9 +25,9 @@ func TestOutline(t *testing.T) {
 	var s OutlineState[string]
 	s.List.Selected = &sel
 	roots := []string{"src", "docs", "README.md"}
-	tt := NewTester(func(c *Context) {
-		Outline(c, &s, roots, children, func(path string) {
-			Text(c, baseName(path))
+	tt := coreNewTester(func(c *context) {
+		coreOutline(c, &s, roots, children, func(path string) {
+			coreText(c, baseName(path))
 		}).Grow(1)
 	}, 400, 400)
 	tt.SetPreferences(Preferences{ReduceMotion: true, TextScale: 1})
@@ -80,7 +80,7 @@ func TestOutline(t *testing.T) {
 	tt.Key(allMod, KeyRight)
 	tt.send(platform.SurfaceEvent{Kind: platform.AccessibilityOn})
 	tree := tt.h.access
-	node(t, tree, platform.RoleTree, "")
+	accessNode(t, tree, platform.RoleTree, "")
 	for _, want := range []struct {
 		name  string
 		level int
@@ -92,7 +92,7 @@ func TestOutline(t *testing.T) {
 		{"docs", 1, platform.AccessExpandable},
 		{"README.md", 1, 0},
 	} {
-		n := node(t, tree, platform.RoleTreeItem, want.name)
+		n := accessNode(t, tree, platform.RoleTreeItem, want.name)
 		if got := n.States & (platform.AccessExpandable | platform.AccessExpanded); n.Level != want.level || got != want.state {
 			t.Errorf("%s: level %d, states %b", want.name, n.Level, got)
 		}
@@ -109,15 +109,15 @@ func TestOutlineBuildsWhatShows(t *testing.T) {
 		kids[i] = i + 1
 	}
 	built := 0
-	tt := NewTester(func(c *Context) {
-		Outline(c, &s, []int{0}, func(item int) []int {
+	tt := coreNewTester(func(c *context) {
+		coreOutline(c, &s, []int{0}, func(item int) []int {
 			if item == 0 {
 				return kids
 			}
 			return nil
 		}, func(item int) {
 			built++
-			Textf(c, "Item %d", item)
+			coreTextf(c, "Item %d", item)
 		}).Grow(1)
 	}, 400, 400)
 	tt.SetPreferences(Preferences{ReduceMotion: true, TextScale: 1})
@@ -149,14 +149,14 @@ func TestOutlineTable(t *testing.T) {
 	s.List.Selected, s.List.Sort = &sel, &sort
 	roots := []string{"src", "docs", "README.md"}
 	cols := []TableColumn{{Title: "Name", Sortable: true}, {Title: "Kind", Width: 100}}
-	tt := NewTester(func(c *Context) {
-		OutlineTable(c, &s, cols, roots, children, func(path string, col int) {
+	tt := coreNewTester(func(c *context) {
+		coreOutlineTable(c, &s, cols, roots, children, func(path string, col int) {
 			if col == 0 {
-				Text(c, baseName(path)).SingleLine()
+				coreText(c, baseName(path)).SingleLine()
 			} else if files[path] != nil {
-				Text(c, "Folder")
+				coreText(c, "Folder")
 			} else {
-				Text(c, "File")
+				coreText(c, "File")
 			}
 		}).Grow(1)
 	}, 400, 400)
@@ -176,8 +176,8 @@ func TestOutlineTable(t *testing.T) {
 	}
 	tt.send(platform.SurfaceEvent{Kind: platform.AccessibilityOn})
 	tree := tt.h.access
-	node(t, tree, platform.RoleColumnHeader, "Name")
-	if n := node(t, tree, platform.RoleTreeItem, "ui"); n.Level != 2 || n.States&platform.AccessChecked == 0 {
+	accessNode(t, tree, platform.RoleColumnHeader, "Name")
+	if n := accessNode(t, tree, platform.RoleTreeItem, "ui"); n.Level != 2 || n.States&platform.AccessChecked == 0 {
 		t.Errorf("ui: %+v", n)
 	}
 	// Sorting is the app's, the header shows it.
@@ -192,26 +192,26 @@ func TestOutlineExpandsForAssistiveTechnology(t *testing.T) {
 	var s OutlineState[string]
 	s.List.Selected = &sel
 	open := false
-	tt := NewTester(func(c *Context) {
-		Column(c).Fill().Children(func() {
-			Outline(c, &s, []string{"src", "README.md"}, children, func(path string) {
-				Text(c, baseName(path))
+	tt := coreNewTester(func(c *context) {
+		coreColumn(c).Fill().Children(func() {
+			coreOutline(c, &s, []string{"src", "README.md"}, children, func(path string) {
+				coreText(c, baseName(path))
 			}).Grow(1)
-			Tree(c, func() {
-				TreeItem(c, "lib", &open, func() { TreeItem(c, "util.go", nil, nil) })
+			coreTree(c, func() {
+				coreTreeItem(c, "lib", &open, func() { coreTreeItem(c, "util.go", nil, nil) })
 			})
 		})
 	}, 400, 400)
 	tt.send(platform.SurfaceEvent{Kind: platform.AccessibilityOn})
 	act := func(name string, a platform.AccessActionKind) {
 		t.Helper()
-		n := node(t, tt.h.access, platform.RoleTreeItem, name)
+		n := accessNode(t, tt.h.access, platform.RoleTreeItem, name)
 		if n.Actions&platform.ActionExpand == 0 {
 			t.Fatalf("%s cannot expand: %+v", name, n)
 		}
 		tt.send(platform.SurfaceEvent{Kind: platform.AccessAction, ID: n.ID, Action: a})
 	}
-	if n := node(t, tt.h.access, platform.RoleTreeItem, "README.md"); n.Actions&platform.ActionExpand != 0 {
+	if n := accessNode(t, tt.h.access, platform.RoleTreeItem, "README.md"); n.Actions&platform.ActionExpand != 0 {
 		t.Errorf("a file can expand")
 	}
 	// Opening and closing, not choosing, which pressing does.

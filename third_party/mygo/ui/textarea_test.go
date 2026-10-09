@@ -17,6 +17,9 @@ func checkBuffer(t *testing.T, b *buffer, want []rune) {
 	if b.s != string(want) || b.n != len(want) {
 		t.Fatalf("buffer holds %q (%d runes), want %q", b.s, b.n, string(want))
 	}
+	if b.units != countUnits(b.s) {
+		t.Fatalf("UTF-16 length %d want %d", b.units, countUnits(b.s))
+	}
 	p := 0
 	for i := 0; i <= len(want); i++ {
 		if i == 0 || want[i-1] == '\n' {
@@ -30,6 +33,13 @@ func checkBuffer(t *testing.T, b *buffer, want []rune) {
 		}
 		if got := b.byteOf(i); got != len(string(want[:i])) {
 			t.Fatalf("rune %d starts at byte %d, want %d", i, got, len(string(want[:i])))
+		}
+		units := countUnits(string(want[:i]))
+		if b.utf16At(i) != units || b.runeAtUTF16(units) != i {
+			t.Fatalf("UTF-16 offset at rune %d", i)
+		}
+		if i < len(want) && want[i] > 0xffff && b.runeAtUTF16(units+1) != i {
+			t.Fatal("UTF-16 index split surrogate")
 		}
 	}
 	if p != len(b.paras) {
@@ -56,6 +66,35 @@ func TestBufferEdits(t *testing.T) {
 		b.replace(a, z, string(ins))
 		want = append(want[:a:a], append(ins, want[z:]...)...)
 		checkBuffer(t, &b, want)
+	}
+}
+
+func TestBufferSetUTF8(t *testing.T) {
+	for _, s := range []string{
+		"", "\n", "ascii\ncode\n", "long ASCII line without a newline",
+		"é\n日本語\n😀\r\n", "1234567é\n12345678😀tail",
+		"bad\xff\xfe\nutf8\xc0\xaf\n", "\xf0\x9f\n\x80\x00",
+	} {
+		var b buffer
+		b.set(s)
+		// Invalid UTF-8 preserves the source bytes but decodes to RuneError
+		// as range does; compare positions against the source independently.
+		if b.n != len([]rune(s)) {
+			t.Fatalf("%q: %d runes, want %d", s, b.n, len([]rune(s)))
+		}
+		p, runes := 1, 0
+		for at, r := range s {
+			runes++
+			if r == '\n' {
+				if b.paras[p].rune != runes || b.paras[p].byte != at+1 {
+					t.Fatalf("%q: paragraph %d starts at %+v", s, p, b.paras[p])
+				}
+				p++
+			}
+		}
+		if p != len(b.paras) {
+			t.Fatalf("%q: %d paragraphs, want %d", s, len(b.paras), p)
+		}
 	}
 }
 
@@ -149,11 +188,11 @@ func TestHeights(t *testing.T) {
 // them.
 func TestTextAreaLaysOutAsWholeText(t *testing.T) {
 	s := strings.Repeat("A paragraph long enough to wrap in the text area, twice over at least, with words.\n\nshort\n", 4)
-	tt := NewTester(func(c *Context) { TextArea(c, &s).Fill() }, 300, 2000)
-	var e *Element
+	tt := coreNewTester(func(c *context) { coreTextArea(c, &s).Fill() }, 300, 2000)
+	var e *node
 	for _, st := range tt.rt.states {
 		if st.editor != nil {
-			e = &Element{st: st}
+			e = &node{st: st}
 		}
 	}
 	ed := e.st.editor
@@ -176,7 +215,7 @@ func TestTextAreaLaysOutAsWholeText(t *testing.T) {
 // redoes them.
 func TestTextAreaUndo(t *testing.T) {
 	s := "first line\nsecond line\nthird"
-	tt := NewTester(func(c *Context) { TextArea(c, &s).Fill() }, 400, 300)
+	tt := coreNewTester(func(c *context) { coreTextArea(c, &s).Fill() }, 400, 300)
 	tt.Press(20, 15)
 	tt.Release(20, 15)
 	var ed *editor
@@ -236,7 +275,7 @@ func TestTextAreaScrolls(t *testing.T) {
 		b.WriteByte('\n')
 	}
 	s := b.String()
-	tt := NewTester(func(c *Context) { TextArea(c, &s).Fill() }, 400, 300)
+	tt := coreNewTester(func(c *context) { coreTextArea(c, &s).Fill() }, 400, 300)
 	tt.Press(20, 15)
 	tt.Release(20, 15)
 	// A text area opens with the caret at the end, in view.
@@ -283,7 +322,7 @@ func TestTextAreaScrolls(t *testing.T) {
 // selected newlines and empty lines included.
 func TestTextAreaSelectsAsWholeText(t *testing.T) {
 	s := "A paragraph long enough to wrap in the text area, twice over.\n\nshort\n\nlast one"
-	tt := NewTester(func(c *Context) { TextArea(c, &s).Fill() }, 260, 2000)
+	tt := coreNewTester(func(c *context) { coreTextArea(c, &s).Fill() }, 260, 2000)
 	var ed *editor
 	for _, st := range tt.rt.states {
 		if st.editor != nil {
@@ -327,8 +366,8 @@ func TestTextAreaSelectsAsWholeText(t *testing.T) {
 // step takes the app's change back with the typing.
 func TestTextAreaUndoAppChanges(t *testing.T) {
 	s := ""
-	tt := NewTester(func(c *Context) {
-		TextArea(c, &s).Fill()
+	tt := coreNewTester(func(c *context) {
+		coreTextArea(c, &s).Fill()
 		s = strings.ToUpper(s)
 	}, 400, 300)
 	tt.Press(20, 15)
@@ -359,7 +398,7 @@ func textAreaState(tt *Tester) *state {
 // that undoing the step still takes the app's texts back.
 func TestTextAreaUndoAppLog(t *testing.T) {
 	s := ""
-	tt := NewTester(func(c *Context) { TextArea(c, &s).Fill() }, 400, 300)
+	tt := coreNewTester(func(c *context) { coreTextArea(c, &s).Fill() }, 400, 300)
 	tt.Press(20, 15)
 	tt.Release(20, 15)
 	tt.Type("x")
@@ -389,7 +428,7 @@ func TestTextAreaUndoAppLog(t *testing.T) {
 // at once.
 func TestTextAreaSharesValue(t *testing.T) {
 	s := strings.Repeat("abc\n", 100) + "x"
-	tt := NewTester(func(c *Context) { TextArea(c, &s).Fill() }, 400, 300)
+	tt := coreNewTester(func(c *context) { coreTextArea(c, &s).Fill() }, 400, 300)
 	tt.Press(20, 15)
 	tt.Release(20, 15)
 	ed := textAreaState(tt).editor
@@ -406,7 +445,7 @@ func TestTextAreaSharesValue(t *testing.T) {
 // after short ones.
 func TestTextAreaRevealsWrapped(t *testing.T) {
 	s := strings.Repeat("short\n", 2000) + strings.Repeat(strings.Repeat("word ", 80)+"\n", 300) + "end"
-	tt := NewTester(func(c *Context) { TextArea(c, &s).Fill() }, 400, 300)
+	tt := coreNewTester(func(c *context) { coreTextArea(c, &s).Fill() }, 400, 300)
 	st := textAreaState(tt)
 	ed, a := st.editor, st.editor.area
 	check := func(what string) {
@@ -429,7 +468,7 @@ func TestTextAreaRevealsWrapped(t *testing.T) {
 // growing, leaves the view where the wheel put it.
 func TestTextAreaKeepsViewOnAppText(t *testing.T) {
 	s := strings.Repeat("a line of the log\n", 2000)
-	tt := NewTester(func(c *Context) { TextArea(c, &s).Fill() }, 400, 300)
+	tt := coreNewTester(func(c *context) { coreTextArea(c, &s).Fill() }, 400, 300)
 	tt.Press(20, 15)
 	tt.Release(20, 15)
 	tt.Key(Ctrl, KeyHome)
@@ -447,7 +486,7 @@ func TestTextAreaKeepsViewOnAppText(t *testing.T) {
 // padding above the view is laid out, as the text is drawn there.
 func TestTextAreaShowsThroughPadding(t *testing.T) {
 	s := strings.Repeat("line\n", 200)
-	tt := NewTester(func(c *Context) { TextArea(c, &s).Fill() }, 400, 300)
+	tt := coreNewTester(func(c *context) { coreTextArea(c, &s).Fill() }, 400, 300)
 	tt.Press(20, 15)
 	tt.Release(20, 15)
 	tt.Key(Ctrl, KeyHome)
@@ -463,7 +502,7 @@ func TestTextAreaShowsThroughPadding(t *testing.T) {
 // as multi-line fields have no password mode on any platform.
 func TestTextAreaPassword(t *testing.T) {
 	notes := "first\nsecond"
-	tt := NewTester(func(c *Context) { TextArea(c, &notes).Password().Height(120) }, 400, 200)
+	tt := coreNewTester(func(c *context) { coreTextArea(c, &notes).Password().Height(120) }, 400, 200)
 	ed := textAreaState(tt).editor
 	if ed.password {
 		t.Fatal("Password made a text area a password field")
@@ -477,14 +516,278 @@ func TestTextAreaPassword(t *testing.T) {
 // line of its text area.
 func TestTextAreaInForm(t *testing.T) {
 	bio := "The first line"
-	tt := NewTester(func(c *Context) {
-		Form(c, func() {
-			Field(c, "About you", func() { TextArea(c, &bio).Height(110) })
+	tt := coreNewTester(func(c *context) {
+		coreForm(c, func() {
+			coreField(c, "About you", func() { coreTextArea(c, &bio).Height(110) })
 		})
 	}, 500, 300)
 	label, _ := tt.Find("About you")
 	st := textAreaState(tt)
 	if y := st.y + st.editor.originY; abs32(label.Y-y) > 0.5 {
 		t.Errorf("the label is at %v, the first line of the text area at %v", label.Y, y)
+	}
+}
+
+// A text area with Lines is as high as its text wraps at its width, from its
+// least lines up to its most, past which it scrolls.
+func TestTextAreaLinesFollowWrappedText(t *testing.T) {
+	draft := ""
+	tt := coreNewTester(func(c *context) {
+		coreColumn(c).Width(200).Children(func() {
+			coreTextAreaBase(c, &draft).Lines(1, 4).Label("Draft")
+		})
+	}, 400, 600)
+	empty, _ := tt.Find("Draft")
+	if empty.H <= 0 {
+		t.Fatalf("empty text area is %v high", empty.H)
+	}
+	draft = "one line"
+	tt.Frame()
+	if r, _ := tt.Find("Draft"); r.H != empty.H {
+		t.Errorf("one short line is %v high, want %v", r.H, empty.H)
+	}
+	// One paragraph long enough to wrap: higher, though it has no newline.
+	draft = strings.Repeat("word ", 12)
+	tt.Frame()
+	wrapped, _ := tt.Find("Draft")
+	if wrapped.H <= empty.H*1.5 {
+		t.Errorf("a wrapping paragraph is %v high, one line %v", wrapped.H, empty.H)
+	}
+	draft = strings.Repeat("word ", 400)
+	tt.Frame()
+	long, _ := tt.Find("Draft")
+	if math.Abs(float64(long.H-4*empty.H)) > 1 {
+		t.Errorf("a long text is %v high, want the most lines, %v", long.H, 4*empty.H)
+	}
+}
+
+// The app reads where the caret is and puts it elsewhere, as a mention
+// completed where it was typed.
+func TestTextSelection(t *testing.T) {
+	draft := "hello world"
+	var input *node
+	move := -1
+	tt := coreNewTester(func(c *context) {
+		input = coreTextAreaBase(c, &draft).Label("Draft")
+		if move >= 0 {
+			input.SetTextSelection(move, move)
+			move = -1
+		}
+	}, 400, 300)
+	if err := tt.Click("Draft"); err != nil {
+		t.Fatal(err)
+	}
+	move = 5
+	tt.Frame()
+	if start, end := input.TextSelection(); start != 5 || end != 5 {
+		t.Fatalf("caret at %d–%d, want 5", start, end)
+	}
+	tt.Type(",")
+	if draft != "hello, world" {
+		t.Fatalf("typed into %q", draft)
+	}
+	if start, end := input.TextSelection(); start != 6 || end != 6 {
+		t.Errorf("caret at %d–%d after typing, want 6", start, end)
+	}
+	tt.Frame()
+	input.SetTextSelection(0, 99)
+	if start, end := input.TextSelection(); start != 0 || end != utf8.RuneCountInString(draft) {
+		t.Errorf("selection %d–%d, want the whole text", start, end)
+	}
+}
+
+// A placeholder shows in the lines of its input, whose line height is
+// fixed or not.
+func TestPlaceholderWithFixedLineHeight(t *testing.T) {
+	var a, b string
+	tt := coreNewTester(func(c *context) {
+		coreColumn(c).Padding(10).Gap(10).Children(func() {
+			coreTextAreaBase(c, &a).Lines(1, 4).FixedLineHeight(19).Placeholder("Area").Width(200).Label("A")
+			coreTextInputBase(c, &b).FixedLineHeight(19).Placeholder("Input").Width(200).Label("B")
+		})
+	}, 300, 120)
+	img := tt.Image()
+	for _, name := range []string{"A", "B"} {
+		r, ok := tt.Find(name)
+		if !ok {
+			t.Fatalf("no %s", name)
+		}
+		inked := false
+		for y := int(r.Y); y < int(r.Y+r.H) && !inked; y++ {
+			for x := int(r.X); x < int(r.X+r.W); x++ {
+				if px := img.RGBAAt(x, y); px.R < 200 {
+					inked = true
+					break
+				}
+			}
+		}
+		if !inked {
+			t.Errorf("the placeholder of %s draws nothing in %v", name, r)
+		}
+	}
+}
+
+// A single-line input's text goes where TextAlign puts it while it fits.
+func TestInputTextAlign(t *testing.T) {
+	left, right := "abc", "abc"
+	tt := coreNewTester(func(c *context) {
+		coreColumn(c).Width(200).Children(func() {
+			coreTextInputBase(c, &left).Label("Left")
+			coreTextInputBase(c, &right).TextAlign(End).Label("Right")
+		})
+	}, 300, 100)
+	img := tt.Image()
+	inked := func(name string) (first, last int) {
+		r, _ := tt.Find(name)
+		first, last = -1, -1
+		for x := int(r.X); x < int(r.X+r.W); x++ {
+			for y := int(r.Y); y < int(r.Y+r.H); y++ {
+				if img.RGBAAt(x, y).R < 128 {
+					if first < 0 {
+						first = x
+					}
+					last = x
+					break
+				}
+			}
+		}
+		return first, last
+	}
+	l0, _ := inked("Left")
+	r0, r1 := inked("Right")
+	box, _ := tt.Find("Right")
+	if l0 < 0 || r0 < 0 {
+		t.Fatalf("no text drawn: %d, %d", l0, r0)
+	}
+	if r0 <= l0+50 || float32(r1) < box.X+box.W-8 {
+		t.Errorf("right-aligned text spans %d–%d in %v; left-aligned starts at %d", r0, r1, box, l0)
+	}
+}
+
+// An input that stops calling Password shows its text again.
+func TestInputPasswordToggles(t *testing.T) {
+	value, hidden := "secret", true
+	var in *node
+	tt := coreNewTester(func(c *context) {
+		in = coreTextInputBase(c, &value).Width(200).Label("Key")
+		if hidden {
+			in.Password()
+		}
+	}, 300, 60)
+	if got := in.st.editor.displayText(); got == value {
+		t.Fatalf("a password shows %q", got)
+	}
+	hidden = false
+	tt.Frame()
+	tt.Frame()
+	if got := in.st.editor.displayText(); got != value {
+		t.Errorf("the shown key reads %q", got)
+	}
+}
+
+// inkSpan is the first and last columns of `name`'s box with dark pixels in them.
+func inkSpan(tt *Tester, name string) (first, last int, box Rect) {
+	img := tt.Image()
+	box, _ = tt.Find(name)
+	first, last = -1, -1
+	for x := int(box.X); x < int(box.X+box.W); x++ {
+		for y := int(box.Y); y < int(box.Y+box.H); y++ {
+			if px := img.RGBAAt(x, y); px.R < 160 && px.G < 160 && px.B < 160 {
+				if first < 0 {
+					first = x
+				}
+				last = x
+				break
+			}
+		}
+	}
+	return first, last, box
+}
+
+// A single-line input's placeholder stays on its line, cut off at the box, where a wrapped one
+// would stop at the last word that fits; a text area's wraps.
+func TestInputPlaceholderStaysOnItsLine(t *testing.T) {
+	var line, area string
+	var lineEl, areaEl *node
+	coreNewTester(func(c *context) {
+		lineEl = coreTextInputBase(c, &line).Width(120).Placeholder("mmmm mmmm mmmm mmmm mmmm mmmm").Label("Field")
+		areaEl = coreTextAreaBase(c, &area).Width(120).Placeholder("mmmm mmmm mmmm mmmm mmmm mmmm").Label("Area")
+	}, 300, 160)
+	if n := len(textSystem().Layout(lineEl.placeholderParams(120)).Lines); n != 1 {
+		t.Errorf("the input's placeholder takes %d lines", n)
+	}
+	if n := len(textSystem().Layout(areaEl.placeholderParams(120)).Lines); n < 2 {
+		t.Errorf("the text area's placeholder takes %d lines", n)
+	}
+}
+
+// An input without the focus shows the start of a text too long for it; with the focus, the
+// caret's end.
+func TestInputShowsItsStartUnfocused(t *testing.T) {
+	long, other := strings.Repeat("abc ", 60), ""
+	var in *node
+	tt := coreNewTester(func(c *context) {
+		coreColumn(c).Children(func() {
+			in = coreTextInputBase(c, &long).Width(120).Label("Long")
+			coreTextInputBase(c, &other).Width(120).Label("Other")
+		})
+	}, 300, 80)
+	if x := in.st.editor.scrollX; x != 0 {
+		t.Errorf("the unfocused input is scrolled %v to its caret at the end", x)
+	}
+	in.Focus()
+	tt.Frame()
+	tt.Frame()
+	if in.st.editor.scrollX == 0 {
+		t.Error("the focused input keeps its start, not its caret, in view")
+	}
+	tt.Key(0, KeyTab)
+	tt.Frame()
+	if x := in.st.editor.scrollX; x != 0 {
+		t.Errorf("the input left by the focus stays scrolled %v", x)
+	}
+}
+
+// TextRanges paint runs of an input's text in their color and lay them out in their weight, in a
+// text area and a single-line input alike, and only in the frames that call it.
+func TestTextRanges(t *testing.T) {
+	area, line := "hi @Scout there\nnext", "to @Scout now"
+	styled := true
+	red := RGB(220, 0, 0)
+	var areaEl, lineEl *node
+	tt := coreNewTester(func(c *context) {
+		coreColumn(c).Gap(10).Padding(10).Children(func() {
+			areaEl = coreTextAreaBase(c, &area).Width(260).Label("Area")
+			lineEl = coreTextInputBase(c, &line).Width(260).Label("Line")
+			if styled {
+				areaEl.TextRanges(TextRange{Start: 3, End: 9, Color: red, Weight: 700})
+				lineEl.TextRanges(TextRange{Start: 3, End: 9, Color: red})
+			}
+		})
+	}, 320, 160)
+	// The glyphs painted red, read from the scene: pixels would count the colored edges that
+	// subpixel antialiasing, as ClearType's, gives black text too.
+	redGlyphs := func() int {
+		n := 0
+		for _, g := range tt.h.last.Glyphs {
+			if g.Color == red.scene() {
+				n++
+			}
+		}
+		return n
+	}
+	if n := redGlyphs(); n < 2 {
+		t.Fatalf("%d glyphs red with the ranges", n)
+	}
+	ed := areaEl.st.editor
+	bold := ed.area.paraLayout(ed, 0).Lines[0].Width
+	styled = false
+	tt.Frame()
+	tt.Frame()
+	if n := redGlyphs(); n != 0 {
+		t.Errorf("%d glyphs stayed red without the ranges", n)
+	}
+	if plain := ed.area.paraLayout(ed, 0).Lines[0].Width; plain >= bold {
+		t.Errorf("the bold mention is %v wide, plain %v", bold, plain)
 	}
 }

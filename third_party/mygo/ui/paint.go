@@ -3,6 +3,7 @@ package ui
 import (
 	"math"
 	"runtime"
+	"slices"
 	"time"
 
 	"github.com/egoist/mygo/internal/scene"
@@ -17,9 +18,13 @@ type Painter struct {
 	scale   float32
 	opacity float32
 	clip    Rect
-	// opaque tells that the root's background covers the window, which
-	// subpixel glyphs need.
+	// opaque tells that the glyphs painted now land on an opaque
+	// background, which subpixel glyphs need: the root's, covering the
+	// window, or that of an element around them, as a pane beside a
+	// sidebar over the window's material. under holds the boxes of the
+	// elements painting with an opaque background around the one painting.
 	opaque bool
+	under  []Rect
 }
 
 // continuousCorners curves rounded corners as Apple does, on macOS, where
@@ -27,7 +32,7 @@ type Painter struct {
 // elsewhere, as Windows and GTK draw them.
 const continuousCorners = runtime.GOOS == "darwin"
 
-func (rt *engine) paint(root *Element, w, h, scale float32) {
+func (rt *engine) paint(root *node, w, h, scale float32) {
 	s := &rt.scene
 	// The root paints the theme's background: frames start transparent, so
 	// that a transparent root shows what is behind the content, such as a
@@ -39,13 +44,19 @@ func (rt *engine) paint(root *Element, w, h, scale float32) {
 	opaque := root.bg.A == 255 && root.fill == fillColor && (!root.opacitySet || root.opacity >= 1)
 	// The painter is the engine's, which draw callbacks get, so that
 	// painting allocates none.
-	rt.painter = Painter{rt: rt, s: s, scale: scale, opacity: 1, clip: Rect{0, 0, w, h}, opaque: opaque}
+	under := rt.under[:0]
+	if opaque {
+		// Under all the window paints, as what it drags.
+		under = append(under, Rect{0, 0, w, h})
+	}
+	rt.painter = Painter{rt: rt, s: s, scale: scale, opacity: 1, clip: Rect{0, 0, w, h}, opaque: opaque, under: under}
 	p := &rt.painter
 	p.element(root)
 	if rt.insp.open {
 		rt.insp.paintHighlight(rt, p, h)
 	}
 	rt.paintDrag(p, w, h)
+	rt.under = p.under[:0] // kept for the next frame's
 }
 
 // Now returns the time of the frame being painted, which drawings that
@@ -92,7 +103,7 @@ func (p *Painter) visible(r Rect, margin float32) bool {
 		r.X+r.W+margin > p.clip.X && r.Y+r.H+margin > p.clip.Y
 }
 
-func (p *Painter) element(e *Element) {
+func (p *Painter) element(e *node) {
 	if e.styleFn != nil {
 		e.styleFn(e)
 	}
@@ -118,6 +129,13 @@ func (p *Painter) element(e *Element) {
 		return
 	}
 	box := Rect{e.x, e.y, e.w, e.h}
+	savedOpaque, under := p.opaque, len(p.under)
+	if e.fill == fillColor && e.bg.A == 255 && p.opacity >= 1 {
+		p.under = append(p.under, box)
+	}
+	// What the element paints lands on an opaque background when all of
+	// it that shows does.
+	p.opaque = p.covered(intersect(box, p.clip))
 	margin := float32(0)
 	for _, sh := range e.shadows {
 		margin = max(margin, abs32(sh.x)+abs32(sh.y)+sh.blur+sh.spread)
@@ -140,10 +158,10 @@ func (p *Painter) element(e *Element) {
 		case kindText:
 			ts := e.resolvedText()
 			ox, oy := e.x+e.contentX(), e.y+e.contentY()
-			if ed := e.st.editor; ed != nil && e.flags&flagSelectable != 0 && e.Focused() {
+			if ed := e.st.editor; ed != nil && e.flags&flagSelectable != 0 && p.rt.textSelectionVisible(e.st) {
 				if a, b := ed.selection(); a != b {
 					for _, r := range e.tl.Selection(a, b) {
-						p.Fill(Rect{ox + r.X, oy + r.Y, r.W, r.H}, e.c.theme.Selection, 0)
+						p.Fill(Rect{ox + r.X, oy + r.Y, r.W, r.H}, ts.selectionColor(e.c.theme), 0)
 					}
 				}
 			}
@@ -209,12 +227,27 @@ func (p *Painter) element(e *Element) {
 		p.FocusRing(box, e.radius)
 	}
 	p.opacity = saved
+	p.opaque, p.under = savedOpaque, p.under[:under]
+}
+
+// covered reports whether an opaque background around the element painting
+// holds all of r, when r has an area.
+func (p *Painter) covered(r Rect) bool {
+	if r.W <= 0 || r.H <= 0 {
+		return true
+	}
+	for _, b := range slices.Backward(p.under) {
+		if r.X >= b.X && r.Y >= b.Y && r.X+r.W <= b.X+b.W && r.Y+r.H <= b.Y+b.H {
+			return true
+		}
+	}
+	return false
 }
 
 // clipRect returns the box an element clips its children to, inside its
 // border, and its radii: as far as the clip reaches along an axis it does
 // not clip.
-func (e *Element) clipRect() (Rect, [4]float32) {
+func (e *node) clipRect() (Rect, [4]float32) {
 	r := Rect{e.x + e.border[3], e.y + e.border[0], e.w - e.border[1] - e.border[3], e.h - e.border[0] - e.border[2]}
 	var rad [4]float32
 	all := e.flags&(flagScrollX|flagScrollY) != 0 || e.flags&flagClip == flagClip
@@ -259,7 +292,7 @@ func (p *Painter) fill(r Rect, radius [4]float32, bg Color, bw float32, bc Color
 
 // background paints the background of an element, and its border with it
 // unless withBorder is false.
-func (p *Painter) background(e *Element, box Rect, withBorder bool) {
+func (p *Painter) background(e *node, box Rect, withBorder bool) {
 	border := withBorder && scene.HasBorder(e.border) && e.borderC.A > 0
 	if e.fill == fillMaterial {
 		e.material.PaintMaterial(p, box, e.radius)
@@ -304,7 +337,7 @@ func (p *Painter) background(e *Element, box Rect, withBorder bool) {
 }
 
 // border paints e's border alone.
-func (p *Painter) border(e *Element, box Rect) {
+func (p *Painter) border(e *node, box Rect) {
 	p.s.Ops = append(p.s.Ops, scene.Op{Kind: scene.OpFill, Rect: p.snap(box), Radii: p.radii(e.radius), Continuous: continuousCorners, Opacity: p.opacity,
 		Border: p.borders(e.border), BorderColor: e.borderC.scene(), Dashed: e.borderStyle == BorderDashed, Wide: p.wide(Color{}, Color{}, e.borderC)})
 }
@@ -340,7 +373,7 @@ func (p *Painter) gradient(op *scene.Op, g LinearGradient) {
 // middle of the room between each two: after each row of a List but its
 // last, else between children next to each other in the tree, on the same
 // line.
-func (p *Painter) dividers(e *Element) {
+func (p *Painter) dividers(e *node) {
 	var d dividers
 	for _, d = range e.c.dividers {
 		if d.e == e {
@@ -360,7 +393,7 @@ func (p *Painter) dividers(e *Element) {
 	if !row {
 		lo, hi = e.x+e.border[3], e.x+e.w-e.border[1]
 	}
-	var prev *Element
+	var prev *node
 	for c := e.first; c != nil; c = c.next {
 		if c.flags&flagAbsolute != 0 || c.collapsed {
 			continue
@@ -413,11 +446,11 @@ func (p *Painter) divider(row bool, at, lo, hi, width float32, c Color) {
 
 // debug outlines an element and the elements inside it: their margins in
 // orange, borders and padding in green, and content in blue.
-func (p *Painter) debug(e *Element) {
+func (p *Painter) debug(e *node) {
 	saved := p.opacity
 	p.opacity = 1
-	var walk func(e *Element)
-	walk = func(e *Element) {
+	var walk func(e *node)
+	walk = func(e *node) {
 		if e.flags&flagInvisible != 0 {
 			return
 		}
@@ -618,11 +651,11 @@ func (p *Painter) wave(x0, x1, y, thick float32, c Color) {
 }
 
 // contentBox returns the element's box inside its padding and border.
-func (e *Element) contentBox() Rect {
+func (e *node) contentBox() Rect {
 	return Rect{e.x + e.contentX(), e.y + e.contentY(), e.w - e.padX(), e.h - e.padY()}
 }
 
-func (p *Painter) image(e *Element) {
+func (p *Painter) image(e *node) {
 	if s := e.svg; s != nil {
 		p.drawSVG(s, e.contentBox(), e.fit, e.radius, e.resolvedText().color, e.gray)
 		return
@@ -674,7 +707,7 @@ func (p *Painter) drawBitmap(img *Bitmap, box Rect, fit Fit, radius [4]float32, 
 
 // scrollbars draws the thumbs of a scroll container whose content
 // overflows it.
-func (p *Painter) scrollbars(e *Element) {
+func (p *Painter) scrollbars(e *node) {
 	st := e.st
 	rt := e.c.rt
 	theme := e.c.theme

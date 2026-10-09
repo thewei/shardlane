@@ -235,8 +235,15 @@ var templateFuncs = template.FuncMap{
 	},
 }
 
-// writeTemplate writes the files of template/<tmpl> into dir.
+// writeTemplate installs the bundled skills and template/<tmpl> into dir.
 func writeTemplate(dir, tmpl string, data templateData) error {
+	if err := installSkills(dir); err != nil {
+		return err
+	}
+	return writeTemplateDir(dir, tmpl, data)
+}
+
+func writeTemplateDir(dir, tmpl string, data templateData) error {
 	root := "template/" + tmpl
 	return fs.WalkDir(templateFS, root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {

@@ -50,6 +50,12 @@ func runeAt(runes []rune, u int) int {
 }
 
 func (s *surface) markedRange() nsRange {
+	if c := s.input.Client; c != nil {
+		if r, ok := c.MarkedRange(); ok {
+			return nsRange{Location: uint(r.Start), Length: uint(max(0, r.End-r.Start))}
+		}
+		return nsRange{Location: nsNotFound}
+	}
 	if s.marked == "" {
 		return nsRange{Location: nsNotFound}
 	}
@@ -60,6 +66,10 @@ func (s *surface) markedRange() nsRange {
 func (s *surface) selectedRange() nsRange {
 	if !s.input.Active {
 		return nsRange{Location: nsNotFound}
+	}
+	if c := s.input.Client; c != nil {
+		r := c.Selection().Range
+		return nsRange{Location: uint(r.Start), Length: uint(max(0, r.End-r.Start))}
 	}
 	doc, start, end := s.document()
 	if s.marked != "" {
@@ -96,6 +106,13 @@ func (s *surface) textRange(r nsRange) (from, to int) {
 }
 
 func (s *surface) substring(r nsRange, actual *nsRange) id {
+	if c := s.input.Client; c != nil {
+		text, rangeUsed := c.TextForRange(platform.TextRange{Start: int(min(r.Location, uint(1<<31))), End: int(min(r.Location+r.Length, uint(1<<31)))})
+		if actual != nil {
+			*actual = nsRange{Location: uint(rangeUsed.Start), Length: uint(max(0, rangeUsed.End-rangeUsed.Start))}
+		}
+		return autorelease(send(send(class("NSAttributedString"), "alloc"), "initWithString:", uintptr(nsString(text))))
+	}
 	doc, _, _ := s.document()
 	u := utf16.Encode(doc)
 	lo := int(min(r.Location, uint(len(u))))
@@ -108,6 +125,10 @@ func (s *surface) substring(r nsRange, actual *nsRange) id {
 }
 
 func (s *surface) setMarkedText(text string, selected, replacement nsRange) {
+	if c := s.input.Client; c != nil {
+		c.SetMarkedText(clientRange(replacement), text, platform.TextRange{Start: int(selected.Location), End: int(selected.Location + selected.Length)})
+		return
+	}
 	ev := platform.SurfaceEvent{Kind: platform.TextComposition, Text: text, Caret: runesBefore(text, int(selected.Location))}
 	if replacement.Location != nsNotFound {
 		ev.Replace = true
@@ -118,6 +139,10 @@ func (s *surface) setMarkedText(text string, selected, replacement nsRange) {
 }
 
 func (s *surface) insertText(text string, replacement nsRange) {
+	if c := s.input.Client; c != nil {
+		c.ReplaceText(clientRange(replacement), text)
+		return
+	}
 	ev := platform.SurfaceEvent{Kind: platform.TextInput, Text: text}
 	if replacement.Location != nsNotFound {
 		ev.Replace = true
@@ -129,5 +154,32 @@ func (s *surface) insertText(text string, replacement nsRange) {
 	}
 	if text != "" || ev.Replace {
 		s.send(ev)
+	}
+}
+
+func clientRange(r nsRange) *platform.TextRange {
+	if r.Location == nsNotFound {
+		return nil
+	}
+	v := platform.TextRange{Start: int(min(r.Location, uint(1<<31))), End: int(min(r.Location+r.Length, uint(1<<31)))}
+	return &v
+}
+
+func (s *surface) hasMarkedText() bool {
+	if c := s.input.Client; c != nil {
+		_, ok := c.MarkedRange()
+		return ok
+	}
+	return s.marked != ""
+}
+
+func (s *surface) unmarkText() {
+	if c := s.input.Client; c != nil {
+		c.UnmarkText()
+		return
+	}
+	if s.marked != "" {
+		s.marked = ""
+		s.send(platform.SurfaceEvent{Kind: platform.TextComposition})
 	}
 }

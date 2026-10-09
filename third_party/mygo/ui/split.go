@@ -6,24 +6,24 @@ package ui
 // divider keeps 40 DIPs from either edge. Changed reports a move.
 //
 //	ui.Split(c, &app.sidebar, app.files, app.editor).Fill()
-func Split(c *Context, size *float32, first, second func()) *Element {
+func coreSplit(c *context, size *float32, first, second func()) *node {
 	return split(c, size, first, second, false)
 }
 
 // SplitVertical is Split with first above second, *size its height.
-func SplitVertical(c *Context, size *float32, first, second func()) *Element {
+func coreSplitVertical(c *context, size *float32, first, second func()) *node {
 	return split(c, size, first, second, true)
 }
 
-func split(c *Context, size *float32, first, second func(), vertical bool) *Element {
+func split(c *context, size *float32, first, second func(), vertical bool) *node {
 	t := c.theme
 	minPane, grip := t.Space(10), t.Space(1.5)
 	// One element or the other: creating one adds it to the parent.
-	var e *Element
+	var e *node
 	if vertical {
-		e = Column(c).AlignItems(Stretch)
+		e = coreColumn(c).AlignItems(Stretch)
 	} else {
-		e = Row(c).AlignItems(Stretch)
+		e = coreRow(c).AlignItems(Stretch)
 	}
 	e.widget = "Split"
 	e.Children(func() {
@@ -31,11 +31,11 @@ func split(c *Context, size *float32, first, second func(), vertical bool) *Elem
 		// and it. The handle the pointer drags spans a few DIPs over either
 		// pane, above them: it is placed in this box, which has no padding,
 		// whatever the split's.
-		var in *Element
+		var in *node
 		if vertical {
-			in = Column(c).Grow(1).MinHeight(0).AlignItems(Stretch)
+			in = coreColumn(c).Grow(1).MinHeight(0).AlignItems(Stretch)
 		} else {
-			in = Row(c).Grow(1).MinWidth(0).AlignItems(Stretch)
+			in = coreRow(c).Grow(1).MinWidth(0).AlignItems(Stretch)
 		}
 		// The room to share, as the last frame laid it out.
 		total := in.st.w
@@ -49,12 +49,12 @@ func split(c *Context, size *float32, first, second func(), vertical bool) *Elem
 			v = max(v, minPane)
 			if v != *size {
 				*size = v
-				e.st.changed = true
+				e.st.markChanged()
 				c.rt.consumed = true
 			}
 		}
 		in.Children(func() {
-			a := Box(c).Shrink(0).Clip()
+			a := coreBox(c).Shrink(0).Clip()
 			if vertical {
 				a.Height(*size)
 			} else {
@@ -63,7 +63,7 @@ func split(c *Context, size *float32, first, second func(), vertical bool) *Elem
 			a.Children(first)
 
 			// The line takes the focus between the panes, in their order.
-			div := Box(c).Shrink(0).Focusable().Role(RoleSplitter).Label("Divider")
+			div := coreBox(c).Shrink(0).Focusable().Role(RoleSplitter).Label("Divider")
 			div.widget = "Divider"
 			div.flags |= flagOwnRing
 			if vertical {
@@ -75,16 +75,18 @@ func split(c *Context, size *float32, first, second func(), vertical bool) *Elem
 			if vertical {
 				back, forth = KeyUp, KeyDown
 			}
-			if div.Shortcut(0, back) {
-				set(*size - t.Space(2.5))
-			}
-			if div.Shortcut(0, forth) {
-				set(*size + t.Space(2.5))
-			}
+			div.afterInput(func() {
+				if div.Shortcut(0, back) {
+					set(*size - t.Space(2.5))
+				}
+				if div.Shortcut(0, forth) {
+					set(*size + t.Space(2.5))
+				}
+			})
 			div.hasRange, div.accRange = true, [3]float64{float64(minPane), float64(max(total-1-minPane, minPane)), float64(*size)}
 			div.accStep = float64(t.Space(2.5))
 
-			b := Box(c).Grow(1).Shrink(1).Clip()
+			b := coreBox(c).Grow(1).Shrink(1).Clip()
 			if vertical {
 				b.MinHeight(0)
 			} else {
@@ -92,7 +94,7 @@ func split(c *Context, size *float32, first, second func(), vertical bool) *Elem
 			}
 			b.Children(second)
 
-			handle := Box(c).Absolute()
+			handle := coreBox(c).Absolute()
 			handle.flags |= flagDraggable | flagHover
 			if vertical {
 				handle.Left(0).Right(0).Top(*size - (grip-1)/2).Height(grip).Cursor(CursorResizeNS)
@@ -101,14 +103,16 @@ func split(c *Context, size *float32, first, second func(), vertical bool) *Elem
 			}
 			// A press there focuses the line, as a press on it would.
 			dx, dy, held := handle.Dragged()
-			if held {
-				div.Focus()
-				if vertical {
-					set(*size + dy)
-				} else {
-					set(*size + dx)
+			handle.afterInput(func() {
+				if held {
+					div.Focus()
+					if vertical {
+						set(*size + dy)
+					} else {
+						set(*size + dx)
+					}
 				}
-			}
+			})
 			div.Draw(func(p *Painter, r Rect) {
 				line := t.Border
 				if held || handle.Hovered() {

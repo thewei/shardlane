@@ -21,7 +21,7 @@ import (
 // scrollback, as does the wheel, unless the program takes the mouse. Hold
 // Shift to select while a program takes the mouse, and Command (Control
 // elsewhere) to open a hyperlink (OSC 8) on click.
-func View(c *ui.Context, t *Terminal) *ui.Element {
+func View(c *ui.Context, t *Terminal) ui.Element {
 	v := t.viewOf(c)
 	e := ui.Box(c).Focusable().FocusRing(false).Cursor(ui.CursorText).Clip().Label("Terminal")
 	v.build(c, e)
@@ -40,9 +40,9 @@ func (t *Terminal) viewOf(c *ui.Context) *view {
 		t.v.shaped.init(4096)
 	}
 	v := t.v
-	if v.c != c {
-		v.c = c
-		draw := c.Invalidate
+	if v.services != c.Services() {
+		v.services = c.Services()
+		draw := v.services.Invalidate
 		t.draw.Store(&draw)
 	}
 	return v
@@ -51,8 +51,8 @@ func (t *Terminal) viewOf(c *ui.Context) *view {
 // view is what a frame of the terminal needs from frame to frame. Main
 // thread only.
 type view struct {
-	t *Terminal
-	c *ui.Context
+	t        *Terminal
+	services ui.Services
 
 	theme   *Theme
 	applied *Theme // the theme the emulator has
@@ -102,7 +102,7 @@ type pendingKey struct {
 }
 
 // build updates the view as a frame builds.
-func (v *view) build(c *ui.Context, e *ui.Element) {
+func (v *view) build(c *ui.Context, e ui.Element) {
 	t := v.t
 	dark := c.Theme().Dark
 	focused := e.Focused()
@@ -201,7 +201,7 @@ func (v *view) menu(m *ui.Menu) {
 	}
 	t.mu.Unlock()
 	if m.Item("Copy").Shortcut(cmd, ui.KeyC).Disabled(!selected || text == "").Chosen() {
-		v.c.WriteClipboard(text)
+		v.services.WriteClipboard(text)
 	}
 	if m.Item("Paste").Shortcut(cmd, ui.KeyV).Chosen() {
 		v.paste()
@@ -433,12 +433,12 @@ func (v *view) copy() {
 	}
 	t.mu.Unlock()
 	if ok && text != "" {
-		v.c.WriteClipboard(text)
+		v.services.WriteClipboard(text)
 	}
 }
 
 func (v *view) paste() {
-	if text := v.c.ReadClipboard(); text != "" {
+	if text := v.services.ReadClipboard(); text != "" {
 		v.t.Paste(text)
 	}
 }
@@ -452,7 +452,7 @@ func (v *view) selectAll() {
 		}
 	}
 	t.mu.Unlock()
-	v.c.Invalidate()
+	v.services.Invalidate()
 }
 
 // cellAt returns the cell under a point of the element, in DIPs, within
@@ -511,7 +511,7 @@ func (v *view) pointerEvent(ev ui.InputEvent) bool {
 				url = urlAt(text, cols, col)
 			}
 			if url != "" {
-				v.c.OpenURL(url)
+				v.services.OpenURL(url)
 				return true
 			}
 		}

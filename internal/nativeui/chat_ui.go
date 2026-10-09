@@ -43,9 +43,10 @@ func (s *Shell) chatTimelineRow(c *ui.Context, turn conversation.TimelineTurn, t
 			}
 			if turn.Thinking != nil && *turn.Thinking != "" {
 				open := s.chatTurnPartOpen(turnIndex, "thinking")
-				ui.Collapsible(c, "Thinking", &open, func() {
+				col := ui.Collapsible(c, "Thinking", &open, func() {
 					ui.Text(c, *turn.Thinking).FontSize(Typography().BodySmall).TextColor(t.TextMuted)
 				})
+				col.Changed() // apply a pending toggle now, so the store keeps it
 				s.setChatTurnPartOpen(turnIndex, "thinking", open)
 			}
 			if len(turn.ToolRuns) > 0 {
@@ -54,11 +55,12 @@ func (s *Shell) chatTimelineRow(c *ui.Context, turn conversation.TimelineTurn, t
 					summary = "Tool activity (grouped)"
 				}
 				open := s.chatTurnPartOpen(turnIndex, "tools")
-				ui.Collapsible(c, summary, &open, func() {
+				col := ui.Collapsible(c, summary, &open, func() {
 					for _, run := range turn.ToolRuns {
 						toolCard(c, run.Name, run.InputPreview, run.Output, run.IsError)
 					}
 				})
+				col.Changed() // apply a pending toggle now, so the store keeps it
 				s.setChatTurnPartOpen(turnIndex, "tools", open)
 			}
 		}

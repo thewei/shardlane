@@ -4,10 +4,12 @@ import (
 	"slices"
 	"sync"
 	"time"
+	"weak"
 
 	"github.com/egoist/mygo/internal/platform"
 	"github.com/egoist/mygo/internal/scene"
 	"github.com/egoist/mygo/internal/text"
+	"github.com/egoist/mygo/transfer"
 )
 
 // host is where a runtime's frames go: a window's surface, or memory for
@@ -28,10 +30,16 @@ type host interface {
 	readClipboard() string
 	writeClipboard(string)
 	startDrag()
+	startDataDrag(transfer.Data, any, transfer.DragOptions, float32, float32) error
+	cancelDataDrag()
+	setDropFormats([]transfer.Format)
 	titleBarDoubleClicked()
 	isDark() bool
 	preferences() platform.Preferences
 	titleBar() TitleBar
+	// vibrancy reports whether the window shows a material where the
+	// frames are transparent.
+	vibrancy() bool
 	// invalidate asks for a frame from any goroutine.
 	invalidate()
 	// post runs fn on the main thread soon; it is safe from any goroutine.
@@ -46,13 +54,30 @@ type host interface {
 // the view function, lays them out, paints them and routes input to the
 // elements of the last frame. Main thread only, except where noted.
 type engine struct {
-	view     func(*Context)
-	host     host
-	c        Context
-	text     *text.System
-	scene    scene.Scene
-	painter  Painter
-	glyphRun glyphRun
+	owner           weak.Pointer[engine]
+	epoch           uint64
+	parts           []any
+	public          *Context
+	arena           *elementOwner
+	handleChecks    bool
+	afterInputs     []inputAction
+	inputs          []*node
+	inputAt         int
+	afterInputAt    int
+	applyingInputs  bool
+	notices         []*state
+	typedInputs     []*state
+	focusFields     map[any]*focusField
+	refs            []*refState
+	actions         []action
+	textInputClosed bool
+	view            func(*context)
+	host            host
+	c               context
+	text            *text.System
+	scene           scene.Scene
+	painter         Painter
+	glyphRun        glyphRun
 	// measured are the last spans laid out outside elements (richParams).
 	measured     [8]measuredSpans
 	nextMeasured int
@@ -60,6 +85,9 @@ type engine struct {
 	svgs         svgs
 	flex         flexScratch
 	grid         gridScratch
+	// under is the painter's stack of opaque backgrounds, kept from one
+	// frame to the next.
+	under []Rect
 
 	states map[uint64]*state
 	// free are states pruned, which new elements take: rows coming into
@@ -106,7 +134,7 @@ type engine struct {
 	trans        map[uint64]*transition
 	exitsBuilt   bool
 	laidW, laidH float32
-	byID         map[uint64]*Element
+	byID         map[uint64]*node
 	// insp is the inspector (inspector.go); dupKeys are the duplicate keys
 	// reported, and warnings what the inspector lists.
 	insp     inspector
@@ -122,10 +150,14 @@ type engine struct {
 	pointerIn          bool
 	hover              []uint64
 	// chain is a buffer for the elements under the pointer.
-	chain         []uint64
-	pressed       *state
-	pressButton   int
-	focused       uint64
+	chain       []uint64
+	pressed     *state
+	pressButton int
+	focused     uint64
+	// texts are selectable paragraphs in build order; selection spans those
+	// of one Selectable container (textselection.go).
+	texts         []*state
+	selection     textSelection
 	focusVisible  bool
 	windowFocused bool
 	keys          []keyEvent
@@ -148,11 +180,12 @@ type engine struct {
 	// frame built anew; repainting as it paints when only drawings move
 	// (Painter.AnimationFrame), for a frame painting its elements again,
 	// and repaintAt to when drawings change next (Painter.After). redraw
-	// tells that the next frame may paint again, as nothing else asked for
-	// one since; painted is the size and scale of the window, and gen the
-	// text system's Generation, as the last frame was built. repaintTimer
-	// asks for that frame at repaintDue. held tells that what moves waits
-	// for the window to show.
+	// tells that the next frame may paint again, as no event came and
+	// nothing else asked for one since; painted is the size and scale of
+	// the window, and gen the text system's Generation, as the last frame
+	// was built. repaintTimer asks for a frame at repaintDue, unless one
+	// came or was asked for since. held tells that what moves waits for
+	// the window to show.
 	animating    bool
 	repainting   bool
 	repaintAt    time.Time
@@ -178,7 +211,12 @@ type engine struct {
 		base  int
 	}
 	// drag is the value being dragged within the window.
-	drag *valueDrag
+	drag        *valueDrag
+	incoming    *platform.DataDragEvent
+	dataOver    uint64
+	closed      bool
+	dropFormats []transfer.Format
+	dropScratch []transfer.Format
 	// kept are the pages of the history that Routers keep, and commitPage
 	// the page around the elements being committed.
 	kept       map[uint64]bool
@@ -258,9 +296,13 @@ type keyEvent struct {
 	key  Key
 }
 
-func newRuntime(view func(*Context), h host) *engine {
+func newRuntime(view func(*context), h host) *engine {
 	rt := &engine{view: view, host: h, text: textSystem(), states: map[uint64]*state{}, windowFocused: true}
 	rt.c.rt = rt
+	rt.owner = weak.Make(rt)
+	rt.arena = &elementOwner{rt: rt}
+	rt.public = &Context{rt: rt, services: Services{owner: rt.owner}}
+	rt.handleChecks = developmentHandles
 	if frameStatsOn {
 		rt.stats = newFrameStats(frameStatsThreshold)
 	}
@@ -291,7 +333,7 @@ func (rt *engine) defaultTheme() *Theme {
 // desktop's preferences.
 func (rt *engine) themeChanged() {
 	rt.darkKnown, rt.prefsKnown = false, false
-	rt.redraw = false
+	rt.redraw, rt.repaintDue = false, time.Time{}
 	rt.host.requestFrame()
 }
 
@@ -311,6 +353,7 @@ func (rt *engine) runFrame() {
 	appW := rt.insp.contentWidth(w)
 	rt.insp.lap(-1)
 	rt.c.titleBar = rt.host.titleBar()
+	rt.c.vibrancy = rt.host.vibrancy()
 	rt.text.BeginFrame()
 	rt.gen = rt.text.Generation()
 	rt.painted = [3]float32{w, h, scale}
@@ -321,11 +364,14 @@ func (rt *engine) runFrame() {
 		rt.drag.elem = nil
 		rt.dragScroll()
 	}
+	rt.scrollTextSelection()
 
 	if rt.exitsBuilt {
 		// The last frame's elements stay as they are while this one builds,
 		// for copies of those that go with an exit transition.
 		rt.c.chunks, rt.c.spare = rt.c.spare, rt.c.chunks
+		rt.c.dirty, rt.c.spareDirty = rt.c.spareDirty, rt.c.dirty
+		rt.c.used = rt.c.dirty
 	}
 
 	// An event handled while building (a click, an edit) may change what
@@ -344,6 +390,14 @@ func (rt *engine) runFrame() {
 		if rt.insp.open {
 			rt.buildInspector(&rt.c, appW, w, h)
 		}
+		rt.applyInputs()
+		rt.finishInputs()
+		// Commit derived values while callbacks still hold this pass's
+		// bindings. Delivered callbacks do not repeat in the next pass.
+		rt.runNoticeActions()
+		rt.applyFocusRequests()
+		rt.runActions()
+		rt.prepareSelectable(rt.c.root)
 		rt.resolveMenu()
 		rt.endPass()
 		if !rt.consumed {
@@ -358,6 +412,11 @@ func (rt *engine) runFrame() {
 	root := rt.c.root
 	layoutTree(root, appW, h)
 	rt.commit(root, w, h)
+	rt.commitFocusBindings()
+	clear(rt.texts)
+	rt.texts = rt.texts[:0]
+	rt.collectSelectable(root, false)
+	rt.syncTextSelection()
 	rt.stats.lap(phaseLayout)
 	rt.insp.lap(1)
 	if rt.insp.open {
@@ -375,6 +434,7 @@ func (rt *engine) runFrame() {
 	rt.host.present(&rt.scene)
 	rt.stats.lap(phasePresent)
 	rt.prune()
+	rt.syncDropFormats()
 	rt.prunePictures()
 	rt.text.EndFrame()
 	rt.regs, rt.nextRegs = rt.nextRegs, rt.regs
@@ -391,6 +451,8 @@ func (rt *engine) runFrame() {
 	rt.next()
 	rt.armTimer()
 	rt.showMenu()
+	rt.c.finish()
+	clear(rt.byID)
 	rt.stats.end(rt)
 }
 
@@ -434,10 +496,13 @@ func (rt *engine) next() {
 	}
 }
 
-// repaintNow asks for the frame painting drawings again that Painter.After
-// asked for, unless another frame came since.
+// repaintNow asks for the frame that Painter.After asked for, unless
+// another frame came, or was asked for, since. An event since that asked
+// for none, as the pointer moving over elements that do not look at it,
+// leaves it due: it builds the view anew, in case the event changed what
+// the view shows.
 func (rt *engine) repaintNow() {
-	if rt.redraw && !rt.repaintDue.IsZero() && !rt.now().Before(rt.repaintDue.Add(-time.Millisecond)) {
+	if !rt.repaintDue.IsZero() && !rt.now().Before(rt.repaintDue.Add(-time.Millisecond)) {
 		rt.repaintDue = time.Time{}
 		rt.host.requestFrame()
 	}
@@ -513,16 +578,22 @@ func (rt *engine) forgetInput() {
 			continue
 		}
 		s.clicks, s.rightClicks, s.doubleClicks = 0, 0, 0
+		s.pressPending = false
 		s.dragX, s.dragY = 0, 0
-		s.changed, s.submitted, s.typing = false, false, false
 		s.dropped = nil
 		s.droppedValue, s.hasDropped = nil, false
+		s.dataDropped = nil
 	}
 }
 
 // prune forgets the elements the frame did not build, but those of the
 // pages Routers keep.
 func (rt *engine) prune() {
+	if d := rt.drag; d != nil && d.native {
+		if s := rt.states[d.src]; s == nil || s.seen != rt.frame || s.pass != rt.pass {
+			rt.host.cancelDataDrag()
+		}
+	}
 	unpressed := false
 	for id, s := range rt.states {
 		if s.seen != rt.frame || s.pass != rt.pass {
@@ -530,10 +601,16 @@ func (rt *engine) prune() {
 				rt.pressed, unpressed = nil, true
 			}
 			if !rt.keptAlive(s) {
+				if s.textAdapter != nil {
+					s.textAdapter.release()
+				}
 				delete(rt.states, id)
 				if rt.scrollDrag.st == s {
 					rt.scrollDrag.st = nil
 				}
+				// Recycle the state itself, without keeping the editor,
+				// local resources or callbacks of the element that went.
+				*s = state{}
 				if len(rt.free) < maxFree {
 					rt.free = append(rt.free, s)
 				}
@@ -579,19 +656,19 @@ func (rt *engine) keptAlive(s *state) bool {
 }
 
 // requestFrame asks the host for a frame built anew, unless one is being
-// built.
+// built. It comes in place of one Painter.After has due.
 func (rt *engine) requestFrame() {
 	if rt.inFrame {
 		return
 	}
-	rt.redraw = false
+	rt.redraw, rt.repaintDue = false, time.Time{}
 	rt.host.requestFrame()
 }
 
 // changed asks the host for a frame built anew after the app changed what
 // the view shows, from outside the view (surface.Conn.Changed).
 func (rt *engine) changed() {
-	rt.redraw = false
+	rt.redraw, rt.repaintDue = false, time.Time{}
 	rt.host.requestFrame()
 }
 
@@ -623,6 +700,39 @@ func (rt *engine) armTimer() {
 }
 
 func (rt *engine) close() {
+	rt.closed = true
+	clear(rt.focusFields)
+	rt.focusFields = nil
+	for _, r := range rt.refs {
+		r.closed = true
+		r.requested = false
+	}
+	clear(rt.refs)
+	rt.refs = nil
+	clear(rt.parts)
+	rt.parts = nil
+	clear(rt.typedInputs)
+	rt.typedInputs = nil
+	clear(rt.notices)
+	rt.notices = nil
+	clear(rt.afterInputs)
+	rt.afterInputs = nil
+	clear(rt.inputs)
+	rt.inputs = nil
+	rt.arena.rt = nil
+	rt.public.rt = nil
+	clear(rt.actions)
+	rt.actions = nil
+	rt.textInputClosed = true
+	if rt.drag != nil && rt.drag.native {
+		rt.host.cancelDataDrag()
+	}
+	rt.drag, rt.incoming = nil, nil
+	for _, s := range rt.states {
+		if s.textAdapter != nil {
+			s.textAdapter.release()
+		}
+	}
 	if rt.timer != nil {
 		rt.timer.Stop()
 	}
@@ -633,7 +743,7 @@ func (rt *engine) close() {
 
 // commit records the laid out frame in the elements' states: their
 // boxes, the hit list in paint order, the focus order.
-func (rt *engine) commit(root *Element, w, h float32) {
+func (rt *engine) commit(root *node, w, h float32) {
 	rt.hits = rt.hits[:0]
 	rt.focusOrder, rt.focusScopes = rt.focusOrder[:0], rt.focusScopes[:0]
 	rt.modal, rt.modalLayer, rt.commitScope, rt.commitPage = 0, 0, focusScope{}, 0
@@ -649,7 +759,7 @@ func (rt *engine) commit(root *Element, w, h float32) {
 	rt.noteGroups()
 }
 
-func (rt *engine) commitElement(e *Element, clip Rect, hidden bool) {
+func (rt *engine) commitElement(e *node, clip Rect, hidden bool) {
 	inline := e.isInline()
 	if e.kind == kindText && e.first != nil && !inline {
 		placeInline(e, e, 0)
@@ -680,7 +790,16 @@ func (rt *engine) commitElement(e *Element, clip Rect, hidden bool) {
 	s.cursor, s.tip = e.cursor, e.tip
 	s.role = e.role
 	s.input, s.caret, s.takesText = e.inputFn, e.caret, e.takesText
-	if e.flags&(flagEditable|flagSelectable) != 0 && s.cursor == 0 {
+	if s.textClient != e.textClient {
+		if s.textAdapter != nil {
+			s.textAdapter.release()
+		}
+		s.textClient, s.textAdapter = e.textClient, nil
+	}
+	if s.textClient != nil && s.textAdapter == nil {
+		s.textAdapter = &textInputAdapter{rt: rt, id: s.id}
+	}
+	if (e.flags&flagEditable != 0 || e.flags&flagSelectable != 0 && s.editor != nil) && s.cursor == 0 {
 		s.cursor = CursorText + 1
 	}
 	v := intersect(Rect{e.x, e.y, e.w, e.h}, clip)

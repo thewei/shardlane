@@ -345,15 +345,24 @@ func (t *tray) SetMenu(m *platform.Menu) {
 }
 
 func (t *tray) PopUpMenu(m *platform.Menu) {
-	if m == nil {
+	if m == nil || t.item == 0 {
 		return
 	}
 	withPool(func() {
 		owner := newOwner()
 		defer dropOwner(owner)
 		menu := t.b.buildMenu(m, "", owner)
-		bounds := msgRect(t.button, sel("bounds"))
-		msgPopUpMenu(menu, sel("popUpMenuPositioningItem:atLocation:inView:"), 0, NSPoint{0, bounds.Size.Height + 4}, t.button)
+		// Let the status item place and track its menu, including the
+		// button's highlight. Keep its previous menu alive while swapped.
+		previous := retain(send(t.item, "menu"))
+		defer release(previous)
+		send(t.item, "setMenu:", uintptr(menu))
+		send(t.button, "performClick:", 0)
+		// Menu actions run in a nested event loop: they may destroy the
+		// tray or install another menu, which we must leave intact.
+		if t.item != 0 && send(t.item, "menu") == menu {
+			send(t.item, "setMenu:", uintptr(previous))
+		}
 	})
 }
 

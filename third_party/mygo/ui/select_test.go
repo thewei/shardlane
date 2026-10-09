@@ -7,10 +7,10 @@ import (
 
 func TestSelectableText(t *testing.T) {
 	const sentence = "Order 12345 shipped"
-	tt := NewTester(func(c *Context) {
-		Column(c).Padding(20).Gap(10).AlignItems(Start).Children(func() {
-			Text(c, sentence).Selectable()
-			Text(c, "Plain text")
+	tt := coreNewTester(func(c *context) {
+		coreColumn(c).Padding(20).Gap(10).AlignItems(Start).Children(func() {
+			coreText(c, sentence).Selectable()
+			coreText(c, "Plain text")
 		})
 	}, 400, 200)
 	var ed *editor

@@ -66,7 +66,7 @@ type tipRow struct {
 // paintTooltip paints the tooltip of e, whose margin box is box, above
 // it, else below, as Chrome's: what it is and its size, its colors, font
 // and spacing, and what assistive technology sees.
-func (in *inspector) paintTooltip(rt *engine, p *Painter, e *Element, box Rect, h float32) {
+func (in *inspector) paintTooltip(rt *engine, p *Painter, e *node, box Rect, h float32) {
 	const (
 		pad  = 8
 		size = 11

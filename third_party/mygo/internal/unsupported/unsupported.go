@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/egoist/mygo/internal/platform"
+	"github.com/egoist/mygo/transfer"
 )
 
 // Backend reports that the platform is not supported.
@@ -88,6 +89,14 @@ func (dialogs) ShowMessageBox(_ platform.Window, _ *platform.MessageBoxOptions, 
 }
 
 type clipboard struct{}
+
+func (clipboard) ReadData([]transfer.Format) (transfer.Data, error) {
+	return transfer.Data{}, errUnsupported
+}
+func (clipboard) WriteData(transfer.Data, func()) error { return errUnsupported }
+func (clipboard) Formats() []transfer.Format            { return nil }
+func (clipboard) Flush() error                          { return errUnsupported }
+func (clipboard) Close()                                {}
 
 func (clipboard) ReadText() string           { return "" }
 func (clipboard) WriteText(string)           {}

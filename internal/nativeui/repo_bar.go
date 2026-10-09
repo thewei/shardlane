@@ -204,7 +204,7 @@ func (s *Shell) worktreesMenuPanel(c *ui.Context) {
 // so a count kept across frames would swallow every click after the
 // first (the 2026-10-06 staged-files toggle could collapse but never
 // re-expand).
-func toggleMenu(open *bool, e *ui.Element) {
+func toggleMenu(open *bool, e ui.Element) {
 	if e.Clicked() {
 		*open = !*open
 	}

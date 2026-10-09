@@ -82,8 +82,9 @@ type MenuItem struct {
 	Checked bool
 	ToolTip string
 	Submenu []*MenuItem
-	// Click is called on the main thread when the item is chosen. win is
-	// the focused window, or nil.
+	// Click is called on the main thread when the item is chosen. On Linux
+	// and Windows, win is the window whose menu bar or context menu was
+	// chosen. Other menus use the focused window, which may be nil.
 	Click func(item *MenuItem, win *Window)
 
 	uid    int
@@ -412,12 +413,11 @@ func (it *MenuItem) snapshotLocked() *platform.MenuItem {
 }
 
 // menuItemClicked runs on the main thread when the backend reports a click.
-func menuItemClicked(uid int) {
+func menuItemClicked(uid int, win *Window) {
 	it := lookupMenuItem(uid)
 	if it == nil {
 		return
 	}
-	win := FocusedWindow()
 	switch it.Type {
 	case MenuItemCheckbox:
 		it.SetChecked(!it.IsChecked())

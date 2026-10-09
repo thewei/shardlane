@@ -33,6 +33,13 @@ func (s *surface) imeRequest(wp, lp uintptr) uintptr {
 		return 0
 	}
 	units := utf16Units(s.input.Text)
+	var context platform.TextContext
+	start, end := unitOffset(s.input.Text, s.input.Start), unitOffset(s.input.Text, s.input.End)
+	if c := s.input.Client; c != nil {
+		context = platform.ClientTextContext(c)
+		units = utf16Units(context.Text)
+		start, end = context.Start, context.End
+	}
 	switch wp {
 	case imrDocumentFeed, imrReconvertString:
 		head := uint32(unsafe.Sizeof(reconvertString{}))
@@ -44,7 +51,6 @@ func (s *surface) imeRequest(wp, lp uintptr) uintptr {
 		if rs.Size < size {
 			return 0
 		}
-		start, end := unitOffset(s.input.Text, s.input.Start), unitOffset(s.input.Text, s.input.End)
 		*rs = reconvertString{Size: size, StrLen: uint32(len(units)), StrOffset: head,
 			CompStrLen: uint32(end - start), CompStrOffset: uint32(start) * 2,
 			TargetStrLen: uint32(end - start), TargetStrOffset: uint32(start) * 2}
@@ -57,7 +63,12 @@ func (s *surface) imeRequest(wp, lp uintptr) uintptr {
 		if from < 0 || to > len(units) {
 			return 0
 		}
-		s.reconvert = &[2]int{runeOffset(units, from), runeOffset(units, to)}
+		if s.input.Client != nil {
+			r := context.Range(platform.TextRange{Start: from, End: to})
+			s.reconvert = &[2]int{r.Start, r.End}
+		} else {
+			s.reconvert = &[2]int{runeOffset(units, from), runeOffset(units, to)}
+		}
 		return 1
 	}
 	return 0
@@ -69,6 +80,21 @@ func (s *surface) composed(ev platform.SurfaceEvent) {
 	if r := s.reconvert; r != nil {
 		ev.Replace, ev.From, ev.To = true, r[0], r[1]
 		s.reconvert = nil
+	}
+	if c := s.input.Client; c != nil {
+		var r *platform.TextRange
+		if ev.Replace {
+			rangeWanted := platform.TextRange{Start: ev.From, End: ev.To}
+			r = &rangeWanted
+		}
+		if ev.Kind == platform.TextInput {
+			s.clientComposition.Replace(c, r, ev.Text)
+		} else {
+			s.clientComposition.Reset()
+			caret := platform.UTF16Len(string([]rune(ev.Text)[:min(ev.Caret, len([]rune(ev.Text)))]))
+			c.SetMarkedText(r, ev.Text, platform.TextRange{Start: caret, End: caret})
+		}
+		return
 	}
 	s.send(ev)
 }

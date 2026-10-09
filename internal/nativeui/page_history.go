@@ -255,10 +255,10 @@ func (s *Shell) historyDetailBody(c *ui.Context) {
 // historyBlockView renders one normalized block with native widgets.
 // Thinking renders collapsed behind a disclosure; long text previews end
 // with an explicit truncation marker.
-func (s *Shell) historyBlockView(c *ui.Context, block historyBlock) *ui.Element {
+func (s *Shell) historyBlockView(c *ui.Context, block historyBlock) ui.Element {
 	t := c.Theme()
 	tokens := designTokens(t.Dark)
-	var view *ui.Element
+	var view ui.Element
 	ui.Box(c).Children(func() {
 		view = ui.Column(c).FillWidth().Padding(10, 12).Gap(5).Radius(8).Background(tokens.Panel).Border(1, tokens.BorderSubtle).Children(func() {
 			roleLabel := strings.ToUpper(string(block.Role))
@@ -286,9 +286,10 @@ func (s *Shell) historyBlockView(c *ui.Context, block historyBlock) *ui.Element 
 			if block.Thinking != "" {
 				// DS-05: the official Collapsible owns the thinking disclosure.
 				expanded := s.blockExpanded(block.Seq, "thinking")
-				ui.Collapsible(c, "Thinking", &expanded, func() {
+				col := ui.Collapsible(c, "Thinking", &expanded, func() {
 					ui.Text(c, block.Thinking).FontSize(Typography().BodySmall).TextColor(t.TextMuted)
 				})
+				col.Changed() // apply a pending toggle now, so the store keeps it
 				if expanded != s.blockExpanded(block.Seq, "thinking") {
 					s.setBlockExpanded(block.Seq, "thinking", expanded)
 				}

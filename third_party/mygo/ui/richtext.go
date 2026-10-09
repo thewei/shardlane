@@ -58,7 +58,7 @@ type Span struct {
 //
 // Only text elements go inside a text, and their sizes, padding, borders
 // and corners do not apply; a background highlights their text.
-func RichText(c *Context, spans ...Span) *Element {
+func coreRichText(c *context, spans ...Span) *node {
 	e := c.newElement(kindText)
 	e.text = e.st.spanCache().join(spans)
 	e.spans = spans
@@ -67,7 +67,7 @@ func RichText(c *Context, spans ...Span) *Element {
 
 // textSpans encodes the styles of an element's spans for its layout, once
 // a frame, with those of the elements inside it, once it is built.
-func (e *Element) textSpans() string {
+func (e *node) textSpans() string {
 	if e.first != nil && !e.merged {
 		e.spans, e.merged = e.inlineSpans(), true
 	}
@@ -226,7 +226,7 @@ func (p *Painter) MeasureText(width float32, spans ...Span) (w, h float32) {
 // MeasureText returns the size spans of text take as Painter.RichText draws
 // them, wrapping lines at width DIPs (none for 0), to lay out what depends
 // on it while building.
-func (c *Context) MeasureText(width float32, spans ...Span) (w, h float32) {
+func (c *context) MeasureText(width float32, spans ...Span) (w, h float32) {
 	l := c.rt.text.Layout(c.rt.richParams(width, spans))
 	return l.Width, l.Height
 }
@@ -250,7 +250,7 @@ func newSpanPaint(spans []Span) *spanPaint {
 // paintSpans returns how to paint the spans of the element's text, which
 // textSpans cached as it laid it out, or nil when they paint nothing but
 // its color.
-func (e *Element) paintSpans(sp *spanPaint) *spanPaint {
+func (e *node) paintSpans(sp *spanPaint) *spanPaint {
 	if e.spans == nil {
 		return nil
 	}

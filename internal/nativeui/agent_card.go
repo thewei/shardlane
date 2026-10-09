@@ -20,7 +20,7 @@ import (
 // and a working agent spins at the row's trailing edge so mid-flight work
 // reads at a glance. Click handling stays with the caller; the returned
 // element carries the Clicked/ContextMenu surface.
-func (s *Shell) agentCardRow(c *ui.Context, card agent.AgentCardModel, selected bool) *ui.Element {
+func (s *Shell) agentCardRow(c *ui.Context, card agent.AgentCardModel, selected bool) ui.Element {
 	t := c.Theme()
 	tokens := designTokens(t.Dark)
 	mark := agentMark(card.Provider, t.Dark)
@@ -28,8 +28,8 @@ func (s *Shell) agentCardRow(c *ui.Context, card agent.AgentCardModel, selected 
 	if label == "" {
 		label = card.Title
 	}
-	var row *ui.Element
-	ui.Box(c).Key("agent:" + card.PaneID).Children(func() {
+	var row ui.Element
+	ui.Box(c.Key("agent:" + card.PaneID)).Children(func() {
 		row = ui.ButtonBase(c).
 			FillWidth().
 			MinHeight(38).

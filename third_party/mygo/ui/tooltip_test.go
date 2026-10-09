@@ -15,14 +15,14 @@ func ticker(tt *Tester, now *time.Time) (tick func(d time.Duration)) {
 }
 
 func TestTooltipBase(t *testing.T) {
-	var save, tip *Element
-	tt, now := clockTester(func(c *Context) {
-		Column(c).Padding(80, 40).Gap(20).Children(func() {
-			save = Button(c, "Save").Label("save")
-			tip = TooltipBase(c, save, func(tip *Element) {
-				tip.Padding(4).Children(func() { Text(c, "Saves the file") })
+	var save, tip *node
+	tt, now := clockTester(func(c *context) {
+		coreColumn(c).Padding(80, 40).Gap(20).Children(func() {
+			save = coreButton(c, "Save").Label("save")
+			tip = coreTooltipBase(c, save, func(tip *node) {
+				tip.Padding(4).Children(func() { coreText(c, "Saves the file") })
 			})
-			Button(c, "Open").Label("open").Tooltip("Opens a file")
+			coreButton(c, "Open").Label("open").Tooltip("Opens a file")
 		})
 	}, 400, 300)
 	tick := ticker(tt, now)
@@ -74,10 +74,10 @@ func TestTooltipBase(t *testing.T) {
 
 func TestTooltipFocus(t *testing.T) {
 	disabled := false
-	tt, now := clockTester(func(c *Context) {
-		Column(c).Padding(40).Gap(20).Children(func() {
-			Button(c, "Save").Tooltip("Saves the file").Disabled(disabled)
-			Button(c, "Open").Tooltip("Opens a file")
+	tt, now := clockTester(func(c *context) {
+		coreColumn(c).Padding(40).Gap(20).Children(func() {
+			coreButton(c, "Save").Tooltip("Saves the file").Disabled(disabled)
+			coreButton(c, "Open").Tooltip("Opens a file")
 		})
 	}, 400, 300)
 	tick := ticker(tt, now)
@@ -127,9 +127,9 @@ func TestTooltipFocus(t *testing.T) {
 }
 
 func TestTooltipInnermost(t *testing.T) {
-	tt, now := clockTester(func(c *Context) {
-		Row(c).Padding(20).Tooltip("The toolbar").Children(func() {
-			Button(c, "Cut").Label("cut").Tooltip("Cut the selection")
+	tt, now := clockTester(func(c *context) {
+		coreRow(c).Padding(20).Tooltip("The toolbar").Children(func() {
+			coreButton(c, "Cut").Label("cut").Tooltip("Cut the selection")
 		})
 	}, 300, 200)
 	tick := ticker(tt, now)

@@ -10,8 +10,8 @@ import (
 func TestCalendar(t *testing.T) {
 	day := time.Date(2026, 10, 15, 9, 41, 0, 0, time.UTC)
 	changes := 0
-	tt := NewTester(func(c *Context) {
-		if Calendar(c, &day).Changed() {
+	tt := coreNewTester(func(c *context) {
+		if coreCalendar(c, &day).Changed() {
 			changes++
 		}
 	}, 400, 400)
@@ -34,7 +34,7 @@ func TestCalendar(t *testing.T) {
 	}
 	// Assistive technology reads the day chosen.
 	tt.send(platform.SurfaceEvent{Kind: platform.AccessibilityOn})
-	if n := node(t, tt.h.access, platform.RoleButton, "October 31, 2026"); tt.h.access.Focus != n.ID || n.States&platform.AccessChecked == 0 {
+	if n := accessNode(t, tt.h.access, platform.RoleButton, "October 31, 2026"); tt.h.access.Focus != n.ID || n.States&platform.AccessChecked == 0 {
 		t.Errorf("the focus on %d, the day %+v", tt.h.access.Focus, n)
 	}
 }
@@ -42,8 +42,8 @@ func TestCalendar(t *testing.T) {
 func TestTimeInput(t *testing.T) {
 	alarm := time.Date(2026, 10, 4, 7, 30, 0, 0, time.UTC)
 	changes := 0
-	tt := NewTester(func(c *Context) {
-		if TimeInput(c, &alarm).Label("Alarm").Changed() {
+	tt := coreNewTester(func(c *context) {
+		if coreTimeInput(c, &alarm).Label("Alarm").Changed() {
 			changes++
 		}
 	}, 300, 100)
@@ -82,11 +82,11 @@ func TestTimeInput(t *testing.T) {
 		t.Errorf("the date changed: %v", alarm)
 	}
 	tt.send(platform.SurfaceEvent{Kind: platform.AccessibilityOn})
-	hours := node(t, tt.h.access, platform.RoleStepper, "Alarm hours")
+	hours := accessNode(t, tt.h.access, platform.RoleStepper, "Alarm hours")
 	if hours.Now != 9 || hours.Max != 23 {
 		t.Errorf("hours: %+v", hours)
 	}
-	node(t, tt.h.access, platform.RoleStepper, "Alarm minutes")
+	accessNode(t, tt.h.access, platform.RoleStepper, "Alarm minutes")
 	// Assistive technology steps the hours, not the focus to the minutes.
 	tt.send(platform.SurfaceEvent{Kind: platform.AccessAction, ID: hours.ID, Action: platform.AccessIncrement})
 	if alarm.Hour() != 10 {
@@ -97,8 +97,8 @@ func TestTimeInput(t *testing.T) {
 func TestColorPicker(t *testing.T) {
 	color := Hex("#3b82f6")
 	changes := 0
-	tt := NewTester(func(c *Context) {
-		if ColorPicker(c, &color).Changed() {
+	tt := coreNewTester(func(c *context) {
+		if coreColorPicker(c, &color).Changed() {
 			changes++
 		}
 	}, 400, 500)
@@ -116,7 +116,7 @@ func TestColorPicker(t *testing.T) {
 	}
 	// The square: its top-right corner is the hue itself; its bottom black.
 	tt.send(platform.SurfaceEvent{Kind: platform.AccessibilityOn})
-	sq := node(t, tt.h.access, platform.RoleSlider, "Saturation and brightness").Bounds
+	sq := accessNode(t, tt.h.access, platform.RoleSlider, "Saturation and brightness").Bounds
 	tt.ClickAt(float32(sq.X+sq.W-1), float32(sq.Y+1))
 	if h := toHSVA(color); h.s < 0.98 || h.v < 0.98 || h.h < 115 || h.h > 125 {
 		t.Fatalf("the top-right corner: %v (%+v)", hexOf(color), h)
@@ -130,10 +130,10 @@ func TestColorPicker(t *testing.T) {
 	// The app sets another color.
 	color = Hex("#ffffff")
 	tt.Frame()
-	if n := node(t, tt.h.access, platform.RoleTextField, "Hex"); n.Value != "#ffffff" {
+	if n := accessNode(t, tt.h.access, platform.RoleTextField, "Hex"); n.Value != "#ffffff" {
 		t.Errorf("the hex shows %q", n.Value)
 	}
-	n := node(t, tt.h.access, platform.RoleSlider, "Hue")
+	n := accessNode(t, tt.h.access, platform.RoleSlider, "Hue")
 	if n.Max != 360 {
 		t.Errorf("the hue: %+v", n)
 	}
@@ -141,11 +141,11 @@ func TestColorPicker(t *testing.T) {
 
 func TestColorWell(t *testing.T) {
 	color := Hex("#3b82f6")
-	tt := NewTester(func(c *Context) {
-		ColorWell(c, &color).Label("Tint")
+	tt := coreNewTester(func(c *context) {
+		coreColorWell(c, &color).Label("Tint")
 	}, 400, 500)
 	tt.send(platform.SurfaceEvent{Kind: platform.AccessibilityOn})
-	if n := node(t, tt.h.access, platform.RoleColorWell, "Tint"); n.Value != "#3b82f6" || n.States&platform.AccessExpanded != 0 {
+	if n := accessNode(t, tt.h.access, platform.RoleColorWell, "Tint"); n.Value != "#3b82f6" || n.States&platform.AccessExpanded != 0 {
 		t.Fatalf("the well: %+v", n)
 	}
 	tt.Click("Tint")
@@ -156,7 +156,7 @@ func TestColorWell(t *testing.T) {
 	if color != Hex("#22c55e") {
 		t.Errorf("chose %v", hexOf(color))
 	}
-	if n := node(t, tt.h.access, platform.RoleColorWell, "Tint"); n.Value != "#22c55e" || n.States&platform.AccessExpanded == 0 {
+	if n := accessNode(t, tt.h.access, platform.RoleColorWell, "Tint"); n.Value != "#22c55e" || n.States&platform.AccessExpanded == 0 {
 		t.Errorf("the well: %+v", n)
 	}
 	tt.Key(0, KeyEscape)

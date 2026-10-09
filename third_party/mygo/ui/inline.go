@@ -16,12 +16,12 @@ import (
 // paragraph's layout, as their area.
 
 // isInline reports whether the element is inside a text.
-func (e *Element) isInline() bool { return e.parent != nil && e.parent.kind == kindText }
+func (e *node) isInline() bool { return e.parent != nil && e.parent.kind == kindText }
 
 // inlineText makes the text of a paragraph its own followed by that of the
 // elements inside it, once they are built, and gives each the range of its
 // text in it.
-func (e *Element) inlineText() {
+func (e *node) inlineText() {
 	if !e.paragraph {
 		e.paragraph, e.ownText = true, e.text
 	}
@@ -35,17 +35,11 @@ func (e *Element) inlineText() {
 		b.WriteString(ch.text)
 	}
 	e.text = b.String()
-	// Selectable before Children selects in the whole text.
-	if ed := e.st.editor; ed != nil && e.flags&flagSelectable != 0 && ed.source != e.text {
-		ed.source = e.text
-		ed.setText(e.text)
-		ed.caret, ed.anchor = 0, 0
-	}
 }
 
 // inlineSpans returns the spans of a paragraph: its own, then those of the
 // elements inside it, in the styles they set over it.
-func (e *Element) inlineSpans() []Span {
+func (e *node) inlineSpans() []Span {
 	out := slices.Clone(e.spans)
 	if out == nil && e.ownText != "" {
 		out = []Span{{Text: e.ownText}}
@@ -67,7 +61,7 @@ func (e *Element) inlineSpans() []Span {
 }
 
 // spanStyle returns the text style the element sets, as a span.
-func (e *Element) spanStyle() Span {
+func (e *node) spanStyle() Span {
 	t := &e.ts
 	var s Span
 	if t.set&setFamily != 0 {
@@ -163,7 +157,7 @@ func over(s, base Span) Span {
 // placeInline gives the elements inside e, which starts at rune offset of
 // paragraph para's text, and those inside them, the boxes of their text in
 // the paragraph's layout, and as their box the box around those.
-func placeInline(para, e *Element, offset int) {
+func placeInline(para, e *node, offset int) {
 	ox, oy := para.x+para.contentX(), para.y+para.contentY()
 	for ch := e.first; ch != nil; ch = ch.next {
 		a, b := offset+ch.runes[0], offset+ch.runes[1]
@@ -193,7 +187,7 @@ func union(a, b Rect) Rect {
 
 // paintInline draws the focus ring of an inline element around its words,
 // and those of the elements inside it: the paragraph draws their text.
-func (p *Painter) paintInline(e *Element) {
+func (p *Painter) paintInline(e *node) {
 	if e.ringShown() {
 		for _, r := range e.frags {
 			p.FocusRing(r, [4]float32{2, 2, 2, 2})
@@ -208,7 +202,7 @@ func (p *Painter) paintInline(e *Element) {
 
 // ringShown reports whether the element has the keyboard focus from the
 // keyboard and MyGo rings it.
-func (e *Element) ringShown() bool {
+func (e *node) ringShown() bool {
 	rt := e.c.rt
 	return e.flags&(flagFocusable|flagOwnRing) == flagFocusable && rt.focused == e.id && rt.focusVisible && rt.windowFocused
 }
@@ -216,7 +210,7 @@ func (e *Element) ringShown() bool {
 // accessInline describes the elements inside text e that are more than
 // text to assistive technology, such as links, as nodes inside the node
 // parent: the text itself already reads theirs.
-func (rt *engine) accessInline(t *platform.AccessTree, e *Element, parent int) {
+func (rt *engine) accessInline(t *platform.AccessTree, e *node, parent int) {
 	for ch := e.first; ch != nil; ch = ch.next {
 		if ch.flags&flagInvisible != 0 || len(ch.frags) == 0 {
 			continue

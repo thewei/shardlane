@@ -92,7 +92,7 @@ func (s *Shell) agentSwitcherOverlay(c *ui.Context) {
 			for index, card := range cards {
 				index, card := index, card
 				highlighted := index == s.workbench.switcherIndex
-				var row *ui.Element
+				var row ui.Element
 				ui.Box(c).Children(func() {
 					row = ui.Row(c).FillWidth().Padding(sp.S, sp.M).Gap(sp.S).
 						AlignItems(ui.Center).Radius(Radius().Control).Children(func() {

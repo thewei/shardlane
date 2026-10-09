@@ -25,6 +25,7 @@ import (
 
 	"github.com/egoist/mygo/internal/fake"
 	"github.com/egoist/mygo/internal/platform"
+	"github.com/egoist/mygo/transfer"
 )
 
 var fb *fake.Backend
@@ -1318,6 +1319,66 @@ func TestMenuRolesOnWindow(t *testing.T) {
 	}
 }
 
+func TestWindowMenuActivation(t *testing.T) {
+	w, fw := testWindow(t, WindowOptions{Hidden: true})
+	other, otherNative := testWindow(t, WindowOptions{Hidden: true})
+	other.Focus()
+	var clicked *Window
+	var checked bool
+	var zoom float64
+	clicks := 0
+	menu := NewMenu([]*MenuItem{{Label: "View", Submenu: []*MenuItem{
+		{ID: "small", Label: "Small", Type: MenuItemRadio, Checked: true},
+		{ID: "large", Label: "Large", Type: MenuItemRadio, Role: RoleZoomIn, Click: func(it *MenuItem, win *Window) {
+			clicked, checked = win, it.IsChecked()
+			if win != nil {
+				zoom = win.Page().ZoomFactor()
+			}
+			clicks++
+		}},
+	}}})
+	item := menu.ItemByID("large")
+	onMain(func() { fw.ClickMenuItem(item.uid) })
+	if clicked != w || !checked || zoom != 1.1 || menu.ItemByID("small").IsChecked() {
+		t.Errorf("click = (%v, checked %v, zoom %v), want the menu's window after its state and role changed", clicked, checked, zoom)
+	}
+	if other.Page().ZoomFactor() != 1 {
+		t.Error("the role changed the focused window instead of the menu's window")
+	}
+	if FocusedWindow() != other {
+		t.Error("choosing a menu item changed window focus")
+	}
+
+	// A submenu taking focus clears FocusedWindow; its owner still applies.
+	onMain(otherNative.Blur)
+	if FocusedWindow() != nil {
+		t.Fatal("a window still has focus")
+	}
+	onMain(func() { fw.ClickMenuItem(item.uid) })
+	if clicked != w || zoom != 1.25 {
+		t.Errorf("click without focus = (%v, zoom %v), want the menu's window", clicked, zoom)
+	}
+
+	// Application and tray menus without a window use the focused window.
+	other.Focus()
+	onMain(func() { fb.ClickMenuItem(item.uid) })
+	if clicked != other || zoom != 1.1 {
+		t.Errorf("application click = (%v, zoom %v), want the focused window", clicked, zoom)
+	}
+	onMain(otherNative.Blur)
+	onMain(func() { fb.ClickMenuItem(item.uid) })
+	if clicked != nil {
+		t.Error("a menu without a window supplied one while none had focus")
+	}
+
+	w.Destroy()
+	before := clicks
+	onMain(func() { fw.ClickMenuItem(item.uid) })
+	if clicks != before {
+		t.Error("a destroyed window still delivered a menu click")
+	}
+}
+
 func TestNextZoom(t *testing.T) {
 	if nextZoom(1, 1) != 1.1 || nextZoom(1, -1) != 0.9 || nextZoom(5, 1) != 5 || nextZoom(0.25, -1) != 0.25 {
 		t.Error("zoom steps")
@@ -1443,6 +1504,13 @@ var needsAppCalls = []struct {
 	{"Clipboard.WriteImage", func() { Clipboard.WriteImage(nil) }},
 	{"Clipboard.Clear", func() { Clipboard.Clear() }},
 	{"Clipboard.AvailableFormats", func() { Clipboard.AvailableFormats() }},
+	{"Clipboard.Write", func() { Clipboard.Write(transfer.Data{}) }},
+	{"Clipboard.Read", func() { Clipboard.Read() }},
+	{"Clipboard.Formats", func() { Clipboard.Formats() }},
+	{"Clipboard.ReadFormat", func() { Clipboard.ReadFormat(transfer.Text) }},
+	{"Clipboard.ReadFiles", func() { Clipboard.ReadFiles() }},
+	{"Clipboard.WriteFiles", func() { Clipboard.WriteFiles() }},
+	{"Clipboard.Flush", func() { Clipboard.Flush() }},
 	{"Screen.Displays", func() { Screen.Displays() }},
 	{"Screen.PrimaryDisplay", func() { Screen.PrimaryDisplay() }},
 	{"Screen.CursorScreenPoint", func() { Screen.CursorScreenPoint() }},

@@ -15,6 +15,7 @@ import (
 	"github.com/ebitengine/purego"
 
 	"github.com/egoist/mygo/internal/platform"
+	"github.com/egoist/mygo/transfer"
 )
 
 var (
@@ -101,10 +102,17 @@ func pngFromPixbuf(pix ptr) []byte {
 
 type clipboard struct{}
 
-func clip() ptr { return gtkClipboardGet(gdkAtomIntern(cs("CLIPBOARD"), false)) }
+func clip() ptr {
+	cb := gtkClipboardGet(gdkAtomIntern(cs("CLIPBOARD"), false))
+	if !clipboardConnected {
+		connect(cb, "owner-change", cbClipboardOwner, 0)
+		clipboardConnected = true
+	}
+	return cb
+}
 
-func (clipboard) ReadText() string      { return takeStr(gtkClipboardWaitForText(clip())) }
-func (clipboard) WriteText(text string) { gtkClipboardSetText(clip(), cs(text), -1) }
+func (clipboard) ReadText() string        { return takeStr(gtkClipboardWaitForText(clip())) }
+func (c clipboard) WriteText(text string) { _ = c.WriteData(transfer.TextData(text), nil) }
 
 func (clipboard) ReadHTML() string {
 	sd := gtkClipboardWaitForContents(clip(), gdkAtomIntern(cs("text/html"), false))
@@ -120,9 +128,9 @@ func (clipboard) ReadHTML() string {
 	return string(unsafe.Slice(*(**byte)(unsafe.Pointer(&data)), n))
 }
 
-// WriteHTML stores the markup as text: GTK 3 only offers rich targets
-// through ownership callbacks.
-func (c clipboard) WriteHTML(markup string) { c.WriteText(markup) }
+func (c clipboard) WriteHTML(markup string) {
+	_ = c.WriteData(transfer.New(transfer.NewItem(transfer.Bytes(transfer.HTML, []byte(markup)), transfer.Bytes(transfer.Text, []byte(markup)))), nil)
+}
 
 func (clipboard) ReadImage() []byte {
 	pix := gtkClipboardWaitForImage(clip())
@@ -133,14 +141,13 @@ func (clipboard) ReadImage() []byte {
 	return pngFromPixbuf(pix)
 }
 
-func (clipboard) WriteImage(png []byte) error {
+func (c clipboard) WriteImage(png []byte) error {
 	pix, err := pixbufFromPNG(png)
 	if err != nil {
 		return err
 	}
 	defer gObjectUnref(pix)
-	gtkClipboardSetImage(clip(), pix)
-	return nil
+	return c.WriteData(transfer.New(transfer.NewItem(transfer.Bytes(transfer.PNG, png))), nil)
 }
 
 func (clipboard) Clear() { gtkClipboardClear(clip()) }

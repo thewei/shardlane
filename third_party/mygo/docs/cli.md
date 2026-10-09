@@ -59,12 +59,33 @@ icon. The module has the CLI as a [tool](https://go.dev/doc/modules/managing-dep
 so `go tool mygo dev` and `go tool mygo build` run the version it pins,
 without Bun. See [native UI](getting-started.md#native-ui).
 
+Both templates include the `mygo-maintenance` agent skill in
+`.agents/skills/mygo-maintenance/`, with guidance on element lifetimes,
+stable identity, threading, and testing when maintaining the app.
+
 | Flag | |
 |---|---|
 | `-template` | `web`, a TypeScript frontend (the default), or `native`, native UI in Go |
 | `-name` | the app's name (default: the directory's name) |
 | `-module` | the Go module path (default: the directory's name) |
 | `-mygo` | a checkout of MyGo to use, through a `replace` directive, instead of the released module; the scripts then run the checkout's CLI with `go run`; run `bun install && bun run build` in the checkout first, for the web template |
+
+## mygo install-skills
+
+```sh
+mygo install-skills [dir]
+```
+
+Installs or updates the agent skills bundled with the CLI version you run
+in an existing project's `.agents/skills/`. The directory defaults to the
+current directory; no project configuration, Go build, or frontend tools
+are needed. New projects receive these skills through `mygo init` too.
+
+The command overwrites bundled files such as
+`mygo-maintenance/SKILL.md` and `mygo-maintenance/agents/openai.yaml`,
+including local edits to those files. Other skills and extra custom files
+are preserved. Upgrade the CLI, then run the command again to refresh its
+guidance.
 
 ## mygo dev
 
@@ -160,8 +181,16 @@ Prints the version of the CLI.
 
 | Variable | |
 |---|---|
+| `CGO_ENABLED` | `0` by default when unset or empty; set to `1` for app dependencies that need cgo, including in `mygo dev`, `mygo build` and `mygo generate` |
 | `MYGO_INSPECTOR` | `1` keeps the [inspector of native UI](ui/inspector.md) in production builds of `mygo build`, which leave it out |
 | `MYGO_UPDATER_PRIVATE_KEY` | the secret key that signs updates, for `mygo build` |
 | `MYGO_WINDOWS_CERTIFICATE_PASSWORD` | the password of `windows.certificate`, for `mygo build` |
 | `MYGO_CLI_BINARY` | a build of the CLI for the `mygo-cli` package to run |
 | `MYGO_ENV` | `production` makes an app behave like a production build, e.g. without the web inspector |
+
+For an app with dependencies that need cgo:
+
+```sh
+CGO_ENABLED=1 go tool mygo dev
+CGO_ENABLED=1 go tool mygo build
+```

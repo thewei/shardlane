@@ -219,6 +219,7 @@ func registerClasses() {
 	registerAppDelegate()
 	registerWindowClasses()
 	registerSurfaceClass()
+	registerClipboardClass()
 	registerAccessClass()
 	registerMenuTarget()
 	registerSchemeHandler()

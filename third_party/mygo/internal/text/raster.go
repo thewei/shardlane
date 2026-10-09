@@ -113,6 +113,7 @@ func (s *System) BeginFrame() {
 	s.MaskAtlas.ResetTransient()
 	clear(s.transient)
 	s.full, s.want = [2]bool{}, [2]int{}
+	s.wantSize = [2]image.Point{}
 	s.rooms = 0
 }
 
@@ -135,13 +136,14 @@ func (s *System) MakeRoom() {
 	s.rooms++
 	for i, color := range [2]bool{false, true} {
 		if s.full[i] {
-			s.makeRoom(color, s.want[i], s.rooms > 1)
+			s.makeRoom(color, s.want[i], s.wantSize[i], s.rooms > 1)
 		}
 	}
 	s.full, s.want = [2]bool{}, [2]int{}
+	s.wantSize = [2]image.Point{}
 }
 
-func (s *System) makeRoom(color bool, want int, grow bool) {
+func (s *System) makeRoom(color bool, want int, size image.Point, grow bool) {
 	a := s.MaskAtlas
 	if color {
 		a = s.ColorAtlas
@@ -191,7 +193,7 @@ func (s *System) makeRoom(color bool, want int, grow bool) {
 	if grow {
 		a.Grow()
 	}
-	for need*2 > a.W*a.H && a.Grow() {
+	for (need*2 > a.W*a.H || size.X > a.W || size.Y > a.H) && a.Grow() {
 	}
 	pos, ok := a.Repack(rects)
 	if !ok {
@@ -312,6 +314,13 @@ func (s *System) alloc(color bool, w, h int) (int, int, bool) {
 	if color {
 		a = s.ColorAtlas
 	}
+	// The first bitmap can size an empty atlas without invalidating any
+	// glyphs already painted. In particular, the color atlas starts with
+	// one transparent texel and needs no repaint to show its first emoji.
+	if a.Version() == 0 {
+		for (w+1 > a.W || h+1 > a.H) && a.Grow() {
+		}
+	}
 	if x, y, ok := a.Alloc(w, h); ok {
 		return x, y, true
 	}
@@ -326,6 +335,8 @@ func (s *System) leftOut(color bool, w, h int) {
 	}
 	s.full[i] = true
 	s.want[i] += (w + 1) * (h + 1)
+	s.wantSize[i].X = max(s.wantSize[i].X, w+1)
+	s.wantSize[i].Y = max(s.wantSize[i].Y, h+1)
 	s.failed++
 }
 

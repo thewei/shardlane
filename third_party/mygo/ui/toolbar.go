@@ -28,18 +28,18 @@ type toolbarItem struct {
 //			app.share()
 //		}
 //	}).Label("Format")
-func Toolbar(c *Context, fn func()) *Element {
+func coreToolbar(c *context, fn func()) *node {
 	t := c.theme
-	tb := Row(c).AlignItems(Center).Gap(t.Space(1)).Padding(t.Space(1)).MinWidth(0)
+	tb := coreRow(c).AlignItems(Center).Gap(t.Space(1)).Padding(t.Space(1)).MinWidth(0)
 	tb.widget, tb.role = "Toolbar", RoleToolbar
 	tb.FocusGroup(Horizontal)
-	items := Local(tb, "overflow", func() []toolbarItem { return nil })
+	items := coreLocal(tb, "overflow", func() []toolbarItem { return nil })
 	tb.overflow = items
 	saved := c.buttons
 	c.buttons = toolbarButtons
 	tb.Children(func() {
 		fn()
-		more := ButtonBase(c)
+		more := coreButtonBase(c)
 		styleButton(c, more, false)
 		more.Label("More").Children(func() { chevrons(c) })
 		more.Menu(func(m *Menu) {
@@ -73,9 +73,9 @@ func Toolbar(c *Context, fn func()) *Element {
 }
 
 // chevrons draws », of a toolbar's overflow menu.
-func chevrons(c *Context) {
+func chevrons(c *context) {
 	t := c.theme
-	Box(c).Size(t.Space(3), t.Space(3)).Shrink(0).Draw(func(p *Painter, r Rect) {
+	coreBox(c).Size(t.Space(3), t.Space(3)).Shrink(0).Draw(func(p *Painter, r Rect) {
 		for _, x := range []float32{0.2, 0.5} {
 			var path Path
 			path.MoveTo(r.X+r.W*x, r.Y+r.H*0.25).LineTo(r.X+r.W*(x+0.25), r.Y+r.H*0.5).LineTo(r.X+r.W*x, r.Y+r.H*0.75)
@@ -87,8 +87,8 @@ func chevrons(c *Context) {
 // layoutToolbar takes out of the flow the controls of a toolbar cw wide
 // that do not fit, from the last, and notes them for its overflow menu,
 // whose button, its last child, shows only then.
-func (e *Element) layoutToolbar(cw float32) {
-	var kids []*Element
+func (e *node) layoutToolbar(cw float32) {
+	var kids []*node
 	for ch := e.first; ch != nil; ch = ch.next {
 		if ch.collapsed {
 			// Laid out again: the room may have grown.
@@ -103,7 +103,7 @@ func (e *Element) layoutToolbar(cw float32) {
 		return
 	}
 	more, items := kids[len(kids)-1], kids[:len(kids)-1]
-	width := func(ch *Element) float32 { return intrinsic(ch, true) + ch.marginX() }
+	width := func(ch *node) float32 { return intrinsic(ch, true) + ch.marginX() }
 	total := float32(0)
 	for i, ch := range items {
 		if i > 0 {
@@ -126,7 +126,7 @@ func (e *Element) layoutToolbar(cw float32) {
 			used += w
 		}
 	}
-	collapse := func(ch *Element) {
+	collapse := func(ch *node) {
 		ch.flags |= flagAbsolute | flagInvisible
 		ch.collapsed = true
 	}
@@ -153,7 +153,7 @@ func (e *Element) layoutToolbar(cw float32) {
 }
 
 // appendToolbarItems appends the controls of e, or e, to list.
-func appendToolbarItems(list []toolbarItem, e *Element) []toolbarItem {
+func appendToolbarItems(list []toolbarItem, e *node) []toolbarItem {
 	if e.flags&(flagClickable|flagMenuButton) != 0 {
 		label := e.label
 		if label == "" {

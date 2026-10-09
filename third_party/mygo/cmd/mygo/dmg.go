@@ -128,7 +128,7 @@ func hdiutilCreateArgs(volume, src, out string, size int64) []string {
 func setFinderFlags(path string, flags uint16) error {
 	var info [32]byte
 	info[8], info[9] = byte(flags>>8), byte(flags)
-	return command("xattr", "-wx", "com.apple.FinderInfo", hex.EncodeToString(info[:]), path)
+	return command("/usr/bin/xattr", "-wx", "com.apple.FinderInfo", hex.EncodeToString(info[:]), path)
 }
 
 // detach unmounts a disk image, retrying while macOS services such as

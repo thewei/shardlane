@@ -18,9 +18,10 @@ import (
 // Native menu items are tracked per owner (a window's menu bar, a popup, a
 // tray) so they can be updated in place and forgotten when rebuilt.
 type nativeItem struct {
-	owner int
-	item  ptr
-	check bool
+	owner    int
+	item     ptr
+	check    bool
+	windowID int // menu bar or popup's window; 0 for a tray
 }
 
 var (
@@ -52,21 +53,45 @@ func initMenuCallbacks() {
 		}
 		b := theBackend
 		id := int(data)
+		// A submenu may have focus. Resolve this native item's window, as
+		// the same Go item may appear in several windows' menu bars.
+		var w *window
+		for _, n := range itemsByID[id] {
+			if n.item == item && n.windowID != 0 {
+				w = b.window(ptr(n.windowID))
+				if w == nil {
+					return
+				}
+				break
+			}
+		}
 		if cmd, ok := editCommands[itemRoles[id]]; ok {
-			for _, w := range b.windows {
-				if gtkWindowIsActive(w.win) && w.surface != nil {
+			if w == nil {
+				for _, x := range b.windows {
+					if !x.closed && gtkWindowIsActive(x.win) {
+						w = x
+						break
+					}
+				}
+			}
+			if w != nil {
+				if w.surface != nil {
 					role := itemRoles[id]
 					if role == "pasteAndMatchStyle" {
 						role = "paste"
 					}
 					w.h.SurfaceEvent(platform.SurfaceEvent{Kind: platform.SurfaceCommand, Text: role})
-				} else if gtkWindowIsActive(w.win) {
+				} else {
 					webkitWebViewExecuteEditingCommand(w.web, cs(cmd))
 				}
 			}
 			return
 		}
-		b.h.MenuItemClicked(id)
+		if w != nil {
+			w.h.MenuItemClicked(id)
+		} else {
+			b.h.MenuItemClicked(id)
+		}
 	})
 	cbMenuDeactivate = purego.NewCallback(func(menu, loop ptr) {
 		gMainLoopQuit(loop)
@@ -137,13 +162,13 @@ func dropOwner(owner int) {
 }
 
 // buildMenu fills a GtkMenuShell with items.
-func buildMenu(shell ptr, m *platform.Menu, accel ptr, owner int) {
+func buildMenu(shell ptr, m *platform.Menu, accel ptr, owner, windowID int) {
 	for _, it := range m.Items {
-		gtkMenuShellAppend(shell, buildItem(it, accel, owner))
+		gtkMenuShellAppend(shell, buildItem(it, accel, owner, windowID))
 	}
 }
 
-func buildItem(it *platform.MenuItem, accel ptr, owner int) ptr {
+func buildItem(it *platform.MenuItem, accel ptr, owner, windowID int) ptr {
 	var item ptr
 	check := false
 	switch it.Type {
@@ -158,7 +183,7 @@ func buildItem(it *platform.MenuItem, accel ptr, owner int) ptr {
 	}
 	if it.Submenu != nil {
 		sub := gtkMenuNew()
-		buildMenu(sub, it.Submenu, accel, owner)
+		buildMenu(sub, it.Submenu, accel, owner, windowID)
 		gtkMenuItemSetSubmenu(item, sub)
 	} else if it.Type != platform.MenuItemSeparator {
 		connect(item, "activate", cbMenuActivate, ptr(it.ID))
@@ -170,7 +195,7 @@ func buildItem(it *platform.MenuItem, accel ptr, owner int) ptr {
 		}
 	}
 	applyState(item, it, check)
-	itemsByID[it.ID] = append(itemsByID[it.ID], nativeItem{owner: owner, item: item, check: check})
+	itemsByID[it.ID] = append(itemsByID[it.ID], nativeItem{owner: owner, item: item, check: check, windowID: windowID})
 	return item
 }
 
@@ -271,7 +296,7 @@ func (w *window) installMenu(m *platform.Menu) {
 	}
 	w.owner = newOwner()
 	w.menubar = gtkMenuBarNew()
-	buildMenu(w.menubar, m, w.accel, w.owner)
+	buildMenu(w.menubar, m, w.accel, w.owner, w.id)
 	gtkBoxPackStart(w.box, w.menubar, false, false, 0)
 	gtkBoxReorderChild(w.box, w.menubar, 0)
 	gtkWidgetShowAll(w.menubar)
@@ -333,12 +358,6 @@ func (b *Backend) UpdateMenuItem(it *platform.MenuItem) {
 
 // PopupMenu shows a context menu and blocks until it is dismissed.
 func (b *Backend) PopupMenu(m *platform.Menu, pw platform.Window, pos *platform.Point) {
-	owner := newOwner()
-	defer dropOwner(owner)
-	menu := gtkMenuNew()
-	buildMenu(menu, m, 0, owner)
-	gtkWidgetShowAll(menu)
-
 	// GTK positions menus relative to a window: the given one, else the
 	// active one.
 	w, _ := pw.(*window)
@@ -352,9 +371,13 @@ func (b *Backend) PopupMenu(m *platform.Menu, pw platform.Window, pos *platform.
 		}
 	}
 	if w == nil {
-		gtkWidgetDestroy(menu) // nowhere to show it
-		return
+		return // nowhere to show it
 	}
+	owner := newOwner()
+	defer dropOwner(owner)
+	menu := gtkMenuNew()
+	buildMenu(menu, m, 0, owner, w.id)
+	gtkWidgetShowAll(menu)
 	event, anchor := w.popupTrigger(), w.contentWindow()
 	const northWest = 1 // GDK_GRAVITY_NORTH_WEST
 	switch {
@@ -444,7 +467,7 @@ func (t *tray) SetMenu(m *platform.Menu) {
 	t.owner = newOwner()
 	menu := gtkMenuNew()
 	if m != nil {
-		buildMenu(menu, m, 0, t.owner)
+		buildMenu(menu, m, 0, t.owner, 0)
 	}
 	gtkWidgetShowAll(menu)
 	appIndicatorSetMenu(t.ind, menu)

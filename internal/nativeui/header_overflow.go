@@ -20,7 +20,7 @@ import (
 // tree rows' hover "..." and the pane right-click menu.
 func (s *Shell) headerOverflow(c *ui.Context) {
 	k := gorexColorsOf(c.Theme().Dark)
-	var trigger *ui.Element
+	var trigger ui.Element
 	ui.Box(c).Children(func() {
 		b := gorexIconButton(c, k, iconEllipsis, "More actions", "More actions", false, 28, 14)
 		trigger = b

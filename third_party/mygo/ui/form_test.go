@@ -11,42 +11,42 @@ func TestField(t *testing.T) {
 	name, email, font, size := "", "", "Arial", "Small"
 	notify, express := false, false
 	emailError := "Enter an email address."
-	tt := NewTester(func(c *Context) {
-		Column(c).Gap(12).Children(func() {
-			Field(c, "Name", func() { TextInput(c, &name) }).Description("As on your passport.")
-			Field(c, "Email", func() { TextInput(c, &email) }).Description("For receipts.").Error(emailError)
-			Field(c, "Notifications", func() { Checkbox(c, &notify, "Send emails") })
-			Field(c, "Delivery", func() {
-				RadioGroup(c, func() {
-					Radio(c, &size, "Small", "Small")
-					Radio(c, &size, "Large", "Large")
+	tt := coreNewTester(func(c *context) {
+		coreColumn(c).Gap(12).Children(func() {
+			coreField(c, "Name", func() { coreTextInput(c, &name) }).Description("As on your passport.")
+			coreField(c, "Email", func() { coreTextInput(c, &email) }).Description("For receipts.").Error(emailError)
+			coreField(c, "Notifications", func() { coreCheckbox(c, &notify, "Send emails") })
+			coreField(c, "Delivery", func() {
+				coreRadioGroup(c, func() {
+					coreRadio(c, &size, "Small", "Small")
+					coreRadio(c, &size, "Large", "Large")
 				})
 			})
-			Field(c, "Font", func() { Combobox(c, &font, fonts) })
-			Field(c, "Express", func() { Switch(c, &express) })
-			Button(c, "Cut").Tooltip("Cut the selection")
+			coreField(c, "Font", func() { coreCombobox(c, &font, fonts) })
+			coreField(c, "Express", func() { coreSwitch(c, &express) })
+			coreButton(c, "Cut").Tooltip("Cut the selection")
 		})
 	}, 500, 700)
 	tt.send(platform.SurfaceEvent{Kind: platform.AccessibilityOn})
 	tree := tt.h.access
 	// The label names the control, and the texts below describe it, the
 	// error first.
-	if n := node(t, tree, platform.RoleTextField, "Name"); n.Description != "As on your passport." || n.States&platform.AccessInvalid != 0 {
+	if n := accessNode(t, tree, platform.RoleTextField, "Name"); n.Description != "As on your passport." || n.States&platform.AccessInvalid != 0 {
 		t.Errorf("Name: %+v", n)
 	}
-	if n := node(t, tree, platform.RoleTextField, "Email"); n.Description != emailError+"\nFor receipts." || n.States&platform.AccessInvalid == 0 {
+	if n := accessNode(t, tree, platform.RoleTextField, "Email"); n.Description != emailError+"\nFor receipts." || n.States&platform.AccessInvalid == 0 {
 		t.Errorf("Email: %+v", n)
 	}
 	if !tt.HasText(emailError) || !tt.HasText("For receipts.") {
 		t.Errorf("the texts below do not show: %q", tt.Texts())
 	}
 	// A check box names itself; the field names the group around it.
-	node(t, tree, platform.RoleCheckBox, "Send emails")
-	node(t, tree, platform.RoleGroup, "Notifications")
-	node(t, tree, platform.RoleRadioGroup, "Delivery")
-	node(t, tree, platform.RoleComboBox, "Font")
-	node(t, tree, platform.RoleSwitch, "Express")
-	if n := node(t, tree, platform.RoleButton, "Cut"); n.Description != "Cut the selection" {
+	accessNode(t, tree, platform.RoleCheckBox, "Send emails")
+	accessNode(t, tree, platform.RoleGroup, "Notifications")
+	accessNode(t, tree, platform.RoleRadioGroup, "Delivery")
+	accessNode(t, tree, platform.RoleComboBox, "Font")
+	accessNode(t, tree, platform.RoleSwitch, "Express")
+	if n := accessNode(t, tree, platform.RoleButton, "Cut"); n.Description != "Cut the selection" {
 		t.Errorf("the tooltip does not describe the button: %+v", n)
 	}
 	// A click on the label focuses the control, or clicks it.
@@ -82,10 +82,10 @@ func TestField(t *testing.T) {
 
 func TestFieldDisabled(t *testing.T) {
 	name, saved := "", 0
-	tt := NewTester(func(c *Context) {
-		Fieldset(c, "Account", func() {
-			Field(c, "Name", func() { TextInput(c, &name) })
-			if Button(c, "Save").Clicked() {
+	tt := coreNewTester(func(c *context) {
+		coreFieldset(c, "Account", func() {
+			coreField(c, "Name", func() { coreTextInput(c, &name) })
+			if coreButton(c, "Save").Clicked() {
 				saved++
 			}
 		}).Disabled(true)
@@ -106,7 +106,7 @@ func TestFieldDisabled(t *testing.T) {
 		t.Error("a click focused a disabled input")
 	}
 	tt.send(platform.SurfaceEvent{Kind: platform.AccessibilityOn})
-	if n := node(t, tt.h.access, platform.RoleGroup, "Account"); n.States&platform.AccessDisabled == 0 {
+	if n := accessNode(t, tt.h.access, platform.RoleGroup, "Account"); n.States&platform.AccessDisabled == 0 {
 		t.Errorf("the fieldset: %+v", n)
 	}
 }
@@ -114,20 +114,22 @@ func TestFieldDisabled(t *testing.T) {
 func TestFormLayout(t *testing.T) {
 	name, email, city := "", "", ""
 	notify, express := false, false
-	tt := NewTester(func(c *Context) {
-		Form(c, func() {
-			Field(c, "Name", func() { TextInput(c, &name) })
-			Field(c, "Email address", func() { TextInput(c, &email) }).Description("For receipts.")
-			Field(c, "Notifications", func() { Checkbox(c, &notify, "Send emails") })
-			Field(c, "Express", func() { Switch(c, &express) })
-			Fieldset(c, "Shipping", func() {
-				Field(c, "City", func() { TextInput(c, &city) })
+	tt := coreNewTester(func(c *context) {
+		coreForm(c, func() {
+			coreField(c, "Name", func() { coreTextInput(c, &name) })
+			coreField(c, "Email address", func() { coreTextInput(c, &email) }).Description("For receipts.")
+			coreField(c, "Notifications", func() { coreCheckbox(c, &notify, "Send emails") })
+			coreField(c, "Express", func() { coreSwitch(c, &express) })
+			coreFieldset(c, "Shipping", func() {
+				coreField(c, "City", func() { coreTextInput(c, &city) })
 			})
 		}).Width(480)
 	}, 500, 500)
 	tt.send(platform.SurfaceEvent{Kind: platform.AccessibilityOn})
 	tree := tt.h.access
-	box := func(role platform.AccessRole, name string) platform.RectF { return node(t, tree, role, name).Bounds }
+	box := func(role platform.AccessRole, name string) platform.RectF {
+		return accessNode(t, tree, role, name).Bounds
+	}
 	find := func(s string) Rect {
 		r, ok := tt.Find(s)
 		if !ok {

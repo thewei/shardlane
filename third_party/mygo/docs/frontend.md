@@ -242,8 +242,9 @@ mygo.NewWindow(mygo.WindowOptions{
 })
 ```
 
-See `examples/frameless` for a complete custom title bar, and
-`examples/vibrancy` for a translucent sidebar under an inset title bar.
+See `examples/frameless` for a complete custom title bar. Native UI shows
+materials the same way ([Vibrancy](ui/windows.md#vibrancy)), as
+`examples/vibrancy` does in a translucent sidebar under an inset title bar.
 
 ## Dropped files
 

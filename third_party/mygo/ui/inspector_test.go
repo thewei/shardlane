@@ -16,12 +16,12 @@ const pickLabel = "Select an element in the window to inspect it"
 
 // inspected returns a tester of view whose window lets the inspector open,
 // and the width the view had in its last frame.
-func inspected(view func(c *Context)) (*Tester, *float32) { return inspectedAs(NewTester, view) }
+func inspected(view func(c *context)) (*Tester, *float32) { return inspectedAs(coreNewTester, view) }
 
 // inspectedAs is inspected with a tester newTester makes.
-func inspectedAs(newTester func(func(*Context), int, int) *Tester, view func(c *Context)) (*Tester, *float32) {
+func inspectedAs(newTester func(func(*context), int, int) *Tester, view func(c *context)) (*Tester, *float32) {
 	var width float32
-	tt := newTester(func(c *Context) {
+	tt := newTester(func(c *context) {
 		width, _ = c.Size()
 		view(c)
 	}, 1000, 600)
@@ -36,8 +36,8 @@ func openInspector(tt *Tester) {
 }
 
 func TestInspectorOpensAndCloses(t *testing.T) {
-	tt, width := inspected(func(c *Context) {
-		Column(c).Padding(20).Children(func() { Text(c, "Hello") })
+	tt, width := inspected(func(c *context) {
+		coreColumn(c).Padding(20).Children(func() { coreText(c, "Hello") })
 	})
 	tt.Key(0, KeyF12)
 	if !tt.rt.insp.open {
@@ -92,10 +92,10 @@ func TestInspectorOpensAndCloses(t *testing.T) {
 
 func TestInspectorFollowsTheContent(t *testing.T) {
 	n := 0
-	tt, _ := inspected(func(c *Context) {
-		Column(c).Padding(20).Gap(8).Children(func() {
-			Text(c, fmt.Sprintf("Count %d", n))
-			if Button(c, "Add").Clicked() {
+	tt, _ := inspected(func(c *context) {
+		coreColumn(c).Padding(20).Gap(8).Children(func() {
+			coreText(c, fmt.Sprintf("Count %d", n))
+			if coreButton(c, "Add").Clicked() {
 				n++
 			}
 		})
@@ -114,9 +114,9 @@ func TestInspectorFollowsTheContent(t *testing.T) {
 
 func TestInspectorPicksAndDescribes(t *testing.T) {
 	clicks := 0
-	tt, _ := inspected(func(c *Context) {
-		Column(c).Padding(20).Children(func() {
-			if Button(c, "Press").Width(120).Clicked() {
+	tt, _ := inspected(func(c *context) {
+		coreColumn(c).Padding(20).Children(func() {
+			if coreButton(c, "Press").Width(120).Clicked() {
 				clicks++
 			}
 		})
@@ -176,12 +176,12 @@ func TestInspectorPicksAndDescribes(t *testing.T) {
 }
 
 func TestInspectorTree(t *testing.T) {
-	tt, _ := inspected(func(c *Context) {
-		Column(c).Padding(20).Children(func() {
-			Row(c).Key("toolbar").Children(func() {
-				Row(c).Children(func() { Text(c, "Deep") })
+	tt, _ := inspected(func(c *context) {
+		coreColumn(c).Padding(20).Children(func() {
+			coreRow(c).Key("toolbar").Children(func() {
+				coreRow(c).Children(func() { coreText(c, "Deep") })
 			})
-			Text(c, "Inside")
+			coreText(c, "Inside")
 		})
 	})
 	openInspector(tt)
@@ -254,9 +254,9 @@ func TestInspectorTree(t *testing.T) {
 func TestInspectorTabs(t *testing.T) {
 	log.SetOutput(io.Discard)
 	defer log.SetOutput(os.Stderr)
-	tt, width := inspectedAs(lenientTester, func(c *Context) {
-		Row(c).Key("twice")
-		Row(c).Key("twice")
+	tt, width := inspectedAs(lenientTester, func(c *context) {
+		coreRow(c).Key("twice")
+		coreRow(c).Key("twice")
 	})
 	openInspector(tt)
 	if !tt.HasText("Issues 1") {
@@ -294,7 +294,7 @@ func TestInspectorTabs(t *testing.T) {
 }
 
 func TestInspectorDarkPalette(t *testing.T) {
-	tt, _ := inspected(func(c *Context) { Text(c, "Hi") })
+	tt, _ := inspected(func(c *context) { coreText(c, "Hi") })
 	tt.SetDark(true)
 	openInspector(tt)
 	if p := tt.Image().RGBAAt(990, 300); p.R > 60 {
@@ -305,11 +305,11 @@ func TestInspectorDarkPalette(t *testing.T) {
 // TestInspectorSettles checks that the inspector asks for frames only
 // while what it shows changes, in all its tabs and while picking.
 func TestInspectorSettles(t *testing.T) {
-	tt, _ := inspected(func(c *Context) {
-		Column(c).Padding(20).Gap(8).Children(func() {
-			Text(c, "Title").Bold()
+	tt, _ := inspected(func(c *context) {
+		coreColumn(c).Padding(20).Gap(8).Children(func() {
+			coreText(c, "Title").Bold()
 			for i := range 3 {
-				Row(c).Key(i).Transition(ElementTransition{}).Children(func() { Button(c, fmt.Sprint("Item ", i)) })
+				coreRow(c).Key(i).Transition(ElementTransition{}).Children(func() { coreButton(c, fmt.Sprint("Item ", i)) })
 			}
 		})
 	})

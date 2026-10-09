@@ -58,6 +58,11 @@ func initSystemSurface() {
 		if s == nil || !s.input.Active || n < 0 {
 			return false
 		}
+		if client := s.input.Client; client != nil {
+			r := platform.ClientDeleteRange(client, int(offset), int(n))
+			client.ReplaceText(&r, "")
+			return true
+		}
 		from := s.input.End + int(offset)
 		s.send(platform.SurfaceEvent{Kind: platform.TextInput, Replace: true, From: from, To: from + int(n)})
 		return true
@@ -73,6 +78,10 @@ func initSystemSurface() {
 // surrounding returns the text around the caret that input methods see,
 // and the caret's byte offset in it: the end of the selection.
 func (s *surface) surrounding() (string, int) {
+	if c := s.input.Client; c != nil {
+		context := platform.ClientTextContext(c)
+		return context.Text, platform.UTF16ByteOffset(context.Text, context.Caret)
+	}
 	text, cursor := s.input.Text, 0
 	for i := range text {
 		if cursor == s.input.End {

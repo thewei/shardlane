@@ -35,7 +35,7 @@ const (
 // slideWidth drives one panel host's animated width. The host element
 // must persist frame-to-frame; its first build seeds at the target, so
 // the very first frame of a session never animates.
-func slideWidth(host *ui.Element, key any, closed bool, openWidth float32) float32 {
+func slideWidth(host ui.Element, key any, closed bool, openWidth float32) float32 {
 	target := openWidth
 	if closed {
 		target = 0
@@ -46,7 +46,7 @@ func slideWidth(host *ui.Element, key any, closed bool, openWidth float32) float
 // sidebarSlide mounts the sidebar — plus its zone gutter to the content
 // column — inside the persistent slide host.
 func (s *Shell) sidebarSlide(c *ui.Context) {
-	host := ui.Row(c).Key("sidebar-slide").Shrink(0).AlignItems(ui.Stretch)
+	host := ui.Row(c.Key("sidebar-slide")).Shrink(0).AlignItems(ui.Stretch)
 	w := slideWidth(host, "width", s.sidebarCollapsed, sidebarWidth+gorexGap)
 	if w <= panelSlideEpsilon {
 		return
@@ -66,7 +66,7 @@ func (s *Shell) sidebarSlide(c *ui.Context) {
 // host. The center surface is never changed by panel open/close
 // (GWB-074 regression contract) — this only animates the reveal.
 func (s *Shell) rightPanelSlide(c *ui.Context) {
-	host := ui.Row(c).Key("right-panel-slide").Shrink(0).AlignItems(ui.Stretch)
+	host := ui.Row(c.Key("right-panel-slide")).Shrink(0).AlignItems(ui.Stretch)
 	w := slideWidth(host, "width", !s.rightPanel.open, float32(s.rightPanel.width))
 	if w <= panelSlideEpsilon {
 		return

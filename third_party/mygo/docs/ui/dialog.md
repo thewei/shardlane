@@ -43,7 +43,7 @@ backdrop covering the window, which centers the panel, and the panel, and
 builds the panel's content:
 
 ```go
-ui.DialogBase(c, &app.open, func(backdrop, panel *ui.Element) {
+ui.DialogBase(c, &app.open, func(backdrop, panel ui.Element) {
 	backdrop.Background(ui.RGBA(0, 0, 0, 0.5))
 	panel.Width(360).Padding(24).Radius(16).Background(t.Background)
 	ui.Text(c, "Welcome").FontSize(20).Bold()

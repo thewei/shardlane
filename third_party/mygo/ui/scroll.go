@@ -5,6 +5,8 @@ import "slices"
 // ScrollState is how far a scroll container scrolls its content, kept in
 // the app's state with TrackScroll.
 type ScrollState struct {
+	Handle
+
 	// X and Y are how far the content is scrolled left and up, in DIPs.
 	// Set them to scroll: the container keeps them within its content, so
 	// that 0 shows the start and math.MaxFloat32 the end.
@@ -28,7 +30,10 @@ type ScrollState struct {
 //
 // A List keeps its place by its rows instead, and scrolls to a row with
 // its ListState.
-func (e *Element) TrackScroll(s *ScrollState) *Element {
+func (e *node) TrackScroll(s *ScrollState) *node {
+	if s != nil {
+		wrapElement(e).Bind(&s.Handle)
+	}
 	e.track = s
 	if e.adoptScroll() && e.first != nil {
 		// What is built was built for the old place, as List's rows.
@@ -42,14 +47,17 @@ func (e *Element) TrackScroll(s *ScrollState) *Element {
 // comes into view with it. Call it in the frame it should come into view,
 // as when it is added or chosen: in every frame, it would keep the user
 // from scrolling it away.
-func (e *Element) ScrollIntoView() *Element {
+func (e *node) ScrollIntoView() *node {
+	if !e.hasState() {
+		return e
+	}
 	e.c.reveal = append(e.c.reveal, e)
 	return e
 }
 
 // adoptScroll takes the offset the app set in the element's ScrollState,
 // and reports whether it was a new one.
-func (e *Element) adoptScroll() bool {
+func (e *node) adoptScroll() bool {
 	st, t := e.st, e.track
 	st.track = t
 	if t == nil || t.X == float32(st.scrollX) && t.Y == float32(st.scrollY) {
@@ -67,7 +75,7 @@ func (e *Element) adoptScroll() bool {
 
 // maxScroll returns as far as the element scrolls its content, on the axes
 // it scrolls.
-func (e *Element) maxScroll() (x, y float64) {
+func (e *node) maxScroll() (x, y float64) {
 	if e.flags&flagScrollX != 0 {
 		x = max(0, e.contentW-float64(e.w))
 	}
@@ -111,10 +119,10 @@ func (rt *engine) reveal(id uint64) {
 
 // revealAll scrolls the elements of root with the given ids into view, in
 // that order.
-func revealAll(root *Element, ids []uint64) {
-	found := make([]*Element, len(ids))
-	var walk func(e *Element)
-	walk = func(e *Element) {
+func revealAll(root *node, ids []uint64) {
+	found := make([]*node, len(ids))
+	var walk func(e *node)
+	walk = func(e *node) {
 		if i := slices.Index(ids, e.id); i >= 0 && found[i] == nil {
 			found[i] = e
 		}
@@ -133,7 +141,7 @@ func revealAll(root *Element, ids []uint64) {
 // reveal scrolls the containers around e, innermost first, as little as
 // shows its box. The layout has sized and arranged the boxes, relative to
 // their parents, but not placed them yet.
-func reveal(e *Element) {
+func reveal(e *node) {
 	for e.isInline() {
 		e = e.parent
 	}

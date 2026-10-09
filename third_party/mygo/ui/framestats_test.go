@@ -35,11 +35,11 @@ func TestFrameStats(t *testing.T) {
 	frameLog = func(v ...any) { logged = append(logged, v[0].(string)) }
 
 	clicked := false
-	tt := NewTester(func(c *Context) {
-		if Button(c, "Go").Clicked() {
+	tt := coreNewTester(func(c *context) {
+		if coreButton(c, "Go").Clicked() {
 			clicked = true
 		}
-		Text(c, "Hello")
+		coreText(c, "Hello")
 	}, 200, 100)
 	tt.rt.stats = newFrameStats(0)
 	if err := tt.Click("Go"); err != nil || !clicked {

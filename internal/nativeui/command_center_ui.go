@@ -166,7 +166,7 @@ func (s *Shell) commandCenterOverlay(c *ui.Context) {
 	}
 	sp := Spacing()
 	winW, winH := c.Size()
-	ui.DialogBase(c, &s.commandCenterOpen, func(back, panel *ui.Element) {
+	ui.DialogBase(c, &s.commandCenterOpen, func(back, panel ui.Element) {
 		back.Background(ui.RGBA(0, 0, 0, 0.4))
 		// Liquid Glass (MyGo 0.2.15): the palette frosts the dimmed page
 		// under it instead of painting a flat panel — the macOS-26 overlay
@@ -273,7 +273,7 @@ func (s *Shell) commandCenterRow(c *ui.Context, i int, result commandcenter.Resu
 // PgUp/PgDn jump; every move reveals its row. Home/End stay with the
 // caret: the editor takes them unconditionally, as mainstream palettes
 // do while their input holds the focus.
-func (s *Shell) commandCenterListKeys(field *ui.Element, n int) {
+func (s *Shell) commandCenterListKeys(field ui.Element, n int) {
 	if n == 0 {
 		return
 	}

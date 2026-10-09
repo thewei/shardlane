@@ -10,7 +10,7 @@ import (
 // frame of a 980×720 window at twice the density, as on macOS and Linux.
 func BenchmarkFrame(b *testing.B) {
 	d := &demo{choice: "a", size: "Medium", volume: 40}
-	tt := NewTester(d.view, 980, 720)
+	tt := coreNewTester(d.view, 980, 720)
 	tt.SetScale(2)
 	for b.Loop() {
 		tt.h.img.Invalidate()
@@ -22,7 +22,7 @@ func BenchmarkFrame(b *testing.B) {
 // button and off it: the CPU renderer redraws the button alone.
 func BenchmarkFrameHover(b *testing.B) {
 	d := &demo{choice: "a", size: "Medium", volume: 40}
-	tt := NewTester(d.view, 980, 720)
+	tt := coreNewTester(d.view, 980, 720)
 	tt.SetScale(2)
 	r, _ := tt.Find("Increment")
 	on := false
@@ -40,10 +40,10 @@ func BenchmarkFrameHover(b *testing.B) {
 // wave, whose mask is drawn anew each frame, and a disc, which is cached.
 func BenchmarkFrameAnimatedPaths(b *testing.B) {
 	frame := 0
-	view := func(c *Context) {
+	view := func(c *context) {
 		frame++
 		phase := float64(frame) * 0.05
-		Box(c).Size(700, 320).Draw(func(p *Painter, r Rect) {
+		coreBox(c).Size(700, 320).Draw(func(p *Painter, r Rect) {
 			var wave Path
 			for i := 0; i <= 100; i++ {
 				x := r.X + 20 + float32(i)*6
@@ -60,7 +60,7 @@ func BenchmarkFrameAnimatedPaths(b *testing.B) {
 			p.FillPath(&dot, RGB(37, 99, 235))
 		})
 	}
-	tt := NewTester(view, 980, 720)
+	tt := coreNewTester(view, 980, 720)
 	tt.SetScale(2)
 	b.ReportAllocs()
 	for b.Loop() {
@@ -116,40 +116,40 @@ func newDiffScene(diff bool) *diffScene {
 	return d
 }
 
-func (d *diffScene) view(c *Context) {
+func (d *diffScene) view(c *context) {
 	t := c.Theme()
 	muted := t.TextMuted
-	Row(c).Grow(1).AlignItems(Stretch).Children(func() {
-		List(c, &d.history, len(d.commits), func(i int) { d.commitRow(c, i, muted) }).
+	coreRow(c).Grow(1).AlignItems(Stretch).Children(func() {
+		coreList(c, &d.history, len(d.commits), func(i int) { d.commitRow(c, i, muted) }).
 			Width(300).Shrink(0).Padding(2, 8).Gap(1).Focusable().FocusRing(false).Label("History")
 		if !d.diff {
 			return
 		}
-		List(c, &d.changes, len(d.lines), func(i int) { d.lineRow(c, i) }).
+		coreList(c, &d.changes, len(d.lines), func(i int) { d.lineRow(c, i) }).
 			Grow(1).Padding(0, 12, 24).Background(RGB(246, 248, 250)).Label("Changes")
 	})
 }
 
-func (d *diffScene) commitRow(c *Context, i int, muted Color) {
+func (d *diffScene) commitRow(c *context, i int, muted Color) {
 	cm := &d.commits[i]
-	row := Row(c).Gap(8).Padding(5, 8).Radius(6).AlignItems(Start).Role(RoleButton).Label(cm.subject)
+	row := coreRow(c).Gap(8).Padding(5, 8).Radius(6).AlignItems(Start).Role(RoleButton).Label(cm.subject)
 	if row.Hovered() {
 		row.Background(RGBA(127, 127, 127, 0.08))
 	}
 	row.Clicked()
 	row.Children(func() {
-		Text(c, cm.short).Font("SF Mono, Menlo, monospace").FontSize(12).TextColor(RGB(5, 80, 174)).Width(56).Shrink(0)
-		Column(c).Grow(1).MinWidth(0).Gap(2).Children(func() {
-			Text(c, cm.subject).FontSize(12).SingleLine().Tooltip(cm.subject)
-			Row(c).Gap(6).Children(func() {
-				Text(c, cm.author).FontSize(10).SingleLine().TextColor(muted).Grow(1).MinWidth(0)
-				Text(c, cm.ago).FontSize(10).TextColor(muted).Shrink(0).Tooltip(cm.when)
+		coreText(c, cm.short).Font("SF Mono, Menlo, monospace").FontSize(12).TextColor(RGB(5, 80, 174)).Width(56).Shrink(0)
+		coreColumn(c).Grow(1).MinWidth(0).Gap(2).Children(func() {
+			coreText(c, cm.subject).FontSize(12).SingleLine().Tooltip(cm.subject)
+			coreRow(c).Gap(6).Children(func() {
+				coreText(c, cm.author).FontSize(10).SingleLine().TextColor(muted).Grow(1).MinWidth(0)
+				coreText(c, cm.ago).FontSize(10).TextColor(muted).Shrink(0).Tooltip(cm.when)
 			})
 		})
 	})
 }
 
-func (d *diffScene) lineRow(c *Context, i int) {
+func (d *diffScene) lineRow(c *context, i int) {
 	l := &d.lines[i]
 	const lh, gutter = 20, 44
 	accent := c.Theme().Accent
@@ -160,29 +160,29 @@ func (d *diffScene) lineRow(c *Context, i int) {
 	case 2:
 		bg, gutterBg, bar = RGB(255, 235, 233), RGB(255, 215, 213), RGB(207, 34, 46)
 	}
-	Row(c).BorderWidth(0, 1, 0, 1).BorderColor(RGB(208, 215, 222)).Children(func() {
-		cell := Row(c).Grow(1).MinWidth(0).AlignItems(Stretch).Background(bg)
+	coreRow(c).BorderWidth(0, 1, 0, 1).BorderColor(RGB(208, 215, 222)).Children(func() {
+		cell := coreRow(c).Grow(1).MinWidth(0).AlignItems(Stretch).Background(bg)
 		hovered := cell.Hovered()
 		if hovered {
 			cell.Background(RGB(240, 240, 240))
 		}
 		cell.Clicked()
 		cell.Children(func() {
-			Row(c).Shrink(0).AlignItems(Start).Background(gutterBg).Children(func() {
-				Box(c).Width(4).AlignSelf(Stretch).Background(bar)
-				Text(c, l.old).Font("SF Mono, Menlo, monospace").FontSize(12).FixedLineHeight(lh).TextColor(RGB(110, 119, 129)).
+			coreRow(c).Shrink(0).AlignItems(Start).Background(gutterBg).Children(func() {
+				coreBox(c).Width(4).AlignSelf(Stretch).Background(bar)
+				coreText(c, l.old).Font("SF Mono, Menlo, monospace").FontSize(12).FixedLineHeight(lh).TextColor(RGB(110, 119, 129)).
 					Width(gutter-4).TextAlign(End).Padding(0, 8, 0, 0).Shrink(0)
-				Text(c, l.new).Font("SF Mono, Menlo, monospace").FontSize(12).FixedLineHeight(lh).TextColor(RGB(110, 119, 129)).
+				coreText(c, l.new).Font("SF Mono, Menlo, monospace").FontSize(12).FixedLineHeight(lh).TextColor(RGB(110, 119, 129)).
 					Width(gutter-4).TextAlign(End).Padding(0, 8, 0, 0).Shrink(0)
 			})
-			plus := ButtonBase(c).Absolute().Top((lh-18)/2).Left(2*gutter-13).Size(18, 18).Radius(5).Center().
+			plus := coreButtonBase(c).Absolute().Top((lh-18)/2).Left(2*gutter-13).Size(18, 18).Radius(5).Center().
 				Background(accent).Label("Comment").Tooltip("Comment on this line").FocusRing(false)
 			if !hovered {
 				plus.Opacity(0)
 			}
 			plus.Clicked()
-			Box(c).Grow(1).Basis(0).MinWidth(0).ClipX().Margin(0, 10).Children(func() {
-				RichText(c, l.spans...).Font("SF Mono, Menlo, monospace").FontSize(13).FixedLineHeight(lh).
+			coreBox(c).Grow(1).Basis(0).MinWidth(0).ClipX().Margin(0, 10).Children(func() {
+				coreRichText(c, l.spans...).Font("SF Mono, Menlo, monospace").FontSize(13).FixedLineHeight(lh).
 					TextColor(RGB(36, 41, 47)).NoWrap().AlignSelf(Start)
 			})
 		})
@@ -194,7 +194,7 @@ func (d *diffScene) lineRow(c *Context, i int) {
 // view has been laid out before, as in a window used for a while.
 func diffSceneTester(diff bool) (*Tester, *diffScene) {
 	d := newDiffScene(diff)
-	tt := NewTester(d.view, 1280, 800)
+	tt := coreNewTester(d.view, 1280, 800)
 	tt.SetScale(2)
 	tt.Move(150, 400)
 	s := &sidebarScroller{tt: tt, d: d}

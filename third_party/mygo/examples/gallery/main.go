@@ -441,7 +441,7 @@ func (g *gallery) sidebar(c *ui.Context) {
 	})
 }
 
-func card(c *ui.Context, title string, body func()) *ui.Element {
+func card(c *ui.Context, title string, body func()) ui.Element {
 	t := c.Theme()
 	return ui.Column(c).Padding(18).Gap(12).Radius(10).Background(t.Background).Border(1, t.Border).
 		Shadow(0, 1, 3, 0, ui.RGBA(0, 0, 0, 0.06)).Children(func() {
@@ -464,45 +464,45 @@ func wideColors(c *ui.Context) {
 	ui.Text(c, "Compare the columns on a Display P3 screen: the right one is more vivid.").FontSize(12).TextColor(t.TextMuted)
 
 	// pair builds a sample twice, in sRGB and then in Oklch, in equal columns.
-	pair := func(sample func(wide bool) *ui.Element) {
+	pair := func(sample func(wide bool) ui.Element) {
 		ui.Row(c).Gap(12).Children(func() {
 			for _, wide := range []bool{false, true} {
 				sample(wide).Basis(0).Grow(1)
 			}
 		})
 	}
-	box := func(label string) *ui.Element {
+	box := func(label string) ui.Element {
 		return ui.Row(c).Height(30).Radius(6).Center().Children(func() {
 			ui.Text(c, label).FontSize(12).Bold().TextColor(black)
 		})
 	}
 
-	pair(func(wide bool) *ui.Element {
+	pair(func(wide bool) ui.Element {
 		if wide {
 			return ui.Text(c, "Oklch").FontSize(12).Bold().TextColor(t.TextMuted)
 		}
 		return ui.Text(c, "sRGB").FontSize(12).Bold().TextColor(t.TextMuted)
 	})
-	pair(func(wide bool) *ui.Element {
+	pair(func(wide bool) ui.Element {
 		if wide {
 			return box("Fill").Background(vivid)
 		}
 		return box("Fill").Background(vivid.SRGB())
 	})
-	pair(func(wide bool) *ui.Element {
+	pair(func(wide bool) ui.Element {
 		if wide {
 			return box("Gradient").LinearGradient(ui.LinearGradient{From: warm, To: vivid, Angle: 90, Oklab: true})
 		}
 		return box("Gradient").LinearGradient(ui.LinearGradient{From: warm.SRGB(), To: vivid.SRGB(), Angle: 90, Oklab: true})
 	})
-	pair(func(wide bool) *ui.Element {
+	pair(func(wide bool) ui.Element {
 		white := ui.RGB(255, 255, 255)
 		if wide {
 			return box("Stripes").Background(white).Stripes(vivid, 4, 6, 45)
 		}
 		return box("Stripes").Background(white).Stripes(vivid.SRGB(), 4, 6, 45)
 	})
-	pair(func(wide bool) *ui.Element {
+	pair(func(wide bool) ui.Element {
 		return ui.Row(c).Height(30).Radius(6).Center().Background(ui.RGB(20, 20, 20)).Children(func() {
 			text := ui.Text(c, "Text").FontSize(14).Bold()
 			if wide {
@@ -512,7 +512,7 @@ func wideColors(c *ui.Context) {
 			}
 		})
 	})
-	pair(func(wide bool) *ui.Element {
+	pair(func(wide bool) ui.Element {
 		e := box("Shadow").Margin(6).Background(ui.RGB(255, 255, 255))
 		if wide {
 			return e.Shadow(0, 4, 12, 0, vivid)
@@ -566,7 +566,7 @@ func (g *gallery) overview(c *ui.Context) {
 	})
 }
 
-func (g *gallery) sparkline(c *ui.Context) *ui.Element {
+func (g *gallery) sparkline(c *ui.Context) ui.Element {
 	t := c.Theme()
 	return ui.Box(c).Radius(6).Background(t.Surface).Draw(func(p *ui.Painter, r ui.Rect) {
 		if len(g.samples) < 2 {
@@ -631,7 +631,7 @@ func (g *gallery) controls(c *ui.Context) {
 					ui.Text(c, title).FontWeight(600)
 					for i := range g.tasks {
 						if task := &g.tasks[i]; task.done == done {
-							ui.Row(c).Key(task.name).Padding(7, 10).Radius(6).Background(t.Background).Border(1, t.Border).Cursor(ui.CursorPointer).Drag(task).Children(func() {
+							ui.Row(c.Key(task.name)).Padding(7, 10).Radius(6).Background(t.Background).Border(1, t.Border).Cursor(ui.CursorPointer).Drag(task).Children(func() {
 								ui.Text(c, task.name)
 							})
 						}
@@ -802,7 +802,7 @@ func (g *gallery) controls(c *ui.Context) {
 				ui.Text(c, g.fruit)
 				ui.Icon(c, chevronIcon).TextColor(t.TextMuted)
 			})
-			sel.Popup(func(panel *ui.Element) {
+			sel.Popup(func(panel ui.Element) {
 				panel.Margin(4, 0, 0, 0).Padding(4).Radius(10).Background(t.Background).Border(1, t.Border)
 				panel.Shadow(0, 8, 24, 0, ui.RGBA(0, 0, 0, 0.15))
 				for _, fruit := range []string{"Apple", "Banana", "Cherry", "Durian"} {
@@ -876,6 +876,13 @@ func (g *gallery) text(c *ui.Context) {
 		ui.Text(c, strings.Repeat("Long text wraps to the width it gets. ", 6)).TextColor(t.TextMuted)
 		ui.Text(c, strings.Repeat("A single line that ends with an ellipsis when it does not fit. ", 4)).SingleLine()
 	})
+	card(c, "Text selection", func() {
+		ui.Column(c).Selectable().Gap(12).Children(func() {
+			ui.Text(c, "Drag from this paragraph into the next, then copy the selected text.")
+			ui.RichText(c, ui.Span{Text: "Each paragraph keeps its own layout. "}, ui.Span{Text: "They share one selection.", Weight: 700})
+			ui.Text(c, "This hint is excluded from selection.").Unselectable().TextColor(t.TextMuted)
+		})
+	})
 }
 
 func (g *gallery) list(c *ui.Context) {
@@ -905,9 +912,6 @@ func (g *gallery) list(c *ui.Context) {
 	list := ui.List(c, &g.rows, len(rows), func(i int) {
 		n := rows[i]
 		row := ui.Row(c).Height(32).PaddingX(12).Gap(10)
-		if row.DoubleClicked() {
-			open(n)
-		}
 		row.ContextMenu(func(m *ui.Menu) {
 			if m.Item("Open").Chosen() {
 				open(n)
@@ -935,8 +939,8 @@ func (g *gallery) list(c *ui.Context) {
 	if list.Changed() {
 		g.picked = rows[at]
 	}
-	if list.Shortcut(0, ui.KeyEnter) && at >= 0 {
-		open(g.picked)
+	if list.Submitted() && at >= 0 {
+		open(rows[at])
 	}
 	g.chatCard(c)
 	ui.Row(c).Gap(18).AlignItems(ui.Stretch).Height(260).Children(func() {
@@ -948,7 +952,11 @@ func (g *gallery) list(c *ui.Context) {
 					open = &o
 					defer func() { g.tree[path] = o }()
 				}
-				if ui.TreeItem(c, label, open, children).Selected(g.leaf == path).Clicked() {
+				if ui.TreeItem(c, label, open, func() {
+					if children != nil {
+						children()
+					}
+				}).Selected(g.leaf == path).Clicked() {
 					g.leaf = path
 				}
 			}
@@ -1135,7 +1143,7 @@ func (g *gallery) styling(c *ui.Context) {
 	ui.Grid(c).Columns(2).Gap(16).Children(func() {
 		card(c, "Grid", func() {
 			ui.Grid(c).ColumnTracks(ui.FitContent(), ui.Fr(1), ui.Fr(1)).Gap(6).Children(func() {
-				cell := func(s string) *ui.Element {
+				cell := func(s string) ui.Element {
 					return ui.Box(c).Padding(8, 10).Radius(6).Background(t.Surface).Children(func() { ui.Text(c, s).FontSize(12) })
 				}
 				cell("ColumnSpan(-1)").ColumnSpan(-1).Background(t.Accent).TextColor(t.AccentText)
@@ -1158,7 +1166,7 @@ func (g *gallery) styling(c *ui.Context) {
 		})
 		card(c, "Fills", func() {
 			blue, yellow := ui.Hex("#2563eb"), ui.Hex("#facc15")
-			bar := func(label string) *ui.Element {
+			bar := func(label string) ui.Element {
 				return ui.Row(c).Height(30).PaddingX(10).Radius(6).Children(func() {
 					ui.Text(c, label).FontSize(12).Bold().TextColor(ui.RGB(255, 255, 255))
 				})
@@ -1194,7 +1202,7 @@ func (g *gallery) styling(c *ui.Context) {
 				name string
 				ease ui.Easing
 			}{{"Linear", ui.Linear}, {"EaseIn", ui.EaseIn}, {"EaseOut", ui.EaseOut}, {"EaseInOut", ui.EaseInOut}} {
-				track := ui.Row(c).Height(18).Key(e.name)
+				track := ui.Row(c.Key(e.name)).Height(18)
 				to := float32(0)
 				if g.eased {
 					to = 1
@@ -1443,7 +1451,7 @@ func (g *gallery) motion(c *ui.Context) {
 				Transition(ui.ElementTransition{Size: true, Duration: itemMotion.Duration, Ease: itemMotion.Ease}).Children(func() {
 				removed := -1
 				for _, it := range g.items {
-					ui.Row(c).Key(it.id).Padding(8, 10).Gap(10).AlignItems(ui.Center).Background(t.Background).Transition(itemMotion).Children(func() {
+					ui.Row(c.Key(it.id)).Padding(8, 10).Gap(10).AlignItems(ui.Center).Background(t.Background).Transition(itemMotion).Children(func() {
 						ui.Box(c).Size(10, 10).Radius(5).Background(motionColors[it.id%len(motionColors)])
 						ui.Text(c, it.name).Grow(1)
 						if ui.Button(c, "Remove").Clicked() {
@@ -1488,7 +1496,7 @@ func (g *gallery) motion(c *ui.Context) {
 			ui.Text(c, "Their backgrounds and borders fade as the pointer comes and goes.").FontSize(12).TextColor(t.TextMuted)
 			ui.Row(c).Gap(10).Children(func() {
 				for i, col := range motionColors[:3] {
-					tile := ui.Box(c).Key(i).Size(64, 48).Radius(8).Border(2, t.Border)
+					tile := ui.Box(c.Key(i)).Size(64, 48).Radius(8).Border(2, t.Border)
 					tile.Background(col.Alpha(0.15))
 					if tile.Hovered() {
 						tile.Background(col).BorderColor(col.Mix(ui.RGB(0, 0, 0), 0.3))
@@ -1530,7 +1538,7 @@ func (g *gallery) overlays(c *ui.Context) {
 			}
 			ui.Popover(c, menu, &g.menu, func() {
 				for _, item := range []string{"New file", "Open…", "Save as…"} {
-					entry := ui.Row(c).Key(item).Padding(6, 12).Radius(5).Width(180)
+					entry := ui.Row(c.Key(item)).Padding(6, 12).Radius(5).Width(180)
 					if entry.Hovered() {
 						entry.Background(t.Accent).TextColor(t.AccentText)
 					}

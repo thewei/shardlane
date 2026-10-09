@@ -9,21 +9,21 @@ import (
 func TestSidebar(t *testing.T) {
 	place, changes := "recents", 0
 	locations := true
-	tt := NewTester(func(c *Context) {
-		Row(c).Fill().AlignItems(Stretch).Children(func() {
-			if Sidebar(c, &place, func() {
-				SidebarSection(c, "Favorites", nil, func() {
-					SidebarItem(c, "recents", nil, "Recents")
-					SidebarItem(c, "desktop", nil, "Desktop").Children(func() { Badge(c, "3") })
-					SidebarItem(c, "documents", nil, "Documents")
+	tt := coreNewTester(func(c *context) {
+		coreRow(c).Fill().AlignItems(Stretch).Children(func() {
+			if coreSidebar(c, &place, func() {
+				coreSidebarSection(c, "Favorites", nil, func() {
+					coreSidebarItem(c, "recents", nil, "Recents")
+					coreSidebarItem(c, "desktop", nil, "Desktop").Children(func() { coreBadge(c, "3") })
+					coreSidebarItem(c, "documents", nil, "Documents")
 				})
-				SidebarSection(c, "Locations", &locations, func() {
-					SidebarItem(c, "mac", nil, "Macintosh HD")
+				coreSidebarSection(c, "Locations", &locations, func() {
+					coreSidebarItem(c, "mac", nil, "Macintosh HD")
 				})
 			}).Width(200).Changed() {
 				changes++
 			}
-			Button(c, "Other")
+			coreButton(c, "Other")
 		})
 	}, 500, 400)
 	tt.SetPreferences(Preferences{ReduceMotion: true, TextScale: 1})
@@ -68,15 +68,15 @@ func TestSidebar(t *testing.T) {
 	// Assistive technology: a tree whose item chosen has the focus.
 	tt.send(platform.SurfaceEvent{Kind: platform.AccessibilityOn})
 	tree := tt.h.access
-	side := node(t, tree, platform.RoleTree, "")
-	docs := node(t, tree, platform.RoleTreeItem, "Documents")
+	side := accessNode(t, tree, platform.RoleTree, "")
+	docs := accessNode(t, tree, platform.RoleTreeItem, "Documents")
 	if side.States&platform.AccessSelectable == 0 || docs.Level != 2 || docs.States&platform.AccessChecked == 0 || tree.Focus != docs.ID {
 		t.Errorf("the sidebar %+v, Documents %+v, the focus on %d", side, docs, tree.Focus)
 	}
-	if n := node(t, tree, platform.RoleTreeItem, "Desktop"); n.Label != "Desktop 3" || n.States&platform.AccessChecked != 0 {
+	if n := accessNode(t, tree, platform.RoleTreeItem, "Desktop"); n.Label != "Desktop 3" || n.States&platform.AccessChecked != 0 {
 		t.Errorf("Desktop: %+v", n)
 	}
-	head := node(t, tree, platform.RoleTreeItem, "Locations")
+	head := accessNode(t, tree, platform.RoleTreeItem, "Locations")
 	if head.States&(platform.AccessExpandable|platform.AccessExpanded) != platform.AccessExpandable || head.Level != 1 {
 		t.Errorf("Locations: %+v", head)
 	}
@@ -85,7 +85,7 @@ func TestSidebar(t *testing.T) {
 		t.Error("expanding Locations")
 	}
 	// Focusing an item chooses it.
-	mac := node(t, tt.h.access, platform.RoleTreeItem, "Macintosh")
+	mac := accessNode(t, tt.h.access, platform.RoleTreeItem, "Macintosh")
 	tt.send(platform.SurfaceEvent{Kind: platform.AccessAction, ID: mac.ID, Action: platform.AccessFocus})
 	if place != "mac" {
 		t.Errorf("focusing Macintosh HD chose %q", place)

@@ -16,7 +16,10 @@ import (
 // it and in its child windows, the controls of a hidden title bar among
 // them. Those show through DirectComposition instead: a surface of
 // premultiplied BGRA on a layered window without a redirection bitmap
-// either, which blends over the webview as a layered window does.
+// either, which blends over the webview as a layered window does. Native
+// UI drawn in memory shows the same way on its surface's window; drawn on
+// the GPU, through the renderer's swap chain, on a device of its own
+// (d3d11.NewComposed).
 //
 // The windows share a Direct3D 11 device and a DirectComposition device.
 // When the GPU device is removed (a driver update, a GPU reset), which its
@@ -199,6 +202,11 @@ func (b *Backend) loseComposition(err error) {
 			c.comp.free()
 		}
 	}
+	for _, s := range b.surfaces {
+		if s.comp != nil {
+			s.comp.free()
+		}
+	}
 	if b.comp != nil {
 		b.comp.free()
 		b.comp = nil
@@ -222,8 +230,9 @@ func (b *Backend) composeLater(at time.Time) {
 	procSetTimer.Call(b.appHwnd, timerCompose, uintptr(ms), 0)
 }
 
-// recompose draws again, on timerCompose, the controls that do not show
-// through the device: it was lost, or they could not draw.
+// recompose draws again, on timerCompose, the controls and the frames
+// drawn in memory that do not show through the device: it was lost, or
+// they could not draw.
 func (b *Backend) recompose() {
 	procKillTimer.Call(b.appHwnd, timerCompose)
 	b.composeAt = time.Time{}
@@ -236,6 +245,17 @@ func (b *Backend) recompose() {
 			continue
 		}
 		c.paint()
+	}
+	// Frames drawn in memory that could not show draw again.
+	for _, s := range b.surfaces {
+		if s.comp == nil || s.comp.dev != nil {
+			continue
+		}
+		if time.Now().Before(s.comp.retry) {
+			b.composeLater(s.comp.retry)
+			continue
+		}
+		s.RequestFrame()
 	}
 }
 
@@ -289,7 +309,7 @@ func (c *compositor) show(px []uint32, w, h int32) {
 		return
 	}
 	// The device is fine: this window alone tries again.
-	log.Printf("mygo: cannot show the window controls through DirectComposition: %v", err)
+	log.Printf("mygo: cannot show a window's pixels through DirectComposition: %v", err)
 	c.retry = time.Now().Add(backoff(c.fails))
 	c.fails++
 	b.composeLater(c.retry)

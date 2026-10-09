@@ -87,6 +87,8 @@ that must start instantly.
   keyboard shortcuts and tray icons.
 - [Desktop APIs](native.md): dialogs, notifications, the clipboard, the
   shell, displays, dark mode, power and global shortcuts.
+- [Clipboard and drag data](data-transfer.md): multiple representations,
+  file lists, custom formats, lazy providers, and clipboard persistence.
 - [Building and distributing](distribution.md): packaged apps for macOS,
   Windows and Linux, signing, installers and disk images.
 - [Auto-updates](updates.md): signed updates from GitHub releases, an S3
@@ -118,6 +120,8 @@ components, from buttons to tables.
   with no CORS, any header, streamed bodies and cancellation.
 - [WebSocket](plugins/websocket.md): a `WebSocket` whose connections Go
   makes, with headers on the handshake.
+- [SQLite](plugins/sqlite.md): local databases with parameterized queries
+  and atomic transactions, without cgo.
 - [Updater](plugins/updater.md): an update window in the manner of
   Sparkle, which checks for updates and offers to install them.
 - [Terminal](plugins/terminal.md): a terminal for native UI, which runs

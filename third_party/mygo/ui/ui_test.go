@@ -41,40 +41,40 @@ type demo struct {
 	selected int
 }
 
-func (d *demo) view(c *Context) {
+func (d *demo) view(c *context) {
 	t := c.Theme()
-	Column(c).Fill().Padding(20).Gap(14).Children(func() {
-		Row(c).Gap(10).Children(func() {
-			Text(c, "MyGo UI").FontSize(24).Bold()
-			Spacer(c)
-			Text(c, "GPU rendered, pure Go").TextColor(t.TextMuted)
+	coreColumn(c).Fill().Padding(20).Gap(14).Children(func() {
+		coreRow(c).Gap(10).Children(func() {
+			coreText(c, "MyGo UI").FontSize(24).Bold()
+			coreSpacer(c)
+			coreText(c, "GPU rendered, pure Go").TextColor(t.TextMuted)
 		})
-		Row(c).Gap(8).Children(func() {
-			if Button(c, "Increment").Clicked() {
+		coreRow(c).Gap(8).Children(func() {
+			if coreButton(c, "Increment").Clicked() {
 				d.count++
 			}
-			if PrimaryButton(c, "Reset").Clicked() {
+			if corePrimaryButton(c, "Reset").Clicked() {
 				d.count = 0
 			}
-			Textf(c, "Count: %d", d.count)
+			coreTextf(c, "Count: %d", d.count)
 		})
-		Row(c).Gap(16).Children(func() {
-			Checkbox(c, &d.agree, "I agree")
-			Switch(c, &d.dark)
-			Radio(c, &d.choice, "a", "Alpha")
-			Radio(c, &d.choice, "b", "Beta")
+		coreRow(c).Gap(16).Children(func() {
+			coreCheckbox(c, &d.agree, "I agree")
+			coreSwitch(c, &d.dark)
+			coreRadio(c, &d.choice, "a", "Alpha")
+			coreRadio(c, &d.choice, "b", "Beta")
 		})
-		Row(c).Gap(10).Children(func() {
-			TextInput(c, &d.name).Placeholder("Your name").Grow(1)
-			Select(c, &d.size, []string{"Small", "Medium", "Large"})
+		coreRow(c).Gap(10).Children(func() {
+			coreTextInput(c, &d.name).Placeholder("Your name").Grow(1)
+			coreSelect(c, &d.size, []string{"Small", "Medium", "Large"})
 		})
-		Slider(c, &d.volume, 0, 100)
-		Progress(c, d.volume/100)
-		Box(c).Padding(12).Radius(10).Background(t.Surface).Border(1, t.Border).Shadow(0, 2, 10, 0, RGBA(0, 0, 0, 0.12)).Children(func() {
-			Text(c, "A card with a shadow and a long text that wraps across lines when the window is narrow enough to need it.")
+		coreSlider(c, &d.volume, 0, 100)
+		coreProgress(c, d.volume/100)
+		coreBox(c).Padding(12).Radius(10).Background(t.Surface).Border(1, t.Border).Shadow(0, 2, 10, 0, RGBA(0, 0, 0, 0.12)).Children(func() {
+			coreText(c, "A card with a shadow and a long text that wraps across lines when the window is narrow enough to need it.")
 		})
-		List(c, nil, 1000, func(i int) {
-			row := Row(c).Height(28).PaddingX(8).Gap(8)
+		coreList(c, nil, 1000, func(i int) {
+			row := coreRow(c).Height(28).PaddingX(8).Gap(8)
 			if i == d.selected {
 				row.Background(t.Accent).TextColor(t.AccentText).Radius(4)
 			}
@@ -82,8 +82,8 @@ func (d *demo) view(c *Context) {
 				d.selected = i
 			}
 			row.Children(func() {
-				Textf(c, "Row %d", i).Grow(1)
-				Text(c, fmt.Sprint(i*i)).TextColor(t.TextMuted)
+				coreTextf(c, "Row %d", i).Grow(1)
+				coreText(c, fmt.Sprint(i*i)).TextColor(t.TextMuted)
 			})
 		}).Grow(1).Border(1, t.Border).Radius(6)
 	})
@@ -91,7 +91,7 @@ func (d *demo) view(c *Context) {
 
 func TestDemoRenders(t *testing.T) {
 	d := &demo{choice: "a", size: "Medium", volume: 40}
-	tt := NewTester(d.view, 640, 600)
+	tt := coreNewTester(d.view, 640, 600)
 	savePNG(t, tt, "demo")
 	for _, s := range []string{"MyGo UI", "Count: 0", "I agree", "Row 0", "Medium"} {
 		if _, ok := tt.Find(s); !ok {
@@ -106,7 +106,7 @@ func TestDemoRenders(t *testing.T) {
 
 func TestClickCounts(t *testing.T) {
 	d := &demo{}
-	tt := NewTester(d.view, 640, 600)
+	tt := coreNewTester(d.view, 640, 600)
 	for i := 0; i < 3; i++ {
 		if err := tt.Click("Increment"); err != nil {
 			t.Fatal(err)
@@ -127,7 +127,7 @@ func TestClickCounts(t *testing.T) {
 
 func TestTyping(t *testing.T) {
 	d := &demo{}
-	tt := NewTester(d.view, 640, 600)
+	tt := coreNewTester(d.view, 640, 600)
 	r, ok := tt.Find("Your name")
 	if !ok {
 		// The placeholder is painted, not an element: find the input by
@@ -168,7 +168,7 @@ func TestTyping(t *testing.T) {
 // that frame.
 func TestTextInputFollowsTheFocusAtOnce(t *testing.T) {
 	d := &demo{}
-	tt := NewTester(d.view, 640, 600)
+	tt := coreNewTester(d.view, 640, 600)
 	r, _ := tt.Find("I agree")
 	r.Y += 40
 	x, y := float64(r.X+20), float64(r.Y+r.H/2)
@@ -199,16 +199,16 @@ func TestKeyOnAWidget(t *testing.T) {
 		}
 	}()
 	choice := "a"
-	NewTester(func(c *Context) {
-		Row(c).Key("ok").Children(func() {
-			Radio(c, &choice, "b", "Beta").Key("b")
+	coreNewTester(func(c *context) {
+		coreRow(c).Key("ok").Children(func() {
+			coreRadio(c, &choice, "b", "Beta").Key("b")
 		})
 	}, 200, 100)
 }
 
 func TestTitleBar(t *testing.T) {
 	var got TitleBar
-	tt := NewTester(func(c *Context) { got = c.TitleBar() }, 200, 100)
+	tt := coreNewTester(func(c *context) { got = c.TitleBar() }, 200, 100)
 	if got != (TitleBar{}) {
 		t.Errorf("TitleBar without one = %+v", got)
 	}
@@ -224,7 +224,7 @@ func TestEmacsKeys(t *testing.T) {
 		t.Skip("only macOS text fields have them")
 	}
 	text := "one two\nthree"
-	tt := NewTester(func(c *Context) { TextArea(c, &text).AutoFocus().Fill() }, 300, 200)
+	tt := coreNewTester(func(c *context) { coreTextArea(c, &text).AutoFocus().Fill() }, 300, 200)
 	tt.Key(Ctrl, KeyA) // the start of "three"
 	tt.Type(">")
 	if text != "one two\n>three" {
@@ -251,7 +251,7 @@ func TestEmacsKeys(t *testing.T) {
 
 func TestListScrollsAndSelects(t *testing.T) {
 	d := &demo{}
-	tt := NewTester(d.view, 640, 600)
+	tt := coreNewTester(d.view, 640, 600)
 	r, ok := tt.Find("Row 0")
 	if !ok {
 		t.Fatal("no first row")
@@ -272,7 +272,7 @@ func TestListScrollsAndSelects(t *testing.T) {
 
 func TestTabFocus(t *testing.T) {
 	d := &demo{}
-	tt := NewTester(d.view, 640, 600)
+	tt := coreNewTester(d.view, 640, 600)
 	tt.Key(0, KeyTab)
 	if !tt.Focused("Increment") {
 		t.Fatal("Tab did not focus the first button")
@@ -291,18 +291,18 @@ func TestTabFocus(t *testing.T) {
 func TestAutoFocus(t *testing.T) {
 	var open bool
 	var name string
-	view := func(c *Context) {
-		if Button(c, "Rename").Clicked() {
+	view := func(c *context) {
+		if coreButton(c, "Rename").Clicked() {
 			open = true
 		}
-		Modal(c, &open, func() {
-			TextInput(c, &name).Label("Name").AutoFocus()
-			if Button(c, "Done").Clicked() {
+		coreModal(c, &open, func() {
+			coreTextInput(c, &name).Label("Name").AutoFocus()
+			if coreButton(c, "Done").Clicked() {
 				open = false
 			}
 		})
 	}
-	tt := NewTester(view, 400, 300)
+	tt := coreNewTester(view, 400, 300)
 	tt.Click("Rename")
 	if !tt.Focused("Name") {
 		t.Fatal("the input of the opened dialog has no focus")
@@ -336,7 +336,7 @@ func listScroll(tt *Tester) (y, h float32) {
 
 func TestKeyboardScrolling(t *testing.T) {
 	d := &demo{volume: 40}
-	tt := NewTester(d.view, 640, 600)
+	tt := coreNewTester(d.view, 640, 600)
 	row, _ := tt.Find("Row 1")
 	// Without a focus, keys scroll what the pointer is over, although the
 	// slider elsewhere takes arrow keys while it has the focus.
@@ -385,15 +385,15 @@ func TestKeyboardScrolling(t *testing.T) {
 // focus with AutoFocus again.
 func TestElementsGoneInARebuild(t *testing.T) {
 	text, open := "", true
-	tt := NewTester(func(c *Context) {
-		Column(c).Gap(8).Children(func() {
-			opener := Button(c, "Open")
+	tt := coreNewTester(func(c *context) {
+		coreColumn(c).Gap(8).Children(func() {
+			opener := coreButton(c, "Open")
 			if opener.Clicked() {
 				open = true
 			}
 			if open {
-				TextInput(c, &text).AutoFocus().Label("Field")
-				if Button(c, "Close").Clicked() {
+				coreTextInput(c, &text).AutoFocus().Label("Field")
+				if coreButton(c, "Close").Clicked() {
 					open = false
 					opener.Focus()
 				}
@@ -416,12 +416,12 @@ func TestElementsGoneInARebuild(t *testing.T) {
 func TestRecycledStateIsFresh(t *testing.T) {
 	key, inits := "a", 0
 	var st *state
-	tt := NewTester(func(c *Context) {
+	tt := coreNewTester(func(c *context) {
 		if key == "" {
 			return
 		}
-		e := Scroll(c).Key(key).Size(100, 50).Children(func() { Box(c).Height(200) })
-		n := Local(e, "n", func() int { inits++; return 1 })
+		e := coreScroll(c).Key(key).Size(100, 50).Children(func() { coreBox(c).Height(200) })
+		n := coreLocal(e, "n", func() int { inits++; return 1 })
 		*n *= 2
 		e.Clicked()
 		st = e.st
@@ -456,20 +456,20 @@ func TestRecycledStateIsFresh(t *testing.T) {
 func TestHoverWhilePressed(t *testing.T) {
 	var rowHovered, otherHovered bool
 	removes, keeps := 0, 0
-	tt := NewTester(func(c *Context) {
-		Column(c).Children(func() {
-			row := Row(c).Size(200, 40)
+	tt := coreNewTester(func(c *context) {
+		coreColumn(c).Children(func() {
+			row := coreRow(c).Size(200, 40)
 			rowHovered = row.Hovered()
 			row.Children(func() {
-				if Button(c, "Keep").Clicked() {
+				if coreButton(c, "Keep").Clicked() {
 					keeps++
 				}
-				Spacer(c)
-				if rowHovered && Button(c, "Remove").Clicked() {
+				coreSpacer(c)
+				if rowHovered && coreButton(c, "Remove").Clicked() {
 					removes++
 				}
 			})
-			other := Box(c).Size(200, 40)
+			other := coreBox(c).Size(200, 40)
 			otherHovered = other.Hovered()
 		})
 	}, 300, 200)
