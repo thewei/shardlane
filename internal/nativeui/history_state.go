@@ -1,8 +1,16 @@
 package nativeui
 
+/**
+ * [INPUT]: 依赖 HistoryService 的只读列表/详情查询与 MyGo 窗口调度
+ * [OUTPUT]: 提供 History 查询代际隔离、筛选重置、列表与详情的瞬态状态
+ * [POS]: History 页面状态编排层；查询/筛选不改变 Herdr Runtime 或来源历史文件
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
+
 import (
 	"context"
 	"log/slog"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -13,6 +21,10 @@ import (
 // RecentFeedLimit bounds the Sidebar Recent section.
 const RecentFeedLimit = 8
 
+// HistoryListLimit bounds each interactive History result set. A full page
+// means "latest N", not the exact total size of the catalog.
+const HistoryListLimit = 100
+
 // HistoryListView is the slice of the read-only HistoryService the shell
 // consumes. The narrow seam keeps the presentation testable with
 // deterministic fakes.
@@ -21,6 +33,12 @@ type HistoryListView interface {
 	Open(ctx context.Context, req history.ConversationWindowRequest) (history.TranscriptWindow, error)
 	Recent(ctx context.Context, limit int) ([]history.SessionSummary, error)
 	Scan(ctx context.Context) (history.ScanResult, error)
+}
+
+// HistoryProviderView is optional for test fakes; the production service
+// obtains the full catalog's Provider choices without truncating to 100 rows.
+type HistoryProviderView interface {
+	AvailableProviders(ctx context.Context) ([]history.AgentID, error)
 }
 
 // historyState is the Shell's presentation state for the Native History
@@ -103,11 +121,22 @@ func (s *Shell) requestHistoryList() {
 	query := history.HistoryQuery{
 		ProjectPath: "",
 		Provider:    history.AgentID(s.hist.provider),
-		Search:      s.hist.query,
-		Limit:       100,
+		Search:      strings.TrimSpace(s.hist.query),
+		Limit:       HistoryListLimit,
 	}
 	s.dispatch(func() {
 		summaries, err := service.List(ctx, query)
+		var providers []history.AgentID
+		if err == nil && query.Provider == "" && query.Search == "" {
+			providers = distinctAgents(summaries)
+			if source, ok := service.(HistoryProviderView); ok {
+				if available, lookupErr := source.AvailableProviders(ctx); lookupErr == nil {
+					providers = available
+				} else if ctx.Err() == nil {
+					slog.Warn("history provider catalog unavailable", "error", lookupErr)
+				}
+			}
+		}
 		s.applyOnWindow(func() {
 			if generation != s.hist.listGen.Load() {
 				// Stale generation: the request was superseded. Touch nothing.
@@ -123,12 +152,31 @@ func (s *Shell) requestHistoryList() {
 			// Nothing is selected until the user selects it: the zero value
 			// 0 pre-highlighted the first row as if chosen (2026-10-06 F15).
 			s.hist.listSelected = -1
-			if s.hist.provider == "" {
-				s.hist.providers = distinctAgents(summaries)
+			if query.Provider == "" && query.Search == "" {
+				s.hist.providers = providers
+				s.feedRecentFromHistory(summaries)
 			}
-			s.feedRecentFromHistory(summaries)
 		})
 	})
+}
+
+// applyHistoryFilters is the one transition for interactive Search/Provider
+// changes. The previous result set must not remain clickable under new
+// criteria while its replacement is loading.
+func (s *Shell) applyHistoryFilters() {
+	s.hist.sessions = nil
+	s.hist.listSelected = -1
+	s.hist.loaded = false
+	s.requestHistoryList()
+}
+
+func (s *Shell) clearHistoryFilters() {
+	if s.hist.query == "" && s.hist.provider == "" {
+		return
+	}
+	s.hist.query = ""
+	s.hist.provider = ""
+	s.applyHistoryFilters()
 }
 
 // feedRecentFromHistory updates the Sidebar Recent rows from session

@@ -69,12 +69,39 @@ func (s *Shell) sidebarSlide(c *ui.Context) {
 	})
 }
 
-// rightPanelSlide mounts the Right Panel inside its persistent slide
-// host. The center surface is never changed by panel open/close
-// (GWB-074 regression contract) — this only animates the reveal.
+// panelMinCenterWidth reserves enough room for a real Terminal/Diff task
+// while both navigation rails compete for space. This is presentation-only:
+// a narrow window never writes the user's saved panel visibility preference.
+const panelMinCenterWidth float32 = 560
+
+// contextPanelFits is one pure width policy used by titlebar, shortcut, and
+// panel host. It does not treat a saved open preference as a layout mandate.
+func contextPanelFits(windowWidth float32, sidebarVisible bool, rightWidth int) bool {
+	if windowWidth <= 0 {
+		return true // no window geometry yet
+	}
+	used := float32(rightWidth)
+	if sidebarVisible {
+		used += sidebarWidth + gorexGap
+	}
+	return windowWidth-used >= panelMinCenterWidth
+}
+
+func (s *Shell) contextPanelFits(windowWidth float32) bool {
+	return contextPanelFits(windowWidth, !s.sidebarCollapsed, s.rightPanel.width)
+}
+
+func (s *Shell) contextPanelVisible(windowWidth float32) bool {
+	return s.contextPanelOpen() && s.contextPanelFits(windowWidth)
+}
+
+// rightPanelSlide mounts the panel only when the central task retains enough
+// room. Auto-hidden panels restore on resize without altering their saved
+// open state or Workspace/History context ownership.
 func (s *Shell) rightPanelSlide(c *ui.Context) {
 	host := ui.Row(c.Key("right-panel-slide")).Shrink(0).AlignItems(ui.Stretch)
-	w := slideWidth(host, "width", !s.rightPanel.open || s.activeContextPanel() == contextPanelNone, float32(s.rightPanel.width))
+	windowWidth, _ := c.Size()
+	w := slideWidth(host, "width", !s.contextPanelVisible(windowWidth), float32(s.rightPanel.width))
 	if w <= panelSlideEpsilon {
 		return
 	}

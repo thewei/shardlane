@@ -188,10 +188,10 @@ func TestQuickPanelStatusTabFilters(t *testing.T) {
 	}
 }
 
-// TestQuickPanelCardClickNavigates pins the row action: clicking an agent
-// card hides the panel and lands on the agent's owning pane, client-locally
-// (no Herdr focus RPC).
-func TestQuickPanelCardClickNavigates(t *testing.T) {
+// TestQuickPanelCardClickOpensAgentDetail pins the two-level popover:
+// selecting an Agent in the overview reveals its exact details without
+// navigating away; explicit actions in the detail handle navigation.
+func TestQuickPanelCardClickOpensAgentDetail(t *testing.T) {
 	shell := quickPanelShell(t)
 	shell.router.Replace("/history")
 	tester := ui.NewTester(shell.QuickPanelView, QuickPanelWidth, QuickPanelHeight)
@@ -200,11 +200,14 @@ func TestQuickPanelCardClickNavigates(t *testing.T) {
 		t.Fatal(err)
 	}
 	tester.Frame()
-	if shell.selectedPaneID != "p2" {
-		t.Fatalf("selected pane = %q, want p2", shell.selectedPaneID)
+	if shell.quickPanelAgent == nil || shell.quickPanelAgent.TerminalID != "term-2" {
+		t.Fatalf("Agent detail = %#v, want Ranger", shell.quickPanelAgent)
 	}
-	if shell.router.Path() != routeWorkspace {
-		t.Fatalf("route = %q, want the workspace", shell.router.Path())
+	if shell.router.Path() != routeHistory || shell.selectedPaneID != "" {
+		t.Fatalf("Agent preview unexpectedly navigated: route=%q pane=%q", shell.router.Path(), shell.selectedPaneID)
+	}
+	if !tester.HasText("Open Terminal") {
+		t.Fatalf("focused action missing: %q", tester.Texts())
 	}
 }
 

@@ -1,5 +1,12 @@
 package nativeui
 
+/**
+ * [INPUT]: 依赖只读 HistoryService 的列表/详情状态和共享 MyGo Design Tokens
+ * [OUTPUT]: 提供 History 列表、Provider 过滤与有界会话详情内容
+ * [POS]: History 的主内容页，仅中间阅读域拥有 transcript；右侧详情交给 context_panel
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
+
 import (
 	"fmt"
 	"math"
@@ -33,25 +40,42 @@ func (s *Shell) historyNav(c *ui.Context) {
 	path := s.router.Path()
 	ui.Text(c, "History").FontSize(13).Bold().Padding(6, 8, 8)
 	if navButton(c, iconHistory, "All conversations", "", path == routeHistory).Clicked() {
-		s.router.Push(routeHistory)
+		s.showHistoryIndex()
 	}
-	if navButton(c, iconFolder, "By Project", "", path == "/history-projects").Clicked() {
+	if navButton(c, iconFolder, "By Project", "", path == "/history-projects").Clicked() && path != "/history-projects" {
+		if strings.HasPrefix(path, routeHistory+"/") {
+			s.cancelHistoryDetailRequest()
+		}
 		s.router.Push("/history-projects")
 	}
-	sectionLabel(c, "Filter")
-	field := ui.TextInput(c, &s.hist.query).Label("Search History").Placeholder("Search sessions…").FillWidth()
-	if field.Submitted() {
-		s.requestHistoryList()
+	// The grouped page and transcript detail don't consume list search,
+	// Provider filters, or the list refresh action. Never render a control
+	// whose effect cannot be seen in the currently selected page.
+	if path != routeHistory {
+		ui.Spacer(c)
+		return
 	}
-	if navButton(c, nil, "All", "", s.hist.provider == "").Clicked() {
+	sectionLabel(c, "Filter")
+	field := ui.SearchField(c, &s.hist.query).Label("Search History").FillWidth()
+	if field.Changed() || field.Submitted() {
+		s.applyHistoryFilters()
+	}
+	ui.Text(c, historyResultLabel(s.hist.loading, s.hist.loaded, s.hist.errText, len(s.hist.sessions))).
+		FontSize(Typography().Caption).TextColor(c.Theme().TextMuted).Padding(2, 8, 5)
+	if navButton(c, nil, "All", "", s.hist.provider == "").Clicked() && s.hist.provider != "" {
 		s.hist.provider = ""
-		s.requestHistoryList()
+		s.applyHistoryFilters()
 	}
 	for _, id := range s.hist.providers {
 		id := id
-		if navButton(c, nil, id.DisplayName(), "", s.hist.provider == string(id)).Clicked() {
+		if navButton(c, nil, id.DisplayName(), "", s.hist.provider == string(id)).Clicked() && s.hist.provider != string(id) {
 			s.hist.provider = string(id)
-			s.requestHistoryList()
+			s.applyHistoryFilters()
+		}
+	}
+	if historyFiltersActive(s.hist.query, s.hist.provider) {
+		if ui.Button(c, "Clear filters").Clicked() {
+			s.clearHistoryFilters()
 		}
 	}
 	ui.Spacer(c)
@@ -85,7 +109,17 @@ func (s *Shell) historyListBody(c *ui.Context) {
 		emptyState(c, "History is unavailable", "The read-only history catalog could not be opened in this session.")
 	case s.hist.loading && len(s.hist.sessions) == 0:
 		loadingState(c, "Loading History…")
-	case s.hist.errText == "" && s.hist.loaded && len(s.hist.sessions) == 0:
+	case s.hist.errText != "" && len(s.hist.sessions) == 0:
+		emptyState(c, "History could not load", "Use Retry above to reload the conversations.")
+	case s.hist.loaded && len(s.hist.sessions) == 0 && historyFiltersActive(s.hist.query, s.hist.provider):
+		ui.Column(c).Grow(1).Center().Gap(Spacing().M).Children(func() {
+			ui.Text(c, "No matching conversations").Bold()
+			ui.Text(c, "Try another search or provider.").FontSize(Typography().BodySmall).TextColor(c.Theme().TextMuted)
+			if ui.Button(c, "Clear filters").Clicked() {
+				s.clearHistoryFilters()
+			}
+		})
+	case s.hist.loaded && len(s.hist.sessions) == 0:
 		emptyState(c, "No conversations found", "Conversations appear here once provider history sources are indexed.")
 	default:
 		sp := Spacing()
@@ -122,20 +156,20 @@ func (s *Shell) historyRow(c *ui.Context, summary history.SessionSummary) {
 	row.Children(func() {
 		ui.Column(c).Grow(1).MinWidth(0).Gap(3).Children(func() {
 			ui.Row(c).Gap(sp.S).AlignItems(ui.Center).Children(func() {
-				ui.Text(c, fallbackText(summary.Meta.Title, history.Untitled)).FontSize(typ.Body + 0.5).FontWeight(600).Grow(1).SingleLine()
+				ui.Text(c, fallbackText(summary.Meta.Title, history.Untitled)).FontSize(typ.Body + 0.5).FontWeight(600).Grow(1).SingleLine().Tooltip(fallbackText(summary.Meta.Title, history.Untitled))
 				providerBadge(c, summary.Meta.Agent)
 			})
 			// F102: the title is derived from the first user message and so is
 			// the catalog description — when one is a prefix of the other the
-			// second line read the same text twice. Only keep a description
-			// that adds information; otherwise fall back to the project name.
+			// second line read the same text twice. Show only genuinely new
+			// description content; the project already has its own metadata row.
 			description := historyRowDescription(summary)
 			if description != "" {
-				ui.Text(c, description).FontSize(typ.BodySmall).TextColor(t.TextMuted).SingleLine()
+				ui.Text(c, description).FontSize(typ.BodySmall).TextColor(t.TextMuted).SingleLine().Tooltip(description)
 			}
 			ui.Row(c).Gap(sp.S).Children(func() {
 				if summary.Meta.ProjectName != "" {
-					ui.Text(c, summary.Meta.ProjectName).FontSize(typ.Caption).TextColor(t.TextMuted).SingleLine()
+					ui.Text(c, summary.Meta.ProjectName).FontSize(typ.Caption).TextColor(t.TextMuted).SingleLine().Tooltip(summary.Meta.ProjectName)
 				}
 				if stamp := historyTimestamp(summary.Meta.UpdatedAt); stamp != "" {
 					ui.Text(c, stamp).FontSize(typ.Caption).TextColor(t.TextMuted)
@@ -144,6 +178,30 @@ func (s *Shell) historyRow(c *ui.Context, summary history.SessionSummary) {
 			})
 		})
 	})
+}
+
+// historyFiltersActive indicates a scoped view, not an empty catalog.
+func historyFiltersActive(query, provider string) bool {
+	return strings.TrimSpace(query) != "" || provider != ""
+}
+
+// historyResultLabel describes only the bounded page returned by History,
+// never claims a catalog-wide total when the result hits the query limit.
+func historyResultLabel(loading, loaded bool, errText string, count int) string {
+	switch {
+	case loading:
+		return "Searching…"
+	case errText != "":
+		return "Unable to load results"
+	case !loaded:
+		return "Results not loaded"
+	case count == HistoryListLimit:
+		return fmt.Sprintf("Latest %d results · Newest first", count)
+	case count == 1:
+		return "1 result · Newest first"
+	default:
+		return fmt.Sprintf("%d results · Newest first", count)
+	}
 }
 
 // historyDetailPage renders the bounded Native transcript window for one
@@ -166,9 +224,8 @@ func (s *Shell) historyDetailPage(c *ui.Context, id string) {
 		}
 		ui.Row(c).Padding(18, 20, 14).Gap(10).AlignItems(ui.Center).
 			BorderWidth(0, 0, 1, 0).BorderColor(tokens.BorderSubtle).Children(func() {
-			if ui.Button(c, "Back").Clicked() {
-				s.cancelHistoryDetailRequest()
-				s.router.Back()
+			if ui.Button(c, "Back to History").Clicked() {
+				s.showHistoryIndex()
 			}
 			ui.Column(c).Grow(1).MinWidth(0).Gap(2).Children(func() {
 				// F47 symmetry: the list rows carry a tooltip; the detail header
@@ -198,8 +255,7 @@ func (s *Shell) historyDetailBody(c *ui.Context) {
 		ui.Column(c).Grow(1).Center().Gap(8).Children(func() {
 			ui.Text(c, detail.errText).TextColor(t.Danger)
 			if ui.Button(c, "Back to History").Clicked() {
-				s.cancelHistoryDetailRequest()
-				s.router.Back()
+				s.showHistoryIndex()
 			}
 		})
 		return
@@ -340,12 +396,12 @@ func historyTimestamp(ms int64) string {
 
 // historyRowDescription picks the list-card preview (F102): the catalog
 // description duplicates the title whenever both are derived from the first
-// user message, so a prefix-overlap falls back to the project name.
+// user message. In that case omit the preview: Project is already metadata.
 func historyRowDescription(summary history.SessionSummary) string {
 	title := strings.TrimSpace(summary.Meta.Title)
 	description := strings.TrimSpace(summary.Description)
 	if description == "" {
-		return summary.Meta.ProjectName
+		return ""
 	}
 	if title == "" {
 		return description
@@ -355,7 +411,7 @@ func historyRowDescription(summary history.SessionSummary) string {
 		shorter, longer = longer, shorter
 	}
 	if strings.HasPrefix(longer, shorter) {
-		return summary.Meta.ProjectName
+		return ""
 	}
 	return description
 }

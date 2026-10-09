@@ -159,6 +159,9 @@ func (s *Shell) workbenchFiltered() []agent.AgentCardModel {
 // lands blocked agents on their Terminal), records the MRU visit and clears
 // unread. It never emits a Herdr focus RPC.
 func (s *Shell) openAgentCard(card agent.AgentCardModel) {
+	if s.holdCommitNavigation() {
+		return
+	}
 	s.workbench.markers.Visit(card.Key)
 	s.recordAgentVisit(card.Key)
 	if card.PaneID != "" {

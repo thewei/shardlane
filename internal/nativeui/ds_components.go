@@ -67,6 +67,31 @@ func emptyState(c *ui.Context, title, detail string) {
 	})
 }
 
+// workspaceEmptyBanner is a compact, top-aligned empty state for the
+// Terminal-adjacent Chat/Diff surfaces. It uses the same layout and tokens
+// everywhere, instead of a centered modal-like card in the main canvas.
+func workspaceEmptyBanner(c *ui.Context, glyph *ui.SVG, title, detail string, actions func()) {
+	t := c.Theme()
+	tokens := designTokens(t.Dark)
+	sp := Spacing()
+	ui.Column(c).Grow(1).MinWidth(0).Padding(sp.XL).Children(func() {
+		ui.Row(c).FillWidth().Gap(sp.L).Padding(sp.L).
+			BorderWidth(0, 0, 1, 0).BorderColor(tokens.BorderSubtle).
+			AlignItems(ui.Center).Children(func() {
+			ui.Icon(c, glyph).Size(18, 18).TextColor(t.TextMuted).Shrink(0)
+			ui.Column(c).Grow(1).MinWidth(0).Gap(sp.XS).Children(func() {
+				ui.Text(c, title).FontSize(Typography().Section).FontWeight(650)
+				if detail != "" {
+					ui.Text(c, detail).FontSize(Typography().BodySmall).TextColor(t.TextMuted)
+				}
+			})
+			if actions != nil {
+				ui.Row(c).Gap(sp.S).AlignItems(ui.Center).Children(actions)
+			}
+		})
+	})
+}
+
 // loadingState is the shared in-flight state.
 func loadingState(c *ui.Context, text string) {
 	t := c.Theme()

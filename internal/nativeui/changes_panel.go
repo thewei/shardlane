@@ -122,14 +122,8 @@ func (s *Shell) gdChangesFooter(c *ui.Context, pal *gdPalette, snap *gitworkbenc
 			ui.Text(c, "+"+gdThousands(snap.TotalAdditions)).Font(gdCodeFont()).FontSize(11).FontWeight(600).TextColor(pal.addText)
 			ui.Text(c, "-"+gdThousands(snap.TotalDeletions)).Font(gdCodeFont()).FontSize(11).FontWeight(600).TextColor(pal.delText)
 		})
-		ui.Spacer(c)
-		b := ui.Button(c, "").Children(func() {
-			ui.Icon(c, iconCommit).FontSize(14)
-			ui.Text(c, "Commit").SingleLine()
-		})
-		if b.Clicked() {
-			s.showSurface(WorkspaceSurfaceCommit)
-		}
+		// Commit is deliberately available only once, in the center
+		// Workbench toolbar. This footer is a read-only total summary.
 	})
 }
 

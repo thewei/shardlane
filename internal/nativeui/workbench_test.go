@@ -56,9 +56,9 @@ func TestWorkbenchSidebarShowsSharedCardRows(t *testing.T) {
 // page; since 2026-10-07 the status tab group lives in the floating agent
 // activity panel (quick_panel_test.go covers it).
 
-// TestWorkbenchBlockedActionOpensTerminalLocally pins that the agent card
-// click (the panel row, formerly the /agents page button) navigates
-// client-locally to the owning pane and never emits a Herdr focus RPC.
+// TestWorkbenchBlockedActionOpensTerminalLocally pins the explicit
+// quick-panel Open Terminal action after selecting a blocked Agent. Merely
+// selecting an Agent for preview never moves the Terminal focus.
 func TestWorkbenchBlockedActionOpensTerminalLocally(t *testing.T) {
 	shell := workbenchTestShell(t)
 	tester := ui.NewTester(shell.QuickPanelView, QuickPanelWidth, QuickPanelHeight)
@@ -66,7 +66,14 @@ func TestWorkbenchBlockedActionOpensTerminalLocally(t *testing.T) {
 	if err := tester.Click("Ranger"); err != nil {
 		t.Fatal(err)
 	}
-	// The blocked agent Ranger sits on p2; local selection moves there.
+	tester.Frame()
+	if shell.selectedPaneID != "" {
+		t.Fatalf("preview switched pane prematurely: %q", shell.selectedPaneID)
+	}
+	if err := tester.Click("Open Terminal"); err != nil {
+		t.Fatal(err)
+	}
+	// Ranger sits on p2; only the explicit action moves local selection.
 	if shell.selectedPaneID != "p2" {
 		t.Fatalf("selected pane = %q, want p2", shell.selectedPaneID)
 	}

@@ -38,9 +38,12 @@ const (
 
 // rightPanelState holds presentation state for the Project tool area.
 type rightPanelState struct {
-	open    bool
-	surface RightPanelSurface
-	width   int
+	// open is Workspace-tool visibility; History remembers its own inspector
+	// visibility so toggling it cannot surprise a later Terminal visit.
+	open        bool
+	historyOpen bool
+	surface     RightPanelSurface
+	width       int
 	// lastToolByTab remembers the per-Tab last tool choice (GWB-072).
 	lastToolByTab map[string]RightPanelSurface
 
@@ -70,18 +73,73 @@ func defaultRightPanelState() rightPanelState {
 
 // toggleRightPanel toggles panel visibility. The center surface is never
 // changed by panel open/close (GWB-074 regression contract).
-func (s *Shell) toggleRightPanel() {
-	if s.activeContextPanel() == contextPanelNone {
-		return
-	}
-	s.rightPanel.open = !s.rightPanel.open
-	if s.rightPanel.open && s.activeContextPanel() == contextPanelWorkspace {
-		s.syncRightPanelRoot()
+func (s *Shell) contextPanelOpen() bool {
+	switch s.activeContextPanel() {
+	case contextPanelWorkspace:
+		return s.rightPanel.open
+	case contextPanelHistory:
+		return s.rightPanel.historyOpen
+	default:
+		return false
 	}
 }
 
+// toggleRightPanelForViewport is the user-action entry point. At narrow
+// widths an explicit request to show the Inspector makes room by collapsing
+// the left navigation when that is sufficient. Otherwise it explains the
+// constraint instead of silently toggling an invisible saved preference.
+func (s *Shell) toggleRightPanelForViewport(windowWidth float32) {
+	if s.activeContextPanel() == contextPanelNone {
+		return
+	}
+	if !s.contextPanelVisible(windowWidth) {
+		if !s.contextPanelFits(windowWidth) {
+			if s.sidebarCollapsed || !contextPanelFits(windowWidth, false, s.rightPanel.width) {
+				s.pendingToast = "More space is needed for this panel. Widen the window to open it."
+				return
+			}
+			s.sidebarCollapsed = true
+		}
+		if !s.contextPanelOpen() {
+			s.toggleRightPanel()
+		}
+		return
+	}
+	s.toggleRightPanel()
+}
+
+func (s *Shell) toggleRightPanel() {
+	switch s.activeContextPanel() {
+	case contextPanelWorkspace:
+		s.rightPanel.open = !s.rightPanel.open
+		if s.rightPanel.open {
+			s.syncRightPanelRoot()
+		}
+	case contextPanelHistory:
+		s.rightPanel.historyOpen = !s.rightPanel.historyOpen
+	}
+}
+
+// openRightPanelSurfaceForViewport is the Command Center's explicit tool
+// destination. It uses the same width policy as the titlebar/shortcut, and
+// navigates to Workspace before opening its own contextual tool. Invalid
+// widths keep the user's current page/tool/visibility intact.
+func (s *Shell) openRightPanelSurfaceForViewport(surface RightPanelSurface, windowWidth float32) {
+	if !contextPanelFits(windowWidth, false, s.rightPanel.width) {
+		s.pendingToast = "More space is needed for this panel. Widen the window to open it."
+		return
+	}
+	if s.router.Path() != routeWorkspace {
+		s.showViewTerminal()
+	}
+	if !s.contextPanelFits(windowWidth) {
+		s.sidebarCollapsed = true
+	}
+	s.openRightPanelSurface(surface)
+}
+
 // openRightPanelSurface switches to a surface, remembers the per-Tab choice
-// and ensures visibility.
+// and ensures visibility. Internal tool tabs call it only while visible.
 func (s *Shell) openRightPanelSurface(surface RightPanelSurface) {
 	s.rightPanel.surface = surface
 	s.rightPanel.open = true
@@ -155,6 +213,9 @@ func (s *Shell) rightPanelContent(c *ui.Context) {
 				ui.Row(c).FillWidth().Padding(sp.S, sp.M).AlignItems(ui.Center).
 					BorderWidth(0, 0, 1, 0).BorderColor(designTokens(t.Dark).BorderSubtle).Children(func() {
 					surfaces := []string{"Changes", "Files", "Services"}
+					if s.sidebarInDiffMode() {
+						surfaces[0] = "Review"
+					}
 					currentIdx := 0
 					switch s.rightPanel.surface {
 					case SurfaceFiles:
@@ -181,7 +242,11 @@ func (s *Shell) rightPanelContent(c *ui.Context) {
 				ui.Column(c).Grow(1).MinHeight(0).Children(func() {
 					switch s.rightPanel.surface {
 					case SurfaceChanges:
-						s.changesToolView(c)
+						if s.sidebarInDiffMode() {
+							s.gitReviewInspector(c)
+						} else {
+							s.changesToolView(c)
+						}
 					case SurfaceFiles:
 						s.filesToolView(c)
 					case SurfaceServices:

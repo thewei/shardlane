@@ -16,11 +16,67 @@ func (s *Shell) openTextDialog(kind, target, title, label, value string) {
 
 func (s *Shell) openConfirm(kind, target, title, message string) {
 	s.confirmKind, s.confirmTarget = kind, target
+	s.confirmRepoRoot = ""
+	if strings.HasPrefix(kind, "git-") && s.git != nil {
+		s.confirmRepoRoot = s.git.root
+	}
 	s.confirmTitle, s.confirmMessage = title, message
 	s.confirmOpen = true
 }
 
 func (s *Shell) dialogs(c *ui.Context) {
+	if s.mergeDialogOpen && (s.git == nil || s.mergeRepoRoot == "" || s.mergeRepoRoot != s.git.root) {
+		s.mergeDialogOpen = false
+		s.pendingToast = "Repository changed. Reopen Merge for the current repository."
+	}
+	if s.mergeDialogOpen {
+		ui.Modal(c, &s.mergeDialogOpen, func() {
+			ui.Column(c).Width(430).MaxWidth(480).Gap(Spacing().M).Children(func() {
+				ui.Text(c, "Merge branch").FontSize(Typography().Title).FontWeight(650)
+				ui.Text(c, s.mergeTarget).FontSize(Typography().Body).FontWeight(600).SingleLine().Tooltip(s.mergeTarget)
+				ui.Segmented(c, &s.mergeStrategy, "Fast-forward only", "Create merge commit").FillWidth()
+				if s.mergeStrategy == 0 {
+					ui.Text(c, "Only moves the branch forward when histories have not diverged. No merge commit is created.").FontSize(Typography().Caption).TextColor(c.Theme().TextMuted)
+				} else {
+					ui.Text(c, "Creates a merge commit. Conflicts may require resolving files before Continue or Abort.").FontSize(Typography().Caption).TextColor(c.Theme().TextMuted)
+				}
+				ui.Row(c).FillWidth().Gap(Spacing().S).Justify(ui.End).Children(func() {
+					if ui.Button(c, "Cancel Merge").Clicked() {
+						s.mergeDialogOpen = false
+					}
+					if ui.PrimaryButton(c, "Review merge").Clicked() {
+						target, strategy := s.mergeTarget, s.mergeStrategy
+						s.mergeDialogOpen = false
+						if strategy == 1 {
+							s.confirmMergeNoFFBranch(target)
+						} else {
+							s.confirmMergeBranch(target)
+						}
+					}
+				})
+			})
+		})
+	}
+	// Commit always owns one modal, regardless of which Git entry opened it.
+	// MyGo dismisses Modal on backdrop/Escape; we turn such dismissals into
+	// the same explicit guarded cancel flow on the next frame.
+	if s.surface.current() == WorkspaceSurfaceCommit {
+		if !s.commitDialogOpen {
+			s.commitDialogOpen = true
+			s.requestCancelCommit()
+		}
+		if s.surface.current() == WorkspaceSurfaceCommit {
+			ui.Modal(c, &s.commitDialogOpen, func() {
+				_, height := c.Size()
+				ui.Column(c).Width(680).MaxWidth(760).Height(min(height-100, 600)).
+					MinHeight(240).MinWidth(0).Gap(Spacing().M).Children(func() {
+					ui.Text(c, "Commit changes").FontSize(Typography().Title).FontWeight(700)
+					ui.Text(c, "Review the selected files and message before committing.").FontSize(Typography().Caption).TextColor(c.Theme().TextMuted)
+					s.commitSurface(c)
+				})
+			})
+		}
+	}
 	if s.dialogOpen {
 		ui.Modal(c, &s.dialogOpen, func() {
 			ui.Text(c, s.dialogTitle).Bold().FontSize(16)
@@ -76,6 +132,10 @@ func (s *Shell) submitTextDialog(kind, target, value string) {
 }
 
 func (s *Shell) submitConfirm(kind, target string) {
+	if strings.HasPrefix(kind, "git-") && (s.git == nil || s.confirmRepoRoot == "" || s.git.root != s.confirmRepoRoot) {
+		s.pendingToast = "Repository changed. Please reopen the Git action before confirming."
+		return
+	}
 	switch kind {
 	case "delete-workspace":
 		s.deleteWorkspace(target)

@@ -1,5 +1,12 @@
 package history
 
+/**
+ * [INPUT]: 依赖只读 Catalog 的最新元数据、会话索引与有界 transcript 缓存
+ * [OUTPUT]: 对外提供 HistoryService 的列表/筛选/阅读查询与增量扫描入口
+ * [POS]: 历史领域服务层；Project/Provider 条件在 SQL 限额之前生效
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
+
 import (
 	"context"
 	"fmt"
@@ -61,6 +68,15 @@ func (s *HistoryService) Scan(ctx context.Context) (ScanResult, error) {
 	return s.scanner.Scan(ctx)
 }
 
+// AvailableProviders lists the catalog's actual Provider identities without
+// imposing the interactive list page limit; this is a metadata-only read.
+func (s *HistoryService) AvailableProviders(ctx context.Context) ([]AgentID, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return s.catalog.AvailableProviders()
+}
+
 // List returns bounded session metadata. It never parses transcripts.
 func (s *HistoryService) List(ctx context.Context, q HistoryQuery) ([]SessionSummary, error) {
 	if err := ctx.Err(); err != nil {
@@ -85,24 +101,10 @@ func (s *HistoryService) List(ctx context.Context, q HistoryQuery) ([]SessionSum
 		}
 		return summaries, nil
 	}
-	if q.ProjectPath != "" {
-		_, summaries, err := s.catalog.SessionsForProject(q.ProjectPath, q.Limit)
-		return summaries, err
+	if q.ProjectPath != "" || q.Provider != "" {
+		return s.catalog.ListFilteredSessions(q.ProjectPath, q.Provider, q.Limit)
 	}
-	summaries, err := s.catalog.ListSessions(q.Limit)
-	if err != nil {
-		return nil, err
-	}
-	if q.Provider == "" {
-		return summaries, nil
-	}
-	filtered := make([]SessionSummary, 0, len(summaries))
-	for _, summary := range summaries {
-		if summary.Meta.Agent == q.Provider {
-			filtered = append(filtered, summary)
-		}
-	}
-	return filtered, nil
+	return s.catalog.ListSessions(q.Limit)
 }
 
 // Recent returns the most recent sessions for the Sidebar Recent section:

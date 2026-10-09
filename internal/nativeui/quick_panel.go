@@ -9,8 +9,8 @@ import (
 
 /**
  * [INPUT]: 依赖 mygo 的第二个无边框窗口与 Screen 工作区、ui.Segmented、agent_card 共享卡片、tray_model 的计数
- * [OUTPUT]: 对外提供 Shell.QuickPanelView（Agent 活动浮层内容）、AttachQuickPanel、ToggleQuickPanel（托盘锚点）、Shell.toggleAgentActivityPanel（标题栏按钮锚点）、QuickPanelHeightFor（内容驱动高度纯函数）
- * [POS]: Agent 活动的唯一浮层（2026-10-07）：托盘与标题栏按钮共用；高度随内容伸缩、封顶后内部滚动；状态标签组切换列表
+ * [OUTPUT]: 对外提供 Shell.QuickPanelView（Agent 概览或聚焦详情）、AttachQuickPanel、ToggleQuickPanel（托盘锚点）、Shell.toggleAgentActivityPanel（标题栏按钮锚点）、QuickPanelHeightFor（内容驱动高度纯函数）
+ * [POS]: Agent 活动的唯一浮层：托盘/标题栏浏览概览，侧栏/列表卡片浏览精确 Agent；同一原生窗口与高度管理，焦点与路由归属独立
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 
@@ -35,13 +35,17 @@ const quickPanelGap = 8
 // scroll padding; quickPanelRowHeight is one agent card plus its gap;
 // quickPanelEmptyHeight is the empty state's budget.
 const (
-	quickPanelChromeHeight = 116
+	quickPanelChromeHeight = 180
 	quickPanelRowHeight    = 44
 	quickPanelEmptyHeight  = 72
 )
 
 // quickPanelMinHeight keeps the panel presentable when it is nearly empty.
 const quickPanelMinHeight = 160
+
+// The focused Agent card uses the same floating window but a shorter,
+// action-oriented detail layout, rather than a second popup implementation.
+const quickPanelAgentHeight = 328
 
 // QuickPanelHeightFor returns the content-driven panel height: chrome plus
 // one row per listed agent, clamped between the minimum and the fixed cap
@@ -111,14 +115,20 @@ func (s *Shell) QuickPanelView(c *ui.Context) {
 		s.hideQuickPanel()
 	}
 	snapshot := s.BuildStatusCenterSnapshot()
+	if s.quickPanelAgent != nil {
+		s.agentQuickPanelDetail(c, snapshot)
+		return
+	}
 	entries := s.filterStatusEntries(snapshot)
 	header := QuickPanelHeader(snapshot, !s.offline)
 	ui.Column(c).Grow(1).Background(designTokens(t.Dark).Content).Children(func() {
 		ui.Column(c).FillWidth().Padding(sp.M, sp.L).Gap(sp.XS).
 			BorderWidth(0, 0, 1, 0).BorderColor(designTokens(t.Dark).BorderSubtle).Children(func() {
-			ui.Text(c, "Shardlane").FontSize(Typography().Body + 1).FontWeight(700)
+			ui.Text(c, "Shardlane").FontSize(Typography().Micro).TextColor(t.TextMuted)
+			ui.Text(c, "Agent Activity").FontSize(Typography().Section + 1).FontWeight(700)
 			ui.Text(c, header).FontSize(Typography().Caption).TextColor(t.TextMuted).SingleLine()
 		})
+		s.quickPanelSummary(c, snapshot)
 		// The status tab group switches the agent list (2026-10-07); a
 		// change resizes the panel window to the new content height.
 		ui.Row(c).FillWidth().Padding(sp.S, sp.L, 0).Children(func() {
@@ -149,12 +159,10 @@ func (s *Shell) QuickPanelView(c *ui.Context) {
 						}
 					})
 					if row.Clicked() {
-						s.hideQuickPanel()
-						if entry.HasInteraction {
-							s.openChat(entry.Card)
-							return
-						}
-						s.openAgentCard(entry.Card)
+						key := entry.Card.Key
+						s.quickPanelAgent = &key
+						s.positionQuickPanel()
+						s.invalidateQuickPanel()
 					}
 				}
 			})
@@ -227,6 +235,7 @@ func quickPanelToggleOff(visible bool, blurHideAt, now time.Time) bool {
 
 // hideQuickPanel hides the panel when visible (blur/Escape lifecycle).
 func (s *Shell) hideQuickPanel() {
+	s.quickPanelAgent = nil
 	if s.quickPanel != nil && s.quickPanel.IsVisible() {
 		s.quickPanel.Hide()
 	}
@@ -289,6 +298,12 @@ func (s *Shell) toggleQuickPanelAnchored(anchor QuickRect) {
 		s.hideQuickPanel()
 		return
 	}
+	s.quickPanelAgent = nil
+	s.showQuickPanelAnchored(anchor)
+}
+
+// showQuickPanelAnchored opens (or retargets) the one reusable popover.
+func (s *Shell) showQuickPanelAnchored(anchor QuickRect) {
 	s.refreshUsageProjection(true)
 	display := mygo.Screen.DisplayNearestPoint(mygo.Point{
 		X: anchor.X + anchor.Width/2,
@@ -310,6 +325,9 @@ func (s *Shell) positionQuickPanel() {
 		return
 	}
 	height := QuickPanelHeightFor(len(s.filterStatusEntries(s.BuildStatusCenterSnapshot())))
+	if s.quickPanelAgent != nil {
+		height = quickPanelAgentHeight
+	}
 	x, y := QuickPanelBounds(s.quickPanelPlacement.anchor, s.quickPanelPlacement.workArea, QuickPanelWidth, height)
 	s.quickPanel.SetBounds(mygo.Rectangle{X: x, Y: y, Width: QuickPanelWidth, Height: height})
 }

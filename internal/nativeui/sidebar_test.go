@@ -18,10 +18,10 @@ func TestInnerPageSidebarPinsPageNavAndBack(t *testing.T) {
 	for _, route := range []string{"/settings/general", "/history", "/history-projects"} {
 		s.router.Replace(route)
 		tester := ui.NewTester(s.View, 1200, 800)
-		if !tester.HasText("Back to Workspace") {
+		if !tester.HasText("Back to Terminal") {
 			t.Fatalf("%s: sidebar missing the back control; texts=%q", route, tester.Texts())
 		}
-		if err := tester.Click("Back to Workspace"); err != nil {
+		if err := tester.Click("Back to Terminal"); err != nil {
 			t.Fatalf("%s: back click failed: %v", route, err)
 		}
 		if got := s.router.Path(); got != "/workspace" {

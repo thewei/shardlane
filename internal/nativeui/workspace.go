@@ -7,13 +7,11 @@ import (
 )
 
 // workspacePage renders the /workspace center through the single
-// WorkspacePrimarySurface owner (plan §5): Terminal, Diff or Commit —
-// never two at once. The Terminal surface stays transparent so the
-// gorex background gradient shows between the pane cards, and the Diff
-// surface rides in a gorex card on the same gradient.
+// WorkspacePrimarySurface owner: Terminal, Chat, Diff, or Commit state.
+// Commit displays Diff under its native modal editor; no Terminal frame or
+// second Git transaction can receive input while the modal is active.
 func (s *Shell) workspacePage(c *ui.Context) {
 	t := c.Theme()
-	tokens := designTokens(t.Dark)
 	ui.Column(c).Grow(1).MinWidth(0).Children(func() {
 		if s.errText != "" {
 			s.workspaceErrorBanner(c, t)
@@ -25,9 +23,9 @@ func (s *Shell) workspacePage(c *ui.Context) {
 			// old opaque app sheet is gone (2026-10-06).
 			gorexContentCard(c, gorexColorsOf(t.Dark), func() { s.gdDiffSurface(c) })
 		case WorkspaceSurfaceCommit:
-			ui.Column(c).Grow(1).MinWidth(0).Background(tokens.Content).Children(func() {
-				s.commitSurface(c)
-			})
+			// Commit is a modal editing task above the last Git review. Never
+			// render Terminal alongside it or rebuild the commit transaction.
+			gorexContentCard(c, gorexColorsOf(t.Dark), func() { s.gdDiffSurface(c) })
 		case WorkspaceSurfaceChat:
 			gorexContentCard(c, gorexColorsOf(t.Dark), func() { s.workspaceChatSurface(c) })
 		default:
@@ -71,6 +69,9 @@ func (s *Shell) terminalSurface(c *ui.Context) {
 // leaving Terminal explicitly removes terminal focus; entering it restores
 // pane focus and resyncs geometry (GWB-042).
 func (s *Shell) showSurface(kind WorkspaceSurfaceKind) {
+	if s.surface.current() == WorkspaceSurfaceCommit && kind != WorkspaceSurfaceCommit && s.holdCommitNavigation() {
+		return
+	}
 	if s.surface.current() == kind {
 		return
 	}
@@ -95,9 +96,26 @@ func (s *Shell) showSurface(kind WorkspaceSurfaceKind) {
 	}
 }
 
-// openWorkspaceChat activates the Chat primary surface and binds the
-// selected pane's agent if available.
+// workspaceChatAvailable fences user-triggered Chat navigation to an
+// actual Agent pane. A previously bound conversation for another pane does
+// not qualify the currently selected plain shell as a Chat destination.
+func (s *Shell) workspaceChatAvailable() bool {
+	_, ok := s.agentCardForSelectedPane()
+	return ok
+}
+
+func (s *Shell) chatUnavailableNotice() {
+	s.pendingToast = "Chat needs an Agent pane. Select an Agent from the sidebar."
+}
+
+// openWorkspaceChat activates Chat only for an Agent-backed pane. The
+// ordinary shell remains on its current surface; no stale Chat draft or
+// conversation may be projected as though it belongs to that shell.
 func (s *Shell) openWorkspaceChat() {
+	if !s.workspaceChatAvailable() {
+		s.chatUnavailableNotice()
+		return
+	}
 	s.surface.openChat(s.workspaceContext())
 	s.rebindWorkspaceChat()
 }
@@ -126,6 +144,10 @@ func (s *Shell) rebindWorkspaceChat() {
 
 // toggleTerminalChat toggles between Terminal and Chat on the active workspace.
 func (s *Shell) toggleTerminalChat() {
+	if s.surface.current() != WorkspaceSurfaceChat && !s.workspaceChatAvailable() {
+		s.chatUnavailableNotice()
+		return
+	}
 	if s.router.Path() != routeWorkspace {
 		s.router.Push(routeWorkspace)
 	}

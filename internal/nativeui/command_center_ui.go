@@ -46,6 +46,9 @@ func (s *Shell) handleCommandCenterShortcuts(c *ui.Context) {
 // openCommandCenter snapshots the palette index from application state and
 // opens the overlay.
 func (s *Shell) openCommandCenter(scope commandcenter.Scope) {
+	if s.holdCommitNavigation() {
+		return
+	}
 	s.commandCenterIndexCache = commandcenter.Build(s.buildCommandCenterActions())
 	s.commandCenterScope = scope
 	s.commandCenterQuery = ""
@@ -342,11 +345,18 @@ func (s *Shell) executeCommandCenterResult(result commandcenter.Result) {
 	case commandcenter.TargetHistory:
 		s.router.Push("/history/" + action.TargetID)
 	default:
+		// Command actions have no Context during execution. The native window
+		// size supplies the same geometry that View gets from c.Size(); in
+		// headless mode a zero width means geometry is not yet established.
+		windowWidth := float32(0)
+		if s.win != nil {
+			windowWidth = float32(s.win.Bounds().Width)
+		}
 		switch action.TargetID {
 		case "action:toggle-right-panel":
-			s.toggleRightPanel()
+			s.toggleRightPanelForViewport(windowWidth)
 		case "action:open-files":
-			s.openRightPanelSurface(SurfaceFiles)
+			s.openRightPanelSurfaceForViewport(SurfaceFiles, windowWidth)
 		default:
 			if action.TargetID != "" {
 				s.router.Push(action.TargetID)

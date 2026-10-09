@@ -1,5 +1,12 @@
 package history
 
+/**
+ * [INPUT]: 依赖 SQLite 会话元数据表、项目归一化键与只读 FTS 索引
+ * [OUTPUT]: 提供 Catalog 的有界会话列表、Project/Provider 筛选与 metadata 搜索
+ * [POS]: History 查询存储层；筛选、排序和 LIMIT 在数据库内同一查询完成
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
+
 import (
 	"fmt"
 	"strings"
@@ -30,6 +37,62 @@ func (c *Catalog) ListSessions(limit int) ([]SessionSummary, error) {
 		"SELECT "+sessionColumns+" FROM sessions WHERE archived = 0 ORDER BY updated_at DESC LIMIT ?", limit)
 	if err != nil {
 		return nil, fmt.Errorf("list sessions: %w", err)
+	}
+	defer rows.Close()
+	return collectSessionSummaries(rows)
+}
+
+// AvailableProviders returns all Provider identities in the read-only catalog,
+// not just the first page of recent conversations.
+func (c *Catalog) AvailableProviders() ([]AgentID, error) {
+	rows, err := c.db.Query(
+		"SELECT agent FROM sessions WHERE archived = 0 AND agent != '' " +
+			"GROUP BY agent ORDER BY MAX(updated_at) DESC, agent ASC")
+	if err != nil {
+		return nil, fmt.Errorf("list available providers: %w", err)
+	}
+	defer rows.Close()
+	providers := make([]AgentID, 0, 8)
+	for rows.Next() {
+		var agent AgentID
+		if err := rows.Scan(&agent); err != nil {
+			return nil, fmt.Errorf("scan available providers: %w", err)
+		}
+		providers = append(providers, agent)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate available providers: %w", err)
+	}
+	return providers, nil
+}
+
+// ListFilteredSessions applies Project and Provider scopes in SQL BEFORE the
+// bounded limit. Filtering a globally limited page would hide older matching
+// provider conversations (UI-006).
+func (c *Catalog) ListFilteredSessions(projectPath string, provider AgentID, limit int) ([]SessionSummary, error) {
+	if limit <= 0 {
+		return []SessionSummary{}, nil
+	}
+	conditions := []string{"archived = 0"}
+	values := make([]any, 0, 3)
+	if projectPath != "" {
+		key := NormalizedProjectKey(projectPath)
+		if key == "" {
+			return []SessionSummary{}, nil
+		}
+		conditions = append(conditions, "project_key = ?")
+		values = append(values, key)
+	}
+	if provider != "" {
+		conditions = append(conditions, "agent = ?")
+		values = append(values, string(provider))
+	}
+	values = append(values, limit)
+	rows, err := c.db.Query(
+		"SELECT "+sessionColumns+" FROM sessions WHERE "+
+			strings.Join(conditions, " AND ")+" ORDER BY updated_at DESC, key ASC LIMIT ?", values...)
+	if err != nil {
+		return nil, fmt.Errorf("list filtered sessions: %w", err)
 	}
 	defer rows.Close()
 	return collectSessionSummaries(rows)

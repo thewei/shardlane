@@ -42,6 +42,7 @@ var settingsSections = []struct {
 	{"/settings/general", "General", iconSettings},
 	{"/settings/terminal", "Terminal", iconTerminal},
 	{"/settings/providers", "Providers", iconAgent},
+	{"/settings/git", "Git & AI", iconBranch},
 	{"/settings/runtime", "Runtime", iconWorkspace},
 	{"/settings/diagnostics", "Diagnostics", iconSearch},
 }
@@ -52,11 +53,25 @@ func (s *Shell) settingsNav(c *ui.Context) {
 	ui.Text(c, "Settings").FontSize(13).Bold().Padding(6, 8, 8)
 	for _, section := range settingsSections {
 		section := section
-		selected := strings.HasSuffix(s.router.Path(), strings.TrimPrefix(section.path, "/settings"))
-		if navButton(c, section.icon, section.label, "", selected).Clicked() {
+		selected := s.router.Path() == section.path
+		if navButton(c, section.icon, section.label, "", selected).Clicked() && !selected {
 			s.router.Push(section.path)
 		}
 	}
+}
+
+// settingsPage is the one layout owner for Settings. The heading remains
+// fixed outside the scroll viewport; each section renders only controls.
+const settingsContentMaxWidth float32 = 920
+
+func settingsPage(c *ui.Context, title, subtitle string, body func()) {
+	ui.Column(c).Grow(1).MinWidth(0).Children(func() {
+		pageHeader(c, title, subtitle)
+		ui.Scroll(c).Grow(1).MinHeight(0).Children(func() {
+			ui.Column(c).FillWidth().MaxWidth(settingsContentMaxWidth).
+				Padding(Spacing().XL).Gap(Spacing().L).Children(body)
+		})
+	})
 }
 
 func (s *Shell) settingsLayout(c *ui.Context, r *ui.Route) {
@@ -67,25 +82,26 @@ func (s *Shell) settingsLayout(c *ui.Context, r *ui.Route) {
 			switch {
 			case r.Match("/general") || r.Match("/"):
 				r.Title("Settings · General")
-				s.settingsGeneral(c)
+				settingsPage(c, "General", "Appearance, layout and window preferences.", func() { s.settingsGeneral(c) })
 			case r.Match("/terminal"):
 				r.Title("Settings · Terminal")
-				s.settingsTerminal(c)
+				settingsPage(c, "Terminal", "Native Terminal presentation for attached Herdr Panes.", func() { s.settingsTerminal(c) })
 			case r.Match("/providers"):
 				r.Title("Settings · Providers")
-				s.settingsProviders(c)
+				settingsPage(c, "Providers", "Integration health and supported provider actions.", func() { s.settingsProviders(c) })
+			case r.Match("/git"):
+				r.Title("Settings · Git & AI")
+				settingsPage(c, "Git & AI", "Commit rules, Pi Agent and safe one-shot message generation.", func() { s.settingsGit(c) })
 			case r.Match("/runtime"):
 				r.Title("Settings · Runtime")
-				s.settingsRuntime(c)
+				settingsPage(c, "Runtime", "Current Herdr session and application runtime facts.", func() { s.settingsRuntime(c) })
 			case r.Match("/diagnostics"):
 				r.Title("Settings · Diagnostics & Logs")
-				s.settingsDiagnostics(c)
+				settingsPage(c, "Diagnostics & Logs", "Local diagnostic facts and sanitized export.", func() { s.settingsDiagnostics(c) })
 			default:
 				r.Title("Settings · General")
-				// Unknown sections fall back to General instead of a dead
-				// end: stale deep links (older Command Center targets, saved
-				// session routes) stay usable.
-				s.settingsGeneral(c)
+				// Unknown sections stay usable through the canonical fallback.
+				settingsPage(c, "General", "Appearance, layout and window preferences.", func() { s.settingsGeneral(c) })
 			}
 		})
 	})
@@ -94,8 +110,7 @@ func (s *Shell) settingsLayout(c *ui.Context, r *ui.Route) {
 // settingsGeneral/terminal/runtime compose the shared settingsCard primitive
 // with the official ui.Form/Field pair (DS-03/DS-05).
 func (s *Shell) settingsGeneral(c *ui.Context) {
-	ui.Column(c).Grow(1).Padding(Spacing().XL).Gap(Spacing().L).Children(func() {
-		ui.Text(c, "General").FontSize(Typography().Title).Bold()
+	ui.Column(c).FillWidth().Gap(Spacing().L).Children(func() {
 		settingsCard(c, "Appearance", func() {
 			ui.Form(c, func() {
 				ui.Field(c, "Theme", func() {
@@ -160,8 +175,7 @@ func (s *Shell) settingsGeneral(c *ui.Context) {
 }
 
 func (s *Shell) settingsTerminal(c *ui.Context) {
-	ui.Column(c).Grow(1).Padding(Spacing().XL).Gap(Spacing().L).Children(func() {
-		ui.Text(c, "Terminal").FontSize(Typography().Title).Bold()
+	ui.Column(c).FillWidth().Gap(Spacing().L).Children(func() {
 		settingsCard(c, "Presentation", func() {
 			ui.Text(c, "Changes apply to newly attached Herdr Panes. Herdr keeps terminal identity, scrollback semantics and process ownership.").FontSize(Typography().Caption).TextColor(c.Theme().TextMuted)
 
@@ -222,15 +236,6 @@ func (s *Shell) settingsTerminal(c *ui.Context) {
 							return nil
 						})
 					}
-				}).Description("Let the window gradient show through the terminal. Applies to newly attached Panes.")
-				ui.Field(c, "Transparent background", func() {
-					transparent := s.settings.Terminal.Transparent
-					if ui.Checkbox(c, &transparent, "Enabled").Changed() {
-						s.applySettings(func(v *settings.Settings) error {
-							v.Terminal.Transparent = transparent
-							return nil
-						})
-					}
 				}).Description("Let the window gradient show through the terminal paper. Applies to newly attached Panes.")
 			})
 		})
@@ -239,8 +244,7 @@ func (s *Shell) settingsTerminal(c *ui.Context) {
 
 func (s *Shell) settingsRuntime(c *ui.Context) {
 	t := c.Theme()
-	ui.Column(c).Grow(1).Padding(22).Gap(12).Children(func() {
-		ui.Text(c, "Runtime").FontSize(18).Bold()
+	ui.Column(c).FillWidth().Gap(Spacing().L).Children(func() {
 		ui.Text(c, fmt.Sprintf("Workspace: %s", fallbackText(s.activeInstance, "none")))
 		ui.Text(c, fmt.Sprintf("Herdr protocol: %d", s.projection.Protocol)).TextColor(t.TextMuted)
 		ui.Text(c, fmt.Sprintf("Projects: %d · Tabs: %d · Panes: %d · Agents: %d", len(s.projection.Projects), len(s.projection.Tabs), len(s.projection.Panes), len(s.projection.Agents))).TextColor(t.TextMuted)
@@ -270,8 +274,7 @@ func (s *Shell) settingsDiagnostics(c *ui.Context) {
 	home, _ := os.UserHomeDir()
 	snap := diagnostics.BuildSnapshot(s.projection.Version, s.projection.Protocol, s.activeInstance, home)
 
-	ui.Column(c).Grow(1).Padding(sp.XL).Gap(sp.L).Children(func() {
-		ui.Text(c, "Diagnostics & Logs").FontSize(Typography().Title).Bold()
+	ui.Column(c).FillWidth().Gap(sp.L).Children(func() {
 
 		// System snapshot card
 		settingsCard(c, "System & Runtime Facts", func() {

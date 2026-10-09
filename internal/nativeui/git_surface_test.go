@@ -168,19 +168,21 @@ func TestSidebarSplitPanesAndRepoBar(t *testing.T) {
 	if !tester.HasText("Tags") || !tester.HasText("Stashes") {
 		t.Fatalf("diff sidebar missing the repo bar; texts=%q", tester.Texts())
 	}
-	// The pane actions read Stage/Unstage (A1/A2): they act on the pane's
-	// Cmd/Shift selection, or on every file when nothing is chosen.
+	// Per-pane Stage/Unstage remain scoped to their file selection. The new
+	// Git Workbench toolbar adds explicit Stage All/Unstage All actions.
 	if !tester.HasText("Stage") || !tester.HasText("Unstage") {
 		t.Fatalf("pane headers missing the Stage/Unstage actions; texts=%q", tester.Texts())
 	}
-	if tester.HasText("Stage All") || tester.HasText("Unstage All") {
-		t.Fatalf("pane actions must not read Stage All/Unstage All; texts=%q", tester.Texts())
+	for _, label := range []string{"Stage All", "Unstage All", "Commit…", "More…"} {
+		if !tester.HasText(label) {
+			t.Fatalf("Git Workbench toolbar missing %s: %q", label, tester.Texts())
+		}
 	}
 
 	shell.showSurface(WorkspaceSurfaceTerminal)
 	tester.Frame()
-	if tester.HasText("Unstaged Files") || tester.HasText("Stashes") {
-		t.Fatalf("terminal sidebar must drop the repo bar and panes; texts=%q", tester.Texts())
+	if tester.HasText("Unstaged Files") || tester.HasText("Stashes") || tester.HasText("More…") {
+		t.Fatalf("terminal must drop Git-specific controls: texts=%q", tester.Texts())
 	}
 	// The runtime sections return outside the git surface.
 	if !tester.HasText("Agents") || !tester.HasText("Workspace") {

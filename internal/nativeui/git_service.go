@@ -102,6 +102,11 @@ type gitService struct {
 	commitSnap *gitworkbench.ChangesSnapshot
 	commitMeta *gitworkbench.CommitInfo
 
+	// Current Git sequencer facts are refreshed off the UI lane together with
+	// branches. A conflict is repository state, not an ad hoc dialog flag.
+	sequencer        gitworkbench.SequencerStatus
+	sequencerChecked bool
+
 	// explicit repository operations (stage/discard/stash/sync): the UI-level
 	// busy flag keeps buttons single-shot; the Runner owns the real lock.
 	opBusy bool
@@ -296,6 +301,11 @@ func (s *Shell) resetGitContextState() {
 	s.git.gdMatches, s.git.gdMatchesFor = nil, ""
 	s.git.gdMatch = 0
 	s.git.branches = nil
+	s.branchFilter = ""
+	s.branchDraft = ""
+	s.branchMenuOpen = false
+	s.git.sequencer = gitworkbench.SequencerStatus{}
+	s.git.sequencerChecked = false
 	s.git.preflight = nil
 	s.git.preflightSnap = nil
 	s.changesTree = nil

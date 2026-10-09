@@ -1,5 +1,12 @@
 package nativeui
 
+/**
+ * [INPUT]: gitworkbench Runner/selected repository snapshot, native dialogs and UI dispatcher
+ * [OUTPUT]: background Stage/Unstage/Sync/Stash/FF Merge/Revert/Undo execution with failure refresh
+ * [POS]: presentation action orchestration only; sole Git command authority remains internal/gitworkbench
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
+
 import (
 	"context"
 	"strings"
@@ -37,16 +44,21 @@ func (s *Shell) runGitOp(name string, run func(ctx context.Context, root string)
 			switch {
 			case err != nil:
 				s.pendingToast = name + " failed: " + firstErrLine(err)
+				if name == "Revert Commit" || name == "Merge Commit" || name == "Cherry-pick Commit" {
+					s.pendingToast += " If conflicts occurred, open Local Changes to resolve or abort the operation."
+				}
+				// A failed Git mutation can leave MERGE_HEAD/REVERT_HEAD and
+				// conflict markers. Always re-read rather than showing a stale
+				// clean state from before the attempted operation.
+				s.git.staleBanner = true
 			case notice != "":
 				s.pendingToast = notice
-			}
-			if err == nil {
-				s.git.cache.Invalidate(root)
-				s.git.preflight = nil
 				s.git.expectDrift = true
-				s.ensureGitSnapshot(true)
-				s.loadBranches()
 			}
+			s.git.cache.Invalidate(root)
+			s.git.preflight = nil
+			s.ensureGitSnapshot(true)
+			s.loadBranches()
 		})
 	}()
 }
@@ -177,6 +189,101 @@ func (s *Shell) deleteBranch(name string) {
 		"Git's safe delete: an unmerged branch is refused, not forced away.")
 }
 
+// confirmMergeBranch only offers a non-rewriting, fast-forward-only merge.
+// A divergent target cannot create a surprise merge commit through this path.
+func (s *Shell) confirmMergeBranch(target string) {
+	if s.git == nil || s.git.root == "" || target == "" || target == s.currentBranchName() {
+		return
+	}
+	s.openConfirm("git-merge-ff", target, "Fast-forward merge "+target+"?",
+		"Move the current branch forward to "+target+" only if Git can fast-forward. "+
+			"A dirty working tree or divergent branches will be refused; no merge commit is created.")
+}
+
+// openMergeDialog lets one branch-menu action explain both strategies
+// before the user reaches a transaction confirmation.
+func (s *Shell) openMergeDialog(target string) {
+	if s.git == nil || s.git.root == "" || target == "" || target == s.currentBranchName() || s.git.opBusy {
+		return
+	}
+	s.mergeTarget = target
+	s.mergeRepoRoot = s.git.root
+	s.mergeStrategy = 0
+	s.mergeDialogOpen = true
+}
+
+// confirmMergeNoFFBranch is separate from the original safe FF-only path.
+// This operation may leave conflicts; the Git Inspector exposes resolution.
+func (s *Shell) confirmMergeNoFFBranch(target string) {
+	if s.git == nil || s.git.root == "" || target == "" || target == s.currentBranchName() {
+		return
+	}
+	s.openConfirm("git-merge-no-ff", target, "Create merge commit with "+target+"?",
+		"This merges "+target+" into the currently checked-out branch and can create a merge commit. "+
+			"If files conflict, resolve and stage them, then Continue or Abort in the Git Review Inspector.")
+}
+
+func (s *Shell) confirmCherryPickCommit(hash, subject string) {
+	if s.git == nil || s.git.root == "" || !gitworkbenchFullHash(hash) {
+		return
+	}
+	s.openConfirm("git-cherry-pick", hash, "Cherry-pick commit?",
+		"Apply "+subject+" as a new commit on the current branch. "+
+			"A clean working tree is required. Conflicts may need resolution before Continue or Abort.")
+}
+
+func (s *Shell) continueSequencer() {
+	if s.git == nil || !s.git.sequencerChecked || s.git.sequencer.Unmerged != 0 {
+		return
+	}
+	kind := s.git.sequencer.Kind
+	if kind == gitworkbench.SequencerNone || kind == gitworkbench.SequencerUnsupported {
+		return
+	}
+	s.runGitOp("Continue "+string(kind), func(ctx context.Context, root string) (string, error) {
+		if err := s.git.runner.FinishSequencer(ctx, root, kind, false); err != nil {
+			return "", err
+		}
+		return "Completed " + string(kind), nil
+	})
+}
+
+func (s *Shell) confirmAbortSequencer() {
+	if s.git == nil || !s.git.sequencerChecked {
+		return
+	}
+	kind := s.git.sequencer.Kind
+	if kind == gitworkbench.SequencerNone || kind == gitworkbench.SequencerUnsupported {
+		return
+	}
+	s.openConfirm("git-sequencer-abort", string(kind), "Abort "+string(kind)+"?",
+		"Return to the state before this Git operation. Resolution edits made during the conflict may be lost.")
+}
+
+func (s *Shell) confirmRevertCommit(hash, subject string) {
+	if s.git == nil || s.git.root == "" || !gitworkbenchFullHash(hash) {
+		return
+	}
+	s.openConfirm("git-revert-commit", hash, "Revert commit?",
+		"Create a new commit reversing: "+subject+
+			". Published history stays intact. A clean working tree is required; conflicts may need manual resolution in Terminal.")
+}
+
+// gitworkbenchFullHash keeps the UI's command identity exact, not the
+// abbreviated display hash. The domain layer revalidates independently.
+func gitworkbenchFullHash(hash string) bool {
+	if len(hash) != 40 && len(hash) != 64 {
+		return false
+	}
+	for _, ch := range hash {
+		if ch >= '0' && ch <= '9' || ch >= 'a' && ch <= 'f' || ch >= 'A' && ch <= 'F' {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
 func (s *Shell) undoLastCommit() {
 	s.openConfirm("git-undo-commit", "", "Undo last commit?",
 		"The commit is undone with a soft reset: its changes return to the index, nothing is discarded.")
@@ -299,6 +406,8 @@ func (s *Shell) gdReviewingCommit() bool {
 
 func (s *Shell) runGitConfirm(kind, target string) {
 	switch kind {
+	case "git-switch-branch":
+		s.switchBranch(target)
 	case "git-discard":
 		s.runGitOp("Discard", func(ctx context.Context, root string) (string, error) {
 			paths := splitPathsTarget(target)
@@ -328,6 +437,41 @@ func (s *Shell) runGitConfirm(kind, target string) {
 				return "", err
 			}
 			return "Dropped " + target, nil
+		})
+	case "git-merge-ff":
+		s.runGitOp("Fast-forward Merge", func(ctx context.Context, root string) (string, error) {
+			if err := s.git.runner.MergeFastForward(ctx, root, target); err != nil {
+				return "", err
+			}
+			return "Fast-forwarded current branch to " + target, nil
+		})
+	case "git-merge-no-ff":
+		s.runGitOp("Merge Commit", func(ctx context.Context, root string) (string, error) {
+			if err := s.git.runner.MergeNoFastForward(ctx, root, target); err != nil {
+				return "", err
+			}
+			return "Merged branch " + target, nil
+		})
+	case "git-cherry-pick":
+		s.runGitOp("Cherry-pick Commit", func(ctx context.Context, root string) (string, error) {
+			if err := s.git.runner.CherryPickCommit(ctx, root, target); err != nil {
+				return "", err
+			}
+			return "Cherry-picked " + target[:8], nil
+		})
+	case "git-sequencer-abort":
+		s.runGitOp("Abort "+target, func(ctx context.Context, root string) (string, error) {
+			if err := s.git.runner.FinishSequencer(ctx, root, gitworkbench.SequencerKind(target), true); err != nil {
+				return "", err
+			}
+			return "Aborted " + target, nil
+		})
+	case "git-revert-commit":
+		s.runGitOp("Revert Commit", func(ctx context.Context, root string) (string, error) {
+			if err := s.git.runner.RevertCommit(ctx, root, target); err != nil {
+				return "", err
+			}
+			return "Reverted commit " + target[:8], nil
 		})
 	case "git-undo-commit":
 		s.runGitOp("Undo Commit", func(ctx context.Context, root string) (string, error) {

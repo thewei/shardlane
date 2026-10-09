@@ -1,5 +1,12 @@
 package nativeui
 
+/**
+ * [INPUT]: 依赖 Shell 当前 Router/Workspace/Agent 投影、共享 agentCardRow 和 native Quick Panel
+ * [OUTPUT]: 提供 Sidebar 的 Workspace 树、History/Settings 导航与 Agent 行点击/右键动作
+ * [POS]: 唯一左栏实现，导航负责编排目标，Agent 单击交给共享 Quick Panel 做上下文预览
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
+
 import (
 	"fmt"
 	"strings"
@@ -99,15 +106,15 @@ func (s *Shell) sidebarInDiffMode() bool {
 // sidebar body for their own navigation below the back control.
 func (s *Shell) sidebarInnerPage() bool {
 	path := s.router.Path()
-	return path == routeHistory || path == "/history-projects" ||
-		strings.HasPrefix(path, "/history/") || strings.HasPrefix(path, "/settings/")
+	return isHistoryRoute(path) || strings.HasPrefix(path, "/settings/")
 }
 
-// sidebarBackRow is the inner-page back control: it returns to the workspace
-// sidebar and its Terminal view (route re-entry re-syncs attachments).
+// sidebarBackRow names the destination precisely: the Workspace's Terminal,
+// not the last visible Diff/Chat/Commit surface. The global router history
+// shortcut remains independent of this explicit product navigation.
 func (s *Shell) sidebarBackRow(c *ui.Context) {
-	if navButton(c, iconArrowLeft, "Back to Workspace", "", false).Clicked() {
-		s.router.Push(routeWorkspace)
+	if navButton(c, iconArrowLeft, "Back to Terminal", "", false).Clicked() {
+		s.showViewTerminal()
 	}
 }
 
@@ -141,6 +148,9 @@ func (s *Shell) sidebarFilesView(c *ui.Context) {
 			}
 			if ui.Segmented(c, &mode, "Local Changes", "All Commits").Changed() {
 				s.commitsMode = mode == 1
+				if !s.commitsMode {
+					s.reviewLocalChanges()
+				}
 			}
 		})
 
@@ -280,6 +290,17 @@ func (s *Shell) commitsPane(c *ui.Context, pal *gdPalette) {
 		// The pane is narrow: resting on a row shows the full details.
 		row.Tooltip(cm.Subject + "\n" + cm.Author + " · " +
 			cm.Time.Format("2006-01-02 15:04") + "\n" + cm.Hash)
+		row.ContextMenu(func(m *ui.Menu) {
+			if m.Item("Cherry-pick commit…").Chosen() {
+				s.confirmCherryPickCommit(cm.Hash, cm.Subject)
+			}
+			if m.Item("Revert commit…").Chosen() {
+				s.confirmRevertCommit(cm.Hash, cm.Subject)
+			}
+			if m.Item("Copy commit hash").Chosen() {
+				s.copyToClipboard(cm.Hash)
+			}
+		})
 		row.Children(func() {
 			ui.Text(c, cm.Short).Font(gdCodeFont()).FontSize(12).TextColor(ref).Width(62).Shrink(0).SingleLine()
 			ui.Column(c).Grow(1).MinWidth(0).Gap(2).Children(func() {
@@ -483,10 +504,7 @@ func (s *Shell) agentItems(c *ui.Context) {
 		selected := card.PaneID != "" && card.PaneID == s.selectedPaneID
 		row := s.agentCardRow(c, card, selected)
 		if row.Clicked() {
-			s.router.Push(routeWorkspace)
-			if card.PaneID != "" {
-				s.selectPane(card.PaneID)
-			}
+			s.openAgentQuickPanel(row, card)
 		}
 		row.ContextMenu(func(m *ui.Menu) {
 			if m.Item("Open Chat").Chosen() {

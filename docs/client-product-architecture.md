@@ -229,9 +229,13 @@ Normative 0.10 boundaries:
 
 - Selecting a Project, Tab, Pane or Agent destination returns the workspace
   center to **Terminal**. Selecting a changed file from the contextual tool
-  panel opens **Diff Review** in that same center; Commit is also a center
-  surface, not a modal. Right-panel visibility never implicitly changes the
-  center surface.
+  panel opens **Diff Review** in that same center. **As built 2026-10-09**,
+  Commit remains the sole `WorkspaceSurfaceCommit` transactional state,
+  but its editor renders in a native modal over the Diff Review; it is not a
+  second Router, PTY, or competing Git transaction. Discarding the modal
+  protects unsaved message fields; successful commit retains the existing
+  stale-state fence and returns to Diff. Right-panel visibility never
+  implicitly changes the center surface.
 - While Diff/Commit is visible and `/workspace` remains active, Herdr-owned
   terminal processes and the client's current terminal attachments may remain
   alive for fast restoration, but `terminal.View` is not rendered and hidden
@@ -252,6 +256,12 @@ Normative 0.10 boundaries:
 - Commit is an explicit Git mutation with stale-state fences. The transaction
   must prove that unrelated already-staged work is neither consumed nor added
   to the selected commit. No force/reset-hard/destructive clean is permitted.
+  **As built 2026-10-09** Git Workbench also supports explicit FF-only and
+  no-FF merge strategies, single-commit cherry-pick and revert, with
+  operation-specific Git sequencer status, conflict count, confirmed Abort
+  and guarded Continue. Only Git itself owns index/sequencer/merge state:
+  the native UI renders cached facts and never creates a parallel conflict
+  runtime; advanced rebase and custom conflict editors remain deferred.
 - Branch switching is explicit, local-branch-only in the core release,
   non-force, performs no automatic fetch, and never restarts Herdr-owned
   Terminals/Agents/services merely because the worktree changed. New Branch
@@ -270,6 +280,20 @@ Normative 0.10 boundaries:
   single ownership. Its visual density/header/file-list language may adapt
   Godiff's compact macOS-native patterns without adding a second navigation
   hierarchy.
+
+**As built 2026-10-09, route-scoped native inspector.** The main window's
+single Right Panel host is a page-context projection, not a second Router:
+`/workspace` owns Changes/Files/Services tools, `/history` and its detail or
+Project-grouping routes own History metadata context, and Settings/Agent
+Inspector routes have no right-side tool host. Workspace and History remember
+their own inspector visibility; switching pages never changes the Workspace
+primary surface or Herdr state. The left Sidebar's Agent card opens a focused
+view in the **same** native activity popover used by the titlebar and tray;
+its explicit Open Terminal action retains the established Agent destination
+semantics. All Agent facts come from the existing Status Center / Agent card
+projection, never a new client-owned runtime monitor. Interaction details,
+remaining accessibility/responsive work and real-app acceptance gates live in
+`mygo-native-unified-ui-ux-plan-2026-10-09.md`.
 
 Detailed execution/audit documents:
 

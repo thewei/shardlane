@@ -38,6 +38,9 @@ func (s *Shell) agentSessionIdentity(key agent.AgentKey) (history.AgentID, *herd
 // conversations read through HistoryService. It activates WorkspaceSurfaceChat
 // inside the workspace for a seamless in-situ experience.
 func (s *Shell) openChat(card agent.AgentCardModel) {
+	if s.holdCommitNavigation() {
+		return
+	}
 	s.chatPaneID = card.PaneID
 	if card.PaneID != "" {
 		s.selectPane(card.PaneID)

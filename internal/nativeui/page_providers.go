@@ -17,8 +17,7 @@ func (s *Shell) settingsProviders(c *ui.Context) {
 	s.consumeIntegrationToast(c)
 
 	sp := Spacing()
-	ui.Column(c).Grow(1).Padding(sp.XL).Gap(sp.L).Children(func() {
-		pageHeader(c, "Providers", "Integration health is owned by Herdr — Shardlane never installs a second copy of these hooks.")
+	ui.Column(c).FillWidth().Gap(sp.L).Children(func() {
 
 		if s.integrations.errText != "" {
 			inlineNotice(c, ToneError, s.integrations.errText, func() {

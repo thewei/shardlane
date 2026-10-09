@@ -277,13 +277,25 @@ func (r *Runner) DeleteBranch(ctx context.Context, root, name string) error {
 	return err
 }
 
-// UndoLastCommit soft-resets HEAD~1: the commit's changes return to the
-// index, nothing is discarded. The UI must confirm before calling.
+// UndoLastCommit soft-resets a LOCAL unpushed non-root HEAD commit:
+// changes remain staged. Never silently rewrite a commit referenced by a
+// known remote-tracking ref; published history should use Revert instead.
 func (r *Runner) UndoLastCommit(ctx context.Context, root string) error {
-	head, err := r.Read(ctx, root, "rev-parse", "--verify", "--quiet", "HEAD")
-	if err != nil || strings.TrimSpace(string(head)) == "" {
+	if err := r.RequireCleanWorktree(ctx, root); err != nil {
+		return err
+	}
+	parent, err := r.Read(ctx, root, "rev-parse", "--verify", "--quiet", "HEAD^")
+	if err != nil || strings.TrimSpace(string(parent)) == "" {
 		return &Error{Class: ErrStaleState, OpClass: OpMutate, Op: "reset",
-			err: errors.New("no commit to undo")}
+			err: errors.New("no parent commit to restore; the initial commit cannot be undone here")}
+	}
+	refs, err := r.Read(ctx, root, "for-each-ref", "--format=%(refname)", "--contains", "HEAD", "refs/remotes")
+	if err != nil {
+		return err
+	}
+	if len(strings.TrimSpace(string(refs))) != 0 {
+		return &Error{Class: ErrRefusal, OpClass: OpMutate, Op: "reset",
+			err: errors.New("HEAD is included in a remote-tracking branch; use Revert instead of rewriting published history")}
 	}
 	_, err = r.Mutate(ctx, root, "reset", "--soft", "HEAD~1")
 	return err

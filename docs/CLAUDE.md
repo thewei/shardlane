@@ -24,6 +24,8 @@ Members:
 - `reference-godiff-shardlane-0.10-audit.md` — Godiff reference decomposition plus post-0.9 reality audit; documents which landed features are package-only versus actually wired and the current Godiff import/license constraints.
 - `mygo-native-0.10.0-git-workbench-primary-surface-plan.md` — removes Lazygit and defines one `/workspace` Terminal/Diff/Commit primary surface, Godiff-inspired Sidebar/Header/Changes UI, safe native commit/branch operations, and inherited 0.9 fixes.
 - `libghostty-upgrade.md` — vendored libghostty-vt upgrade and ABI verification runbook.
+- `mygo-native-unified-ui-ux-plan-2026-10-09.md` — screenshot and source-based MyGo UI/UX audit, page map, contextual panel/Agent popover interaction specification, staged implementation and acceptance ledger.
+- `mygo-git-workbench-product-ux-2026-10-09.md` — Fork/lazygit feature parity, native Git toolbar and Commit dialog, safe FF merge/revert/undo, AI commit prompt handoff versus future generation API, acceptance stages.
 
 Rules:
 - Shardlane is the client/product brand; Herdr is the real backend/runtime and retains its technical name wherever that is the fact being described.

@@ -47,6 +47,9 @@ func (s *Shell) gdDiffSurface(c *ui.Context) {
 		return
 	}
 	s.gdSetFiles()
+	if !s.gdReviewingCommit() {
+		s.gitSequencerBanner(c)
+	}
 
 	// A commit review never drifts; the drift banner is worktree-only.
 	if s.git.staleBanner && !s.gdReviewingCommit() {
@@ -72,28 +75,30 @@ func (s *Shell) gdDiffSurface(c *ui.Context) {
 		s.gdThinking(c)
 		return
 	}
+	// The Git action bar remains visible on an otherwise clean worktree.
+	// A historical commit diff is read-only and must never show mutation UI.
+	if !s.gdReviewingCommit() {
+		ui.Column(c).FillWidth().Padding(8, 12, 0).Gap(Spacing().XS).Children(func() {
+			s.gitWorkbenchActionBar(c)
+			// Layout is a view preference; remote operations belong to the
+			// Git Actions menu, not another row of Fetch/Pull/Push buttons.
+			// The single toolbar above owns the working-tree actions.
+		})
+	}
 	if len(s.git.gdFiles) == 0 {
 		title, detail := "No local changes", gdAbbreviateHome(s.git.root)
 		if s.gdReviewingCommit() {
 			title, detail = "No changes in commit", s.git.commitHash
 		}
 		s.gdEmptyPanel(c, pal, title, detail, func() {
+			if !s.gdReviewingCommit() && ui.Button(c, "View Commits").Clicked() {
+				s.commitsMode = true
+			}
 			if ui.PrimaryButton(c, "Open Terminal").Clicked() {
 				s.showSurface(WorkspaceSurfaceTerminal)
 			}
 		})
 		return
-	}
-
-	// The toolbar: the layout switch and the sync actions; the branch menu
-	// lives in the sidebar's repo bar. A commit review is read-only, so the
-	// sync actions only show for the worktree.
-	if !s.gdReviewingCommit() {
-		ui.Row(c).FillWidth().Padding(8, 12, 0).Gap(8).AlignItems(ui.Center).Children(func() {
-			s.gdLayoutControl(c, pal)
-			ui.Box(c).Grow(1)
-			s.gdSyncButtons(c, pal)
-		})
 	}
 
 	if s.git.gdRowsDirty {
@@ -105,7 +110,20 @@ func (s *Shell) gdDiffSurface(c *ui.Context) {
 		if s.gdSearching() {
 			title, detail = "No matches in diffs", strings.TrimSpace(s.git.gdQuery)
 		}
-		s.gdEmptyPanel(c, pal, title, detail, nil)
+		s.gdEmptyPanel(c, pal, title, detail, func() {
+			if s.gdSearching() {
+				if ui.Button(c, "Clear diff search").Clicked() {
+					s.git.gdFinding = false
+					s.git.gdQuery = ""
+					s.git.gdRowsDirty = true
+				}
+			} else if strings.TrimSpace(s.changes.filter) != "" {
+				if ui.Button(c, "Clear file filter").Clicked() {
+					s.changes.filter = ""
+					s.git.gdRowsDirty = true
+				}
+			}
+		})
 		return
 	}
 	s.gdDiffList(c, pal)
@@ -150,7 +168,7 @@ func (s *Shell) gdSyncButtons(c *ui.Context, pal *gdPalette) {
 	}
 	button := func(svg *ui.SVG, tip string, action func()) {
 		b := gdIconButton(c, svg, tip)
-		if s.git.opBusy {
+		if s.git.opBusy || s.git.sequencerChecked && s.git.sequencer.Active() {
 			b.Disabled(true)
 		}
 		if b.Clicked() {
@@ -798,20 +816,8 @@ func gdSearchInput(c *ui.Context, query *string, placeholder string, focus, typi
 }
 
 // gdEmptyPanel says why there is nothing to show.
-func (s *Shell) gdEmptyPanel(c *ui.Context, pal *gdPalette, title, detail string, actions func()) {
-	t := c.Theme()
-	ui.Column(c).Grow(1).Center().Padding(24).Children(func() {
-		ui.Column(c).MaxWidth(520).Padding(28).Gap(10).Radius(16).Background(pal.headerBg).Border(1, pal.cardBorder).AlignItems(ui.Center).Children(func() {
-			ui.Icon(c, iconFileDiff).FontSize(28).TextColor(t.TextMuted)
-			ui.Text(c, title).FontSize(15).Bold().TextAlign(ui.Center)
-			if detail != "" {
-				ui.Text(c, detail).FontSize(13).Font(gdCodeFont()).TextColor(t.TextMuted).TextAlign(ui.Center)
-			}
-			if actions != nil {
-				ui.Row(c).Gap(8).Margin(6, 0, 0).Children(actions)
-			}
-		})
-	})
+func (s *Shell) gdEmptyPanel(c *ui.Context, _ *gdPalette, title, detail string, actions func()) {
+	workspaceEmptyBanner(c, iconFileDiff, title, detail, actions)
 }
 
 // gdThinking shows that the changes are loading.

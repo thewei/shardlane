@@ -48,6 +48,9 @@ func (s *Shell) submitCommit(subject, body string, selected []string) {
 			s.git.preflightSnap = nil
 			s.git.cache.Invalidate(root)
 			s.surface.commitSucceeded(true)
+			s.commitDialogOpen = false
+			s.commitDiscardPrompt = false
+			s.resetCommitAIFlow()
 			s.git.expectDrift = true
 			s.ensureGitSnapshot(true)
 			s.loadBranches()
@@ -98,6 +101,9 @@ func (s *Shell) submitCommitAmend(subject, body string, selected []string, amend
 			s.git.preflightSnap = nil
 			s.git.cache.Invalidate(root)
 			s.surface.commitSucceeded(true)
+			s.commitDialogOpen = false
+			s.commitDiscardPrompt = false
+			s.resetCommitAIFlow()
 			s.ensureGitSnapshot(true)
 			s.loadBranches()
 		})

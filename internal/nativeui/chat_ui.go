@@ -149,19 +149,29 @@ func (s *Shell) workspaceChatSurface(c *ui.Context) {
 			}
 		})
 
+		// The selected Agent may disappear while Chat is visible. Do not
+		// reveal a previously bound pane's transcript or composer in that
+		// case, even when the old conversation id still exists locally.
+		if !hasCard {
+			workspaceEmptyBanner(c, iconChat, "No agent in this pane",
+				"This is a standard shell. Select an Agent pane in the sidebar to open its conversation.", func() {
+					if ui.PrimaryButton(c, "Open Terminal").Clicked() {
+						s.showSurface(WorkspaceSurfaceTerminal)
+					}
+				})
+			return
+		}
 		if s.chatLoading {
 			loadingState(c, "Loading conversation…")
 			return
 		}
-
 		if s.chatConversationID == "" {
-			if hasCard {
-				emptyState(c, "Waiting for agent session…",
-					fmt.Sprintf("Agent %q in this pane has not established a typed session yet.", card.Title))
-			} else {
-				emptyState(c, "No agent in this pane",
-					"This pane is running a standard shell. Select an agent pane or launch a new task to view its conversation.")
-			}
+			workspaceEmptyBanner(c, iconChat, "Waiting for agent session…",
+				fmt.Sprintf("Agent %q has not established a conversation yet.", card.Title), func() {
+					if ui.PrimaryButton(c, "Open Terminal").Clicked() {
+						s.showSurface(WorkspaceSurfaceTerminal)
+					}
+				})
 			return
 		}
 

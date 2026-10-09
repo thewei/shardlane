@@ -98,6 +98,7 @@ func (s *Shell) refreshGitChanges() {
 	s.git.staleBanner = false
 	s.git.cache.Invalidate(s.git.root)
 	s.ensureGitSnapshot(true)
+	s.loadBranches()
 }
 
 // loadBranches refreshes the local branch list, the upstream tracking
@@ -120,6 +121,7 @@ func (s *Shell) loadBranches() {
 		tags, _ := s.git.runner.ListTags(ctx, root)
 		worktrees, _ := s.git.runner.ListWorktrees(ctx, root)
 		commits, _ := s.git.runner.ListCommits(ctx, root, 200)
+		sequencer, sequencerErr := s.git.runner.SequencerState(ctx, root)
 		s.applyGuarded(s.git.branchesGen.Load, gen, func() {
 			s.git.branchesLoading = false
 			if err != nil || root != s.git.root {
@@ -131,6 +133,8 @@ func (s *Shell) loadBranches() {
 			s.git.tags = tags
 			s.git.worktrees = worktrees
 			s.git.commits = commits
+			s.git.sequencer = sequencer
+			s.git.sequencerChecked = sequencerErr == nil
 		})
 	}()
 }

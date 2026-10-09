@@ -1,5 +1,12 @@
 package nativeui
 
+/**
+ * [INPUT]: 依赖 Shell 当前路由与 MyGo Router 单实例、History 页面及 Workspace 主表面
+ * [OUTPUT]: 提供精确 History 归属策略、单一 Route View 和原生标题同步所需的标题
+ * [POS]: 顶层页面路由所有者，控制一级页面身份，不重复实现内层 Surface Router
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
+
 import (
 	"log/slog"
 	"strings"
@@ -12,6 +19,14 @@ const (
 	routeHistory   = "/history"
 	routeSettings  = "/settings/general"
 )
+
+// isHistoryRoute is the one exact boundary for the History top-level view.
+// Prefix matching without the slash would accidentally classify paths such
+// as /history-old as History, despite the Router rendering Not Found.
+func isHistoryRoute(path string) bool {
+	return path == routeHistory || path == "/history-projects" ||
+		strings.HasPrefix(path, routeHistory+"/")
+}
 
 func (s *Shell) routeView(c *ui.Context) {
 	// Every route's content rides in a gorex card on the window gradient

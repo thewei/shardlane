@@ -3,6 +3,7 @@
 // [INPUT]: Herdr projections/actions and MyGo's native UI/Terminal toolkit.
 // [OUTPUT]: one native Shardlane window with Sidebar, Header, Pane layout and terminals.
 // [POS]: presentation adapter only; Herdr remains the sole runtime authority.
+// [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 package nativeui
 
 import (
@@ -72,17 +73,38 @@ type Shell struct {
 	statusShown string
 	errText     string
 
-	dialogOpen     bool
-	dialogKind     string
-	dialogTarget   string
-	dialogTitle    string
-	dialogLabel    string
-	dialogValue    string
-	confirmOpen    bool
-	confirmKind    string
-	confirmTarget  string
-	confirmTitle   string
-	confirmMessage string
+	dialogOpen      bool
+	dialogKind      string
+	dialogTarget    string
+	dialogTitle     string
+	dialogLabel     string
+	dialogValue     string
+	confirmOpen     bool
+	confirmKind     string
+	confirmTarget   string
+	confirmTitle    string
+	confirmMessage  string
+	confirmRepoRoot string // binds any pending Git confirmation to its original repository
+	// Commit shares the existing verified Workspace Commit state; the
+	// dialog is presentation-only and never creates a second Git draft.
+	commitDialogOpen           bool
+	commitDiscardPrompt        bool
+	commitPromptPreviewOpen    bool
+	commitPromptIncludeExcerpt bool
+	commitPromptTextVisible    bool
+	commitAIManualEntryOpen    bool
+	commitAIResponse           string
+	commitAIError              string
+	commitAIReplaceConfirm     bool
+	piCommitRunning            bool
+	piCommitError              string
+	piCommitCancel             context.CancelFunc
+	piCommitGeneration         uint64
+	piCommitExecutor           func(context.Context, agent.PiCommitRequest) (agent.PiCommitResponse, error)
+	mergeDialogOpen            bool
+	mergeTarget                string
+	mergeRepoRoot              string
+	mergeStrategy              int // 0: FF-only, 1: create merge commit
 
 	terminals map[string]*terminalSurface
 	// terminalCanvasBounds is the canvas rect captured at render for
@@ -101,9 +123,11 @@ type Shell struct {
 
 	// settingsService owns persistence; settings is the presentation snapshot
 	// refreshed after every successful update.
-	settingsService   *app.SettingsService
-	settings          settings.Settings
-	settingsFontDraft string
+	settingsService        *app.SettingsService
+	settings               settings.Settings
+	settingsFontDraft      string
+	settingsGitPromptDraft string
+	settingsPiBinaryDraft  string
 
 	// hist owns the Native History presentation state over the read-only
 	// HistoryService.
@@ -131,6 +155,9 @@ type Shell struct {
 	// nil means headless (tests, platform fallback) and the anchor clicks
 	// stay no-ops.
 	quickPanel *mygo.Window
+	// quickPanelAgent selects one exact Agent for the shared quick panel;
+	// nil means the tray/titlebar's full activity overview.
+	quickPanelAgent *agent.AgentKey
 	// quickPanelPlacement remembers the anchor + work area the panel was
 	// last shown at, so a status-tab change re-fits the height in place.
 	quickPanelPlacement quickPanelPlacement
@@ -217,6 +244,7 @@ type Shell struct {
 	// branch menu state.
 	branchMenuOpen bool
 	branchDraft    string
+	branchFilter   string
 	tagDraft       string
 	// pendingToast is flushed as a toast on the next frame (background
 	// lanes cannot toast).
@@ -300,6 +328,8 @@ func WithSettings(service *app.SettingsService) ShellOption {
 			s.settingsService = service
 			s.settings = service.Current()
 			s.settingsFontDraft = s.settings.Terminal.FontFamily
+			s.settingsGitPromptDraft = commitPromptPreference(s.settings.Workbench.CommitPrompt)
+			s.settingsPiBinaryDraft = s.settings.Workbench.PiExecutable
 		}
 	}
 }
@@ -340,6 +370,8 @@ func NewShell(opts ...ShellOption) *Shell {
 	s.settingsService = app.NewSettingsService(settings.NewMemoryStore(settings.Default()))
 	s.settings = s.settingsService.Current()
 	s.settingsFontDraft = s.settings.Terminal.FontFamily
+	s.settingsGitPromptDraft = commitPromptPreference(s.settings.Workbench.CommitPrompt)
+	s.settingsPiBinaryDraft = s.settings.Workbench.PiExecutable
 	s.integrations.service = agent.NewIntegrationHealthService()
 	s.launch = app.NewLaunchService(s.runtime)
 	s.interactionBroker = conversation.NewInteractionBroker(nil)
@@ -430,7 +462,12 @@ func (s *Shell) toggleSidebar() {
 // of the current path, so a menu accelerator and an in-app shortcut firing
 // together stay harmless.
 func (s *Shell) Navigate(path string) {
-	s.applyOnWindow(func() { s.router.Push(path) })
+	s.applyOnWindow(func() {
+		if s.holdCommitNavigation() {
+			return
+		}
+		s.router.Push(path)
+	})
 }
 
 // ToggleRightPanelFromMenu is the menu-bar seam for the panel toggle: the
@@ -499,7 +536,8 @@ func (s *Shell) View(c *ui.Context) {
 		s.statusShown = s.status
 	}
 	if c.Shortcut(ui.Super|ui.Alt, ui.KeyB) {
-		s.toggleRightPanel()
+		windowWidth, _ := c.Size()
+		s.toggleRightPanelForViewport(windowWidth)
 	}
 	if c.Shortcut(ui.Super, ui.KeyB) {
 		s.toggleSidebar()

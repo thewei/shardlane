@@ -137,6 +137,9 @@ func compact(node *TreeNode) {
 // FilterTree recursively keeps nodes whose own text or a descendant matches
 // the query (case-insensitive substring). Returns nil when nothing matches.
 func FilterTree(node *TreeNode, query string) *TreeNode {
+	if node == nil {
+		return nil
+	}
 	query = strings.ToLower(strings.TrimSpace(query))
 	if query == "" {
 		return node
@@ -179,6 +182,11 @@ type FlatRow struct {
 // Directories default to expanded (changes trees are small); a key present
 // with value true marks a user-collapsed directory.
 func Flatten(node *TreeNode, collapsed map[string]bool) []FlatRow {
+	// FilterTree returns nil for an unmatched search. Empty results are a
+	// normal UI state, not a malformed tree or reason to panic.
+	if node == nil {
+		return nil
+	}
 	var rows []FlatRow
 	var walk func(n *TreeNode, depth int)
 	walk = func(n *TreeNode, depth int) {

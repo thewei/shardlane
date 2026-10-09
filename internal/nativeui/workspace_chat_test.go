@@ -29,6 +29,11 @@ func TestWorkspaceChatSurfaceSwitchAndToggle(t *testing.T) {
 	shell.selectedProjectID = "w1"
 	shell.selectedTabID = "t1"
 	shell.selectedPaneID = "p1"
+	shell.workbench.directory = agent.NewAgentDirectory()
+	shell.workbench.directory.Replace([]agent.AgentCardModel{{
+		Key:    agent.AgentKey{InstanceID: "default", TerminalID: "term-1"},
+		PaneID: "p1", Title: "Scout", Provider: history.AgentCodex,
+	}})
 	shell.surface.resetToTerminal(shell.workspaceContext())
 
 	// Initial surface is Terminal.
@@ -68,17 +73,28 @@ func TestWorkspaceChatSurfaceRendersInWorkspace(t *testing.T) {
 	shell.selectedTabID = "t1"
 	shell.selectedPaneID = "p1"
 	shell.router.Replace(routeWorkspace)
+	shell.surface.resetToTerminal(shell.workspaceContext())
+	// A plain shell may not be routed into a dead-end Chat surface.
 	shell.showSurface(WorkspaceSurfaceChat)
-
-	tester := ui.NewTester(shell.View, 1200, 800)
-	tester.Frame()
-
-	// When no agent is running in the pane, shows the in-workspace empty state
-	if !tester.HasText("No agent in this pane") {
-		t.Fatalf("missing in-workspace chat empty state; texts=%q", tester.Texts())
+	if shell.surface.current() != WorkspaceSurfaceTerminal {
+		t.Fatal("plain shell unexpectedly opened Chat")
 	}
 
-	// Now simulate an agent in the pane with turns
+	// Once a real Agent appears, the same Pane can open Chat and expose
+	// the typed-session waiting state until its conversation is bound.
+	shell.workbench.directory = agent.NewAgentDirectory()
+	shell.workbench.directory.Replace([]agent.AgentCardModel{{
+		Key:    agent.AgentKey{InstanceID: "default", TerminalID: "term-1"},
+		PaneID: "p1", Title: "Scout", Provider: history.AgentCodex,
+	}})
+	shell.showSurface(WorkspaceSurfaceChat)
+	tester := ui.NewTester(shell.View, 1200, 800)
+	tester.Frame()
+	if !tester.HasText("Waiting for agent session…") {
+		t.Fatalf("missing waiting state: %q", tester.Texts())
+	}
+
+	// Once the typed session is available, Chat renders the timeline.
 	shell.chatConversationID = "conv-1"
 	shell.chatTurns = []conversation.TimelineTurn{
 		{Text: "Fix the bug", UserRow: true},
@@ -90,6 +106,35 @@ func TestWorkspaceChatSurfaceRendersInWorkspace(t *testing.T) {
 		if !tester.HasText(want) {
 			t.Fatalf("workspace chat missing %q; texts=%q", want, tester.Texts())
 		}
+	}
+
+	// The Agent can disappear without a route change. Stale transcript
+	// content and the composer must be hidden before another render.
+	shell.workbench.directory.Replace(nil)
+	tester.Frame()
+	if !tester.HasText("No agent in this pane") || tester.HasText("Fix the bug") || tester.HasText("Chat prompt") {
+		t.Fatalf("stale conversation exposed after Agent disappeared: %q", tester.Texts())
+	}
+	if err := tester.Click("Open Terminal"); err != nil {
+		t.Fatal(err)
+	}
+	if shell.surface.current() != WorkspaceSurfaceTerminal {
+		t.Fatal("empty Chat could not return to Terminal")
+	}
+}
+
+func TestWorkspaceChatGateDoesNotNavigateFromHistory(t *testing.T) {
+	shell := NewShell()
+	shell.router.Replace(routeHistory)
+	shell.showViewChat()
+	if got := shell.router.Path(); got != routeHistory {
+		t.Fatalf("plain-shell Chat click navigated from History to %q", got)
+	}
+	if shell.surface.current() == WorkspaceSurfaceChat {
+		t.Fatal("plain shell entered Chat surface")
+	}
+	if shell.pendingToast == "" {
+		t.Fatal("missing actionable Chat refusal message")
 	}
 }
 

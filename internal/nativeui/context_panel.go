@@ -30,7 +30,7 @@ func contextPanelForRoute(path string) contextPanelKind {
 	switch {
 	case path == routeWorkspace:
 		return contextPanelWorkspace
-	case path == routeHistory, path == "/history-projects", strings.HasPrefix(path, "/history/"):
+	case isHistoryRoute(path):
 		return contextPanelHistory
 	default:
 		return contextPanelNone

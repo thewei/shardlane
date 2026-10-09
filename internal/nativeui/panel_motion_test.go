@@ -71,6 +71,99 @@ func TestSidebarSlideUnmountsWhenSettled(t *testing.T) {
 // TestRightPanelSlideMatchesOpenState pins the Right Panel reveal: with
 // motion off, open builds the tool surface and closed unmounts it; the
 // center surface never changes (GWB-074 contract still holds).
+// TestContextPanelWidthPolicy keeps the Terminal useful instead of letting
+// two rails consume nearly all available content width.
+func TestContextPanelWidthPolicy(t *testing.T) {
+	for _, tc := range []struct {
+		width   float32
+		sidebar bool
+		panel   int
+		fits    bool
+	}{
+		{960, true, DefaultRightPanelWidth, false},
+		{960, false, DefaultRightPanelWidth, true},
+		{1280, true, DefaultRightPanelWidth, true},
+		{700, false, DefaultRightPanelWidth, false},
+		{960, true, MinRightPanelWidth, false},
+		{1512, true, MaxRightPanelWidth, true},
+	} {
+		if got := contextPanelFits(tc.width, tc.sidebar, tc.panel); got != tc.fits {
+			t.Errorf("width %v sidebar %v panel %d: fits=%v, want %v", tc.width, tc.sidebar, tc.panel, got, tc.fits)
+		}
+	}
+}
+
+func TestContextPanelAutoHidesAndRestoresWithoutLosingPreference(t *testing.T) {
+	shell := slideTestShell(t)
+	shell.openRightPanelSurface(SurfaceServices)
+	tester := ui.NewTester(shell.View, 960, 640)
+	tester.SetPreferences(ui.Preferences{ReduceMotion: true})
+	tester.Frame()
+	if tester.HasText("Services") || !tester.HasText("Show Workspace Tools") {
+		t.Fatalf("narrow window must auto-hide inspector: %q", tester.Texts())
+	}
+	if !shell.rightPanel.open || shell.sidebarCollapsed {
+		t.Fatal("responsive auto-hide must not overwrite saved rail visibility")
+	}
+	tester.SetSize(1280, 800)
+	tester.Frame()
+	if !tester.HasText("Services") || !tester.HasText("Hide Workspace Tools") {
+		t.Fatalf("inspector should reappear after resize: %q", tester.Texts())
+	}
+	if shell.rightPanel.surface != SurfaceServices {
+		t.Fatal("responsive auto-hide lost selected Workspace tool")
+	}
+}
+
+func TestExplicitInspectorOpenMakesRoomOrShowsReason(t *testing.T) {
+	shell := slideTestShell(t)
+	shell.toggleRightPanelForViewport(960)
+	if !shell.sidebarCollapsed || !shell.rightPanel.open {
+		t.Fatal("explicit open at 960 DIP should collapse sidebar to make room")
+	}
+	shell.toggleRightPanelForViewport(960)
+	if shell.rightPanel.open {
+		t.Fatal("repeat toggle should close the now-visible right panel")
+	}
+	shell.sidebarCollapsed = false
+	shell.toggleRightPanelForViewport(700)
+	if shell.rightPanel.open || shell.sidebarCollapsed || shell.pendingToast == "" {
+		t.Fatal("too-narrow explicit open must explain limitation without mutating rail state")
+	}
+}
+
+func TestCommandCenterInspectorDestinationRespectsWidthAndRoute(t *testing.T) {
+	shell := slideTestShell(t)
+	shell.router.Replace(routeHistory)
+	shell.openRightPanelSurfaceForViewport(SurfaceFiles, 700)
+	if shell.router.Path() != routeHistory || shell.rightPanel.open || shell.pendingToast == "" {
+		t.Fatal("too narrow Files action must not silently open a hidden Workspace panel")
+	}
+	shell.pendingToast = ""
+	shell.openRightPanelSurfaceForViewport(SurfaceFiles, 960)
+	if shell.router.Path() != routeWorkspace || !shell.rightPanel.open || !shell.sidebarCollapsed || shell.rightPanel.surface != SurfaceFiles {
+		t.Fatalf("Files action failed to expose Workspace tool: route=%q open=%v sidebar=%v tool=%q", shell.router.Path(), shell.rightPanel.open, shell.sidebarCollapsed, shell.rightPanel.surface)
+	}
+}
+
+func TestHistoryInspectorResizesIndependently(t *testing.T) {
+	shell := slideTestShell(t)
+	shell.router.Replace(routeHistory)
+	shell.rightPanel.historyOpen = true
+	tester := ui.NewTester(shell.View, 960, 640)
+	tester.SetPreferences(ui.Preferences{ReduceMotion: true})
+	tester.Frame()
+	if tester.HasText("History details") || !shell.rightPanel.historyOpen {
+		t.Fatal("narrow History inspector should auto-hide without clearing its state")
+	}
+	tester.SetSize(1280, 800)
+	tester.Frame()
+	if !tester.HasText("History details") || !shell.rightPanel.historyOpen {
+		t.Fatal("History inspector should return on resize independently of Workspace tool")
+	}
+}
+
+// TestRightPanelSlideMatchesOpenState pins the standard open/closed states.
 func TestRightPanelSlideMatchesOpenState(t *testing.T) {
 	shell := slideTestShell(t)
 	tester := slideWithoutMotion(shell)

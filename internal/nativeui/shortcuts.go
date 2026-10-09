@@ -201,6 +201,9 @@ func (s *Shell) runShortcut(action shortcutAction) {
 		// matching project/tab/pane/agent/history destination.
 		s.openCommandCenter(commandcenter.ScopeAll)
 	case shortcutSettings:
+		if s.holdCommitNavigation() {
+			return
+		}
 		s.router.Push(routeSettings)
 	case shortcutRefresh:
 		if s.router.Path() == routeWorkspace {
@@ -212,8 +215,12 @@ func (s *Shell) runShortcut(action shortcutAction) {
 			s.reloadInstances(false)
 		}
 	case shortcutBack:
-		s.router.Back()
+		if !s.holdCommitNavigation() {
+			s.router.Back()
+		}
 	case shortcutForward:
-		s.router.Forward()
+		if !s.holdCommitNavigation() {
+			s.router.Forward()
+		}
 	}
 }

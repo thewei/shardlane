@@ -90,17 +90,19 @@ func (s *Shell) titlebarTools(c *ui.Context, k *gorexColors) {
 	s.titlebarViewSwitch(c, k)
 	s.titlebarActivity(c, k)
 	if kind := s.activeContextPanel(); kind != contextPanelNone {
+		windowWidth, _ := c.Size()
+		panelVisible := s.contextPanelVisible(windowWidth)
 		panelName := "Workspace Tools"
 		if kind == contextPanelHistory {
 			panelName = "History Details"
 		}
 		verb := "Show "
-		if s.rightPanel.open {
+		if panelVisible {
 			verb = "Hide "
 		}
 		label := verb + panelName
-		if gorexIconButton(c, k, iconPanel, label, label+" (⌥⌘B)", s.rightPanel.open, gorexIconBtn, 16).Clicked() {
-			s.toggleRightPanel()
+		if gorexIconButton(c, k, iconPanel, label, label+" (⌥⌘B)", panelVisible, gorexIconBtn, 16).Clicked() {
+			s.toggleRightPanelForViewport(windowWidth)
 		}
 	}
 	if gorexIconButton(c, k, iconPin, windowPinLabel, windowPinLabel, s.windowPinned, gorexIconBtn, 15).Clicked() {
@@ -175,12 +177,11 @@ func (s *Shell) toggleWindowPinned() {
 }
 
 // titlebarViewSwitch is the persistent Terminal/Chat/Changes/History switch.
-// Terminal is the first-level view; Chat, Changes and History are mutually
-// exclusive second-level views, and repeating the active view's click exits
-// back to Terminal (2026-10-07 product note). The labels carry the "view"
-// suffix so they never collide with same-named content rows (the Settings
-// "Terminal" nav section, the History page title) in accessibility and
-// tests; the tooltips stay the short names.
+// Terminal is the first-level view; repeating a Workspace secondary surface
+// or the History ROOT exits to Terminal. Repeating History from a nested
+// History route first returns to its index, without discarding reading context.
+// Accessible labels remain stable for shortcuts and assistive technologies;
+// tooltips describe the action that will actually occur.
 func (s *Shell) titlebarViewSwitch(c *ui.Context, k *gorexColors) {
 	onTerminal, onChat, onChanges, onHistory := s.viewSwitchActive()
 	if gorexIconButton(c, k, iconTerminal, "Terminal view", "Terminal view", onTerminal, gorexIconBtn, 15).Clicked() {
@@ -192,7 +193,16 @@ func (s *Shell) titlebarViewSwitch(c *ui.Context, k *gorexColors) {
 	if gorexIconButton(c, k, iconChanges, "Changes view", "Changes", onChanges, gorexIconBtn, 15).Clicked() {
 		s.showViewChanges()
 	}
-	if gorexIconButton(c, k, iconHistory, "History view", "History", onHistory, gorexIconBtn, 15).Clicked() {
+	historyTip := "History"
+	switch s.router.Path() {
+	case routeHistory:
+		historyTip = "Back to Terminal"
+	default:
+		if onHistory {
+			historyTip = "All conversations"
+		}
+	}
+	if gorexIconButton(c, k, iconHistory, "History view", historyTip, onHistory, gorexIconBtn, 15).Clicked() {
 		s.showViewHistory()
 	}
 }
@@ -202,7 +212,7 @@ func (s *Shell) titlebarViewSwitch(c *ui.Context, k *gorexColors) {
 // every /history* route counts as the History view.
 func (s *Shell) viewSwitchActive() (terminal, chat, changes, history bool) {
 	path := s.router.Path()
-	if strings.HasPrefix(path, "/history") {
+	if isHistoryRoute(path) {
 		return false, false, false, true
 	}
 	if path != routeWorkspace {
@@ -221,6 +231,9 @@ func (s *Shell) viewSwitchActive() (terminal, chat, changes, history bool) {
 
 // showViewTerminal lands on the first-level Terminal view from anywhere.
 func (s *Shell) showViewTerminal() {
+	if s.holdCommitNavigation() {
+		return
+	}
 	if s.router.Path() != routeWorkspace {
 		s.router.Push(routeWorkspace)
 	}
@@ -229,8 +242,17 @@ func (s *Shell) showViewTerminal() {
 
 // showViewChat toggles the Chat view: repeating the click exits to Terminal.
 func (s *Shell) showViewChat() {
+	if s.holdCommitNavigation() {
+		return
+	}
 	if _, chat, _, _ := s.viewSwitchActive(); chat {
 		s.showViewTerminal()
+		return
+	}
+	// Check before changing the route: Settings/History should never be
+	// replaced by an empty Chat because a plain shell is selected.
+	if !s.workspaceChatAvailable() {
+		s.chatUnavailableNotice()
 		return
 	}
 	if s.router.Path() != routeWorkspace {
@@ -242,6 +264,16 @@ func (s *Shell) showViewChat() {
 // showViewChanges toggles the Changes view: repeating the click exits to
 // Terminal.
 func (s *Shell) showViewChanges() {
+	fromCommit := s.surface.current() == WorkspaceSurfaceCommit
+	if s.holdCommitNavigation() {
+		return
+	}
+	if fromCommit {
+		// Closing a pristine Commit dialog restores the previous Diff.
+		// Do not interpret that transition as a second Changes click and
+		// unexpectedly switch all the way to Terminal.
+		return
+	}
 	if _, _, changes, _ := s.viewSwitchActive(); changes {
 		s.showViewTerminal()
 		return
@@ -252,14 +284,30 @@ func (s *Shell) showViewChanges() {
 	s.openChanges("")
 }
 
-// showViewHistory toggles the History view: repeating the click exits back
-// to Terminal.
+// showHistoryIndex is the single parent-navigation intent for History.
+// Nested History pages never fall back to the previous unrelated route.
+func (s *Shell) showHistoryIndex() {
+	if s.router.Path() == routeHistory {
+		return
+	}
+	if strings.HasPrefix(s.router.Path(), routeHistory+"/") {
+		s.cancelHistoryDetailRequest()
+	}
+	s.router.Push(routeHistory)
+}
+
+// showViewHistory: from another page open the History index; from a nested
+// History route return to the index; only from the index itself toggle back
+// to Terminal (consistent with the header's "active view" toggle contract).
 func (s *Shell) showViewHistory() {
-	if _, _, _, history := s.viewSwitchActive(); history {
+	if s.holdCommitNavigation() {
+		return
+	}
+	if s.router.Path() == routeHistory {
 		s.showViewTerminal()
 		return
 	}
-	s.router.Push(routeHistory)
+	s.showHistoryIndex()
 }
 
 // crumbPathRow shows the selected Pane's working directory under the

@@ -198,8 +198,8 @@ func TestHistoryListSearchNarrowsSessions(t *testing.T) {
 	if tester.HasText("Build history") {
 		t.Fatal("search filter did not narrow the list")
 	}
-	if !tester.HasText("No conversations found") {
-		t.Fatalf("empty search state missing; texts=%q", tester.Texts())
+	if !tester.HasText("No matching conversations") {
+		t.Fatalf("filtered empty state missing; texts=%q", tester.Texts())
 	}
 }
 

@@ -41,7 +41,7 @@ func TestHistoryContextPanelShowsCurrentConversation(t *testing.T) {
 		{Meta: history.SessionMeta{Key: "a", Title: "First topic", ProjectName: "alpha", FilePath: "/tmp/first.jsonl", MessageCount: 9}},
 		{Meta: history.SessionMeta{Key: "b", Title: "Second topic", ProjectName: "beta", FilePath: "/tmp/second.jsonl", MessageCount: 12}},
 	}
-	shell.rightPanel.open = true
+	shell.rightPanel.historyOpen = true
 	shell.router.Push("/history/b")
 	tester := ui.NewTester(shell.View, 1200, 800)
 	tester.SetPreferences(ui.Preferences{ReduceMotion: true})
@@ -81,9 +81,44 @@ func TestContextPanelHidesUnsupportedRoutesAndPreservesWorkspaceTool(t *testing.
 	}
 }
 
+func TestContextPanelKeepsIndependentHistoryVisibility(t *testing.T) {
+	shell := rightPanelTestShell(t, t.TempDir())
+	if shell.contextPanelOpen() {
+		t.Fatal("Workspace panel should initially be closed")
+	}
+	shell.router.Push(routeHistory)
+	shell.toggleRightPanel()
+	if !shell.contextPanelOpen() || shell.rightPanel.open {
+		t.Fatal("History inspector must open independently of Workspace tools")
+	}
+	shell.router.Push(routeWorkspace)
+	if shell.contextPanelOpen() {
+		t.Fatal("History inspector visibility must not open Workspace tools")
+	}
+	shell.openRightPanelSurface(SurfaceChanges)
+	shell.router.Push(routeHistory)
+	if !shell.contextPanelOpen() {
+		t.Fatal("revisiting History should restore its inspector")
+	}
+	shell.toggleRightPanel()
+	shell.router.Push(routeWorkspace)
+	if !shell.contextPanelOpen() || shell.rightPanel.surface != SurfaceChanges {
+		t.Fatal("Workspace tools must keep their independent visibility and tool")
+	}
+}
+
+func TestHistoryContextMetadataRejectsStaleDetail(t *testing.T) {
+	shell := rightPanelTestShell(t, t.TempDir())
+	shell.hist.detail = &historyDetail{key: "previous", meta: history.SessionMeta{Key: "previous", Title: "Old"}}
+	shell.router.Push("/history/current")
+	if _, ok := shell.historyContextMeta(); ok {
+		t.Fatal("a pending History route must not display the previously opened conversation")
+	}
+}
+
 func TestHistoryContextPanelEmptyList(t *testing.T) {
 	shell := rightPanelTestShell(t, t.TempDir())
-	shell.rightPanel.open = true
+	shell.rightPanel.historyOpen = true
 	shell.router.Push(routeHistory)
 	tester := ui.NewTester(shell.View, 1200, 800)
 	tester.SetPreferences(ui.Preferences{ReduceMotion: true})
