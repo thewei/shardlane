@@ -11,6 +11,13 @@ import (
 	"github.com/wh-studio/herdr-client/internal/preview"
 )
 
+/**
+ * [INPUT]: 依赖 git/files/services 工具只读快照、当前 Router 页面与 context_panel 的页面归属策略
+ * [OUTPUT]: 提供右侧浮动卡片渲染、Workspace 工具切换与保留状态
+ * [POS]: nativeui 的共享右侧卡片 chrome；按页面渲染 Workspace 工具或 History 上下文，避免交叉泄漏
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
+
 // RightPanelSurface defines the active tool in the Native Right Panel.
 // 0.10 target surfaces: Changes / Files / Services (plan §10.1). Lazygit is
 // removed from the product.
@@ -64,8 +71,11 @@ func defaultRightPanelState() rightPanelState {
 // toggleRightPanel toggles panel visibility. The center surface is never
 // changed by panel open/close (GWB-074 regression contract).
 func (s *Shell) toggleRightPanel() {
+	if s.activeContextPanel() == contextPanelNone {
+		return
+	}
 	s.rightPanel.open = !s.rightPanel.open
-	if s.rightPanel.open {
+	if s.rightPanel.open && s.activeContextPanel() == contextPanelWorkspace {
 		s.syncRightPanelRoot()
 	}
 }
@@ -113,7 +123,9 @@ func (s *Shell) rightPanelContent(c *ui.Context) {
 	t := c.Theme()
 	sp := Spacing()
 
-	s.syncRightPanelRoot()
+	if s.activeContextPanel() == contextPanelWorkspace {
+		s.syncRightPanelRoot()
+	}
 
 	// AlignItems(Stretch) is load-bearing: without it the panel column keeps
 	// its intrinsic height and centers vertically in the shell row, floating
@@ -132,6 +144,10 @@ func (s *Shell) rightPanelContent(c *ui.Context) {
 			Shadow(0, 6, 22, -2, k.shadowFocused)
 		card.Transition(ui.ElementTransition{Colors: true, Duration: 160 * time.Millisecond})
 		card.Children(func() {
+			if s.activeContextPanel() == contextPanelHistory {
+				s.historyContextPanel(c)
+				return
+			}
 			ui.Column(c).FillWidth().Grow(1).MinHeight(0).Children(func() {
 				// Header & Surface Switcher (2026-10-06 A4/A5): no close
 				// button — the panel toggles from the header and ⌥⌘B — and
@@ -176,7 +192,7 @@ func (s *Shell) rightPanelContent(c *ui.Context) {
 		})
 	})
 
-	if s.rightPanel.previewOpen && s.rightPanel.preview != nil {
+	if s.activeContextPanel() == contextPanelWorkspace && s.rightPanel.previewOpen && s.rightPanel.preview != nil {
 		s.filePreviewModal(c)
 	}
 }

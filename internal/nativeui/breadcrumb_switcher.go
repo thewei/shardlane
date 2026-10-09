@@ -2,7 +2,15 @@ package nativeui
 
 import (
 	"github.com/egoist/mygo/ui"
+	"github.com/wh-studio/herdr-client/internal/history"
 )
+
+/**
+ * [INPUT]: 依赖 mygo/ui 的 Context/Theme/Popover, herdr-client/internal/history, gorex_style, agent_visual, proc_brands
+ * [OUTPUT]: 对外提供 crumbSegment, Shell.breadcrumbSegments, Shell.breadcrumbSegmentsWithTheme, Shell.breadcrumbRow, crumbItemRow
+ * [POS]: nativeui 标题栏面包屑与快速切换弹层所有者，展示工作区/Tab/Pane层次并呈现 Agent 与进程品牌图标
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
 
 // Breadcrumb switchers (2026-10-05 header review): every segment of the
 // title-bar path is a button that opens a popover listing its siblings —
@@ -14,20 +22,68 @@ type crumbSegment struct {
 	label string
 	kind  string // "project" | "tab" | "pane"
 	id    string
+	mark  visualMark
 }
 
-// breadcrumbSegments resolves the title-bar path with identities.
+// breadcrumbSegments resolves the title-bar path with identities using default theme.
 func (s *Shell) breadcrumbSegments() []crumbSegment {
+	return s.breadcrumbSegmentsWithTheme(false)
+}
+
+// breadcrumbSegmentsWithTheme resolves the title-bar path with identities and visual marks.
+func (s *Shell) breadcrumbSegmentsWithTheme(dark bool) []crumbSegment {
 	var path []crumbSegment
 	if p := s.selectedProject(); p != nil {
-		path = append(path, crumbSegment{label: p.Label, kind: "project", id: p.ID})
+		path = append(path, crumbSegment{label: p.Label, kind: "project", id: p.ID, mark: visualMark{svg: iconFolder}})
 	}
 	if t := s.selectedTab(); t != nil {
-		path = append(path, crumbSegment{label: t.Label, kind: "tab", id: t.ID})
+		tabMark := visualMark{svg: iconTab}
+		tabLabel := t.Label
+		panes := panesForTab(s.projection, t.ID)
+		if len(panes) == 1 {
+			if a := s.paneAgent(panes[0].ID); a != nil {
+				tabMark, _ = s.agentMarkForPane(panes[0].ID, dark)
+				if tabLabel == "" || tabLabel == "Tab" {
+					tabLabel = a.Name
+					if tabLabel == "" {
+						if provider, _ := history.ParseAgentID(a.Kind); provider != "" {
+							tabLabel = provider.DisplayName()
+						}
+					}
+				}
+			} else if brand, ok := s.procMarkForPane(panes[0].ID); ok {
+				tabMark = brand
+				if tabLabel == "" || tabLabel == "Tab" {
+					if act, ok := s.serviceIndex.Panes[panes[0].ID]; ok && act.Proc != "" {
+						tabLabel = procFriendlyName(act.Proc)
+					}
+				}
+			}
+		}
+		path = append(path, crumbSegment{label: tabLabel, kind: "tab", id: t.ID, mark: tabMark})
 	}
 	if p := s.selectedPane(); p != nil && s.selectedTab() != nil && s.selectedTab().PaneCount > 1 {
-		// The popover lists the Tab's Panes, so the segment carries the Tab id.
-		path = append(path, crumbSegment{label: p.Label, kind: "pane", id: p.TabID})
+		paneMark := visualMark{svg: iconTerminal}
+		paneLabel := p.Label
+		if a := s.paneAgent(p.ID); a != nil {
+			paneMark, _ = s.agentMarkForPane(p.ID, dark)
+			if paneLabel == "" || paneLabel == "Pane" || paneLabel == "Terminal" {
+				paneLabel = a.Name
+				if paneLabel == "" {
+					if provider, _ := history.ParseAgentID(a.Kind); provider != "" {
+						paneLabel = provider.DisplayName()
+					}
+				}
+			}
+		} else if brand, ok := s.procMarkForPane(p.ID); ok {
+			paneMark = brand
+			if paneLabel == "" || paneLabel == "Pane" || paneLabel == "Terminal" {
+				if act, ok := s.serviceIndex.Panes[p.ID]; ok && act.Proc != "" {
+					paneLabel = procFriendlyName(act.Proc)
+				}
+			}
+		}
+		path = append(path, crumbSegment{label: paneLabel, kind: "pane", id: p.TabID, mark: paneMark})
 	}
 	return path
 }
@@ -36,7 +92,7 @@ func (s *Shell) breadcrumbSegments() []crumbSegment {
 func (s *Shell) breadcrumbRow(c *ui.Context) {
 	t := c.Theme()
 	sp := Spacing()
-	segments := s.breadcrumbSegments()
+	segments := s.breadcrumbSegmentsWithTheme(t.Dark)
 	if len(segments) == 0 {
 		ui.Text(c, "Herdr").TextColor(t.TextMuted).Grow(1).SingleLine()
 		return
@@ -65,6 +121,11 @@ func (s *Shell) breadcrumbRow(c *ui.Context) {
 				}
 				b.Children(func() {
 					ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
+						if segment.mark.bmp != nil || segment.mark.svg != nil {
+							ui.Box(c).Size(12, 12).Shrink(0).Children(func() {
+								markView(c, segment.mark, 12, t.Text)
+							})
+						}
 						ui.Text(c, segment.label).FontSize(Typography().Caption).
 							FontWeight(600).SingleLine().Shrink(0)
 						if !last {
@@ -120,9 +181,28 @@ func (s *Shell) crumbProjectRows(c *ui.Context) {
 }
 
 func (s *Shell) crumbTabRows(c *ui.Context, projectID string) {
+	dark := c.Theme().Dark
 	for _, tab := range tabsForProject(s.projection, projectID) {
 		tab := tab
-		row := crumbItemRow(c, visualMark{svg: iconTab}, tab.Label, opUnknown, tab.ID == s.selectedTabID)
+		mark := visualMark{svg: iconTab}
+		label := tab.Label
+		panes := panesForTab(s.projection, tab.ID)
+		if len(panes) == 1 {
+			if a := s.paneAgent(panes[0].ID); a != nil {
+				mark, _ = s.agentMarkForPane(panes[0].ID, dark)
+				if label == "" || label == "Tab" {
+					label = a.Name
+					if label == "" {
+						if p, _ := history.ParseAgentID(a.Kind); p != "" {
+							label = p.DisplayName()
+						}
+					}
+				}
+			} else if brand, ok := s.procMarkForPane(panes[0].ID); ok {
+				mark = brand
+			}
+		}
+		row := crumbItemRow(c, mark, label, opUnknown, tab.ID == s.selectedTabID)
 		if row.Clicked() {
 			s.crumbOpen = [3]bool{}
 			s.selectTab(tab.ID)
@@ -139,6 +219,11 @@ func (s *Shell) crumbPaneRows(c *ui.Context, tabID string) {
 		pane := pane
 		dark := c.Theme().Dark
 		mark, isAgent := s.agentMarkForPane(pane.ID, dark)
+		if !isAgent {
+			if brand, ok := s.procMarkForPane(pane.ID); ok {
+				mark = brand
+			}
+		}
 		dot := opUnknown
 		if isAgent {
 			if a := s.paneAgent(pane.ID); a != nil {

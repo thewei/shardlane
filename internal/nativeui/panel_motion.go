@@ -6,6 +6,13 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
+/**
+ * [INPUT]: 依赖 MyGo Animate、Shell 侧栏显示状态及 contextPanelForRoute 页面策略
+ * [OUTPUT]: 提供侧栏/右侧上下文面板的裁剪式宽度动画
+ * [POS]: shell.View 的布局动效层；无右侧上下文的页面不创建无关工具面板
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
+
 // Side-panel slide motion (2026-10-06). The sidebar and the Right Panel
 // collapse and expand with a width animation instead of popping. The
 // design follows MyGo's CollapsibleBase recipe, adapted to width:
@@ -67,7 +74,7 @@ func (s *Shell) sidebarSlide(c *ui.Context) {
 // (GWB-074 regression contract) — this only animates the reveal.
 func (s *Shell) rightPanelSlide(c *ui.Context) {
 	host := ui.Row(c.Key("right-panel-slide")).Shrink(0).AlignItems(ui.Stretch)
-	w := slideWidth(host, "width", !s.rightPanel.open, float32(s.rightPanel.width))
+	w := slideWidth(host, "width", !s.rightPanel.open || s.activeContextPanel() == contextPanelNone, float32(s.rightPanel.width))
 	if w <= panelSlideEpsilon {
 		return
 	}

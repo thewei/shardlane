@@ -8,8 +8,16 @@ import (
 	"github.com/egoist/mygo/plugins/terminal"
 	"github.com/egoist/mygo/ui"
 	"github.com/wh-studio/herdr-client/internal/herdr"
+	"github.com/wh-studio/herdr-client/internal/history"
 	"github.com/wh-studio/herdr-client/internal/settings"
 )
+
+/**
+ * [INPUT]: 依赖 mygo/plugins/terminal, mygo/ui, herdr, settings, history, gorex_style
+ * [OUTPUT]: 对外提供 terminalCanvas, paneCard, syncTerminals, closeAllTerminals, paneHeaderVisuals
+ * [POS]: nativeui 的终端画布与 Gorex 窗格卡片主渲染器，管理活动的终端连接与卡片头部视觉呈现
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
 
 // terminalOptionsFromSettings maps persisted presentation preferences onto the
 // official MyGo terminal options. It never carries Herdr terminal identity or
@@ -192,7 +200,46 @@ func (s *Shell) paneCard(c *ui.Context, k *gorexColors, surface *terminalSurface
 // hovered — the pane action buttons. The buttons call the same shared
 // actions as the pane menu (splitPaneAction and friends), never a second
 // implementation.
+// paneHeaderVisuals resolves the visual mark, primary title, and subtitle/detail
+// for one attached terminal surface. If the pane runs an Agent, it prioritizes
+// the Agent's brand icon and name; if it runs a recognizable dev tool/server,
+// it uses the program's brand and friendly name; otherwise it defaults to the
+// terminal glyph, pane label, and shortened directory.
+func (s *Shell) paneHeaderVisuals(surface *terminalSurface, dark bool) (visualMark, string, string) {
+	if a := s.paneAgent(surface.paneID); a != nil {
+		mark, _ := s.agentMarkForPane(surface.paneID, dark)
+		title := a.Name
+		if title == "" {
+			provider, _ := history.ParseAgentID(a.Kind)
+			if provider != "" {
+				title = provider.DisplayName()
+			} else {
+				title = "Agent"
+			}
+		}
+		detail := shortDir(surface.cwd)
+		return mark, title, detail
+	}
+
+	if act, ok := s.serviceIndex.Panes[surface.paneID]; ok && act.Proc != "" && !isShell(act.Proc) {
+		if svg := procBrand(act.Proc); svg != nil {
+			title := procFriendlyName(act.Proc)
+			detail := shortDir(surface.cwd)
+			return visualMark{svg: svg}, title, detail
+		}
+	}
+
+	title := surface.label
+	if title == "" {
+		title = "Terminal"
+	}
+	detail := shortDir(surface.cwd)
+	return visualMark{svg: iconTerminal}, title, detail
+}
+
 func (s *Shell) paneCardHeader(c *ui.Context, k *gorexColors, surface *terminalSurface, focused, hovered bool) {
+	dark := c.Theme().Dark
+	mark, title, detail := s.paneHeaderVisuals(surface, dark)
 	h := ui.Row(c).Height(gorexHeaderH).Padding(0, gorexGap, 0, 12).Gap(7).AlignItems(ui.Center).MinWidth(0)
 	// The pane menu lives here since the F144 real-terminal round: the
 	// terminal surface's right click is a program event now, so the card
@@ -208,16 +255,14 @@ func (s *Shell) paneCardHeader(c *ui.Context, k *gorexColors, surface *terminalS
 		s.selectPane(surface.paneID)
 	}
 	h.Children(func() {
-		ui.Icon(c, iconTerminal).Size(14.5, 14.5).TextColor(k.text).Shrink(0)
+		ui.Box(c).Size(15, 15).Shrink(0).Children(func() {
+			markView(c, mark, 14.5, k.text)
+		})
 		ui.Row(c).Grow(1).MinWidth(0).Gap(5).AlignItems(ui.Center).ClipX().Children(func() {
-			label := surface.label
-			if label == "" {
-				label = "Terminal"
-			}
-			ui.Text(c, label).FontSize(12.5).FontWeight(600).TextColor(k.text).
+			ui.Text(c, title).FontSize(12.5).FontWeight(600).TextColor(k.text).
 				SingleLine().Ellipsis("…").Shrink(0).MaxWidthPercent(80)
-			if cwd := tildePath(surface.cwd); cwd != "" {
-				ui.Text(c, cwd).FontSize(12.5).FontWeight(500).TextColor(k.text.Alpha(0.86)).
+			if detail != "" {
+				ui.Text(c, detail).FontSize(12.5).FontWeight(500).TextColor(k.text.Alpha(0.86)).
 					SingleLine().Ellipsis("…").Shrink(1).MinWidth(0)
 			}
 			s.paneStatusDot(c, k, surface)

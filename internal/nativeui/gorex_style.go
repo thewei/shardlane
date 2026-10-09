@@ -3,12 +3,20 @@ package nativeui
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
 	"github.com/egoist/mygo/plugins/terminal"
 	"github.com/egoist/mygo/ui"
 )
+
+/**
+ * [INPUT]: 依赖 github.com/egoist/mygo/plugins/terminal, github.com/egoist/mygo/ui, os, path/filepath, runtime
+ * [OUTPUT]: 对外提供 gorexColors/gorexColorsOf/paintGorexBackground/gorexContentCard/gorexIconButton/gorexActivityDot/gorexAttentionDot/shortDir/samePath/tildePath
+ * [POS]: nativeui 的 Gorex 风格视觉设计系统实现，被 workspace/terminal/titlebar 等模块消费
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
 
 // The gorex visual language (examples/gorex), adopted by the Shardlane
 // workspace on 2026-10-06: a soft multi-stop gradient window background,
@@ -250,4 +258,34 @@ func tildePath(path string) string {
 		return filepath.Join("~", rel)
 	}
 	return path
+}
+
+// shortDir shows a directory as shells do, from ~, and only its last
+// parts when it is deep, handling cross-platform separators.
+func shortDir(d string) string {
+	if d == "" {
+		return ""
+	}
+	sep := string(filepath.Separator)
+	if home, _ := os.UserHomeDir(); home != "" {
+		if samePath(d, home) {
+			return "~"
+		}
+		if len(d) > len(home) && samePath(d[:len(home)], home) && d[len(home)] == filepath.Separator {
+			d = "~" + d[len(home):]
+		}
+	}
+	parts := strings.Split(d, sep)
+	if len(parts) > 5 || (len(d) > 48 && len(parts) > 3) {
+		return "…" + sep + strings.Join(parts[len(parts)-2:], sep)
+	}
+	return d
+}
+
+// samePath reports whether two paths are the same, without case on Windows.
+func samePath(a, b string) bool {
+	if runtime.GOOS == "windows" {
+		return strings.EqualFold(a, b)
+	}
+	return a == b
 }

@@ -2,6 +2,13 @@ package nativeui
 
 import "github.com/egoist/mygo/ui"
 
+/**
+ * [INPUT]: 依赖 github.com/egoist/mygo/ui 的 MustParseSVG
+ * [OUTPUT]: 对外提供 iconWorkspace/iconFolder/iconTerminal/iconAgent/iconMinus/iconSquare/iconCopy 等 UI 矢量图标
+ * [POS]: nativeui 的图标字典，被 titlebar/sidebar/terminal/breadcrumb 等呈现组件消费
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
+
 func icon(shapes string) *ui.SVG {
 	return ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">` + shapes + `</svg>`))
 }
@@ -36,4 +43,6 @@ var (
 	iconEllipsis    = icon(`<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>`)
 	iconTask        = icon(`<rect x="3" y="3" width="18" height="18" rx="3"/><path d="m8 12 2.5 2.5L16 9"/>`)
 	iconPanel       = icon(`<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/>`)
+	iconMinus       = icon(`<path d="M5 12h14"/>`)
+	iconSquare      = icon(`<rect width="18" height="18" x="3" y="3" rx="2"/>`)
 )

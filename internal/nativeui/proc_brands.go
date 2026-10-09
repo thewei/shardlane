@@ -8,12 +8,19 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-// Runtime brand marks for sidebar Pane rows (2026-10-06 A11): when a
+/**
+ * [INPUT]: 依赖 mygo/ui 的 SVG, herdr-client/internal/herdr 的 Pane 数据, 内嵌 brands/*.svg 资源
+ * [OUTPUT]: 对外提供 procBrand, procBrandAssets, procFriendlyName, isShell, Shell.procMarkForPane
+ * [POS]: 进程与工具品牌标识解析器，将 Herdr 观察到的前台进程映射为矢量图标与友好名称，被 terminal/project_tree/breadcrumb 消费
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
+
+// Runtime brand marks for sidebar Pane rows and pane card headers: when a
 // Pane's foreground process is a recognizable program — a dev server, a
-// database, an editor — its row shows that program's brand icon instead
-// of the generic terminal glyph. The SVGs come from the gorex reference
-// project's brand set (CC0, brands/LICENSE.md); unknown programs keep the
-// default mark.
+// database, an editor, or an Agent CLI — its header and row show that
+// program's brand icon instead of the generic terminal glyph. The SVGs come
+// from the gorex reference project's brand set (CC0, brands/LICENSE.md);
+// unknown programs keep the default mark.
 
 //go:embed brands/*.svg
 var procBrandFS embed.FS
@@ -29,6 +36,8 @@ var (
 // pane.process_info reports it) to its brand asset. One program may come
 // under several names.
 var procBrandAssets = map[string]string{
+	"claude":         "claude",
+	"codex":          "openai",
 	"node":           "nodedotjs",
 	"nodejs":         "nodedotjs",
 	"tsx":            "nodedotjs",
@@ -82,6 +91,8 @@ var procBrandAssets = map[string]string{
 	"kotlin":         "kotlin",
 	"kotlinc":        "kotlin",
 	"git":            "git",
+	"lazygit":        "git",
+	"tig":            "git",
 	"htop":           "htop",
 	"btop":           "htop",
 	"top":            "htop",
@@ -146,4 +157,87 @@ func (s *Shell) procMarkForPane(paneID string) (visualMark, bool) {
 		}
 	}
 	return visualMark{}, false
+}
+
+var procFriendlyNames = map[string]string{
+	"codex":          "Codex",
+	"claude":         "Claude Code",
+	"node":           "Node",
+	"nodejs":         "Node",
+	"tsx":            "Node",
+	"ts-node":        "Node",
+	"vite":           "Vite",
+	"next":           "Next.js",
+	"bun":            "Bun",
+	"deno":           "Deno",
+	"python":         "Python",
+	"python3":        "Python",
+	"lazygit":        "Git Changes",
+	"tig":            "Git Log",
+	"git":            "Git",
+	"vim":            "Vim",
+	"nvim":           "Neovim",
+	"hx":             "Helix",
+	"emacs":          "Emacs",
+	"htop":           "Activity",
+	"btop":           "Activity",
+	"top":            "Activity",
+	"ssh":            "SSH",
+	"docker":         "Docker",
+	"docker-compose": "Docker Compose",
+	"go":             "Go",
+	"cargo":          "Cargo",
+	"rustc":          "Rust",
+	"npm":            "npm",
+	"pnpm":           "pnpm",
+	"yarn":           "Yarn",
+	"ruby":           "Ruby",
+	"php":            "PHP",
+	"psql":           "PostgreSQL",
+	"postgres":       "PostgreSQL",
+	"postgresql":     "PostgreSQL",
+	"mysql":          "MySQL",
+	"mysqld":         "MySQL",
+	"redis-cli":      "Redis",
+	"redis-server":   "Redis",
+	"tmux":           "tmux",
+	"swift":          "Swift",
+	"kotlin":         "Kotlin",
+	"bash":           "Bash",
+	"zsh":            "Zsh",
+	"fish":           "Fish",
+	"powershell":     "PowerShell",
+	"pwsh":           "PowerShell",
+	"cmd":            "Command Prompt",
+}
+
+var knownShells = map[string]bool{
+	"zsh": true, "bash": true, "fish": true, "sh": true, "dash": true,
+	"nu": true, "pwsh": true, "elvish": true, "xonsh": true, "tcsh": true,
+	"csh": true, "ksh": true, "cmd": true, "powershell": true,
+}
+
+// isShell reports whether proc is a recognized shell executable.
+func isShell(proc string) bool {
+	base := strings.ToLower(strings.TrimSpace(proc))
+	base = strings.TrimSuffix(base, ".exe")
+	return knownShells[base]
+}
+
+// procFriendlyName maps a process binary name to its human-readable title.
+func procFriendlyName(proc string) string {
+	base := strings.ToLower(strings.TrimSpace(proc))
+	base = strings.TrimSuffix(base, ".exe")
+	if name, ok := procFriendlyNames[base]; ok {
+		return name
+	}
+	if cut := strings.LastIndexAny(base, ".0123456789"); cut > 0 {
+		if name, ok := procFriendlyNames[base[:cut]]; ok {
+			return name
+		}
+	}
+	if len(base) > 0 {
+		return strings.ToUpper(base[:1]) + base[1:]
+	}
+	return proc
 }

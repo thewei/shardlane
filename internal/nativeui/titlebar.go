@@ -1,15 +1,17 @@
 package nativeui
 
 import (
+	"runtime"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/egoist/mygo/ui"
 )
 
 /**
- * [INPUT]: 依赖 mygo/ui 的 Context/TitleBar（窗口控件带几何）、gorex_style 的图标按钮与配色、router 路由态
- * [OUTPUT]: 对外提供 Shell.titlebar（窗口标题栏：红绿灯对齐、双行面包屑、工具区）、titlebarHeight（灯带对齐的行高纯函数）、showViewTerminal/showViewChat/showViewChanges/showViewHistory（四个视图的唯一切换入口）、toggleWindowPinned（窗口置顶的唯一入口）
+ * [INPUT]: 依赖 mygo/ui 的 Context/TitleBar（窗口控件带几何）、gorex_style 的图标按钮与配色、router 路由态、runtime/time
+ * [OUTPUT]: 对外提供 Shell.titlebar（窗口标题栏：红绿灯对齐、双行面包屑、工具区、Windows 控件）、titlebarHeight（灯带对齐的行高纯函数）、showViewTerminal/showViewChat/showViewChanges/showViewHistory（四个视图的唯一切换入口）、toggleWindowPinned（窗口置顶的唯一入口）
  * [POS]: nativeui 的窗口 chrome 所有者，被 shell.View 顶部消费；高度与 MyGo 红灯带对齐（F142），视图切换、Agent 活动浮层入口与窗口置顶在此收口
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -87,16 +89,75 @@ func titlebarHeight(barHeight float32, workspace bool) float32 {
 func (s *Shell) titlebarTools(c *ui.Context, k *gorexColors) {
 	s.titlebarViewSwitch(c, k)
 	s.titlebarActivity(c, k)
-	panelLabel := "Show Right Panel"
-	if s.rightPanel.open {
-		panelLabel = "Hide Right Panel"
-	}
-	if gorexIconButton(c, k, iconPanel, panelLabel, panelLabel+" (⌥⌘B)", s.rightPanel.open, gorexIconBtn, 16).Clicked() {
-		s.toggleRightPanel()
+	if kind := s.activeContextPanel(); kind != contextPanelNone {
+		panelName := "Workspace Tools"
+		if kind == contextPanelHistory {
+			panelName = "History Details"
+		}
+		verb := "Show "
+		if s.rightPanel.open {
+			verb = "Hide "
+		}
+		label := verb + panelName
+		if gorexIconButton(c, k, iconPanel, label, label+" (⌥⌘B)", s.rightPanel.open, gorexIconBtn, 16).Clicked() {
+			s.toggleRightPanel()
+		}
 	}
 	if gorexIconButton(c, k, iconPin, windowPinLabel, windowPinLabel, s.windowPinned, gorexIconBtn, 15).Clicked() {
 		s.toggleWindowPinned()
 	}
+	s.windowControls(c, k)
+}
+
+// ownControls indicates that the title bar draws custom window controls: on
+// Windows, where native controls do not blend with the gorex gradient header.
+var ownControls = runtime.GOOS == "windows"
+
+// closeRed is Windows 11's close button hover face.
+var closeRed = ui.Hex("#c42b1c")
+
+// windowControls draws minimize, maximize/restore, and close buttons on platforms
+// without macOS traffic lights (such as Windows).
+func (s *Shell) windowControls(c *ui.Context, k *gorexColors) {
+	win := s.win
+	if !ownControls || win == nil || win.IsFullScreen() {
+		return
+	}
+	maximized := win.IsMaximized()
+	ui.Row(c).Gap(2).AlignItems(ui.Center).Shrink(0).Children(func() {
+		ui.Box(c).Size(1, 16).Margin(0, 6).Background(k.textFaint.Alpha(0.25))
+		if gorexIconButton(c, k, iconMinus, "Minimize", "Minimize", false, gorexIconBtn, 16).Clicked() {
+			win.Minimize()
+		}
+		glyph, label := iconSquare, "Maximize"
+		if maximized {
+			glyph, label = iconCopy, "Restore"
+		}
+		if gorexIconButton(c, k, glyph, label, label, false, gorexIconBtn, 13).Clicked() {
+			if maximized {
+				win.Unmaximize()
+			} else {
+				win.Maximize()
+			}
+		}
+		b := ui.Box(c).Size(gorexIconBtn, gorexIconBtn).Center().Radius(gorexIconBtn / 2.6).
+			Cursor(ui.CursorPointer).Role(ui.RoleButton).Label("Close").Tooltip("Close")
+		col := k.iconMuted
+		if b.Pressed() {
+			b.Background(closeRed.Alpha(0.8))
+			col = ui.Hex("#ffffff")
+		} else if b.Hovered() {
+			b.Background(closeRed)
+			col = ui.Hex("#ffffff")
+		}
+		b.Transition(ui.ElementTransition{Colors: true, Duration: 120 * time.Millisecond})
+		b.Children(func() {
+			ui.Icon(c, iconClose).Size(16, 16).TextColor(col)
+		})
+		if b.Clicked() {
+			win.Close()
+		}
+	})
 }
 
 // windowPinLabel names the titlebar pin for accessibility and its tooltip;
