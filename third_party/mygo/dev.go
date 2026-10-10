@@ -1,11 +1,6 @@
 package mygo
 
-import (
-	"net"
-	"os"
-	"sync"
-	"time"
-)
+import "os"
 
 // production is set to "1" by `mygo build` through
 // -ldflags "-X github.com/egoist/mygo.production=1".
@@ -21,53 +16,16 @@ func IsDev() bool {
 	return os.Getenv("MYGO_ENV") != "production"
 }
 
-// devReady reports to `mygo dev` that a build has started, so that a reload
-// only stops the previous build once the new one is up. mygo dev passes a
-// Unix socket in MYGO_READY_SOCKET; the app connects to it when its first
-// window is ready to show, or right away when it opens no window.
-var devReady = struct {
-	once   sync.Once
-	socket string
-}{socket: readySocket()}
+// devLaunched tells that `mygo dev` launched the app, which it does with
+// MYGO_DEV=1: App.Relaunch then has mygo dev start it again.
+var devLaunched = devMarker()
 
-func readySocket() string {
-	path := os.Getenv("MYGO_READY_SOCKET")
+func devMarker() bool {
+	set := os.Getenv("MYGO_DEV") == "1"
 	// Not meant for child processes.
-	os.Unsetenv("MYGO_READY_SOCKET")
-	if production == "1" {
-		return ""
-	}
-	return path
+	os.Unsetenv("MYGO_DEV")
+	return set && production != "1"
 }
 
 // launchedByDev reports whether `mygo dev` launched the app.
-func launchedByDev() bool { return devReady.socket != "" }
-
-func signalDevReady() {
-	if devReady.socket == "" {
-		return
-	}
-	devReady.once.Do(func() {
-		go func() {
-			conn, err := net.DialTimeout("unix", devReady.socket, time.Second)
-			if err != nil {
-				return
-			}
-			_, _ = conn.Write([]byte("ready\n"))
-			conn.Close()
-		}()
-	})
-}
-
-// devReadyAfterLaunch runs once the ready listeners have returned.
-func devReadyAfterLaunch() {
-	if !launchedByDev() {
-		return
-	}
-	if len(Windows()) == 0 {
-		signalDevReady()
-		return
-	}
-	// A window that never loads a page must not hold up reloads.
-	time.AfterFunc(5*time.Second, signalDevReady)
-}
+func launchedByDev() bool { return devLaunched }

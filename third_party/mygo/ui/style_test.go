@@ -666,6 +666,28 @@ func TestDebugAndCursors(t *testing.T) {
 	}
 }
 
+func TestCursorStopsAtClickable(t *testing.T) {
+	tt := coreNewTester(func(c *context) {
+		coreRow(c).Fill().Gap(10).Padding(10).Cursor(CursorText).Children(func() {
+			coreText(c, "inherits")
+			coreButtonBase(c).Size(30, 30).Label("button").Children(func() { coreText(c, "+") })
+			coreButtonBase(c).Size(30, 30).Label("pointer").Cursor(CursorPointer)
+		})
+	}, 200, 60)
+	for _, want := range []struct {
+		name   string
+		cursor Cursor
+	}{{"inherits", CursorText}, {"button", CursorDefault}, {"+", CursorDefault}, {"pointer", CursorPointer}} {
+		r, ok := tt.Find(want.name)
+		if !ok {
+			t.Fatalf("no %q", want.name)
+		}
+		if tt.Move(center(r)); tt.Cursor() != want.cursor {
+			t.Errorf("the pointer is %v over %q, want %v", tt.Cursor(), want.name, want.cursor)
+		}
+	}
+}
+
 func TestThemeUnits(t *testing.T) {
 	th := LightTheme()
 	th.Spacing, th.FontSize = 5, 16

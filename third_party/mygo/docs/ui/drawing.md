@@ -48,7 +48,9 @@ runes each comes from. Move their `X` and draw them with `Painter.Glyphs`;
 display's pixels. `Shape` caches nothing, unlike the text of elements: keep
 the glyphs of text drawn in many frames. `Font.Features` turns OpenType
 features on and off, and `Font.Thicken` draws text with a thicker stroke on
-macOS, as Ghostty's `font-thicken`.
+macOS, as Ghostty's `font-thicken`, and `Font.Antialiased` a thinner one,
+without font smoothing, as browsers draw text styled
+`-webkit-font-smoothing: antialiased`.
 
 ```go
 font := ui.Font{Family: "monospace", Size: 13}

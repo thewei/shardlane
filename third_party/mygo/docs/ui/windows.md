@@ -64,6 +64,23 @@ Text over an opaque background keeps the system's subpixel antialiasing
 antialiased in grayscale. `examples/vibrancy` picks the window's material
 in such a sidebar.
 
+## Closing
+
+A view can close its own window, from a button's click or its callback.
+The window goes at once, by `Destroy` or by a `Close` no `OnClose`
+listener prevents, and the rest of the view builds as it would, with a
+`Context` that still has the theme and the window's size. The frame ends
+there: nothing more is laid out or painted, and no other callback runs.
+Open the window that takes over first, since an app [quits](../app.md)
+when its last window closes:
+
+```go
+if ui.Button(c, "Done").Clicked() {
+	app.showMain()
+	win.Close()
+}
+```
+
 ## No webview
 
 An app whose windows all show native UI needs no webview: on Linux it needs

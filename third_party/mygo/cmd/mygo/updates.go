@@ -200,7 +200,7 @@ func writeArchive(c *Config, stage, target string, entries []string) ([]string, 
 			return nil, fmt.Errorf("updates: %w", err)
 		}
 		if key == nil {
-			logf("not signing an update: set MYGO_UPDATER_PRIVATE_KEY or updates.privateKey")
+			warnf("Not signing an update: set MYGO_UPDATER_PRIVATE_KEY or updates.privateKey")
 		}
 	}
 	if key == nil && !strings.HasPrefix(target, "linux-") {
@@ -283,9 +283,9 @@ func writeDeltas(c *Config, key ed25519.PrivateKey, stage, target string, entrie
 	published, err := fetchManifest(c.updateFeed(target))
 	if err != nil {
 		if errors.Is(err, errNotPublished) {
-			logf("no delta updates for %s: no version is published yet", target)
+			logf("No delta updates for %s: no version is published yet", target)
 		} else {
-			logf("no delta updates for %s: %v", target, err)
+			warnf("No delta updates for %s: %v", target, err)
 		}
 		return nil, nil
 	}
@@ -296,7 +296,7 @@ func writeDeltas(c *Config, key ed25519.PrivateKey, stage, target string, entrie
 		}
 	}
 	if len(bases) == 0 {
-		logf("no delta updates for %s: the published version is %s", target, published.Version)
+		logf("No delta updates for %s: the published version is %s", target, published.Version)
 		return nil, nil
 	}
 	bases = bases[:min(len(bases), n)]
@@ -319,17 +319,17 @@ func writeDeltas(c *Config, key ed25519.PrivateKey, stage, target string, entrie
 		d, err := writeDelta(key, base, filepath.Join(work, strconv.Itoa(i)), path, c.Version, newDir, newEntries)
 		switch {
 		case err != nil:
-			logf("no delta update from %s for %s: %v", base.Version, target, err)
+			warnf("No delta update from %s for %s: %v", base.Version, target, err)
 			continue
 		case d.Size >= m.Size:
 			os.Remove(path)
-			logf("no delta update from %s for %s: it is not smaller than the archive", base.Version, target)
+			logf("No delta update from %s for %s: it is not smaller than the archive", base.Version, target)
 			continue
 		}
 		d.URL = c.updateFile(name, false)
 		m.Deltas = append(m.Deltas, d)
 		files = append(files, path)
-		logf("made the delta update from %s for %s: %s, instead of %s", base.Version, target, formatSize(d.Size), formatSize(m.Size))
+		logf("Made the delta update from %s for %s: %s, instead of %s", base.Version, target, formatSize(d.Size), formatSize(m.Size))
 	}
 	return files, nil
 }
@@ -485,7 +485,7 @@ apps only accept updates signed with it, so losing it strands them.`)
 	if err := os.WriteFile(public, []byte(pubText+"\n"), 0o644); err != nil {
 		return err
 	}
-	logf("wrote %s (secret) and %s", secret, public)
+	logf("Wrote %s (secret) and %s", secret, public)
 	fmt.Printf("Add to mygo.json, or mygo.config.ts:\n\n  \"updates\": {\n    \"publicKey\": %q,\n    \"github\": \"owner/name\"\n  }\n", pubText)
 	return nil
 }

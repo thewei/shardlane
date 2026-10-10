@@ -526,7 +526,17 @@ func (e *pangoEngine) shape(text []rune, style Style, spans []Span, width float3
 		l.attrListUnref(attrs)
 	}
 	if width > 0 {
-		l.layoutSetWidth(layout, int32(min(float64(width)*pangoScale, math.MaxInt32)))
+		// Round up to whole Pango units: truncating can make the box a
+		// thousandth of a dip narrower than the text measured within it.
+		// Pango also applies the letter spacing after the text's last
+		// glyph when wrapping but trims it from the measured line, so
+		// the box needs the spacing back to hold that line; the other
+		// engines keep the trailing spacing in their measurements.
+		w := math.Ceil(float64(width) * pangoScale)
+		if style.LetterSpacing > 0 {
+			w += math.Round(float64(style.LetterSpacing) * pangoScale)
+		}
+		l.layoutSetWidth(layout, int32(min(w, math.MaxInt32)))
 		if wholeWords {
 			l.layoutSetWrap(layout, pangoWrapWord)
 		} else {

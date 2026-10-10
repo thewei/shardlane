@@ -641,6 +641,12 @@ Deferred (available in v0.3.4, needs a product/design decision before adoption):
 
 Fast verification: `GOTOOLCHAIN=go1.27.1 go test ./...`; `GOTOOLCHAIN=auto go tool mygo vet .`; `GOTOOLCHAIN=auto go tool mygo build`.
 
+## N17 — MyGo v0.3.7 upstream refresh (2026-10-10)
+
+- Pin `github.com/egoist/mygo` v0.3.7, keep the single vendored `replace` and rebase both documented compatibility fixes (F146/F147 `LocalDragSelect`, WIX-021 field editor-focus delegation). Neither is in upstream v0.3.7. The new upstream files include layout growth, list horizontal scrolling, TextArea `TrackLines`, and CLI/packaging fixes from the 0.3.5–0.3.7 releases; Shardlane does not automatically adopt any new UI flow merely by upgrading.
+- Complete the repository Go tests, framework SearchField and optional-`nil` focus regressions, MyGo vet and macOS app packaging build against the revised vendored tree. Initial rebase placed `focusTo` ahead of `hasState` and failed `TestOptionalElementInput/nil`; the delegation is now behind the nil-safe guard. Treat actual application keyboard/terminal smoke and the other OS builds as distinct acceptance gates.
+- WebView remains frozen: [upstream evaluation](mygo-webview-upstream-evaluation-2026-10-10.md) records the unmerged #60/#189/#200 alternatives. No PR cherry-pick or second native hosting path is approved.
+
 # M7 — Remote / Mobile API v2
 
 Keep current wire compatibility; reuse Go app services.

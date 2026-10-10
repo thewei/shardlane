@@ -4,6 +4,7 @@ package main
 
 import (
 	"os/exec"
+	"os/signal"
 	"syscall"
 )
 
@@ -37,3 +38,7 @@ func signalGroup(cmd *exec.Cmd, sig syscall.Signal) {
 	}
 	_ = syscall.Kill(-cmd.Process.Pid, sig)
 }
+
+// ignoreTTIN lets reading the terminal fail, rather than stop mygo, when it
+// runs in the background.
+func ignoreTTIN() { signal.Ignore(syscall.SIGTTIN) }

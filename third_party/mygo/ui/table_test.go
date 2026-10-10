@@ -146,6 +146,25 @@ func TestTableReorder(t *testing.T) {
 	}
 }
 
+// A column dragged past several others stays the one dragged: its header
+// keeps the press as the others move aside.
+func TestTableReorderFar(t *testing.T) {
+	s := ListState{}
+	cols := []TableColumn{{Title: "Name"}, {Title: "Kind", Width: 80}, {Title: "Size", Width: 80}, {Title: "Date", Width: 80}}
+	tt := coreNewTester(tableView(&s, cols, []string{"a.txt"}), 600, 300)
+	kind := header(t, tt, "Kind")
+	y := float32(kind.Y + kind.H/2)
+	x := float32(kind.X + 20)
+	tt.Press(x, y)
+	for d := float32(5); d <= 180; d += 15 {
+		tt.Move(x+d, y)
+	}
+	tt.Release(x+180, y)
+	if got := s.Columns.Order; len(got) != 4 || got[1] != "Size" || got[2] != "Date" || got[3] != "Kind" {
+		t.Fatalf("the order after dragging Kind past Size and Date: %q", got)
+	}
+}
+
 func TestTableScrollsSideways(t *testing.T) {
 	s := ListState{}
 	cols := []TableColumn{{Title: "Name", Width: 200}, {Title: "Kind", Width: 200}, {Title: "Size", Width: 200}}

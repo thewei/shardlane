@@ -37,11 +37,20 @@ func (w *Windows) signs() bool { return w.Certificate != "" || w.SignCommand != 
 
 // signWindows signs an executable or installer.
 func signWindows(c *Config, file string) error {
+	t := con.start("Signing " + filepath.Base(file))
+	return t.end(signWindowsFile(c, file), "Signed "+filepath.Base(file))
+}
+
+func signWindowsFile(c *Config, file string) error {
 	w := c.Windows
 	if w.SignCommand != "" {
-		// Not echoed: the command may hold credentials.
-		logf("signing %s", filepath.Base(file))
-		if err := shellCommand(c.root, strings.ReplaceAll(w.SignCommand, "%1", shellQuote(file))).Run(); err != nil {
+		// Not shown: the command may hold credentials.
+		cmd := shellCommand(c.root, strings.ReplaceAll(w.SignCommand, "%1", shellQuote(file)))
+		out, errOut := labeledOutput(cmd, "sign")
+		err := waited(cmd.Run())
+		out.flush()
+		errOut.flush()
+		if err != nil {
 			return fmt.Errorf("windows.signCommand: %w", err)
 		}
 		return nil
@@ -52,7 +61,6 @@ func signWindows(c *Config, file string) error {
 	if ts == "" {
 		ts = "http://timestamp.digicert.com"
 	}
-	logf("signing %s", filepath.Base(file))
 	if runtime.GOOS == "windows" {
 		tool := signtool()
 		if tool == "" {

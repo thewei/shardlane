@@ -939,9 +939,6 @@ func layoutAbsolute(e *node) {
 		} else {
 			h = heightAt(c, w, ph)
 		}
-		if c.place.on {
-			left, top = c.place.fit(c, left, top, w, h, pw, ph)
-		}
 		x := left + c.m(3)
 		if !lok && rok {
 			x = pw - right - w - c.m(1)

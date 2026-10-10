@@ -215,6 +215,7 @@ type engine struct {
 	incoming    *platform.DataDragEvent
 	dataOver    uint64
 	closed      bool
+	closing     bool // the window closed during a frame, which closes the engine as it ends
 	dropFormats []transfer.Format
 	dropScratch []transfer.Format
 	// kept are the pages of the history that Routers keep, and commitPage
@@ -339,11 +340,11 @@ func (rt *engine) themeChanged() {
 
 // runFrame builds, lays out, paints and presents a frame.
 func (rt *engine) runFrame() {
-	if rt.inFrame {
+	if rt.inFrame || rt.closed {
 		return
 	}
 	rt.inFrame = true
-	defer func() { rt.inFrame = false }()
+	defer rt.endFrame()
 
 	rt.frame++
 	rt.stats.begin(rt)
@@ -383,6 +384,11 @@ func (rt *engine) runFrame() {
 		clear(rt.kept)
 		rt.c.reset(now, appW, h)
 		rt.view(&rt.c)
+		if rt.closing {
+			// The view closed the window, as a close button does: the
+			// window is gone at once, and the frame ends with the view.
+			return
+		}
 		rt.buildToasts(&rt.c)
 		if ov := rt.c.overlay; ov != nil {
 			rt.c.root.add(ov)
@@ -400,6 +406,9 @@ func (rt *engine) runFrame() {
 		rt.prepareSelectable(rt.c.root)
 		rt.resolveMenu()
 		rt.endPass()
+		if rt.closing {
+			return // an action closed it
+		}
 		if !rt.consumed {
 			break
 		}
@@ -527,7 +536,7 @@ func (rt *engine) surfaceFrame() {
 // armed them.
 func (rt *engine) repaintFrame(w, h, scale float32) {
 	rt.inFrame = true
-	defer func() { rt.inFrame = false }()
+	defer rt.endFrame()
 	rt.stats.begin(rt)
 	start := time.Now()
 	rt.c.now = rt.now()
@@ -699,8 +708,16 @@ func (rt *engine) armTimer() {
 	}
 }
 
+// close lets the window's state go when the window closes. A window closed
+// during a frame, as a close button's click closes it, keeps it until the
+// frame ends: the rest of the view builds with a Context that still works,
+// and reads the theme, the size and its state as before.
 func (rt *engine) close() {
-	rt.closed = true
+	if rt.inFrame {
+		rt.closing = true
+		return
+	}
+	rt.closed, rt.closing = true, false
 	clear(rt.focusFields)
 	rt.focusFields = nil
 	for _, r := range rt.refs {
@@ -738,6 +755,15 @@ func (rt *engine) close() {
 	}
 	if rt.repaintTimer != nil {
 		rt.repaintTimer.Stop()
+	}
+}
+
+// endFrame ends a frame, and closes the engine when its window closed
+// during it.
+func (rt *engine) endFrame() {
+	rt.inFrame = false
+	if rt.closing {
+		rt.close()
 	}
 }
 
@@ -884,15 +910,25 @@ func intersect(a, b Rect) Rect {
 	return Rect{x0, y0, x1 - x0, y1 - y0}
 }
 
-// updateCursor shows the cursor of the element under the pointer.
+// updateCursor shows the cursor of the element under the pointer: the
+// innermost one's that sets a cursor, up to the innermost element that
+// takes clicks, whose own cursor is the default unless it sets one, so a
+// button in a text field shows no I-beam.
 func (rt *engine) updateCursor() {
 	c := CursorDefault
 	if rt.pressed != nil && rt.pressed.cursor != 0 {
 		c = rt.pressed.cursor - 1
 	} else {
 		for _, id := range rt.hover {
-			if s := rt.states[id]; s != nil && s.cursor != 0 {
+			s := rt.states[id]
+			if s == nil {
+				continue
+			}
+			if s.cursor != 0 {
 				c = s.cursor - 1
+				break
+			}
+			if s.flags&flagClickable != 0 {
 				break
 			}
 		}

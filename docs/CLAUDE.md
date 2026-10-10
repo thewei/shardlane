@@ -26,6 +26,7 @@ Members:
 - `libghostty-upgrade.md` — vendored libghostty-vt upgrade and ABI verification runbook.
 - `mygo-native-unified-ui-ux-plan-2026-10-09.md` — screenshot and source-based MyGo UI/UX audit, page map, contextual panel/Agent popover interaction specification, staged implementation and acceptance ledger.
 - `mygo-git-workbench-product-ux-2026-10-09.md` — Fork/lazygit feature parity, native Git toolbar and Commit dialog, safe FF merge/revert/undo, AI commit prompt handoff versus future generation API, acceptance stages.
+- `mygo-webview-upstream-evaluation-2026-10-10.md` — v0.3.7 WebView gap and three open PR alternatives, non-adoption rationale and safe reconsideration gates.
 
 Rules:
 - Shardlane is the client/product brand; Herdr is the real backend/runtime and retains its technical name wherever that is the fact being described.

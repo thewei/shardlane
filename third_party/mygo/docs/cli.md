@@ -104,7 +104,15 @@ the app, regenerate the TypeScript client and restart the app: the running
 build quits, then the new one starts, so the two never hold the same files,
 locks or web view profile at once. A build that fails to compile keeps the
 running one. Frontend changes are the dev server's to handle. Quitting the app, or
-Ctrl+C, ends mygo dev, and `App.Relaunch` restarts the app.
+Ctrl+C, ends mygo dev (press Ctrl+C again not to wait for the app to quit),
+and `App.Relaunch` restarts the app.
+
+On a terminal, each step shows a spinner with what it does, such as the Go
+packages being compiled, then how long it took; what the dev server and the
+app print is labeled `web │` and `app │`, and a rebuild names the files that
+changed. Type a key, then Enter, as in Vite: `r` rebuilds and restarts the
+app, `c` clears the console, `q` quits and `h` lists them. `NO_COLOR` turns
+colors off, and output to a file or a pipe has a line per step.
 
 The development app is named `<name> Dev`, with the identifier
 `<identifier>.dev`, so that its data, preferences and single instance lock

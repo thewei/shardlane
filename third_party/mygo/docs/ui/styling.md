@@ -33,7 +33,11 @@ ui.Column(c).Padding(18).Gap(12).Radius(10).
   resize cursors (both ways, toward one side as `CursorResizeE`, and of
   columns and rows), `CursorCopy` and `CursorAlias` for drops,
   `CursorContextMenu`, `CursorVerticalText`, `CursorNotAllowed`,
-  `CursorCrosshair`, and `CursorNone`, which hides it.
+  `CursorCrosshair`, and `CursorNone`, which hides it. An element's
+  cursor shows over its children too, except over those that take clicks
+  (a button, or anything with `Clicked` or `OnClick`): those show their
+  own, the default arrow unless they set one, so the buttons of a field
+  with `CursorText` show no I-beam.
 
 `ui.Oklch(l, c, h)` is CSS's `oklch()`; `.Alpha(a)` is its `/ a`. It
 returns a `ui.Color` like any other, so fills, borders, gradients,

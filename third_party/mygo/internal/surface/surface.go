@@ -54,6 +54,9 @@ type Conn struct {
 	// Post runs fn on the main thread soon, unless the window has closed;
 	// it is safe from any goroutine.
 	Post func(fn func())
+	// Ready tells that the content presented its first frame: the window
+	// is ready to show (Window.OnReadyToShow).
+	Ready func()
 	// PopupMenu shows m as a context menu at (x, y) in the surface, in
 	// DIPs, once the event being handled returns. chosen receives the ID of
 	// the item chosen, if one is.

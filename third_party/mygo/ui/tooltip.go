@@ -79,7 +79,7 @@ func tooltipBase(c *context, anchor *node, fn func(tip *node)) (*node, bool) {
 	coreOverlay(c, func() {
 		tip = coreBox(c).Absolute().PassThrough().Role(RoleTooltip)
 		fn(tip)
-		if tip.attach == 0 && !tip.place.on {
+		if tip.attach == 0 {
 			tip.AttachTo(anchor, AnchorTop, AnchorBottom)
 		}
 		if tip.OverlayShortcut(0, KeyEscape) {
@@ -90,9 +90,9 @@ func tooltipBase(c *context, anchor *node, fn func(tip *node)) (*node, bool) {
 }
 
 // Tooltip shows s by the element when the pointer rests on it, or the
-// keyboard focus comes to it, as TooltipBase does: near the pointer, or
-// below the element for the focus. It describes the element to assistive
-// technology where Description does not.
+// keyboard focus comes to it, as TooltipBase does: above the element,
+// centered, or below it where there is no room above. It describes the
+// element to assistive technology where Description does not.
 func (e *node) Tooltip(s string) *node {
 	if e.description == "" {
 		e.description = s
@@ -102,19 +102,13 @@ func (e *node) Tooltip(s string) *node {
 	}
 	c := e.c
 	t := c.theme
-	rt := c.rt
-	x, y := rt.pointerX+12, rt.pointerY+18
 	fill, text := t.inverse()
 	tooltipBase(c, e, func(tip *node) {
 		tip.MaxWidth(t.Space(80)).Padding(t.Space(1.25), t.Space(2)).Radius(t.Space(1.25)).
 			Background(fill).TextColor(text).FontSize(t.FontSize - 1)
 		tip.Shadow(0, 2, 8, 0, RGBA(0, 0, 0, 0.2))
 		tip.Children(func() { coreText(c, s) })
-		if rt.tips.byFocus {
-			tip.AttachTo(e, AnchorBottom, AnchorTop).Margin(t.Space(1), 0, 0, 0)
-		} else {
-			keepInWindow(tip, x, y, y-30)
-		}
+		tip.AttachTo(e, AnchorTop, AnchorBottom).Margin(0, 0, t.Space(1.5), 0)
 	})
 	return e
 }

@@ -1,14 +1,17 @@
 import { Link, useLocation } from "@tanstack/react-router"
+import { MenuIcon } from "lucide-react"
 
 import { GitHubIcon } from "@/components/icons"
 import { Wordmark } from "@/components/logo"
 import { Search } from "@/components/search"
 import { ThemeToggle } from "@/components/theme-toggle"
-import { buttonVariants } from "@/components/ui/button"
+import { Button, buttonVariants } from "@/components/ui/button"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { bookOf, slugOfPath } from "@/lib/docs"
 import { site } from "@/lib/site"
 
 const navLink = "text-muted-foreground transition-colors hover:text-foreground data-current:text-foreground"
+const mobileNavLink = "min-h-11 px-3 data-current:bg-accent aria-[current=page]:bg-accent"
 
 export function SiteHeader() {
   // The docs and native UI's are apart, each with its own sidebar.
@@ -38,6 +41,31 @@ export function SiteHeader() {
           <GitHubIcon />
         </a>
         <ThemeToggle />
+        <DropdownMenu modal={false}>
+          <DropdownMenuTrigger render={<Button variant="ghost" size="icon" className="sm:hidden" aria-label="Navigation menu" />}>
+            <MenuIcon />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-44 sm:hidden">
+            <DropdownMenuItem
+              className={mobileNavLink}
+              render={<Link to="/docs" activeOptions={{ exact: true }} data-current={book === "docs" || undefined} />}
+            >
+              Docs
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              className={mobileNavLink}
+              render={<Link to="/docs/$" params={{ _splat: "ui" }} activeOptions={{ exact: true }} data-current={book === "ui" || undefined} />}
+            >
+              UI
+            </DropdownMenuItem>
+            <DropdownMenuItem className={mobileNavLink} render={<a href={`${site.repo}/tree/main/examples`} />}>
+              Examples
+            </DropdownMenuItem>
+            <DropdownMenuItem className={mobileNavLink} render={<Link to="/benchmarks" />}>
+              Benchmarks
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     </header>
   )

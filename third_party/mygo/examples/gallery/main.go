@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"log"
 	"math"
+	"math/rand/v2"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -1434,11 +1435,11 @@ func (g *gallery) motion(c *ui.Context) {
 					g.items = slices.Insert(g.items, at, motionItem{g.nextItem, fmt.Sprintf("Item %d", g.nextItem)})
 				}
 				if ui.Button(c, "Shuffle").Disabled(len(g.items) < 2).Clicked() {
-					for i := range g.items {
-						j := (i*7 + g.nextItem) % len(g.items)
-						g.items[i], g.items[j] = g.items[j], g.items[i]
+					// Shuffle until the order changes, so that each click moves the items.
+					before := slices.Clone(g.items)
+					for slices.Equal(g.items, before) {
+						rand.Shuffle(len(g.items), func(i, j int) { g.items[i], g.items[j] = g.items[j], g.items[i] })
 					}
-					g.nextItem++
 				}
 				if ui.Button(c, "Sort").Disabled(len(g.items) < 2).Clicked() {
 					slices.SortFunc(g.items, func(a, b motionItem) int { return a.id - b.id })

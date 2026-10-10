@@ -255,7 +255,6 @@ func (a *Application) handleReady() {
 	}
 	// After the windows the app opens when ready, which URLs may target.
 	postMain(launchArgs)
-	devReadyAfterLaunch()
 }
 
 // waitReady blocks a goroutine other than the main one until the

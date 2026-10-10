@@ -94,6 +94,10 @@ type window struct {
 		hasPressed bool
 	}
 
+	// dragPending holds whether a window drag was requested with the last
+	// press and waits for the pointer to move; see StartDrag.
+	dragPending bool
+
 	// cursor is the resize cursor shown over an edge of a frameless
 	// window, and the page's cursor it replaced.
 	cursor struct {
@@ -553,10 +557,40 @@ func (w *window) SetIgnoreMouseEvents(bool) {}
 func (w *window) SetContentProtection(bool) {}
 func (w *window) SetVibrancy(string)        {}
 
+// StartDrag begins moving the window with the last button press. On an
+// undecorated window the compositor takes the pointer once the move
+// starts, so the move waits until the pointer moves, keeping a second
+// press free to reach the page as a double click. Decorated windows
+// observe no motion on the page, so they move at once.
 func (w *window) StartDrag() {
 	if !w.press.hasPressed {
 		return
 	}
+	if !w.undecorated() {
+		gtkWindowBeginMoveDrag(w.win, w.press.button, int32(w.press.rootX), int32(w.press.rootY), w.press.time)
+		return
+	}
+	w.dragPending = true
+}
+
+// checkDragStart starts a pending window drag once the pointer moves past
+// the drag threshold with the button still down.
+func (w *window) checkDragStart(event ptr) {
+	if !w.dragPending {
+		return
+	}
+	// GdkEventMotion: state 48, x_root 64, y_root 72.
+	if field[uint32](event, 48)&(1<<8) == 0 {
+		// The button went up without the pointer moving.
+		w.dragPending = false
+		return
+	}
+	const dragThreshold = 8 // pixels, as GTK's
+	dx, dy := field[float64](event, 64)-w.press.rootX, field[float64](event, 72)-w.press.rootY
+	if dx*dx+dy*dy < dragThreshold*dragThreshold {
+		return
+	}
+	w.dragPending = false
 	gtkWindowBeginMoveDrag(w.win, w.press.button, int32(w.press.rootX), int32(w.press.rootY), w.press.time)
 }
 
@@ -1158,6 +1192,7 @@ func initWindowCallbacks() {
 		}
 		edge := w.resizeEdge(event)
 		w.showResizeCursor(edge)
+		w.checkDragStart(event)
 		return edge >= 0
 	})
 	// WebKit asks for the data of a drag while it moves over the page,

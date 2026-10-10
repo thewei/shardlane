@@ -194,6 +194,32 @@ func TestThick(t *testing.T) {
 	}
 }
 
+// TestFlat rasterizes Flat text unsmoothed, thinner than the darkest shade
+// where the engine smooths fonts, and as other text elsewhere.
+func TestFlat(t *testing.T) {
+	s := newSystem()
+	l := s.Layout(Params{Text: "O", Style: Style{Size: 13}})
+	g := l.Lines[0].Glyphs[0]
+	ink := func(f *Font, shade Shade) (n int) {
+		img := s.Glyph(f, g.ID, 2, 0, shade, false)
+		for y := range int(img.H) {
+			for x := range int(img.W) {
+				n += int(s.MaskAtlas.Pix[(int(img.Y)+y)*s.MaskAtlas.W+int(img.X)+x])
+			}
+		}
+		return n
+	}
+	dark, flat := ink(g.Font, 0), ink(g.Font, Flat)
+	unsmoothed := *g.Font
+	unsmoothed.shaded = false
+	if plain := ink(&unsmoothed, 0); flat != plain {
+		t.Errorf("flat text has ink %d, unsmoothed text %d", flat, plain)
+	}
+	if g.Font.shaded && flat >= dark {
+		t.Errorf("flat text has ink %d, the darkest shade %d", flat, dark)
+	}
+}
+
 // square draws a w×w mask filled with v.
 func square(w int, v byte, calls *int) func() (int, int, []byte) {
 	return func() (int, int, []byte) {

@@ -10,8 +10,9 @@ ui.Button(c, "").Label("Share").Tooltip("Share with others").Children(func() {
 ```
 
 The tip shows once the pointer has rested on the element for 0.6 seconds,
-below and to the right of it, kept in the window, and at once below the
-element as the keyboard focus comes to it from the keyboard. Within 0.4
+and at once as the keyboard focus comes to it from the keyboard. It goes
+above the element, centered, or below it where there is no room above,
+wherever the pointer is on the element, as Base UI's does. Within 0.4
 seconds of a tip going, the next one shows at once, as the pointer moves
 along a toolbar. It goes as the pointer leaves, and a press or a click on
 the element, or Escape, hides it until the pointer leaves and comes back,

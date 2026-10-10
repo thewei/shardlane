@@ -111,9 +111,10 @@ func downloadNSIS(dir string) (string, error) {
 		return "", err
 	}
 	defer os.RemoveAll(work)
-	logf("downloading NSIS %s for the Windows installer", nsisRelease.version)
+	t := con.start("Downloading NSIS " + nsisRelease.version + " for the Windows installer")
 	archive := filepath.Join(work, "nsis.zip")
-	if err := downloadAny(nsisRelease.urls, nsisRelease.sha256, archive); err != nil {
+	err = downloadAny(t, nsisRelease.urls, nsisRelease.sha256, archive)
+	if t.end(err, "Downloaded NSIS "+nsisRelease.version) != nil {
 		return "", fmt.Errorf("downloading NSIS %s (or install it: https://nsis.sourceforge.io):\n%w", nsisRelease.version, err)
 	}
 	unpacked := filepath.Join(work, "nsis")
@@ -141,10 +142,10 @@ func downloadNSIS(dir string) (string, error) {
 
 // downloadAny fetches the first of urls, copies of one file, that answers
 // with a file whose SHA-256 is sum into the file path.
-func downloadAny(urls []string, sum, path string) error {
+func downloadAny(t *task, urls []string, sum, path string) error {
 	var errs []error
 	for _, url := range urls {
-		err := download(url, sum, path)
+		err := download(t, url, sum, path)
 		if err == nil {
 			return nil
 		}
@@ -158,9 +159,9 @@ func downloadAny(urls []string, sum, path string) error {
 // next copy.
 var downloadHeaderTimeout = 30 * time.Second
 
-// download fetches url into the file path and checks that its SHA-256 is
-// sum.
-func download(url, sum, path string) error {
+// download fetches url into the file path, showing its progress on t, and
+// checks that its SHA-256 is sum.
+func download(t *task, url, sum, path string) error {
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
 		return err
@@ -182,7 +183,8 @@ func download(url, sum, path string) error {
 		return err
 	}
 	h := sha256.New()
-	_, err = io.Copy(io.MultiWriter(f, h), io.LimitReader(resp.Body, 64<<20))
+	progress := &downloadProgress{t: t, total: resp.ContentLength}
+	_, err = io.Copy(io.MultiWriter(f, h, progress), io.LimitReader(resp.Body, 64<<20))
 	if cerr := f.Close(); err == nil {
 		err = cerr
 	}
@@ -266,7 +268,7 @@ func writeInstaller(c *Config, stage, work, exe string, installed []string) (str
 		return "", err
 	}
 	if tool == "" {
-		logf("skipping the Windows installer: install NSIS (makensis)")
+		warnf("Skipping the Windows installer: install NSIS (makensis)")
 		return "", nil
 	}
 	out := filepath.Join(stage, fsName(c.Name)+" Setup "+fsName(c.Version)+".exe")
@@ -378,15 +380,17 @@ SectionEnd
 	if err := os.WriteFile(nsi, []byte(script), 0o644); err != nil {
 		return "", err
 	}
-	logf("creating %s", filepath.Base(out))
+	t := con.start("Creating " + filepath.Base(out))
 	if signing != "" {
-		logf("signing Uninstall.exe")
+		t.set("signing Uninstall.exe")
 	}
 	cmd := exec.Command(tool, "-V2", nsi)
 	cmd.Env = append(os.Environ(), env...)
 	if out, err := cmd.CombinedOutput(); err != nil {
+		t.fail()
 		return "", fmt.Errorf("makensis: %v\n%s", err, out)
 	}
+	t.done("Created " + filepath.Base(out))
 	return out, nil
 }
 
@@ -402,7 +406,7 @@ func uninstallerSigning(c *Config, tool string) (script string, env []string, er
 		return "", nil, nil
 	}
 	if major, minor := nsisVersion(tool); major < 3 || major == 3 && minor < 8 {
-		logf("not signing Uninstall.exe: that needs NSIS 3.08 or later, not %s", tool)
+		warnf("Not signing Uninstall.exe: that needs NSIS 3.08 or later, not %s", tool)
 		return "", nil, nil
 	}
 	self, err := os.Executable()
@@ -480,3 +484,20 @@ func nsisEscape(s string) string {
 }
 
 func nsisString(s string) string { return `"` + nsisEscape(s) + `"` }
+
+// downloadProgress shows how much of a download arrived on t.
+type downloadProgress struct {
+	t     *task
+	n     int64
+	total int64 // or -1
+}
+
+func (p *downloadProgress) Write(b []byte) (int, error) {
+	p.n += int64(len(b))
+	if p.total > 0 {
+		p.t.set(fmt.Sprintf("%s of %s", formatSize(p.n), formatSize(p.total)))
+	} else {
+		p.t.set(formatSize(p.n))
+	}
+	return len(b), nil
+}

@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -1761,53 +1760,5 @@ func TestSingleInstance(t *testing.T) {
 		}
 	case <-time.After(3 * time.Second):
 		t.Fatal("OnOpenURL not called for the forwarded URL")
-	}
-}
-
-func TestDevReadySignal(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("unix sockets only")
-	}
-	dir, err := os.MkdirTemp("", "mygo")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(dir)
-	sock := filepath.Join(dir, "ready.sock")
-	ln, err := net.Listen("unix", sock)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer ln.Close()
-	onMain(func() {
-		devReady.socket = sock
-		devReady.once = sync.Once{}
-	})
-	defer onMain(func() { devReady.socket = "" })
-
-	accepted := make(chan string, 1)
-	go func() {
-		conn, err := ln.Accept()
-		if err != nil {
-			return
-		}
-		defer conn.Close()
-		msg, _ := io.ReadAll(conn)
-		accepted <- string(msg)
-	}()
-	_, fw := testWindow(t, WindowOptions{})
-	select {
-	case <-accepted:
-		t.Fatal("ready before the page loaded")
-	case <-time.After(50 * time.Millisecond):
-	}
-	page(fw, `{"t":"dom-ready"}`)
-	select {
-	case msg := <-accepted:
-		if msg != "ready\n" {
-			t.Errorf("ready message = %q", msg)
-		}
-	case <-time.After(3 * time.Second):
-		t.Fatal("the app did not report ready")
 	}
 }

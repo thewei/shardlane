@@ -157,6 +157,7 @@ type paths struct {
 	job    pathJob
 	raster vec.Rasterizer
 	pix    []byte
+	loop   [][2]float32 // a polyline there and back, as strokeInto outlines it
 }
 
 // pathJob is the mask drawPath asks the text system for, which draws it
@@ -246,17 +247,17 @@ func (p *Painter) drawPath(f *flatPath, width float32, c Color, g *LinearGradien
 func (rt *engine) rasterizePath() (int, int, []byte) {
 	j := &rt.paths.job
 	z := &rt.paths.raster
-	z.Reset(j.w, j.h)
-	if j.hw > 0 {
-		strokeInto(z, j.f, j.hw, j.x0, j.y0)
-	} else {
-		fillInto(z, j.f, j.x0, j.y0)
-	}
 	n := j.w * j.h
 	if cap(rt.paths.pix) < n {
 		rt.paths.pix = make([]byte, n)
 	}
 	pix := rt.paths.pix[:n]
+	z.Reset(j.w, j.h)
+	if j.hw > 0 {
+		strokeInto(z, &rt.paths.loop, j.f, j.hw, j.x0, j.y0)
+	} else {
+		fillInto(z, j.f, j.x0, j.y0)
+	}
 	z.Mask(pix, j.w)
 	return j.w, j.h, pix
 }
@@ -303,60 +304,104 @@ func fillInto(z *vec.Rasterizer, f *flatPath, x0, y0 float32) {
 	}
 }
 
-// strokeInto draws a stroke hw pixels to each side of a flattened path: a
-// quadrilateral per segment and a disc at every point, all counterclockwise
-// so that where they overlap they add up instead of cancelling.
-func strokeInto(z *vec.Rasterizer, f *flatPath, hw, x0, y0 float32) {
+// strokeInto draws a stroke hw pixels to each side of a flattened path,
+// with round joins and caps, as an outline that the rasterizer fills: the
+// side of a polyline, an arc around each outer corner and a turn through
+// the corner on the inside, and back along the other side. Each edge of
+// the stroke is drawn once, so that its antialiasing is exact, as
+// rasterizing a piece per segment and per corner and adding them up is
+// not: where their edges meet, as along the outside of curves, their
+// coverage would add up and thicken the stroke.
+func strokeInto(z *vec.Rasterizer, loop *[][2]float32, f *flatPath, hw, x0, y0 float32) {
 	for i := range f.polys() {
-		poly := f.poly(i)
-		n := len(poly)
-		segs := n - 1
-		if f.closed[i] {
-			segs = n
-		}
-		for s := 0; s < segs; s++ {
-			a, b := poly[s], poly[(s+1)%n]
-			dx, dy := b[0]-a[0], b[1]-a[1]
-			l := float32(math.Hypot(float64(dx), float64(dy)))
-			if l == 0 {
-				continue
+		// The polyline without repeated points, moved to the mask.
+		pts := (*loop)[:0]
+		for _, pt := range f.poly(i) {
+			pt = [2]float32{pt[0] - x0, pt[1] - y0}
+			if n := len(pts); n == 0 || pts[n-1] != pt {
+				pts = append(pts, pt)
 			}
-			nx, ny := -dy/l*hw, dx/l*hw
-			polygon(z, [4][2]float32{
-				{a[0] + nx - x0, a[1] + ny - y0}, {b[0] + nx - x0, b[1] + ny - y0},
-				{b[0] - nx - x0, b[1] - ny - y0}, {a[0] - nx - x0, a[1] - ny - y0},
-			})
 		}
-		for _, pt := range poly {
-			disc(z, pt[0]-x0, pt[1]-y0, hw)
+		if f.closed[i] && len(pts) > 2 && pts[0] == pts[len(pts)-1] {
+			pts = pts[:len(pts)-1]
 		}
+		switch {
+		case len(pts) == 1:
+			disc(z, pts[0][0], pts[0][1], hw)
+		case f.closed[i] && len(pts) > 2:
+			// Each side of a closed polyline is a loop of its own, the
+			// other side going the other way, so that the inside is not
+			// filled.
+			n := len(pts)
+			offsetLoop(z, pts, hw)
+			for k := range n / 2 {
+				pts[k], pts[n-1-k] = pts[n-1-k], pts[k]
+			}
+			offsetLoop(z, pts, hw)
+		default:
+			// An open polyline is outlined as the loop that goes there and
+			// back, whose turns at the ends are its caps.
+			n := len(pts)
+			for k := n - 2; k > 0; k-- {
+				pts = append(pts, pts[k])
+			}
+			offsetLoop(z, pts, hw)
+		}
+		*loop = pts[:0]
 	}
 }
 
-// polygon draws a quadrilateral counterclockwise.
-func polygon(z *vec.Rasterizer, q [4][2]float32) {
-	var area float32
-	for i := range q {
-		a, b := q[i], q[(i+1)%4]
-		area += a[0]*b[1] - b[0]*a[1]
+// offsetLoop draws the side of a closed polyline hw pixels to its left
+// (a segment's normal), turning around the outside of its corners in arcs
+// and through the corners on the inside.
+func offsetLoop(z *vec.Rasterizer, pts [][2]float32, hw float32) {
+	n := len(pts)
+	normal := func(k int) (float32, float32, float32, float32) {
+		a, b := pts[k], pts[(k+1)%n]
+		dx, dy := b[0]-a[0], b[1]-a[1]
+		l := float32(math.Hypot(float64(dx), float64(dy)))
+		dx, dy = dx/l, dy/l
+		return dx, dy, -dy * hw, dx * hw
 	}
-	if area < 0 {
-		q[0], q[1], q[2], q[3] = q[3], q[2], q[1], q[0]
+	dx, dy, nx, ny := normal(0)
+	z.MoveTo(pts[0][0]+nx, pts[0][1]+ny)
+	for k := range n {
+		b := pts[(k+1)%n]
+		z.LineTo(b[0]+nx, b[1]+ny)
+		ex, ey, mx, my := normal((k + 1) % n)
+		cross, dot := dx*ey-dy*ex, dx*ex+dy*ey
+		switch {
+		case cross > 0:
+			// The inside of the corner: through it, where the stroke
+			// covers itself.
+			z.LineTo(b[0], b[1])
+			z.LineTo(b[0]+mx, b[1]+my)
+		case cross < 0 || dot < 0:
+			// The outside, or the polyline turning back: an arc around
+			// the corner, the shorter way, or the way the segment went.
+			from := math.Atan2(float64(ny), float64(nx))
+			turn := math.Atan2(float64(cross), float64(dot))
+			if cross == 0 {
+				turn = -math.Pi
+			}
+			steps := int(math.Ceil(math.Abs(turn) / (2 * math.Acos(max(1-0.02/float64(hw), -1)))))
+			for s := 1; s <= steps; s++ {
+				a := from + turn*float64(s)/float64(steps)
+				z.LineTo(b[0]+hw*float32(math.Cos(a)), b[1]+hw*float32(math.Sin(a)))
+			}
+		}
+		dx, dy, nx, ny = ex, ey, mx, my
 	}
-	z.MoveTo(q[0][0], q[0][1])
-	z.LineTo(q[1][0], q[1][1])
-	z.LineTo(q[2][0], q[2][1])
-	z.LineTo(q[3][0], q[3][1])
 	z.ClosePath()
 }
 
-// disc draws a circle of radius r as a polygon, counterclockwise.
+// disc draws a circle of radius r, in four cubic curves.
 func disc(z *vec.Rasterizer, cx, cy, r float32) {
-	n := max(8, min(int(r*4), 32))
+	const k = 0.5522847498
 	z.MoveTo(cx+r, cy)
-	for i := 1; i < n; i++ {
-		a := float64(i) * 2 * math.Pi / float64(n)
-		z.LineTo(cx+r*float32(math.Cos(a)), cy+r*float32(math.Sin(a)))
-	}
+	z.CubeTo(cx+r, cy+r*k, cx+r*k, cy+r, cx, cy+r)
+	z.CubeTo(cx-r*k, cy+r, cx-r, cy+r*k, cx-r, cy)
+	z.CubeTo(cx-r, cy-r*k, cx-r*k, cy-r, cx, cy-r)
+	z.CubeTo(cx+r*k, cy-r, cx+r, cy-r*k, cx+r, cy)
 	z.ClosePath()
 }

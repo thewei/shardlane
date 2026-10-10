@@ -32,6 +32,21 @@ ui.List(c, nil, len(results), func(i int) {
 })
 ```
 
+## Rows wider than the list
+
+`RowWidth(w)` makes the rows at least `w` DIPs wide, as the columns of a
+table ask: where they are wider than the list, it scrolls sideways too, and
+where they are not, they grow to its width. A header above the rows goes
+with them through `ScrollWith`; clip it, so that what scrolls out of it
+does not show. `ui.Table` does this for its columns.
+
+```go
+head := ui.Row(c).Clip().Children(app.titles)
+list := ui.List(c, &app.files, len(app.files)).Grow(1).RowWidth(app.columnsWidth())
+list.Rows(app.row)
+head.ScrollWith(list)
+```
+
 ## List state
 
 A list keeps its place by a row rather than by an offset, so the rows in

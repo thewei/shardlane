@@ -90,23 +90,26 @@ func runInit(args []string) error {
 		data.ConfigImport = moduleSpecifier(dir, filepath.Join(checkout, "packages", "cli", "index.js"))
 	}
 
-	logf("creating %s", dir)
+	logf("Creating %s", dir)
 	if err := writeProject(dir, webTemplate, data, *local, false); err != nil {
 		return err
 	}
 
 	if _, err := exec.LookPath("bun"); err != nil {
-		logf("bun not found: install it from https://bun.sh, then run bun install")
-	} else if err := run(dir, "bun install"); err != nil {
-		return err
+		warnf("Bun not found: install it from https://bun.sh, then run bun install")
+	} else {
+		t := con.start("Installing the dependencies")
+		if err := t.end(run(t, "bun", dir, "bun install"), "Installed the dependencies"); err != nil {
+			return err
+		}
 	}
 	if c, err := loadConfig(dir); err != nil {
-		logf("%v; run mygo generate once it can be read", err)
+		warnf("%v; run mygo generate once it can be read", err)
 	} else {
 		bin := tempBinary(c.executableName())
 		defer os.Remove(bin)
 		if err := buildBinary(c, bin, nil); err == nil {
-			_ = generateBindings(c, bin)
+			_, _ = generateBindings(c, bin)
 		}
 	}
 
@@ -139,7 +142,7 @@ func newProject(path, name, module string) (string, templateData, error) {
 // initNative creates a project of native UI in dir: a Go module, without
 // a frontend.
 func initNative(dir string, data templateData, local string) error {
-	logf("creating %s", dir)
+	logf("Creating %s", dir)
 	if err := writeProject(dir, nativeTemplate, data, local, true); err != nil {
 		return err
 	}
@@ -180,11 +183,11 @@ func writeProject(dir, tmpl string, data templateData, local string, tool bool) 
 			get = []string{"get", "-tool", cliTool + "@latest"}
 		}
 		if err := goCommand(dir, nil, get...).Run(); err != nil {
-			logf("could not fetch github.com/egoist/mygo: %v", err)
+			warnf("Could not fetch github.com/egoist/mygo: %v", err)
 		}
 	}
 	if err := goCommand(dir, nil, "mod", "tidy").Run(); err != nil {
-		logf("go mod tidy failed: %v", err)
+		warnf("go mod tidy failed: %v", err)
 	}
 	return nil
 }

@@ -26,7 +26,7 @@ func runInstallSkills(args []string) error {
 	if err := installSkills(dir); err != nil {
 		return err
 	}
-	logf("installed skills in %s", filepath.Join(dir, ".agents", "skills"))
+	logf("Installed skills in %s", filepath.Join(dir, ".agents", "skills"))
 	return nil
 }
 

@@ -54,10 +54,11 @@ scrolls, as a message field grows with what is typed:
 
 ```go
 ui.TextArea(c, &app.draft).Lines(1, 8)
-``` It lays out only the paragraphs in view and
-keeps their layouts until they change, so that it holds texts of hundreds
-of thousands of lines, as a log or a source file, and stays as quick to
-type in.
+```
+
+A text area lays out only the paragraphs in view and keeps their layouts
+until they change, so that it holds texts of hundreds of thousands of
+lines, as a log or a source file, and stays as quick to type in.
 
 ## Editing
 
@@ -89,6 +90,38 @@ if start, _ := input.TextSelection(); app.completed != "" {
 	input.SetTextSelection(start, start)
 }
 ```
+
+## Beside the lines
+
+`TrackLines` keeps in a `ui.TextLines` where a text area lays out the lines
+of its text, for an app that paints beside them: numbers by the first row
+of each line, or marks on runs of a line. A line is the text between
+newlines, on several rows where the area wraps it. `Top(i)` is the top of
+line `i` in the area's content, below its padding and before it scrolls,
+`At(y)` the line at a height, `Rows(i)` the runes where each row of line
+`i` starts, and `Height` the height of the text. With the area's
+[`ScrollState`](scroll.md#keeping-the-offset), a gutter numbers the lines
+in view:
+
+```go
+const pad = 8 // the text area's top padding
+ui.Row(c).Grow(1).Children(func() {
+	ui.Box(c).Width(48).FillHeight().Draw(func(p *ui.Painter, r ui.Rect) {
+		top := r.Y + pad - app.scroll.Y // the top of the area's content
+		p.Clip(r, 0, func() {
+			for i := app.lines.At(app.scroll.Y); i < app.lines.Count() && top+app.lines.Top(i) < r.Y+r.H; i++ {
+				p.Text(r.X+8, top+app.lines.Top(i), strconv.Itoa(i+1), 12, p.Theme().TextMuted)
+			}
+		})
+	})
+	ui.TextArea(c, &app.source).Padding(pad, 12).Grow(1).FillHeight().
+		TrackLines(&app.lines).TrackScroll(&app.scroll)
+})
+```
+
+The heights of the lines the area has not laid out are estimates, as its
+scroll bar's are, until it shows them. In `Draw` the lines are those of the
+frame; while the view is built, those of the last one.
 
 ## Errors
 

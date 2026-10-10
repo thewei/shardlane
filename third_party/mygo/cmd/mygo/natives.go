@@ -159,15 +159,15 @@ func fetchNative(f nativeFile) (string, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
 	}
-	logf("downloading %s", f.URL)
 	tmp, err := os.CreateTemp(dir, ".download-*")
 	if err != nil {
 		return "", err
 	}
 	tmp.Close()
 	defer os.Remove(tmp.Name())
-	if err := download(f.URL, f.SHA256, tmp.Name()); err != nil {
-		return "", fmt.Errorf("downloading %s: %w", f.Name, err)
+	t := con.start("Downloading " + f.Name)
+	if err := t.end(download(t, f.URL, f.SHA256, tmp.Name()), "Downloaded "+f.Name); err != nil {
+		return "", fmt.Errorf("downloading %s from %s: %w", f.Name, f.URL, err)
 	}
 	if err := os.Chmod(tmp.Name(), 0o755); err != nil {
 		return "", err

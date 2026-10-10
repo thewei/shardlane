@@ -1,6 +1,9 @@
 package main
 
-import "fmt"
+import (
+	"context"
+	"fmt"
+)
 
 func runGenerate(args []string) error {
 	fs := newFlags("generate", "[-o file] [dir]", "Writes the typed TypeScript client for the services bound with mygo.Bind\nand the events declared with mygo.NewEvent.")
@@ -18,7 +21,7 @@ func runGenerate(args []string) error {
 	if c.Bindings == "" {
 		return fmt.Errorf("the project has no frontend to write a client for: set bindings in %s, or pass -o", c.configName())
 	}
-	return writeClient(c)
+	return writeClient(context.Background(), c)
 }
 
 func dirArg(args []string) string {

@@ -1,4 +1,4 @@
-# Local patch over mygo v0.3.4
+# Local patch over mygo v0.3.7
 
 ## Delta 1: terminal `Options.LocalDragSelect`
 
@@ -29,20 +29,21 @@ must take the keyboard the frame the dialog opens, keyboard-first like
 Spotlight/Raycast. Regression: `TestSearchField` now types without a click.
 
 Sites: an unexported `node.focusTo` field in `ui/element.go`, a delegation
-branch at the top of `node.Focus` in `ui/input.go`, one line in `field`
+branch in `node.Focus` after its nil/invalid-state guard in `ui/input.go`, one line in `field`
 (`ui/combobox.go`), and the `TestSearchField` regression in
 `ui/combobox_test.go`.
 
 ## Upgrade path
 
-Rebased onto v0.3.4 on 2026-10-08 (the checked-element release; both deltas
-were re-applied by hand, the v0.2.15-era diff is the reference). When an
+Rebased onto v0.3.7 on 2026-10-10 (both deltas remain absent upstream;
+the v0.2.15-era diff is the reference). When an
 upstream mygo release ships both (a terminal option of the same
 name/semantics and field-focus delegation), delete the
 `replace github.com/egoist/mygo => ./third_party/mygo` directive in
 `go.mod`, bump the pin, and delete this checkout. Shardlane code already
 uses only the public option and needs no changes.
 
-Delta vs v0.3.4: an `Options` field + a 4-line guard in `view.pointerEvent`;
-an unexported `node.focusTo` field, a delegation branch at the top of
-`node.Focus`, and one line in `field`.
+Delta vs v0.3.7: an `Options` field + a 4-line guard in `view.pointerEvent`;
+an unexported `node.focusTo` field, a delegation branch after the nil-safe
+`hasState` guard in `node.Focus`, and one line in `field`. Preserve the upstream
+`TestOptionalElementInput/nil` behavior when rebasing this patch.

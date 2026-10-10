@@ -3,11 +3,13 @@ package main
 import (
 	"bytes"
 	"debug/pe"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -87,8 +89,8 @@ func TestPackagingArgs(t *testing.T) {
 	if got := codesignArgs("A.app", "Apple Development: X", "", false); slices.Contains(got, "--timestamp") {
 		t.Errorf("development builds need no timestamp: %q", got)
 	}
-	args := hdiutilCreateArgs("My App", "src", "rw.dmg", 7<<20)
-	if i := slices.Index(args, "-size"); i < 0 || args[i+1] != "27m" {
+	args := hdiutilCreateArgs("My App", "src", "rw.dmg")
+	if slices.Contains(args, "-size") {
 		t.Errorf("hdiutil create: %q", args)
 	}
 	c := &Config{Name: "A/B: C", Version: "1.0"}
@@ -128,6 +130,95 @@ func TestSetFinderFlagsUsesSystemXattr(t *testing.T) {
 
 // TestBuildDMG builds a disk image of a minimal app with hdiutil.
 func TestBuildDMG(t *testing.T) {
+	c, app, icns := dmgTestApp(t)
+	dmg, err := buildDMG(c, app, filepath.Dir(app), buildOptions{sign: "-"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if filepath.Base(dmg) != "DMG Test 1.2.3.dmg" {
+		t.Errorf("dmg = %s", dmg)
+	}
+	mnt := attachDMG(t, dmg)
+	entries, err := os.ReadDir(mnt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, e := range entries {
+		names = append(names, e.Name())
+	}
+	for _, want := range []string{".DS_Store", ".VolumeIcon.icns", "Applications", "DMG Test.app"} {
+		if !slices.Contains(names, want) {
+			t.Errorf("image lacks %s: %q", want, names)
+		}
+	}
+	if target, _ := os.Readlink(filepath.Join(mnt, "Applications")); target != "/Applications" {
+		t.Errorf("Applications links to %q", target)
+	}
+	if got, err := os.ReadFile(filepath.Join(mnt, ".VolumeIcon.icns")); err != nil || !bytes.Equal(got, icns) {
+		t.Errorf("the volume icon is not the app's: %v", err)
+	}
+	want, err := dsStore(dmgRecords("DMG Test.app"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := os.ReadFile(filepath.Join(mnt, ".DS_Store")); err != nil || !bytes.Equal(got, want) {
+		t.Errorf("the layout differs: %v", err)
+	}
+	out, err := exec.Command("/usr/bin/xattr", "-px", "com.apple.FinderInfo", mnt).Output()
+	if got := strings.Join(strings.Fields(string(out)), ""); err != nil || got != "0000000000000000040000000000000000000000000000000000000000000000" {
+		t.Errorf("the volume's FinderInfo = %q: %v", got, err)
+	}
+	info, _ := exec.Command("hdiutil", "imageinfo", dmg).Output()
+	if !strings.Contains(string(info), "lzma") {
+		t.Error("image is not LZMA compressed")
+	}
+}
+
+// TestBuildDMGSize builds a disk image of an app whose files take more room
+// on HFS+ than their sizes add up to: thousands of tiny files, which take a
+// block each, and a sparse one, which HFS+ cannot keep sparse.
+func TestBuildDMGSize(t *testing.T) {
+	c, app, _ := dmgTestApp(t)
+	res := filepath.Join(app, "Contents", "Resources")
+	small := filepath.Join(res, "small")
+	if err := os.Mkdir(small, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	const files = 8000
+	for i := range files {
+		if err := os.WriteFile(filepath.Join(small, strconv.Itoa(i)), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	const size = 64 << 20
+	f, err := os.Create(filepath.Join(res, "sparse"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Truncate(size); err == nil {
+		_, err = f.WriteAt([]byte("x"), size-1)
+	}
+	if err := errors.Join(err, f.Close()); err != nil {
+		t.Fatal(err)
+	}
+	dmg, err := buildDMG(c, app, filepath.Dir(app), buildOptions{sign: "-"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mnt := attachDMG(t, dmg)
+	res = filepath.Join(mnt, "DMG Test.app", "Contents", "Resources")
+	if entries, err := os.ReadDir(filepath.Join(res, "small")); len(entries) != files {
+		t.Errorf("the image has %d tiny files of %d: %v", len(entries), files, err)
+	}
+	if data, err := os.ReadFile(filepath.Join(res, "sparse")); len(data) != size || data[size-1] != 'x' {
+		t.Errorf("the sparse file differs: %v", err)
+	}
+}
+
+// dmgTestApp writes a minimal app into a temporary directory, with the
+// icon of its bundle.
+func dmgTestApp(t *testing.T) (*Config, string, []byte) {
 	if runtime.GOOS != "darwin" || testing.Short() {
 		t.Skip("needs macOS")
 	}
@@ -146,41 +237,21 @@ func TestBuildDMG(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dmg, err := buildDMG(c, app, dir, buildOptions{sign: "-"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if filepath.Base(dmg) != "DMG Test 1.2.3.dmg" {
-		t.Errorf("dmg = %s", dmg)
-	}
-	mnt := filepath.Join(dir, "mnt")
+	return c, app, icns
+}
+
+// attachDMG mounts a disk image read-only until the test ends, and returns
+// where.
+func attachDMG(t *testing.T, dmg string) string {
+	mnt := filepath.Join(filepath.Dir(dmg), "mnt")
 	if err := os.Mkdir(mnt, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if out, err := exec.Command("hdiutil", "attach", "-readonly", "-nobrowse", "-noautoopen", "-mountpoint", mnt, dmg).CombinedOutput(); err != nil {
 		t.Fatalf("attach: %v\n%s", err, out)
 	}
-	defer exec.Command("hdiutil", "detach", "-force", mnt).Run()
-	entries, err := os.ReadDir(mnt)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var names []string
-	for _, e := range entries {
-		names = append(names, e.Name())
-	}
-	for _, want := range []string{".DS_Store", ".VolumeIcon.icns", "Applications", "DMG Test.app"} {
-		if !slices.Contains(names, want) {
-			t.Errorf("image lacks %s: %q", want, names)
-		}
-	}
-	if target, _ := os.Readlink(filepath.Join(mnt, "Applications")); target != "/Applications" {
-		t.Errorf("Applications links to %q", target)
-	}
-	info, _ := exec.Command("hdiutil", "imageinfo", dmg).Output()
-	if !strings.Contains(string(info), "lzma") {
-		t.Error("image is not LZMA compressed")
-	}
+	t.Cleanup(func() { exec.Command("hdiutil", "detach", "-force", mnt).Run() })
+	return mnt
 }
 
 // TestFrontendOverlay compiles an app with the overlay that embeds its

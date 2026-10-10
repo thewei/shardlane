@@ -3920,6 +3920,25 @@ func (_handle Element) RowTracks(tracks ...Track) Element {
 	return wrapElement(_node.RowTracks(tracks...))
 }
 
+// RowWidth makes the rows of a List at least w DIPs wide, as the columns
+// of a table ask: where they are wider than the list, it scrolls sideways
+// too, and its rows grow to its width where they are not. A header above
+// the rows goes with them through ScrollWith:
+//
+//	head := ui.Row(c).Clip().Padding(0, 8).Children(app.columnTitles)
+//	list := ui.List(c, &app.rows, n).Padding(0, 8).RowWidth(app.columnsWidth())
+//	list.Rows(app.row)
+//	head.ScrollWith(list)
+func (_handle Element) RowWidth(w float32) Element {
+	_node := _handle.node()
+	if _node == nil {
+		return Element{}
+	}
+	_ctx := _node.c
+	_ = _ctx
+	return wrapElement(_node.RowWidth(w))
+}
+
 // Rows gives the grid n rows of equal height, Fr(1) each.
 func (_handle Element) GridRows(n int) Element {
 	_node := _handle.node()
@@ -3944,6 +3963,19 @@ func (_handle Element) ScrollIntoView() Element {
 	_ctx := _node.c
 	_ = _ctx
 	return wrapElement(_node.ScrollIntoView())
+}
+
+// ScrollWith moves the element's content sideways as far as scroller, a
+// scroll container, scrolls its own, as a table's header goes with its
+// rows. Clip the element, so that what goes out of it does not show.
+func (_handle Element) ScrollWith(scroller Element) Element {
+	_node := _handle.node()
+	if _node == nil {
+		return Element{}
+	}
+	_ctx := _node.c
+	_ = _ctx
+	return wrapElement(_node.ScrollWith(scroller.nodeFor(_ctx.rt)))
 }
 
 // ScrollbarInsets moves a scroll container's scroll bars in from its
@@ -4214,9 +4246,9 @@ func (_handle Element) TextSelection() (int, int) {
 }
 
 // Tooltip shows s by the element when the pointer rests on it, or the
-// keyboard focus comes to it, as TooltipBase does: near the pointer, or
-// below the element for the focus. It describes the element to assistive
-// technology where Description does not.
+// keyboard focus comes to it, as TooltipBase does: above the element,
+// centered, or below it where there is no room above. It describes the
+// element to assistive technology where Description does not.
 func (_handle Element) Tooltip(s string) Element {
 	_node := _handle.node()
 	if _node == nil {
@@ -4251,6 +4283,17 @@ func (_handle Element) TopPercent(p float32) Element {
 	_ctx := _node.c
 	_ = _ctx
 	return wrapElement(_node.TopPercent(p))
+}
+
+// TrackLines keeps in l where the text area lays out its lines.
+func (_handle Element) TrackLines(l *TextLines) Element {
+	_node := _handle.node()
+	if _node == nil {
+		return Element{}
+	}
+	_ctx := _node.c
+	_ = _ctx
+	return wrapElement(_node.TrackLines(l))
 }
 
 // TrackScroll keeps the scrolling of a scroll container (Scroll,

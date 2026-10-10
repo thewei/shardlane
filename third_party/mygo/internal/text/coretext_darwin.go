@@ -971,7 +971,7 @@ func (e *coreText) glyph(f *Font, id uint32, scale, dx float32, shade Shade, _ b
 	}
 	s, x := float64(scale), float64(dx)
 	// Smoothing spreads a glyph up to a pixel further.
-	smooth := f.shaded || shade == Thick
+	smooth := f.shaded && shade != Flat || shade == Thick
 	pad := 1
 	if smooth {
 		pad = 2
@@ -1012,7 +1012,7 @@ func (e *coreText) glyph(f *Font, id uint32, scale, dx float32, shade Shade, _ b
 	fill := 0.0
 	if shade == Thick {
 		fill = 1
-	} else if f.shaded {
+	} else if smooth {
 		fill = shadeGray(shade)
 	}
 	ct.contextSetFill(ctx, fill, fill, fill, 1)

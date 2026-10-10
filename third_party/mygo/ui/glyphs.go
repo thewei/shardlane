@@ -22,6 +22,11 @@ type Font struct {
 	// strongest, whatever the color and the user's setting. It changes
 	// nothing elsewhere.
 	Thicken bool
+	// Antialiased draws the glyphs without font smoothing, thinner, as
+	// browsers draw text styled -webkit-font-smoothing: antialiased on
+	// macOS, for drawings that match a web page's. It changes nothing
+	// elsewhere.
+	Antialiased bool
 }
 
 func (f Font) style() text.Style {
@@ -56,6 +61,7 @@ type Glyph struct {
 	font  *text.Font
 	id    uint32
 	thick bool
+	flat  bool
 }
 
 // Shape shapes s in font f, on one line, for Painter.Glyphs: the
@@ -68,7 +74,7 @@ func Shape(s string, f Font) []Glyph {
 	var out []Glyph
 	for _, line := range l.Lines {
 		for _, g := range line.Glyphs {
-			out = append(out, Glyph{Cluster: g.Cluster, Runes: g.Runes, X: line.X + g.X, Advance: g.Advance, font: g.Font, id: g.ID, thick: f.Thicken})
+			out = append(out, Glyph{Cluster: g.Cluster, Runes: g.Runes, X: line.X + g.X, Advance: g.Advance, font: g.Font, id: g.ID, thick: f.Thicken, flat: f.Antialiased})
 		}
 	}
 	return out
@@ -101,6 +107,8 @@ func (p *Painter) Glyphs(glyphs []Glyph, x, y float32, c Color) {
 		shade := shade
 		if g.thick {
 			shade = text.Thick
+		} else if g.flat {
+			shade = text.Flat
 		}
 		gi := sys.Glyph(g.font, g.id, s, pen, shade, p.opaque)
 		if !gi.OK {

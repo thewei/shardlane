@@ -97,6 +97,9 @@ type windowHost struct {
 	idleAt    time.Time
 	idleArmed bool
 	detached  bool
+	// shown tells that a frame was presented, which makes the window
+	// ready to show.
+	shown bool
 }
 
 func (h *windowHost) framePath() string { return h.path }
@@ -184,6 +187,7 @@ func (h *windowHost) present(s *scene.Scene) {
 	h.lastFrame = now
 	h.armIdle(frameIdle)
 	h.useWide(s, now)
+	defer h.ready()
 	if h.render(s) {
 		h.path = "drawn on the GPU"
 		if h.degraded {
@@ -198,6 +202,18 @@ func (h *windowHost) present(s *scene.Scene) {
 		d.PresentDamage(m.Pix, m.Stride, m.W, m.H, damage)
 	} else {
 		h.conn.Surface.PresentPixels(m.Pix, m.Stride, m.W, m.H)
+	}
+}
+
+// ready tells the window, after the first frame, that it is ready to show:
+// once the frame returns, as its listeners may show the window.
+func (h *windowHost) ready() {
+	if h.shown {
+		return
+	}
+	h.shown = true
+	if h.conn.Ready != nil && h.conn.Post != nil {
+		h.conn.Post(h.conn.Ready)
 	}
 }
 

@@ -190,3 +190,30 @@ func nearest(off, pos float64, size, lo, hi float32) float64 {
 	}
 	return off
 }
+
+// RowWidth makes the rows of a List at least w DIPs wide, as the columns
+// of a table ask: where they are wider than the list, it scrolls sideways
+// too, and its rows grow to its width where they are not. A header above
+// the rows goes with them through ScrollWith:
+//
+//	head := ui.Row(c).Clip().Padding(0, 8).Children(app.columnTitles)
+//	list := ui.List(c, &app.rows, n).Padding(0, 8).RowWidth(app.columnsWidth())
+//	list.Rows(app.row)
+//	head.ScrollWith(list)
+func (e *node) RowWidth(w float32) *node {
+	e.rowMinW = max(w, 0)
+	if e.rowMinW > 0 {
+		e.flags |= flagScrollX
+	} else {
+		e.flags &^= flagScrollX
+	}
+	return e
+}
+
+// ScrollWith moves the element's content sideways as far as scroller, a
+// scroll container, scrolls its own, as a table's header goes with its
+// rows. Clip the element, so that what goes out of it does not show.
+func (e *node) ScrollWith(scroller *node) *node {
+	e.followX = scroller
+	return e
+}

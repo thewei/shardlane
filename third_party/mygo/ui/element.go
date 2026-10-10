@@ -307,12 +307,9 @@ type node struct {
 	// highlighted is set on the option of a select the pointer or the
 	// arrows are on.
 	highlighted bool
-	// place moves an overlay element to fit in the window, as keepInWindow
-	// asked.
-	place    placement
-	accValue string
-	accRange [3]float64
-	hasRange bool
+	accValue    string
+	accRange    [3]float64
+	hasRange    bool
 	// accStep is how far the keys move the value of a range.
 	accStep float64
 
@@ -638,8 +635,11 @@ func (e *node) MaxHeightPercent(p float32) *node { e.maxH = percent(p); return e
 // filling the rest of a window.
 func (e *node) Grow(f float32) *node {
 	e.grow = f
+	// As CSS's flex: 1, a basis of 0%: none in a parent of a known size,
+	// the content's in one whose size the content sets, so that a child
+	// growing in a column as high as its content keeps its height.
 	if e.basis.u == unitAuto {
-		e.basis = px(0)
+		e.basis = percent(0)
 	}
 	return e
 }

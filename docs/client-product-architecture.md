@@ -4,7 +4,7 @@ Status: **Canonical / as-built + approved-next architecture**
 Baseline: 2026-08-25
 Runtime baseline: Herdr 0.8.x. Current transitional code still accepts socket protocol 19; the approved TUI-only cutover raises the minimum fully supported protocol to 20 because native shell → hosted TUI navigation uses protocol-20 focus operations. Known wrapper contracts remain version-checked rather than assuming unlimited forward compatibility.
 Current shipped UI baseline: GPUI 0.2.2, gpui-component 0.5.1 + gpui-component-assets 0.5.1
-Approved migration UI baseline (2026-10-04; pin advanced 2026-10-05): MyGo 0.2.7 Native UI, Go 1.27.1, and the official MyGo Terminal/Ghostty surface in this repository (the former `next/` module, now the repository root); this path gates on Herdr 0.9.3 / socket protocol 22 for the audited snapshot/direct-attach capabilities.
+Current migration UI baseline (pin advanced 2026-10-10): MyGo v0.3.7 Native UI with two documented local compatibility deltas, Go 1.27.1, and the official MyGo Terminal/Ghostty surface in this repository (the former `next/` module, now the repository root); this path gates on Herdr 0.9.3 / socket protocol 22 for the audited snapshot/direct-attach capabilities.
 
 This file is the single architectural source of truth for Shardlane. Other documents may define interaction details, execution order, progress evidence, or handoff context, but they must not redefine ownership.
 
@@ -102,7 +102,7 @@ MyGo Native UI
   reconciliation trigger. It is an implementation replacement for the Rust
   adapter, not a second runtime or client-side Workspace registry.
 - **History UI and Chat UI are Native UI for the current migration.** WebView
-  presentation for either surface is frozen. MyGo 0.2.7 does not provide an
+  presentation for either surface is frozen. MyGo v0.3.7 does not provide an
   official WebView element embedded inside the Native UI tree, and the migration
   must not invent private AppKit/GTK/HWND embedding or a second localhost
   presentation backend. This freeze may be reconsidered only after MyGo ships an
@@ -179,7 +179,7 @@ Normative boundaries for this milestone:
   auxiliary tool process/PTY per window, visibility/project scoped, never a
   replacement for or member of the Herdr Pane runtime.
 - The retained Browser product scope remains **local Project Preview only**.
-  MyGo 0.2.7 still has no official Native-UI-embedded WebView element, so the
+  MyGo v0.3.7 still has no official Native-UI-embedded WebView element, so the
   migration may render Preview in a separate project-scoped MyGo WebView
   window until an official embedded capability exists. Private AppKit/GTK/HWND
   embedding is forbidden. Preview accepts local dev targets only and hands

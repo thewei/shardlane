@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"net"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -29,29 +28,16 @@ func TestMain(m *testing.M) {
 		}
 		os.Exit(0)
 	}
-	mode := os.Getenv("MYGO_FAKE_APP")
-	if mode == "relaunch" {
-		// mygo.App.Relaunch the first time, then like "ready".
-		marker := os.Getenv("MYGO_FAKE_MARKER")
-		if _, err := os.Stat(marker); err != nil {
-			_ = os.WriteFile(marker, nil, 0o644)
-			os.Exit(devRelaunchCode)
-		}
-		mode = "ready"
-	}
-	switch mode {
+	switch os.Getenv("MYGO_FAKE_APP") {
 	case "":
 		os.Exit(m.Run())
-	case "ready":
-		// Like the mygo package: report ready, run until SIGTERM.
-		sig := make(chan os.Signal, 1)
-		signal.Notify(sig, syscall.SIGTERM)
-		conn, err := net.Dial("unix", os.Getenv("MYGO_READY_SOCKET"))
-		if err != nil {
+	case "run":
+		// Like an app mygo dev launched: run until SIGTERM.
+		if os.Getenv("MYGO_DEV") != "1" {
 			os.Exit(2)
 		}
-		_, _ = conn.Write([]byte("ready\n"))
-		conn.Close()
+		sig := make(chan os.Signal, 1)
+		signal.Notify(sig, syscall.SIGTERM)
 		<-sig
 		os.Exit(0)
 	case "exit":
@@ -88,40 +74,45 @@ func TestDevLaunch(t *testing.T) {
 	}
 	defer func(d time.Duration) { stopGrace = d }(stopGrace)
 	stopGrace = 5 * time.Second // exiting takes a while under the race detector
-	s := &devSession{root: t.TempDir(), readyTimeout: 5 * time.Second}
-	ctx := context.Background()
+	s := &devSession{root: t.TempDir()}
 
-	t.Setenv("MYGO_FAKE_APP", "ready")
-	p, err := s.launch(ctx, os.Args[0])
+	t.Setenv("MYGO_FAKE_APP", "run")
+	p, err := s.launch(os.Args[0])
 	if err != nil {
 		t.Fatal(err)
+	}
+	select {
+	case <-p.done:
+		t.Fatalf("the build exited: %v", p.err)
+	case <-time.After(200 * time.Millisecond):
 	}
 	p.stop()
 	if p.err != nil {
 		t.Errorf("a stopped build should quit cleanly: %v", p.err)
 	}
 
-	// A build that relaunches itself before it is ready starts again.
-	t.Setenv("MYGO_FAKE_APP", "relaunch")
-	t.Setenv("MYGO_FAKE_MARKER", filepath.Join(t.TempDir(), "launched"))
-	p, err = s.launch(ctx, os.Args[0])
-	if err != nil {
-		t.Fatalf("relaunch: %v", err)
-	}
-	p.stop()
-
+	// A build that exits on its own, as one that crashes, is noticed.
 	t.Setenv("MYGO_FAKE_APP", "exit")
-	if _, err := s.launch(ctx, os.Args[0]); err == nil || !strings.Contains(err.Error(), "exited before it was ready: exit status 3") {
-		t.Errorf("early exit: %v", err)
+	if p, err = s.launch(os.Args[0]); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-p.done:
+		if p.err == nil || !strings.Contains(p.err.Error(), "exit status 3") {
+			t.Errorf("exit: %v", p.err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the exit of a build went unnoticed")
 	}
 
+	// One that ignores SIGTERM is killed.
 	t.Setenv("MYGO_FAKE_APP", "hang")
-	s.readyTimeout = 300 * time.Millisecond
+	if p, err = s.launch(os.Args[0]); err != nil {
+		t.Fatal(err)
+	}
 	stopGrace = 200 * time.Millisecond
 	start := time.Now()
-	if _, err := s.launch(ctx, os.Args[0]); err == nil || !strings.Contains(err.Error(), "did not get ready") {
-		t.Errorf("hang: %v", err)
-	}
+	p.stop()
 	if d := time.Since(start); d > 3*time.Second {
 		t.Errorf("a hanging build took %v to be killed", d)
 	}
@@ -156,10 +147,11 @@ func TestWatcher(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	changes := w.watch(ctx, 20*time.Millisecond)
+	var reported []string // the paths of the last change
 	expect := func(changed bool, what string) {
 		t.Helper()
 		select {
-		case <-changes:
+		case reported = <-changes:
 			if !changed {
 				t.Fatalf("%s: change reported", what)
 			}
@@ -176,8 +168,14 @@ func TestWatcher(t *testing.T) {
 	expect(false, "files the build ignores")
 	put("main.go", "package main // edited")
 	expect(true, "edited source")
+	if want := []string{filepath.Join(dir, "main.go")}; !slices.Equal(reported, want) {
+		t.Errorf("edited source: reported %v, want %v", reported, want)
+	}
 	put("new.go", "package main")
 	expect(true, "new source")
+	if want := []string{filepath.Join(dir, "new.go")}; !slices.Equal(reported, want) {
+		t.Errorf("new source: reported %v, want %v", reported, want)
+	}
 
 	// An edit made while a build runs is not lost when the build hands
 	// over the same inputs.

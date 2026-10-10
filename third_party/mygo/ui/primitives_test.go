@@ -3,9 +3,11 @@ package ui
 import (
 	"errors"
 	"image"
+	"math"
 	"testing"
 
 	"github.com/egoist/mygo/internal/platform"
+	"github.com/egoist/mygo/internal/vec"
 )
 
 // These tests cover what widgets of your own are made of: the states and
@@ -424,6 +426,49 @@ func TestPathsLookTheSameWhateverDrewBefore(t *testing.T) {
 		for x := 28; x < 60; x++ {
 			if a, b := alone.RGBAAt(x, y), after.RGBAAt(x, y); a != b {
 				t.Fatalf("(%d, %d) is %v alone, %v after another path", x, y, a, b)
+			}
+		}
+	}
+}
+
+// TestStrokesAreAsWideAsAsked strokes a circle and a square: the ink of
+// their masks is the area of the stroke, along curves too, where the
+// stroke's pieces meet at every point of the flattened curve. (Windows
+// draws masks with the contrast of its text, so the rendered pixels are
+// darker there.)
+func TestStrokesAreAsWideAsAsked(t *testing.T) {
+	ink := func(path *Path, width, scale float32) float64 {
+		var f flatPath
+		path.flatten(&f, scale)
+		var z vec.Rasterizer
+		var loop [][2]float32
+		n := int(50 * scale)
+		z.Reset(n, n)
+		strokeInto(&z, &loop, &f, width*scale/2, 0, 0)
+		pix := make([]byte, n*n)
+		z.Mask(pix, n)
+		var sum float64
+		for _, v := range pix {
+			sum += float64(v) / 255
+		}
+		return sum / float64(scale*scale)
+	}
+	for _, scale := range []float32{1, 2} {
+		for _, w := range []float32{1, 2} {
+			var circle, square Path
+			circle.Circle(25.2, 25.3, 10)
+			square.MoveTo(10.3, 10.3).LineTo(40.3, 10.3).LineTo(40.3, 40.3).LineTo(10.3, 40.3).Close()
+			for _, c := range []struct {
+				name string
+				path *Path
+				area float64
+			}{
+				{"circle", &circle, 2 * math.Pi * 10 * float64(w)},
+				{"square", &square, 4*30*float64(w) - (4-math.Pi)*float64(w*w)/4},
+			} {
+				if got := ink(c.path, w, scale); math.Abs(got/c.area-1) > 0.02 {
+					t.Errorf("a %s stroked %v wide at scale %v has ink %.1f, want %.1f", c.name, w, scale, got, c.area)
+				}
 			}
 		}
 	}

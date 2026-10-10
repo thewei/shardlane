@@ -1,12 +1,15 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
 	"slices"
 	"strings"
+	"time"
+	"unicode/utf8"
 )
 
 type buildOptions struct {
@@ -76,13 +79,16 @@ update-<platform>.json: publish them where updates point to.`)
 		return fmt.Errorf("notarization needs a Developer ID signing identity: set macos.signingIdentity or pass -sign")
 	}
 
+	con.startBanner("build")
+	started := time.Now()
 	// The TypeScript client comes first: the frontend build type-checks and
 	// bundles it.
-	if err := writeClient(c); err != nil {
+	if err := writeClient(context.Background(), c); err != nil {
 		return err
 	}
 	if c.BuildCommand != "" && !*skipBuildCommand {
-		if err := run(c.root, c.BuildCommand); err != nil {
+		t := con.start("Building the frontend")
+		if err := t.end(run(t, "web", c.root, c.BuildCommand), "Built the frontend"); err != nil {
 			return err
 		}
 	}
@@ -116,15 +122,32 @@ update-<platform>.json: publish them where updates point to.`)
 		if err != nil {
 			return err
 		}
-		for _, path := range paths {
-			rel, _ := filepath.Rel(c.root, path)
-			logf("built %s (%s)", rel, sizeOf(path))
-		}
 	}
+	con.println(buildSummary(c, built, time.Since(started)))
 	if *upload {
 		return publish(c, built)
 	}
 	return nil
+}
+
+// buildSummary lists what a build made, by directory, with sizes.
+func buildSummary(c *Config, artifacts []string, took time.Duration) string {
+	var b strings.Builder
+	b.WriteString("\n  " + green(con.sym.ok) + " " + bold("Built "+c.Name+" "+c.Version) + dim(" in "+formatDuration(took)) + "\n")
+	width := 0
+	for _, a := range artifacts {
+		width = max(width, utf8.RuneCountInString(filepath.Base(a)))
+	}
+	dir := ""
+	for _, a := range artifacts {
+		if d := relPathTo(c.root, filepath.Dir(a)) + "/"; d != dir {
+			dir = d
+			b.WriteString("\n    " + dim(dir) + "\n")
+		}
+		name := filepath.Base(a)
+		b.WriteString("      " + cyan(name) + strings.Repeat(" ", width-utf8.RuneCountInString(name)) + "  " + dim(fmt.Sprintf("%9s", sizeOf(a))) + "\n")
+	}
+	return b.String()
 }
 
 // buildPlatform builds and packages the app for one platform into
@@ -149,12 +172,12 @@ func buildPlatform(c *Config, goos, goarch string, opts buildOptions) ([]string,
 		return nil, err
 	}
 	if other := c.otherArch(goos, goarch); other != "" {
-		logf("no %s for %s/%s, though there is %s", filepath.Join(resourcesDir, goos+"-"+goarch), goos, goarch, filepath.Join(resourcesDir, other))
+		warnf("No %s for %s/%s, though there is %s", filepath.Join(resourcesDir, goos+"-"+goarch), goos, goarch, filepath.Join(resourcesDir, other))
 	}
 
 	target := goos + "-" + goarch
 	if !opts.debug && keepInspector() {
-		logf("keeping the inspector of native UI (MYGO_INSPECTOR=1)")
+		logf("Keeping the inspector of native UI (MYGO_INSPECTOR=1)")
 	}
 	ldflags := "-s -w" + packageFlags(c) + updateFlags(c, target)
 	if !opts.debug {
@@ -165,24 +188,27 @@ func buildPlatform(c *Config, goos, goarch string, opts buildOptions) ([]string,
 		ldflags += " -H=windowsgui"
 	}
 	compile := func(arch, out string) error {
-		logf("building %s/%s", goos, arch)
-		if goos == "windows" {
-			cleanup, err := windowsResources(c, opts.pkg, arch)
+		t := con.start("Compiling " + goos + "/" + arch)
+		err := func() error {
+			if goos == "windows" {
+				cleanup, err := windowsResources(c, opts.pkg, arch)
+				if err != nil {
+					return err
+				}
+				defer cleanup()
+			}
+			overlay, err := writeOverlay(filepath.Join(opts.work, "overlay.json"), opts.overlay)
 			if err != nil {
 				return err
 			}
-			defer cleanup()
-		}
-		overlay, err := writeOverlay(filepath.Join(opts.work, "overlay.json"), opts.overlay)
-		if err != nil {
-			return err
-		}
-		flags := []string{"-trimpath", "-ldflags", ldflags}
-		flags = append(flags, productionTags(opts.debug)...)
-		if overlay != "" {
-			flags = append(flags, "-overlay", overlay)
-		}
-		return buildBinary(c, out, []string{"GOOS=" + goos, "GOARCH=" + arch}, flags...)
+			flags := []string{"-trimpath", "-ldflags", ldflags}
+			flags = append(flags, productionTags(opts.debug)...)
+			if overlay != "" {
+				flags = append(flags, "-overlay", overlay)
+			}
+			return goBuild(context.Background(), c, t, out, []string{"GOOS=" + goos, "GOARCH=" + arch}, flags...)
+		}()
+		return t.end(err, "Compiled "+goos+"/"+arch)
 	}
 
 	name := c.executableName()
@@ -218,16 +244,20 @@ func buildPlatform(c *Config, goos, goarch string, opts buildOptions) ([]string,
 			return r.lipo != "" && strings.HasPrefix(r.src, c.path(resourcesDir)+string(filepath.Separator))
 		}
 		if slices.ContainsFunc(res, inProject) {
-			logf("made universal binaries of the code in %s and %s", filepath.Join(resourcesDir, "darwin-arm64"), filepath.Join(resourcesDir, "darwin-amd64"))
+			logf("Made universal binaries of the code in %s and %s", filepath.Join(resourcesDir, "darwin-arm64"), filepath.Join(resourcesDir, "darwin-amd64"))
 		}
-		if err := codesign(c, app, opts.sign, true); err != nil {
+		var t *task
+		if runtime.GOOS == "darwin" {
+			t = con.start("Signing " + filepath.Base(app))
+		}
+		if err := t.end(codesign(c, app, opts.sign, true), "Signed "+filepath.Base(app)); err != nil {
 			return nil, err
 		}
 		artifacts = append(artifacts, app)
 		switch {
 		case opts.skipDMG:
 		case runtime.GOOS != "darwin":
-			logf("skipping the disk image: it needs macOS")
+			warnf("Skipping the disk image: it needs macOS")
 		default:
 			dmg, err := buildDMG(c, app, stage, opts)
 			if err != nil {
@@ -330,7 +360,7 @@ func buildPlatform(c *Config, goos, goarch string, opts buildOptions) ([]string,
 			}
 		}
 		if top > 0 {
-			logf("copied %d resources next to the executable", top)
+			logf("Copied %d resources next to the executable", top)
 		}
 	}
 	return artifacts, nil
@@ -412,7 +442,7 @@ func windowsResources(c *Config, pkg, arch string) (cleanup func(), err error) {
 	cleanup = func() {}
 	for _, p := range sysoFiles(pkg) {
 		if !mygoSyso(filepath.Base(p)) {
-			logf("using the .syso resources of the app")
+			logf("Using the .syso resources of the app")
 			return cleanup, nil
 		}
 	}

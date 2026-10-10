@@ -989,11 +989,11 @@ func (e *node) FocusWithin() bool {
 // (SearchField, Combobox) hands the focus to its input: only a focused
 // editor takes text.
 func (e *node) Focus() *node {
-	if to := e.focusTo; to != nil {
-		to.Focus()
+	if !e.hasState() {
 		return e
 	}
-	if !e.hasState() {
+	if to := e.focusTo; to != nil {
+		to.Focus()
 		return e
 	}
 	e.flags |= flagFocusable

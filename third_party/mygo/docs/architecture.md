@@ -96,8 +96,8 @@ framework safely. Read it before changing anything under `internal/`.
 ├── ui/                 native UI: views, layout, widgets, text editing, Tester
 ├── transfer/           immutable data items, representations, lazy providers and drag effects
 ├── cmd/mygo/           the CLI: init, generate, dev, build, doctor
-├── examples/           hello, todo, frameless, native; counter-native, vibrancy
-│                       and gallery (native UI)
+├── examples/           hello, todo, frameless, native; counter-native, vibrancy,
+│                       effort-slider and gallery (native UI)
 ├── docs/               the user guides, the official plugins' pages
 │                       (plugins/), and this architecture guide
 └── website/            the website, with these docs: TanStack Start, prerendered
@@ -1277,7 +1277,11 @@ either.
   nothing.
 - **Frames.** The engine (`ui/runtime.go`) calls the view to build a frame,
   again (up to three times) when a handler changed the state while it built,
-  so the frame shows the outcome. Observing `Pressed` when a pointer press
+  so the frame shows the outcome. A window that closes during a frame (a
+  close button's click; backends report `Closed` at once) keeps its engine
+  until the frame ends: the rest of the view builds with a working
+  `Context`, no further callback runs, nothing is laid out or painted, and
+  the engine closes as the frame ends. Observing `Pressed` when a pointer press
   begins also rebuilds before painting, so selection made on press and its
   focus colors appear together; holding the pointer asks for no further
   build passes. The engine lays it out with flexbox (`layout.go`) or
@@ -1841,7 +1845,10 @@ either.
     `text.Shade` of the text's color. `text.Thick`, for text a
     `ui.Font` thickens (the terminal's `Font.Thicken`, as Ghostty's
     font-thicken), smooths at the strongest step whatever the color and
-    the user's setting; other engines draw it as other text.
+    the user's setting, and `text.Flat`, for text a `ui.Font` draws
+    `Antialiased` (as browsers draw `-webkit-font-smoothing:
+    antialiased`), does not smooth; other engines draw both as other
+    text.
   - *Windows.* Glyphs take the rendering mode and grid fitting DirectWrite
     recommends for their font and size (`IDWriteFontFace3`'s, which from
     about 1.9 pixels a DIP downsamples natural symmetric rendering, as
@@ -2184,11 +2191,11 @@ renderer's (`gputest.Compare`).
   bundle-only features (notifications, URL schemes) work and its data stays
   apart from the production app's. Builds are assembled in a staging
   directory and renamed into place, so the running build keeps its files.
-  - *Ready handshake.* The CLI listens on a Unix socket and passes it in
-    `MYGO_READY_SOCKET`; the core connects once the first window is ready to
-    show or failed to load, right after launch when there is no window, and
-    at most 5 s after launch otherwise (`dev.go`). Nothing happens in
-    production builds.
+  - Builds run with `MYGO_DEV=1`, which the core takes out of its
+    environment (`dev.go`): `App.Relaunch` then exits with code 75, which
+    has `mygo dev` start the same build again. Production builds ignore it.
+    A build counts as started once its process is: one that crashes on
+    start is reported as it exits.
   - *Reload.* A change (polling every 250 ms, debounced) rebuilds;
     when the executable, Info.plist and icon are unchanged nothing restarts.
     Otherwise the running build is sent SIGTERM (quit sequence), then
@@ -2197,7 +2204,7 @@ renderer's (`gputest.Compare`).
     the app's files are free. Only the app gets the SIGTERM, which lets it
     end the processes it started; those left after it exits are killed. A
     build that fails to compile leaves the old one running; one that fails
-    to start or get ready within 20 s leaves none until the next change.
+    to start leaves none until the next change.
   - *Watching.* Exactly what the build reads, from `go list -deps` after
     every build: the directories of the compiled packages outside GOROOT and
     the module cache (so local `replace` modules too), embedded files,
@@ -2209,6 +2216,30 @@ renderer's (`gputest.Compare`).
     directories sharing them for deletion (`openDir`), which `os.Open`
     does not, so that deleting or renaming one it lists does not fail.
   - Quitting the app ends `mygo dev`; a crash waits for the next change.
+    Ctrl+C stops the app as a change does; a second one kills it and the
+    dev server at once. The watcher reports the paths that changed, which
+    the rebuild names. Lines typed on the terminal are shortcuts (`r`
+    restarts even an unchanged build, `c`, `q`, `h`); on Unix, mygo
+    ignores SIGTTIN, so that reading them in the background fails rather
+    than stopping it.
+- *Output* (`console.go`), on standard error: a line per step of a
+  command. On a terminal (Windows: a console that takes VT sequences once
+  `enableVT` asks), the step in progress has a spinner, redrawn in place
+  at 12 fps and cut to the width (`termWidth`, autowrap off besides), with
+  its elapsed time and what it does: `goBuild` runs `go build -v` and
+  shows the import paths it prints, and modules it downloads, keeping
+  the other lines, the compiler's errors, for its error; downloads show
+  their bytes. Steps nest (signing inside a build). What the programs the
+  CLI runs print goes through `labeled` writers, which erase the spinner's
+  line, write whole lines with a label (`web │`, `app │`) and draw it
+  again; the app writes to an `os.Pipe`, not a writer of `exec.Cmd`,
+  whose `Wait` would wait for the web view's processes holding it, and
+  commands with writers get a `WaitDelay`. Without a terminal, each step
+  has a start line and an end line, without colors unless `FORCE_COLOR`
+  (`NO_COLOR` turns them off anyway). `dev` and `build` open with a
+  banner whose five exclamation marks are those of MyGO!!!!!, in its
+  members' colors, which light up one after the other on a terminal
+  (redrawn two lines up with the cursor saved, until a line moves it).
 - `build` generates the client, runs `buildCommand`, then compiles each
   target with `-trimpath -ldflags "-s -w -X …production=1"` (`-H=windowsgui`
   on Windows) and `-tags mygo_noinspector`, which leaves the inspector of
@@ -2327,10 +2358,13 @@ renderer's (`gputest.Compare`).
   `--uninstall` removes only what points into its install, including the
   URL handler entry the app registers.
 - On a macOS host, macOS targets also get "<name> <version>.dmg"
-  (`dmg.go`): `hdiutil` creates a writable HFS+ image from the app, the CLI
-  adds the `/Applications` link, the volume icon and a `.DS_Store` written in
-  pure Go (`dsstore.go`, byte-identical to dmgbuild's `ds_store` package) that
-  lays out the Finder window, then `hdiutil convert` compresses it with LZMA.
+  (`dmg.go`): the CLI puts a copy of the app (`ditto --noclone`, since a
+  clone of a sparse file takes fewer blocks than its copy on HFS+ will),
+  the `/Applications` link, the volume icon and a `.DS_Store` written in
+  pure Go (`dsstore.go`, byte-identical to dmgbuild's `ds_store` package)
+  that lays out the Finder window in a folder, `hdiutil` creates a writable
+  HFS+ image of it, as large as its files need, the CLI sets the volume's
+  Finder flags, then `hdiutil convert` compresses it with LZMA.
   No AppleScript or Finder automation is involved, so it works headless and
   in CI. The image is signed with a real identity and, with `macos.notarize`,
   notarized with `notarytool` and stapled.
@@ -2356,7 +2390,7 @@ shader generation commands are listed in [AGENTS.md](../AGENTS.md).
 |---|---|---|
 | core | `go test .` | lifecycle, quit, IPC, channels, events, Eval, protocol, frontend URLs and serving, menus, trust, single instance, dev ready signal (fake backend); `go test -run '^$' -bench .` measures the Go side of IPC and custom schemes |
 | generator | `go test ./internal/tsgen` | TS output, json/v2 rules, source lookup; type-checks the output with `tsc` when `bun install` was run |
-| CLI | `go test ./cmd/mygo` | config, Info.plist, icons, universal binaries, template, dev launch/ready/stop (the test binary plays the app), watcher and `go list` inputs, resources (platform directories, universal pairs, staging, conflicts, dev placement; builds for every OS), frontend embedding (compiles an app with the overlay), `.DS_Store` against a dmgbuild golden file, a real DMG (`hdiutil`); builds and tools are skipped with `-short` |
+| CLI | `go test ./cmd/mygo` | config, Info.plist, icons, universal binaries, template, dev launch/ready/stop (the test binary plays the app), watcher and `go list` inputs, the console's output (replayed as a terminal shows it), resources (platform directories, universal pairs, staging, conflicts, dev placement; builds for every OS), frontend embedding (compiles an app with the overlay), `.DS_Store` against a dmgbuild golden file, a real DMG (`hdiutil`); builds and tools are skipped with `-short` |
 | runtime | `bun run test` | the injected runtime, `mygo-runtime` and the plugins' packages (against a fake Go side on the real runtime, `plugins/fake-go.ts`) |
 | plugins | `go test ./plugins/...` | the fetch plugin against `httptest` servers, the WebSocket client against a test server (ordering, fragments, pings, closing handshakes); the terminal's binding of libghostty-vt (layouts, rendering, encoders, selections), its pseudo-terminals, and its view through `Tester` with real shells: typing, keys as programs ask, input methods, mouse reports, selecting and copying, pasting, scrollback, exits (the library is downloaded, or named by `MYGO_GHOSTTY_VT`; `-short` skips them) |
 | native UI | `go test ./ui ./internal/text ./internal/scene ./internal/raster ./internal/svg ./internal/gpu/...` | the GPU renderers against the CPU renderer (Direct3D on Windows, Metal on macOS, OpenGL on Linux); views through `Tester`: input, focus, editing, lists, overlays, frames that fill the glyph atlas; text layout and caret geometry; atlas zones and repacking; the CPU renderer against its formulas; SVG parsing and drawing, with `FuzzParse`; `go test -run '^$' -bench . ./ui` times a frame |

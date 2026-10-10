@@ -108,3 +108,5 @@ func started(pid uint32) (int64, bool) {
 	}
 	return int64(created.HighDateTime)<<32 | int64(created.LowDateTime), true
 }
+
+func ignoreTTIN() {}

@@ -206,7 +206,7 @@ func codesignArgs(path, identity, entitlements string, production bool) []string
 func codesign(c *Config, path, identity string, production bool) error {
 	if runtime.GOOS != "darwin" {
 		if identity != "-" {
-			logf("not signing %s: code signing needs macOS", filepath.Base(path))
+			warnf("Not signing %s: code signing needs macOS", filepath.Base(path))
 		}
 		return nil
 	}

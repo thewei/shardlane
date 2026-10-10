@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/egoist/mygo/internal/fake"
 	"github.com/egoist/mygo/internal/platform"
@@ -27,6 +28,35 @@ func contentWindow(t *testing.T, view func(c *ui.Context)) (*Window, *fake.Windo
 	}
 	onMain(func() { s.Frame() })
 	return w, fw, s
+}
+
+// TestContentReadyToShow checks that a window showing Content is ready to
+// show once it drew its first frame, which also tells mygo dev that a new
+// build is up.
+func TestContentReadyToShow(t *testing.T) {
+	w := NewWindow(WindowOptions{Width: 300, Height: 200, Content: ui.View(func(c *ui.Context) {})})
+	t.Cleanup(w.Destroy)
+	ready := make(chan struct{}, 2)
+	w.OnReadyToShow(func() { ready <- struct{}{} })
+	wins := fb.Windows()
+	s := wins[len(wins)-1].FakeSurface()
+	onMain(func() {}) // what the window posted ran
+	if len(ready) != 0 {
+		t.Fatal("ready before its first frame")
+	}
+	onMain(func() { s.Frame() })
+	select {
+	case <-ready:
+	case <-time.After(5 * time.Second):
+		t.Fatal("not ready after its first frame")
+	}
+	w.Invalidate()
+	onMain(func() {})
+	onMain(func() { s.Frame() })
+	onMain(func() {})
+	if s.Frames() != 2 || len(ready) != 0 {
+		t.Errorf("%d frames, ready %d more times", s.Frames(), len(ready))
+	}
 }
 
 func TestContentDrawsAndHandlesInput(t *testing.T) {

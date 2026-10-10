@@ -57,14 +57,16 @@ func evalTSConfig(root, file string) ([]byte, error) {
 	cmd.Dir = root
 	cmd.Env = append(os.Environ(), "MYGO_CONFIG_FILE="+file, "MYGO_CONFIG_OUT="+out.Name(), "MYGO_CONFIG_COMMAND="+running)
 	// What the configuration prints must not mix with mygo's own output.
-	cmd.Stdin, cmd.Stdout, cmd.Stderr = strings.NewReader(configLoader), os.Stderr, &stderr
+	printed := con.output("config", os.Stderr)
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = strings.NewReader(configLoader), printed, &stderr
 	if err := cmd.Run(); err != nil {
 		if msg := strings.TrimSpace(stderr.String()); msg != "" {
 			return nil, errors.New(msg)
 		}
 		return nil, fmt.Errorf("%s: %w", cmd.Args[0], err)
 	}
-	os.Stderr.Write(stderr.Bytes())
+	_, _ = printed.Write(stderr.Bytes())
+	printed.flush()
 	data, err := os.ReadFile(out.Name())
 	if err == nil && len(data) == 0 {
 		err = fmt.Errorf("%s exited without writing the configuration", cmd.Args[0])

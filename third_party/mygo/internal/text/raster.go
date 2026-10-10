@@ -22,14 +22,22 @@ const Shades = 4
 // not thicken glyphs draw them as for other text.
 const Thick Shade = Shades
 
+// Flat is a shade beyond the others, for text drawn without font
+// smoothing, whatever its color: thinner, as browsers draw text styled
+// -webkit-font-smoothing: antialiased on macOS. Engines that do not
+// smooth fonts draw it as other text.
+const Flat Shade = Shades + 1
+
 // shadeFor returns the shade that glyphs of f for text of shade are drawn
 // for.
 func (f *Font) shadeFor(shade Shade) Shade {
 	switch {
-	case shade >= Thick && f.thickens:
+	case shade == Thick && f.thickens:
 		return Thick
 	case !f.shaded:
 		return 0
+	case shade == Flat:
+		return Flat
 	}
 	return min(shade, Shades-1)
 }

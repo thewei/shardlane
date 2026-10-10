@@ -1,13 +1,13 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"crypto/sha256"
 	"errors"
 	"fmt"
 	"io"
 	"maps"
-	"net"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -33,9 +33,11 @@ that mygo build embeds.
 
 Changes to the Go code, mygo.json or mygo.config.ts, the icon or the
 resources rebuild the app, regenerate the TypeScript client and relaunch
-it. The new build replaces the running one once it has started, so a build
-that fails or crashes keeps the previous one running. Frontend changes are
-left to the dev server. Quitting the app ends mygo dev.`)
+it. A build that fails to compile keeps the previous one running; the next
+change tries again. Frontend changes are left to the dev server. Quitting the app ends mygo dev.
+
+On a terminal, type r and Enter to rebuild and restart the app, c to clear
+the console, q to quit, h for help.`)
 	skipDevCommand := flags.Bool("skip-dev-command", false, "do not run devCommand")
 	sign := flags.String("sign", "-", "macOS signing identity for the development app")
 	if err := flags.Parse(args); err != nil {
@@ -48,92 +50,118 @@ left to the dev server. Quitting the app ends mygo dev.`)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	s := &devSession{root: c.root, sign: *sign, name: devConfig(c).Name, env: []string{"MYGO_ENV=development"}}
+	var server atomic.Pointer[exec.Cmd] // the dev command
+	go func() {
+		// Ctrl+C again does not wait for the app to quit.
+		<-ctx.Done()
+		sig := make(chan os.Signal, 1)
+		signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
+		<-sig
+		s.killLive()
+		kill(server.Load())
+		con.interrupted()
+		os.Exit(130)
+	}()
 
+	con.startBanner("dev")
 	// The TypeScript client comes first: the frontend imports it.
-	if err := writeClient(c); err != nil {
+	if err := writeClient(ctx, c); err != nil {
+		if ctx.Err() != nil {
+			return nil
+		}
 		return err
 	}
-	s := &devSession{root: c.root, sign: *sign, env: []string{"MYGO_ENV=development"}}
+	var starting *task
 	var exited chan error // the dev command's
+	var quitting atomic.Bool
 	if c.DevCommand != "" && !*skipDevCommand {
-		logf("starting %s", c.DevCommand)
+		starting = con.start("Starting the dev server")
 		cmd := shellCommand(c.root, c.DevCommand)
-		// Stopping the command makes script runners complain; that is noise.
-		out, errOut := &gate{w: os.Stdout}, &gate{w: os.Stderr}
-		cmd.Stdout, cmd.Stderr = out, errOut
-		if isTerminal(os.Stdout) && os.Getenv("NO_COLOR") == "" {
-			cmd.Env = append(cmd.Env, "FORCE_COLOR=1") // it now writes to a pipe
-		}
+		out, errOut := labeledOutput(cmd, "web")
 		if err := cmd.Start(); err != nil {
+			starting.fail()
 			return err
 		}
+		server.Store(cmd)
+		// Stopping the command makes script runners complain; that is
+		// noise.
+		context.AfterFunc(ctx, func() {
+			quitting.Store(true)
+			out.close()
+			errOut.close()
+		})
 		defer func() {
+			quitting.Store(true)
 			out.close()
 			errOut.close()
 			terminate(cmd)
 		}()
 		exited = make(chan error, 1)
-		go func() { exited <- cmd.Wait() }()
+		go func() {
+			err := waited(cmd.Wait())
+			out.flush()
+			errOut.flush()
+			exited <- err
+		}()
 	}
 	switch {
 	case c.DevURL != "":
-		if exited == nil {
-			logf("waiting for %s", c.DevURL)
+		if starting == nil {
+			starting = con.start("Waiting for the dev server")
 		}
+		starting.set(c.DevURL)
 		wait, cancel := context.WithTimeout(ctx, 30*time.Second)
 		err := waitForURL(wait, c.DevURL, exited)
 		cancel()
-		if err != nil {
+		if errors.Is(err, context.Canceled) {
+			starting.stop()
+			return nil
+		}
+		if err := starting.end(err, "Dev server ready at "+cyan(c.DevURL)); err != nil {
 			return err
 		}
 		s.env = append(s.env, "MYGO_DEV_URL="+c.DevURL)
-	case c.FrontendDist != "":
+	case starting != nil:
+		starting.done("Started " + c.DevCommand)
+	}
+	if exited != nil {
+		// From now on, the dev server exiting is news, unless Ctrl+C,
+		// which it gets too, stopped it.
+		go func() {
+			err := <-exited
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(250 * time.Millisecond):
+			}
+			if !quitting.Load() {
+				msg := "The dev server exited"
+				if err != nil {
+					msg += " (" + err.Error() + ")"
+				}
+				warnf("%s", msg)
+			}
+		}()
+	}
+	if c.DevURL == "" && c.FrontendDist != "" {
 		s.env = append(s.env, "MYGO_FRONTEND_DIST="+c.path(c.FrontendDist))
 	}
 	return s.run(ctx, c)
-}
-
-func isTerminal(f *os.File) bool {
-	info, err := f.Stat()
-	return err == nil && info.Mode()&os.ModeCharDevice != 0
-}
-
-// gate writes to w until it is closed.
-type gate struct {
-	mu     sync.Mutex
-	w      io.Writer
-	closed bool
-}
-
-func (g *gate) Write(p []byte) (int, error) {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	if !g.closed {
-		_, _ = g.w.Write(p)
-	}
-	return len(p), nil
-}
-
-func (g *gate) close() {
-	g.mu.Lock()
-	g.closed = true
-	g.mu.Unlock()
 }
 
 // devSession builds and runs development builds of an app.
 type devSession struct {
 	root string
 	sign string
+	name string   // of the development app, for messages
 	env  []string // for the app
 
-	readyTimeout time.Duration // how long a launch may take (default 20s)
-
 	// Used by one build at a time.
-	iconKey  string
-	icns     []byte
-	mainFor  string // the Main that mainDir is the package directory of
-	mainDir  string
-	launches int
+	iconKey string
+	icns    []byte
+	mainFor string // the Main that mainDir is the package directory of
+	mainDir string
 
 	// Used by the run loop only.
 	app *devProcess // the running build
@@ -178,9 +206,10 @@ func (s *devSession) run(ctx context.Context, c *Config) error {
 	if in, err := listBuildInputs(c); err == nil {
 		w.set(in)
 	} else {
-		logf("%v", err)
+		warnf("%v", err)
 	}
 	changes := w.watch(ctx, 250*time.Millisecond)
+	keys := readKeys()
 
 	type result struct {
 		p      *devProcess
@@ -190,12 +219,28 @@ func (s *devSession) run(ctx context.Context, c *Config) error {
 	}
 	results := make(chan result, 1)
 	builds, cancel := context.WithCancel(ctx)
-	building, pending := false, false
+	building, pending, restart := false, false, false
+	launched := false    // a build has started
+	var changed []string // the inputs that changed since the last build started
 	start := func() {
-		building, pending = true, false
 		running := s.sum
+		title, verb := "Rebuilding ", "Rebuilt "
+		switch {
+		case !launched:
+			title, verb = "Building ", "Built "
+		case restart:
+			running, title, verb = [32]byte{}, "Restarting ", "Restarted "
+		}
+		// Why it builds: the step's title is plain, its line dims it.
+		why := ""
+		if len(changed) > 0 {
+			why = "(" + changeSummary(s.root, changed) + ")"
+		}
+		building, pending, restart, changed = true, false, false, nil
+		t := con.start(strings.TrimSpace(title + s.name + " " + why))
 		go func() {
-			p, sum, err := s.buildAndLaunch(builds, running)
+			p, sum, err := s.buildAndLaunch(builds, t, running)
+			s.report(t, verb, why, err)
 			// What the build reads may have changed, e.g. a new import.
 			var inputs *buildInputs
 			if c, cerr := loadConfig(s.root); cerr == nil {
@@ -207,6 +252,13 @@ func (s *devSession) run(ctx context.Context, c *Config) error {
 	var stopping sync.WaitGroup
 	defer func() {
 		cancel()
+		var t *task
+		if building || s.app != nil {
+			t = con.start("Stopping " + s.name)
+			if ctx.Err() != nil {
+				t.set("Ctrl+C again to force")
+			}
+		}
 		if building {
 			if r := <-results; r.p != nil {
 				r.p.stop()
@@ -216,6 +268,7 @@ func (s *devSession) run(ctx context.Context, c *Config) error {
 			s.app.stop()
 		}
 		stopping.Wait()
+		t.stop()
 	}()
 
 	start()
@@ -237,41 +290,60 @@ func (s *devSession) run(ctx context.Context, c *Config) error {
 			var exit *exec.ExitError
 			if errors.As(err, &exit) && exit.ExitCode() == devRelaunchCode {
 				// mygo.App.Relaunch: start the same build again.
-				logf("relaunching")
-				if p, err := s.launch(ctx, exe); err != nil {
-					logf("%v; waiting for changes", err)
+				p, err := s.launch(exe)
+				if err != nil {
+					con.println("  " + red(con.sym.fail) + " Relaunching " + s.name)
+					con.details(err)
+					s.hint("Save a change to start it again.")
 					s.sum = [32]byte{}
-				} else {
-					s.setApp(p)
+					continue
 				}
+				logf("Relaunched %s", s.name)
+				s.setApp(p)
 				continue
 			}
 			s.sum = [32]byte{}
 			if err == nil {
-				logf("the app quit")
+				logf("%s quit", s.name)
 				return nil
 			}
-			logf("the app exited (%v); waiting for changes", err)
-		case <-changes:
+			con.println("  " + red(con.sym.fail) + " " + s.name + " exited (" + err.Error() + ")")
+			s.hint("Save a change to start it again.")
+		case paths := <-changes:
+			for _, p := range paths {
+				if !slices.Contains(changed, p) {
+					changed = append(changed, p)
+				}
+			}
 			if building {
 				pending = true
 			} else {
 				start()
+			}
+		case key, ok := <-keys:
+			switch {
+			case !ok:
+				keys = nil
+			case key == "r":
+				restart = true
+				if building {
+					pending = true
+				} else {
+					start()
+				}
+			case key == "c":
+				con.clearScreen()
+			case key == "q":
+				return nil
+			case key == "h":
+				con.println(devHelp())
 			}
 		case r := <-results:
 			building = false
 			if r.inputs != nil {
 				w.set(r.inputs)
 			}
-			switch {
-			case errors.Is(r.err, errUnchanged):
-				logf("the build did not change")
-			case r.err != nil:
-				logf("%v", r.err)
-				if s.app != nil && !s.app.replaced.Load() {
-					logf("keeping the previous build running")
-				}
-			default:
+			if r.err == nil {
 				prev := s.app
 				s.setApp(r.p)
 				s.sum = r.sum
@@ -282,12 +354,109 @@ func (s *devSession) run(ctx context.Context, c *Config) error {
 						prev.stop()
 					}()
 				}
+				if !launched {
+					launched = true
+					msg := "\n  " + cyan(con.sym.arrow) + " Watching for changes\n"
+					if keys != nil {
+						// A plain space after the arrow: Windows Terminal
+						// colors the part of a glyph wider than its cell
+						// as the next cell.
+						msg += "  " + cyan(con.sym.arrow) + " " + dim("press ") + bold("h + enter") + dim(" to show help") + "\n"
+					}
+					con.println(msg)
+				}
 			}
 			if pending {
 				start()
 			}
 		}
 	}
+}
+
+// report ends the step t of a build with how it went, and why it ran.
+func (s *devSession) report(t *task, verb, why string, err error) {
+	if why != "" {
+		why = " " + dim(why)
+	}
+	switch {
+	case err == nil:
+		t.done(verb + s.name + why)
+	case errors.Is(err, errUnchanged):
+		t.done(dim("No change to "+s.name) + why)
+	case errors.Is(err, context.Canceled):
+		t.stop()
+	default:
+		t.fail()
+		con.details(err)
+		if s.liveRunning() {
+			s.hint("The previous build keeps running: save a fix to try again.")
+		} else {
+			s.hint("Save a fix to try again.")
+		}
+	}
+}
+
+// hint tells what to do after a build failed, or the app crashed.
+func (s *devSession) hint(msg string) {
+	con.println("  " + dim(msg))
+}
+
+// killLive kills the running build at once.
+func (s *devSession) killLive() {
+	s.liveMu.Lock()
+	p := s.live
+	s.liveMu.Unlock()
+	if p != nil {
+		kill(p.cmd)
+	}
+}
+
+// liveRunning reports whether a build runs that no next build stopped.
+func (s *devSession) liveRunning() bool {
+	s.liveMu.Lock()
+	p := s.live
+	s.liveMu.Unlock()
+	if p == nil || p.replaced.Load() {
+		return false
+	}
+	select {
+	case <-p.done:
+		return false
+	default:
+		return true
+	}
+}
+
+// readKeys returns the lines typed on the terminal, which are shortcuts,
+// as Vite has: a key, then Enter. It returns nil when standard input is
+// not a terminal.
+func readKeys() <-chan string {
+	if !con.live || !isTerminal(os.Stdin) {
+		return nil
+	}
+	ignoreTTIN()
+	keys := make(chan string)
+	go func() {
+		defer close(keys)
+		sc := bufio.NewScanner(os.Stdin)
+		for sc.Scan() {
+			keys <- strings.ToLower(strings.TrimSpace(sc.Text()))
+		}
+	}()
+	return keys
+}
+
+func devHelp() string {
+	var b strings.Builder
+	b.WriteString("\n  " + bold("Shortcuts") + "\n")
+	for _, k := range [][2]string{
+		{"r", "rebuild and restart the app"},
+		{"c", "clear the console"},
+		{"q", "quit"},
+	} {
+		b.WriteString("  " + dim("press ") + bold(k[0]+" + enter") + dim(" to "+k[1]) + "\n")
+	}
+	return b.String()
 }
 
 // devConfig configures the development app: "<Name> Dev" with the
@@ -301,15 +470,13 @@ func devConfig(c *Config) *Config {
 }
 
 // buildAndLaunch builds the app and launches it once it differs from the
-// running build, whose fingerprint is running. It returns the new process
-// after it reported ready.
-func (s *devSession) buildAndLaunch(ctx context.Context, running [32]byte) (*devProcess, [32]byte, error) {
-	var sum [32]byte
+// running build, whose fingerprint is running, showing its progress on t.
+// It returns the new process.
+func (s *devSession) buildAndLaunch(ctx context.Context, t *task, running [32]byte) (p *devProcess, sum [32]byte, err error) {
 	c, err := loadConfig(s.root)
 	if err != nil {
 		return nil, sum, err
 	}
-	started := time.Now()
 	dir := filepath.Join(s.root, ".mygo", "dev", runtime.GOOS+"-"+runtime.GOARCH)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, sum, err
@@ -330,18 +497,13 @@ func (s *devSession) buildAndLaunch(ctx context.Context, running [32]byte) (*dev
 		name = slugify(dc.Name)
 	}
 	bin := filepath.Join(stage, name)
-	if running == ([32]byte{}) {
-		logf("building %s", dc.Name)
-	} else {
-		logf("rebuilding")
-	}
 	cleanup := func() {}
 	if runtime.GOOS == "windows" {
 		if cleanup, err = s.windowsResources(c, dc); err != nil {
 			return nil, sum, err
 		}
 	}
-	err = buildBinaryContext(ctx, c, bin, nil, "-ldflags", strings.TrimSpace(packageFlags(dc)))
+	err = goBuild(ctx, c, t, bin, nil, "-ldflags", strings.TrimSpace(packageFlags(dc)))
 	cleanup()
 	if err != nil {
 		return nil, sum, err
@@ -387,11 +549,17 @@ func (s *devSession) buildAndLaunch(ctx context.Context, running [32]byte) (*dev
 		return nil, sum, errUnchanged
 	}
 
-	if err := generateBindings(c, bin); err != nil {
+	t.set("generating the TypeScript client")
+	changed, err := generateBindings(c, bin)
+	if err != nil {
 		return nil, sum, err
+	}
+	if changed {
+		logf("Wrote %s", cyan(relPathTo(c.root, c.path(c.Bindings))))
 	}
 	exe := filepath.Join(dir, name)
 	if runtime.GOOS == "darwin" {
+		t.set("signing")
 		app, err := writeBundle(dc, stage, bin, icns, res)
 		if err != nil {
 			return nil, sum, err
@@ -407,18 +575,10 @@ func (s *devSession) buildAndLaunch(ctx context.Context, running [32]byte) (*dev
 	} else if err := placeBuild(stage, dir, res); err != nil {
 		return nil, sum, err
 	}
-	built := time.Since(started)
-
 	s.stopLive()
-	p, err := s.launch(ctx, exe)
-	if err != nil {
+	if p, err = s.launch(exe); err != nil {
 		return nil, sum, err
 	}
-	verb := "started"
-	if running != ([32]byte{}) {
-		verb = "reloaded"
-	}
-	logf("%s (built in %.1fs, ready in %.1fs)", verb, built.Seconds(), (time.Since(started) - built).Seconds())
 	return p, sum, nil
 }
 
@@ -505,84 +665,44 @@ func (s *devSession) icon(c *Config) ([]byte, error) {
 	return s.icns, nil
 }
 
-// launch starts a build and waits until it reports ready: the app connects
-// to the Unix socket passed in MYGO_READY_SOCKET once its first window is
-// ready to show. A build that relaunches itself first is started again.
-func (s *devSession) launch(ctx context.Context, exe string) (*devProcess, error) {
-	for range 10 {
-		p, err := s.launchOnce(ctx, exe)
-		var exit *exec.ExitError
-		if !errors.As(err, &exit) || exit.ExitCode() != devRelaunchCode {
-			return p, err
-		}
-		logf("relaunching") // mygo.App.Relaunch before the app was ready
-	}
-	return nil, errors.New("the app relaunched itself 10 times without getting ready")
-}
-
-func (s *devSession) launchOnce(ctx context.Context, exe string) (*devProcess, error) {
-	s.launches++
-	sock := readySocketPath(s.launches)
-	_ = os.Remove(sock)
-	ln, err := net.Listen("unix", sock)
+// launch starts a build. MYGO_DEV=1 tells it that mygo dev runs it, which
+// mygo.App.Relaunch asks to start it again.
+func (s *devSession) launch(exe string) (*devProcess, error) {
+	stdout, outDone, err := pipe(con.output("app", os.Stdout))
 	if err != nil {
 		return nil, err
 	}
-	defer ln.Close() // also removes the socket file
-	ready := make(chan struct{})
-	go func() {
-		if conn, err := ln.Accept(); err == nil {
-			conn.Close()
-			close(ready)
-		}
-	}()
-
+	stderr, errDone, err := pipe(con.output("app", os.Stderr))
+	if err != nil {
+		stdout.Close()
+		return nil, err
+	}
 	cmd := exec.Command(exe)
 	cmd.Dir = s.root
-	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
-	cmd.Env = append(append(os.Environ(), s.env...), "MYGO_READY_SOCKET="+sock)
+	cmd.Stdout, cmd.Stderr = stdout, stderr
+	cmd.Env = append(append(os.Environ(), s.env...), "MYGO_DEV=1")
 	setProcessGroup(cmd)
-	if err := cmd.Start(); err != nil {
+	err = cmd.Start()
+	stdout.Close()
+	stderr.Close()
+	if err != nil {
 		return nil, err
 	}
 	p := &devProcess{exe: exe, cmd: cmd, done: make(chan struct{})}
 	go func() {
 		p.err = cmd.Wait()
+		// What the app printed last, as a panic, comes before what mygo
+		// says of its exit, unless processes it started hold its output.
+		timeout := time.After(250 * time.Millisecond)
+		for _, copied := range []<-chan struct{}{outDone, errDone} {
+			select {
+			case <-copied:
+			case <-timeout:
+			}
+		}
 		close(p.done)
 	}()
-
-	wait := s.readyTimeout
-	if wait == 0 {
-		wait = 20 * time.Second
-	}
-	timeout := time.NewTimer(wait)
-	defer timeout.Stop()
-	select {
-	case <-ready:
-		return p, nil
-	case <-p.done:
-		if p.err == nil {
-			return nil, errors.New("the app exited before it was ready")
-		}
-		return nil, fmt.Errorf("the app exited before it was ready: %w", p.err)
-	case <-timeout.C:
-		p.stop()
-		return nil, fmt.Errorf("the app did not get ready within %v", wait)
-	case <-ctx.Done():
-		p.stop()
-		return nil, ctx.Err()
-	}
-}
-
-// readySocketPath returns a socket path short enough for Unix sockets
-// (about 100 bytes).
-func readySocketPath(n int) string {
-	name := fmt.Sprintf("mygo-ready-%d-%d.sock", os.Getpid(), n)
-	dir := os.TempDir()
-	if len(dir)+len(name) >= 100 {
-		dir = "/tmp"
-	}
-	return filepath.Join(dir, name)
+	return p, nil
 }
 
 // devProcess is a running development build.

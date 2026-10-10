@@ -73,7 +73,7 @@ func (rt *engine) runNoticeActions() {
 	for i := range rt.actions {
 		a := &rt.actions[i]
 		a.ready = false
-		if rt.closed {
+		if rt.closing {
 			return
 		}
 		if a.kind != actionChange && a.kind != actionSubmit {
@@ -98,7 +98,7 @@ func (rt *engine) runNoticeActions() {
 		}
 	}
 	for _, a := range rt.actions {
-		if rt.closed {
+		if rt.closing {
 			return
 		}
 		if a.ready {
@@ -109,7 +109,7 @@ func (rt *engine) runNoticeActions() {
 }
 func (rt *engine) runActions() {
 	for _, a := range rt.actions {
-		if rt.closed {
+		if rt.closing {
 			return
 		}
 		if a.kind == actionChange || a.kind == actionSubmit {
