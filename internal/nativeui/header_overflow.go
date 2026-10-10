@@ -50,15 +50,7 @@ func (s *Shell) splitPaneAction(paneID, direction string) {
 func (s *Shell) zoomPaneAction(paneID string) {
 	if s.tabPaneCount(paneID) <= 1 {
 		slog.Info("pane action", "action", "zoom-rails", "pane_id", paneID)
-		if !s.sidebarCollapsed || s.rightPanel.open {
-			s.sidebarCollapsed = true
-			if s.rightPanel.open {
-				s.toggleRightPanel()
-			}
-		} else {
-			s.sidebarCollapsed = false
-			s.toggleRightPanel()
-		}
+		s.sidebarCollapsed = !s.sidebarCollapsed
 		return
 	}
 	slog.Info("pane action", "action", "zoom", "pane_id", paneID)

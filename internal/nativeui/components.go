@@ -1,7 +1,15 @@
 package nativeui
 
+/**
+ * [INPUT]: 依赖 MyGo Native UI 的按钮、拖放目标、位置/尺寸过渡与统一主题 token
+ * [OUTPUT]: 提供包含原生拖动占位反馈的 treeRow 与通用导航组件
+ * [POS]: nativeui 的基础视觉组件层；拖动规则由 reorder.go 注入而非组件自行决定
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
+
 import (
 	"strings"
+	"time"
 
 	"github.com/egoist/mygo/ui"
 )
@@ -109,6 +117,8 @@ type treeRowSpec struct {
 	// it only while the row is collapsed — an expanded row shows its
 	// children, not a tally. 0 and 1 render nothing.
 	Count int
+	// Drag enables a reorder affordance only for the runtime tree.
+	Drag *treeRowDrag
 	// Height overrides the row height; 0 uses the density default.
 	Height float32
 }
@@ -185,7 +195,11 @@ func treeRow(c *ui.Context, spec treeRowSpec) ui.Element {
 	tokens := designTokens(t.Dark)
 	var row ui.Element
 	height := designRowHeight(spec.Height)
-	ui.Box(c.Key(spec.Key)).Children(func() {
+	container := ui.Box(c.Key(spec.Key)).FillWidth().Transition(ui.ElementTransition{Position: true, Size: true, Duration: 170 * time.Millisecond})
+	container.Children(func() {
+		// Reserve an animated, pointer-transparent insertion slot. It never
+		// steals the drop from the row underneath the cursor.
+		before := ui.Box(c).Height(0).PassThrough().Transition(ui.ElementTransition{Size: true, Duration: 150 * time.Millisecond})
 		row = ui.ButtonBase(c).
 			FillWidth().
 			Height(height).
@@ -194,6 +208,23 @@ func treeRow(c *ui.Context, spec treeRowSpec) ui.Element {
 			Label(spec.Label)
 		if tint, ok := rowTint(tokens, spec.Selected, row.Hovered()); ok {
 			row.Background(tint)
+		}
+		if drag := spec.Drag; drag != nil {
+			row.Drag(drag.Value).Cursor(ui.CursorGrab)
+			if row.Dragging() {
+				row.Opacity(0.38).Cursor(ui.CursorGrabbing)
+			}
+			value, over := ui.DragOver[treeNodeDrag](container)
+			_, y, _ := container.PointerPosition()
+			if over && drag.Accept(value) {
+				row.Background(t.Accent.Alpha(0.13))
+				if y < height/2 {
+					before.Height(7).Background(t.Accent.Alpha(0.65))
+				}
+			}
+			if value, dropped := ui.Drop[treeNodeDrag](container); dropped && drag.Accept(value) {
+				drag.Drop(value, y < height/2)
+			}
 		}
 		row.Draw(func(p *ui.Painter, r ui.Rect) {
 			if spec.Depth <= 0 {
@@ -272,6 +303,17 @@ func treeRow(c *ui.Context, spec treeRowSpec) ui.Element {
 				more.Menu(spec.Overflow)
 			}
 		})
+		if drag := spec.Drag; drag != nil {
+			value, over := ui.DragOver[treeNodeDrag](container)
+			_, y, _ := container.PointerPosition()
+			afterHeight := float32(0)
+			if over && drag.Accept(value) && y >= height/2 {
+				afterHeight = 7
+			}
+			ui.Box(c).Height(afterHeight).PassThrough().
+				Background(t.Accent.Alpha(0.65)).
+				Transition(ui.ElementTransition{Size: true, Duration: 150 * time.Millisecond})
+		}
 	})
 	if spec.Activity.On && spec.Activity.Detail != "" {
 		row.Tooltip(spec.Activity.Detail)

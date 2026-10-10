@@ -53,6 +53,9 @@ func (s *Shell) sidebar(c *ui.Context) {
 		// the canonical runtime navigator.
 		if s.sidebarInDiffMode() {
 			s.sidebarFilesView(c)
+		} else if s.router.Path() == routeFiles {
+			s.syncRightPanelRoot()
+			s.filesToolView(c)
 		} else if s.sidebarInnerPage() {
 			s.sidebarInnerNav(c)
 		} else if ui.Sidebar(c, &s.selected, func() {
@@ -106,7 +109,7 @@ func (s *Shell) sidebarInDiffMode() bool {
 // sidebar body for their own navigation below the back control.
 func (s *Shell) sidebarInnerPage() bool {
 	path := s.router.Path()
-	return isHistoryRoute(path) || strings.HasPrefix(path, "/settings/")
+	return isHistoryRoute(path) || path == routeFiles || strings.HasPrefix(path, "/settings/")
 }
 
 // sidebarBackRow names the destination precisely: the Workspace's Terminal,

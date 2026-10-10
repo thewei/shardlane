@@ -126,9 +126,7 @@ func (s *Shell) buildCommandCenterActions() []commandcenter.Action {
 		// /settings/general and read as two identical commands (F16).
 		commandcenter.Action{ID: "app.settings", Title: "Settings", Section: "App",
 			Keywords: []string{"preferences", "appearance", "theme", "density", "language"}, Kind: commandcenter.TargetSetting, TargetID: "/settings/general", Available: true},
-		commandcenter.Action{ID: "app.toggle-right-panel", Title: "Toggle Right Panel", Section: "App", Shortcut: "⌥⌘B",
-			Keywords: []string{"files", "services", "tools"}, Kind: commandcenter.TargetRoute, TargetID: "action:toggle-right-panel", Available: true},
-		commandcenter.Action{ID: "app.open-files", Title: "Open Files Tool", Section: "App",
+		commandcenter.Action{ID: "app.open-files", Title: "Browse Files", Section: "App",
 			Keywords: []string{"directory", "tree", "file preview"}, Kind: commandcenter.TargetRoute, TargetID: "action:open-files", Available: true},
 	)
 	return actions
@@ -348,15 +346,9 @@ func (s *Shell) executeCommandCenterResult(result commandcenter.Result) {
 		// Command actions have no Context during execution. The native window
 		// size supplies the same geometry that View gets from c.Size(); in
 		// headless mode a zero width means geometry is not yet established.
-		windowWidth := float32(0)
-		if s.win != nil {
-			windowWidth = float32(s.win.Bounds().Width)
-		}
 		switch action.TargetID {
-		case "action:toggle-right-panel":
-			s.toggleRightPanelForViewport(windowWidth)
 		case "action:open-files":
-			s.openRightPanelSurfaceForViewport(SurfaceFiles, windowWidth)
+			s.showViewFiles()
 		default:
 			if action.TargetID != "" {
 				s.router.Push(action.TargetID)

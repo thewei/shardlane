@@ -82,36 +82,28 @@ func (s *Shell) gitSequencerBanner(c *ui.Context) {
 		}
 		ui.Row(c).FillWidth().Gap(Spacing().S).AlignItems(ui.Center).Children(func() {
 			s.gitSequencerActions(c)
-		})
-	})
-}
-
-func (s *Shell) gitSequencerInspector(c *ui.Context) {
-	if s.git == nil || !s.git.sequencerChecked || !s.git.sequencer.Active() {
-		return
-	}
-	state := s.git.sequencer
-	settingsCard(c, "Git Operation", func() {
-		historyFact(c, "Operation", gitOperationLabel(state.Kind), "")
-		historyFact(c, "Unresolved", fmt.Sprintf("%d", state.Unmerged), "")
-		if len(state.UnmergedPaths) > 0 {
-			ui.Text(c, "Files needing resolution").FontSize(Typography().Caption).FontWeight(650)
-			for _, path := range state.UnmergedPaths {
-				path := path
-				_, idx := s.gdFileForPath(path)
-				link := ui.Button(c, "Review conflict: "+path).FontSize(Typography().Caption).MaxWidth(225)
-				link.Tooltip(path)
-				link.Disabled(idx < 0)
-				if link.Clicked() && idx >= 0 {
-					s.revealDiffFile(path)
+			if len(state.UnmergedPaths) > 0 {
+				label := "Show conflict files"
+				if s.gitConflictFilesExpanded {
+					label = "Hide conflict files"
+				}
+				if ui.Button(c, label).Clicked() {
+					s.gitConflictFilesExpanded = !s.gitConflictFilesExpanded
 				}
 			}
-			if extra := state.Unmerged - len(state.UnmergedPaths); extra > 0 {
-				ui.Textf(c, "…and %d more unresolved files", extra).FontSize(Typography().Caption).TextColor(c.Theme().TextMuted)
-			}
+		})
+		if s.gitConflictFilesExpanded {
+			ui.Column(c).FillWidth().Gap(Spacing().XXS).Children(func() {
+				ui.Text(c, "Files needing resolution").FontSize(Typography().Caption).FontWeight(650)
+				for _, path := range state.UnmergedPaths {
+					_, index := s.gdFileForPath(path)
+					link := ui.Button(c, "Review conflict: "+path).FontSize(Typography().Caption).MaxWidth(270).Tooltip(path)
+					link.Disabled(index < 0)
+					if link.Clicked() && index >= 0 {
+						s.revealDiffFile(path)
+					}
+				}
+			})
 		}
-		ui.Text(c, "Review conflict markers in the editor; stage each resolved file. Continue keeps the resolution; Abort may discard in-progress resolution edits.").
-			FontSize(Typography().Caption).TextColor(c.Theme().TextMuted)
-		ui.Text(c, "Resolve or Abort from the Git worktree banner above the Diff Review.").FontSize(Typography().Caption).TextColor(c.Theme().TextMuted)
 	})
 }

@@ -14,7 +14,7 @@ import (
 
 /**
  * [INPUT]: 依赖 mygo/plugins/terminal, mygo/ui, herdr, settings, history, gorex_style
- * [OUTPUT]: 对外提供 terminalCanvas, paneCard, syncTerminals, closeAllTerminals, paneHeaderVisuals
+ * [OUTPUT]: 对外提供 terminalCanvas, paneCard, paneCardHeader 的卡片标题拖动交换与动画、syncTerminals, closeAllTerminals, paneHeaderVisuals
  * [POS]: nativeui 的终端画布与 Gorex 窗格卡片主渲染器，管理活动的终端连接与卡片头部视觉呈现
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -127,6 +127,7 @@ func (s *Shell) terminalCanvas(c *ui.Context) {
 				continue
 			}
 			frame := ui.Box(c.Key(surface.key)).
+				Transition(ui.ElementTransition{Position: true, Duration: 190 * time.Millisecond}).
 				Absolute().
 				Left(inner.X + inner.W*left/100 + gorexFrameInset).
 				Top(inner.Y + inner.H*top/100 + gorexFrameInset).
@@ -169,6 +170,16 @@ func (s *Shell) paneCard(c *ui.Context, k *gorexColors, surface *terminalSurface
 	card.Background(bg).Border(1, border).
 		Shadow(0, 1, 2, 0, shadow).
 		Shadow(0, 6, 22, -2, shadow)
+	swapTarget := false
+	if dragged, over := ui.DragOver[paneCardDrag](card); over && s.canSwapCard(dragged, surface.paneID, s.selectedTabID) {
+		// Native drag ghost follows the pointer; the outline and floating
+		// badge preview its landing slot without resizing the live PTY.
+		swapTarget = true
+		card.Border(2, c.Theme().Accent).Background(c.Theme().Accent.Alpha(0.08))
+	}
+	if dragged, dropped := ui.Drop[paneCardDrag](card); dropped && s.canSwapCard(dragged, surface.paneID, s.selectedTabID) {
+		s.swapPaneDrop(dragged.PaneID, surface.paneID, s.selectedTabID)
+	}
 	card.Transition(ui.ElementTransition{Colors: true, Duration: 160 * time.Millisecond})
 	hovered := card.Hovered()
 	card.Children(func() {
@@ -192,6 +203,17 @@ func (s *Shell) paneCard(c *ui.Context, k *gorexColors, surface *terminalSurface
 				s.selectPane(surface.paneID)
 			}
 		})
+		if swapTarget {
+			ui.Row(c.Key("swap-target")).Absolute().Right(12).Top(gorexHeaderH+12).
+				Padding(6, 10).Radius(7).Background(c.Theme().Surface).
+				Border(1, c.Theme().Accent.Alpha(0.5)).Shadow(0, 2, 10, 0, shadow).
+				PassThrough().Transition(ui.ElementTransition{
+				Enter: &ui.Motion{Y: 6}, Exit: &ui.Motion{Y: -4}, Duration: 140 * time.Millisecond,
+			}).Children(func() {
+				ui.Text(c, "Swap positions").FontSize(11).FontWeight(600).
+					TextColor(c.Theme().Accent).PassThrough()
+			})
+		}
 	})
 }
 
@@ -258,7 +280,15 @@ func (s *Shell) paneCardHeader(c *ui.Context, k *gorexColors, surface *terminalS
 		ui.Box(c).Size(15, 15).Shrink(0).Children(func() {
 			markView(c, mark, 14.5, k.text)
 		})
-		ui.Row(c).Grow(1).MinWidth(0).Gap(5).AlignItems(ui.Center).ClipX().Children(func() {
+		caption := ui.Row(c).Grow(1).MinWidth(0).Gap(5).AlignItems(ui.Center).ClipX()
+		if s.canDragPaneCard(surface.paneID) {
+			caption.Drag(paneCardDrag{s.activeInstance, s.selectedTabID, surface.paneID}).
+				Cursor(ui.CursorGrab).Tooltip("Drag to swap pane positions")
+			if caption.Dragging() {
+				caption.Opacity(0.4).Cursor(ui.CursorGrabbing)
+			}
+		}
+		caption.Children(func() {
 			ui.Text(c, title).FontSize(12.5).FontWeight(600).TextColor(k.text).
 				SingleLine().Ellipsis("…").Shrink(0).MaxWidthPercent(80)
 			if detail != "" {

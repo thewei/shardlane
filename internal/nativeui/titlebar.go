@@ -88,23 +88,12 @@ func titlebarHeight(barHeight float32, workspace bool) float32 {
 // and the window pin (always on top).
 func (s *Shell) titlebarTools(c *ui.Context, k *gorexColors) {
 	s.titlebarViewSwitch(c, k)
-	s.titlebarActivity(c, k)
-	if kind := s.activeContextPanel(); kind != contextPanelNone {
-		windowWidth, _ := c.Size()
-		panelVisible := s.contextPanelVisible(windowWidth)
-		panelName := "Workspace Tools"
-		if kind == contextPanelHistory {
-			panelName = "History Details"
-		}
-		verb := "Show "
-		if panelVisible {
-			verb = "Hide "
-		}
-		label := verb + panelName
-		if gorexIconButton(c, k, iconPanel, label, label+" (⌥⌘B)", panelVisible, gorexIconBtn, 16).Clicked() {
-			s.toggleRightPanelForViewport(windowWidth)
-		}
+	// Files is a top-level workbench; its tree shares the left navigation,
+	// and preview owns the whole center instead of stealing a right rail.
+	if gorexIconButton(c, k, iconFolder, "Files view", "Browse project files", s.router.Path() == routeFiles, gorexIconBtn, 16).Clicked() {
+		s.showViewFiles()
 	}
+	s.titlebarActivity(c, k)
 	if gorexIconButton(c, k, iconPin, windowPinLabel, windowPinLabel, s.windowPinned, gorexIconBtn, 15).Clicked() {
 		s.toggleWindowPinned()
 	}
@@ -331,15 +320,18 @@ func (s *Shell) crumbPathRow(c *ui.Context) {
 // actionable count floats at its top-right corner in the strongest tone;
 // a Reconnect button replaces it while Herdr is unreachable.
 func (s *Shell) titlebarActivity(c *ui.Context, k *gorexColors) {
-	if s.shellState() == stateDisconnected {
-		if ui.Button(c, "Reconnect").Clicked() {
-			s.reloadInstances(false)
-		}
-		return
-	}
-
+	// The Agent button also owns Services. It must stay available when
+	// Herdr disconnects so file-free service info and reconnect remain
+	// discoverable instead of replacing the entire destination.
+	disconnected := s.shellState() == stateDisconnected
 	summary := s.agentActivitySummary()
-	label := "Agent Activity"
+	if disconnected {
+		summary = nil
+	}
+	label := "Agents & Services"
+	if disconnected {
+		label = "Agents & Services · Disconnected"
+	}
 	var tone StatusTone
 	total := 0
 	if summary != nil {

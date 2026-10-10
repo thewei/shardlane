@@ -1,5 +1,12 @@
 package nativeui
 
+/**
+ * [INPUT]: 依赖 Herdr 权威 Workspace/Tab 顺序及 Pane layout、reorder.go 的受限拖动规则
+ * [OUTPUT]: 提供侧栏 Workspace → Tab → Pane 交互树、排序与原生拖放入口
+ * [POS]: nativeui 的运行时导航树；状态标识不再干扰用户持久化的拖动顺序
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
+
 import (
 	"sort"
 
@@ -13,13 +20,12 @@ func (s *Shell) projectItems(c *ui.Context) {
 		ui.Text(c, "Choose a Workspace first").Padding(8, 10).TextColor(c.Theme().TextMuted)
 		return
 	}
-	projects := s.projection.Projects
+	projects := orderedProjects(s.projection)
 	activity := buildSidebarActivity(s.projection, s.serviceIndex)
 	for _, project := range projects {
 		project := project
 		selectedProject := project.ID == s.selectedProjectID
 		tabs := tabsForProject(s.projection, project.ID)
-		s.sortTabsActionable(tabs)
 		expandedProject := s.projectExpanded(project.ID)
 		// The collapsed tally (2026-10-07): a folded project shows how
 		// many panes it hides, so the nesting depth never hides the load.
@@ -49,6 +55,7 @@ func (s *Shell) projectItems(c *ui.Context) {
 			Overflow: func(m *ui.Menu) {
 				s.projectMenuItems(m, project)
 			},
+			Drag: s.treeDragFor(treeNodeDrag{s.activeInstance, "project", "", project.ID}),
 		})
 		if row.Clicked() {
 			s.router.Push(routeWorkspace)
@@ -69,7 +76,7 @@ func (s *Shell) projectItems(c *ui.Context) {
 			lastTab := tabIndex == len(tabs)-1
 			selectedTab := tab.ID == s.selectedTabID
 			panes := panesForTab(s.projection, tab.ID)
-			s.sortPanesActionable(panes)
+			sortPanesByLayout(s.projection, tab.ID, panes)
 			expandedTab := s.tabExpanded(tab.ID)
 			// A folded tab shows its pane tally; an expanded one (and a
 			// single-pane leaf) shows none.
@@ -92,6 +99,7 @@ func (s *Shell) projectItems(c *ui.Context) {
 				Overflow: func(m *ui.Menu) {
 					s.tabMenuItems(m, tab)
 				},
+				Drag: s.treeDragFor(treeNodeDrag{s.activeInstance, "tab", project.ID, tab.ID}),
 			})
 			if row.Clicked() {
 				s.router.Push(routeWorkspace)
@@ -139,6 +147,7 @@ func (s *Shell) projectItems(c *ui.Context) {
 					Overflow: func(m *ui.Menu) {
 						s.paneOverflowItems(m, pane.ID, label)
 					},
+					Drag: s.treeDragFor(treeNodeDrag{s.activeInstance, "pane", tab.ID, pane.ID}),
 				})
 				if row.Clicked() {
 					s.router.Push(routeWorkspace)
@@ -202,6 +211,9 @@ func tabsForProject(projection herdr.Projection, projectID string) []herdr.Tab {
 			result = append(result, tab)
 		}
 	}
+	sort.SliceStable(result, func(i, j int) bool {
+		return result[i].Number < result[j].Number
+	})
 	return result
 }
 
@@ -213,60 +225,4 @@ func panesForTab(projection herdr.Projection, tabID string) []herdr.Pane {
 		}
 	}
 	return result
-}
-
-// paneNavRank is the actionable-first navigation rank of one pane
-// (2026-10-07): a pane whose agent waits on the human — attention or
-// ready-for-review — comes first, then working agents, then idle agents,
-// and the plain/service panes last. The workspace grid, the Agents
-// section and the Herdr layout stay untouched: this orders only the
-// navigation lists (sidebar tree, breadcrumb switcher), where the
-// actionable pane is the one the user wants to reach first.
-func paneNavRank(hasAgent bool, state operationalState) int {
-	if !hasAgent {
-		return 3
-	}
-	switch state {
-	case opNeedsAttention, opReadyForReview:
-		return 0
-	case opWorking:
-		return 1
-	default:
-		return 2
-	}
-}
-
-// paneNavRankOf returns the pane's navigation rank from the live
-// projection.
-func (s *Shell) paneNavRankOf(pane herdr.Pane) int {
-	if a := s.paneAgent(pane.ID); a != nil {
-		return paneNavRank(true, normalizeRuntimeStatus(a.Status))
-	}
-	return paneNavRank(false, opUnknown)
-}
-
-// sortPanesActionable orders pane rows actionable-first, keeping the
-// projection order inside a rank (stable sort).
-func (s *Shell) sortPanesActionable(panes []herdr.Pane) {
-	sort.SliceStable(panes, func(i, j int) bool {
-		return s.paneNavRankOf(panes[i]) < s.paneNavRankOf(panes[j])
-	})
-}
-
-// sortTabsActionable orders a project's tabs by their most urgent pane,
-// so the tab holding the working or blocked agent rises in the tree;
-// pane-less tabs keep the tail. Stable, like the pane sort.
-func (s *Shell) sortTabsActionable(tabs []herdr.Tab) {
-	rank := make(map[string]int, len(tabs))
-	for _, tab := range tabs {
-		rank[tab.ID] = paneNavRank(false, opUnknown)
-		for _, pane := range panesForTab(s.projection, tab.ID) {
-			if p := s.paneNavRankOf(pane); p < rank[tab.ID] {
-				rank[tab.ID] = p
-			}
-		}
-	}
-	sort.SliceStable(tabs, func(i, j int) bool {
-		return rank[tabs[i].ID] < rank[tabs[j].ID]
-	})
 }

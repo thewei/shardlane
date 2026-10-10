@@ -138,8 +138,8 @@ func TestZoomActionSinglePaneMaximizesWorkspace(t *testing.T) {
 		t.Fatalf("single-pane zoom must hide both rails: sidebar=%v panel=%v", shell.sidebarCollapsed, shell.rightPanel.open)
 	}
 	shell.zoomPaneAction("p1")
-	if shell.sidebarCollapsed || !shell.rightPanel.open {
-		t.Fatalf("second single-pane zoom must restore both rails: sidebar=%v panel=%v", shell.sidebarCollapsed, shell.rightPanel.open)
+	if shell.sidebarCollapsed || shell.rightPanel.open {
+		t.Fatalf("second single-pane zoom must restore the sole sidebar: sidebar=%v panel=%v", shell.sidebarCollapsed, shell.rightPanel.open)
 	}
 
 	// Split Tab: the Herdr mutation path runs (dropped headlessly at

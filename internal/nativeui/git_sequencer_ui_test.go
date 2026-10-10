@@ -20,15 +20,18 @@ func TestGitConflictBannerAndInspectorFollowActiveRepo(t *testing.T) {
 	s.showSurface(WorkspaceSurfaceDiff)
 	s.git.sequencerChecked = true
 	s.git.sequencer = gitworkbench.SequencerStatus{Kind: gitworkbench.SequencerMerge, Unmerged: 2, UnmergedPaths: []string{"src/main.go", "README.md"}}
-	s.openRightPanelSurface(SurfaceChanges)
 	tester := ui.NewTester(s.View, 1280, 800)
 	tester.SetPreferences(ui.Preferences{ReduceMotion: true})
 	tester.Frame()
-	for _, want := range []string{"Merge needs attention", "Git Operation", "Unresolved", "Continue Merge", "Abort Merge", "Refresh Git State", "Files needing resolution", "Review conflict: src/main.go"} {
+	for _, want := range []string{"Merge needs attention", "2 unresolved", "Continue Merge", "Abort Merge", "Refresh Git State", "Show conflict files"} {
 		if !tester.HasText(want) {
 			t.Fatalf("Git conflict UX missing %q: %q", want, tester.Texts())
 		}
 	}
+	if err := tester.Click("Show conflict files"); err != nil {
+		t.Fatal(err)
+	}
+	tester.Frame()
 	if err := tester.Click("Review conflict: src/main.go"); err != nil {
 		t.Fatal(err)
 	}

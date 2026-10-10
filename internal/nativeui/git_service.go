@@ -304,6 +304,7 @@ func (s *Shell) resetGitContextState() {
 	s.branchFilter = ""
 	s.branchDraft = ""
 	s.branchMenuOpen = false
+	s.gitConflictFilesExpanded = false
 	s.git.sequencer = gitworkbench.SequencerStatus{}
 	s.git.sequencerChecked = false
 	s.git.preflight = nil

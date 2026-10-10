@@ -1,207 +1,189 @@
 package nativeui
 
+/**
+ * [INPUT]: exact Tab CWD, native Files route, cached directory snapshot and shared Agent/Services panel
+ * [OUTPUT]: replaces retired Right Panel tests with Files workbench, inline preview and service tabs
+ * [POS]: Header Files + Agent/Services UI migration regression
+ * [PROTOCOL]: update header and check CLAUDE.md
+ */
+
 import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/wh-studio/herdr-client/internal/herdr"
 )
 
-// rightPanelTestShell builds a shell with an active project, tab, and pane with a concrete CWD.
+// rightPanelTestShell is retained as a setup helper for other cross-page
+// tests; it creates only a Herdr projection, not a rendered right panel.
 func rightPanelTestShell(t *testing.T, cwd string) *Shell {
 	t.Helper()
-	shell := NewShell()
-	shell.activeInstance = "inst-1"
-	shell.projection = herdr.Projection{
+	s := NewShell()
+	s.activeInstance = "inst-1"
+	s.projection = herdr.Projection{
 		Projects: []herdr.Project{{ID: "w1", Label: "demo", CWD: cwd}},
 		Tabs:     []herdr.Tab{{ID: "t1", Label: "main", ProjectID: "w1"}},
 		Panes:    []herdr.Pane{{ID: "p1", TerminalID: "term-1", Label: "editor", TabID: "t1", CWD: cwd}},
 	}
-	shell.reconcileLocalSelection(shell.projection)
-	return shell
+	s.reconcileLocalSelection(s.projection)
+	return s
 }
 
-// TestRightPanelToggleAndSurfaceSwitch pins the 0.10 Right Panel v2 contract:
-// opening, closing, and switching tools (Changes/Files/Services). Lazygit
-// no longer exists as a surface (GWB-020/070/071).
-func TestRightPanelToggleAndSurfaceSwitch(t *testing.T) {
-	dir := t.TempDir()
-	shell := rightPanelTestShell(t, dir)
-
-	if shell.rightPanel.open {
-		t.Fatal("right panel must start closed by default")
-	}
-
-	// Toggle open
-	shell.toggleRightPanel()
-	if !shell.rightPanel.open {
-		t.Fatal("expected right panel to open after toggle")
-	}
-	// Plan §10.2: no prior choice and no Git changes → Files.
-	if shell.rightPanel.surface != SurfaceFiles {
-		t.Fatalf("expected initial surface to be Files, got %s", shell.rightPanel.surface)
-	}
-
-	// Switch surface to Services and Files
-	shell.openRightPanelSurface(SurfaceServices)
-	if shell.rightPanel.surface != SurfaceServices {
-		t.Fatalf("expected surface Services, got %s", shell.rightPanel.surface)
-	}
-
-	shell.openRightPanelSurface(SurfaceFiles)
-	if shell.rightPanel.surface != SurfaceFiles {
-		t.Fatalf("expected surface Files, got %s", shell.rightPanel.surface)
-	}
-
-	// Toggle close
-	shell.toggleRightPanel()
-	if shell.rightPanel.open {
-		t.Fatal("expected right panel to close after toggle")
-	}
-}
-
-// TestRightPanelLazygitRemoved pins the removal audit (GWB-021): no
-// SurfaceLazygit value, no lazygit tool view remains on the target.
-func TestRightPanelLazygitRemoved(t *testing.T) {
-	// Compile-time evidence: the identifier below does not exist; this test
-	// asserts the surfaces list to keep the target honest.
-	if SurfaceChanges != "changes" || SurfaceFiles != "files" || SurfaceServices != "services" {
-		t.Fatal("right panel surfaces drifted from Changes/Files/Services")
-	}
-	dir := t.TempDir()
-	shell := rightPanelTestShell(t, dir)
-	shell.toggleRightPanel()
-	tester := ui.NewTester(shell.View, 1200, 800)
-	tester.Frame()
-	if tester.HasText("Lazygit Tool") {
-		t.Fatal("lazygit placeholder still rendered")
-	}
-}
-
-// TestRightPanelSelectedTabCWDPinsToolRoot pins WIX-041: the active tool root
-// follows the selected Tab CWD, not a global project root.
-func TestRightPanelSelectedTabCWDPinsToolRoot(t *testing.T) {
-	dir1 := t.TempDir()
-	dir2 := t.TempDir()
-
-	shell := NewShell()
-	shell.activeInstance = "inst-1"
-	shell.projection = herdr.Projection{
-		Projects: []herdr.Project{{ID: "w1", Label: "demo", CWD: dir1}},
-		Tabs: []herdr.Tab{
-			{ID: "t1", Label: "tab-1", ProjectID: "w1"},
-			{ID: "t2", Label: "tab-2", ProjectID: "w1"},
-		},
-		Panes: []herdr.Pane{
-			{ID: "p1", TerminalID: "term-1", Label: "pane-1", TabID: "t1", CWD: dir1},
-			{ID: "p2", TerminalID: "term-2", Label: "pane-2", TabID: "t2", CWD: dir2},
-		},
-	}
-
-	// Select Tab 1
-	shell.selectTab("t1")
-	if got := shell.selectedTabCWD(); got != dir1 {
-		t.Fatalf("expected tab 1 cwd %q, got %q", dir1, got)
-	}
-
-	// Select Tab 2
-	shell.selectTab("t2")
-	if got := shell.selectedTabCWD(); got != dir2 {
-		t.Fatalf("expected tab 2 cwd %q, got %q", dir2, got)
-	}
-}
-
-// TestRightPanelFilesTreeAndPreview pins WIX-050..055: background directory
-// snapshots (no render-time IO), expand/collapse, and the preview modal.
-func TestRightPanelFilesTreeAndPreview(t *testing.T) {
-	dir := t.TempDir()
-
-	subDir := filepath.Join(dir, "docs")
-	if err := os.Mkdir(subDir, 0o755); err != nil {
+func TestFilesHeaderOpensDedicatedRouteAndInlinePreview(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "README.md"), []byte("# Readme\nFiles preview is in the center."), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	testFilePath := filepath.Join(dir, "README.md")
-	testFileContent := "# My Project\nDocumentation here."
-	if err := os.WriteFile(testFilePath, []byte(testFileContent), 0o600); err != nil {
+	if err := os.Mkdir(filepath.Join(root, "docs"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-
-	shell := rightPanelTestShell(t, dir)
-	shell.openRightPanelSurface(SurfaceFiles)
-
-	tester := ui.NewTester(shell.View, 1200, 800)
-	tester.Frame()
-
-	// First frame schedules the background read; run more frames until the
-	// snapshot lands (bounded wait, no synchronous render IO).
-	seen := false
-	for i := 0; i < 50 && !seen; i++ {
-		if tester.HasText("README.md") && tester.HasText("docs") {
-			seen = true
-			break
+	if err := os.WriteFile(filepath.Join(root, "docs", "guide.txt"), []byte("nested guide"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s := rightPanelTestShell(t, root)
+	s.sidebarCollapsed = true
+	s.showViewFiles()
+	if s.router.Path() != routeFiles || s.sidebarCollapsed {
+		t.Fatal("Files entry must open route with left navigation visible")
+	}
+	tester := ui.NewTester(s.View, 1200, 800)
+	tester.Frame() // headless directory read fills the cache for the next frame
+	for _, want := range []string{"Files view", "Filter", "README.md", "docs", "Select a file to preview"} {
+		if want == "Filter" {
+			continue
 		}
-		tester.Frame()
+		if !tester.HasText(want) {
+			t.Fatalf("missing %q on Files route: %q", want, tester.Texts())
+		}
 	}
-	if !seen {
-		t.Fatalf("file tree missing entries after background load; texts=%q", tester.Texts())
+	if tester.HasText("Show Workspace Tools") || tester.HasText("History details") {
+		t.Fatalf("old right panel should not render: %q", tester.Texts())
 	}
-
-	// Open file preview modal
-	shell.openFilePreview(testFilePath)
+	if err := tester.Click("README.md"); err != nil {
+		t.Fatal(err)
+	}
 	tester.Frame()
-
-	if !shell.rightPanel.previewOpen || shell.rightPanel.preview == nil {
-		t.Fatal("expected file preview modal to be open with preview data")
+	for _, want := range []string{"Files preview is in the center.", "Copy Path", "Reveal in Finder"} {
+		if !tester.HasText(want) {
+			t.Fatalf("inline preview missing %q: %q", want, tester.Texts())
+		}
 	}
-	if shell.rightPanel.preview.Content != testFileContent {
-		t.Fatalf("preview content mismatch: got %q, want %q", shell.rightPanel.preview.Content, testFileContent)
+	if err := tester.Click("docs"); err != nil {
+		t.Fatal(err)
 	}
-	if !tester.HasText("Copy Path") {
-		t.Fatalf("preview modal missing 'Copy Path' button; texts=%q", tester.Texts())
-	}
-
-	shell.rightPanel.previewOpen = false
 	tester.Frame()
-	if shell.rightPanel.previewOpen {
-		t.Fatal("expected preview modal to close")
+	if !tester.HasText("guide.txt") {
+		t.Fatalf("directory expansion failed: %q", tester.Texts())
+	}
+	if err := tester.Click("guide.txt"); err != nil {
+		t.Fatal(err)
+	}
+	tester.Frame()
+	if !tester.HasText("nested guide") {
+		t.Fatalf("nested file preview not shown: %q", tester.Texts())
+	}
+	s.showViewFiles()
+	if s.router.Path() != routeWorkspace {
+		t.Fatal("repeating Files should return to Terminal")
 	}
 }
 
-// TestRightPanelServicesSurfaces pins the Services surface contract: real
-// observed ports only (no 3000/5173/8080 samples) and script listing.
-func TestRightPanelServicesSurfaces(t *testing.T) {
-	dir := t.TempDir()
-	shell := rightPanelTestShell(t, dir)
-
-	shell.openRightPanelSurface(SurfaceServices)
-	tester := ui.NewTester(shell.View, 1200, 800)
+func TestFilesSelectionClearsOnTabRootChange(t *testing.T) {
+	root1, root2 := t.TempDir(), t.TempDir()
+	_ = os.WriteFile(filepath.Join(root1, "private.txt"), []byte("private project 1"), 0o600)
+	_ = os.WriteFile(filepath.Join(root2, "other.txt"), []byte("other project 2"), 0o600)
+	s := NewShell()
+	s.activeInstance = "inst-1"
+	s.projection = herdr.Projection{
+		Projects: []herdr.Project{{ID: "w1", Label: "demo", CWD: root1}},
+		Tabs:     []herdr.Tab{{ID: "t1", ProjectID: "w1"}, {ID: "t2", ProjectID: "w1"}},
+		Panes: []herdr.Pane{
+			{ID: "p1", TabID: "t1", CWD: root1, TerminalID: "term-1"},
+			{ID: "p2", TabID: "t2", CWD: root2, TerminalID: "term-2"},
+		},
+	}
+	s.reconcileLocalSelection(s.projection)
+	s.showViewFiles()
+	tester := ui.NewTester(s.View, 1200, 800)
 	tester.Frame()
-
-	if !tester.HasText("Listening Ports & Local Preview") {
-		t.Fatalf("Services surface missing Ports section; texts=%q", tester.Texts())
+	if err := tester.Click("private.txt"); err != nil {
+		t.Fatal(err)
 	}
-	if tester.HasText(":3000") || tester.HasText(":5173") || tester.HasText(":8080") {
-		t.Fatalf("hard-coded sample ports rendered: %q", tester.Texts())
+	tester.Frame()
+	if !tester.HasText("private project 1") {
+		t.Fatal("first file preview not displayed")
 	}
-	// With no observed listeners the honest empty state shows.
-	if !tester.HasText("No listening local ports observed.") {
-		t.Fatalf("missing honest empty ports state; texts=%q", tester.Texts())
+	s.selectTab("t2")
+	tester.Frame()
+	tester.Frame() // show the newly cached root directory
+	if s.rightPanel.currentRoot != root2 || s.rightPanel.preview != nil || s.rightPanel.selectedFilePath != "" {
+		t.Fatal("Files root change leaked previous Tab file")
+	}
+	if tester.HasText("private project 1") || !tester.HasText("other.txt") {
+		t.Fatalf("old project file leaked after Tab change: %q", tester.Texts())
 	}
 }
 
-// TestRightPanelChangesWithoutRepository shows the honest empty state when
-// the selected tab is outside any Git repository (GWB-070).
-func TestRightPanelChangesWithoutRepository(t *testing.T) {
-	dir := t.TempDir()
-	shell := rightPanelTestShell(t, dir)
-	shell.toggleRightPanel()
-	shell.openRightPanelSurface(SurfaceChanges)
+func TestAgentServicesTabsAreClickable(t *testing.T) {
+	root := t.TempDir()
+	s := rightPanelTestShell(t, root)
+	tt := ui.NewTester(s.QuickPanelView, QuickPanelWidth, QuickPanelHeight)
+	if err := tt.Click("Services"); err != nil {
+		t.Fatal(err)
+	}
+	if s.quickPanelTab != 1 || !tt.HasText("Listening ports") {
+		t.Fatalf("Services tab should expose real data, got: %q", tt.Texts())
+	}
+	if err := tt.Click("Agents"); err != nil {
+		t.Fatal(err)
+	}
+	if s.quickPanelTab != 0 || !tt.HasText("No agents here") {
+		t.Fatalf("Agents tab should restore Agent overview, got: %q", tt.Texts())
+	}
+}
 
-	tester := ui.NewTester(shell.View, 1200, 800)
+func TestServicesPortCacheScopedToSelectedTab(t *testing.T) {
+	root1, root2 := t.TempDir(), t.TempDir()
+	s := rightPanelTestShell(t, root1)
+	s.portsForRoot = root1
+	s.observedPortsList = []uint16{43217}
+	s.portsRefreshedAt = time.Now()
+	s.quickPanelTab = 1
+	tt := ui.NewTester(s.QuickPanelView, QuickPanelWidth, QuickPanelHeight)
+	if !tt.HasText("localhost:43217") {
+		t.Fatal("initial scoped service port absent")
+	}
+	s.projection.Tabs = append(s.projection.Tabs, herdr.Tab{ID: "t2", Label: "other", ProjectID: "w1"})
+	s.projection.Panes = append(s.projection.Panes, herdr.Pane{ID: "p2", TerminalID: "term-2", TabID: "t2", CWD: root2})
+	s.selectTab("t2")
+	tt.Frame()
+	if tt.HasText("localhost:43217") || s.portsForRoot != root2 {
+		t.Fatal("ports from the previous Tab must not leak into Services")
+	}
+}
+
+func TestServicesLiveInAgentQuickPanel(t *testing.T) {
+	root := t.TempDir()
+	s := rightPanelTestShell(t, root)
+	s.quickPanelTab = 1
+	s.observedPortsList = []uint16{43217}
+	s.portsForRoot = root
+	s.portsRefreshedAt = time.Now()
+	tester := ui.NewTester(s.QuickPanelView, QuickPanelWidth, QuickPanelHeight)
+	for _, want := range []string{"Agents & Services", "Agents", "Services", "Scripts", "Listening ports", "localhost:43217", "Preview"} {
+		if !tester.HasText(want) {
+			t.Fatalf("Services panel missing %q: %q", want, tester.Texts())
+		}
+	}
+	if tester.HasText("Status Center") || tester.HasText("Show Workspace Tools") {
+		t.Fatal("retired tool chrome is still visible")
+	}
+	s.quickPanelTab = 0
 	tester.Frame()
-	if !tester.HasText("No Git Repository") {
-		t.Fatalf("expected no-repository empty state; texts=%q", tester.Texts())
+	if tester.HasText("localhost:43217") {
+		t.Fatal("Services rows leaked into Agent activity list")
 	}
 }

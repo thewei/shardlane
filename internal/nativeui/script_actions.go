@@ -89,12 +89,20 @@ func (s *Shell) observedPorts() []uint16 {
 	if s.portProbe == nil {
 		return nil
 	}
+	root := s.selectedTabCWD()
+	if root != s.portsForRoot {
+		s.portsForRoot = root
+		s.observedPortsList = nil
+		s.portsRefreshedAt = time.Time{}
+	}
+	if root == "" || s.win == nil {
+		return s.observedPortsList
+	}
 	if time.Since(s.portsRefreshedAt) < 10*time.Second {
 		return s.observedPortsList
 	}
 	// Kick a background refresh scoped to the active project root; show the previous snapshot meanwhile.
 	s.portsRefreshedAt = time.Now()
-	root := s.selectedTabCWD()
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
@@ -103,12 +111,12 @@ func (s *Shell) observedPorts() []uint16 {
 			return
 		}
 		ports := dedupePorts(matching)
-		if s.win == nil {
-			s.observedPortsList = ports
-			return
-		}
 		s.win.Update(func() {
+			if s.portsForRoot != root || s.selectedTabCWD() != root {
+				return // results from the previous Project/Tab are stale
+			}
 			s.observedPortsList = ports
+			s.invalidateQuickPanel()
 		})
 	}()
 	return s.observedPortsList

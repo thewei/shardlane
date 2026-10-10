@@ -17,7 +17,7 @@ import (
 func TestAgentQuickPanelOverviewStats(t *testing.T) {
 	shell := quickPanelShell(t)
 	tester := ui.NewTester(shell.QuickPanelView, QuickPanelWidth, QuickPanelHeight)
-	for _, want := range []string{"Agent Activity", "Attention", "Review", "Working"} {
+	for _, want := range []string{"Agents & Services", "Attention", "Review", "Working"} {
 		if !tester.HasText(want) {
 			t.Fatalf("missing overview label %q: %q", want, tester.Texts())
 		}
@@ -45,7 +45,7 @@ func TestAgentQuickPanelFocusedDetailsAndBack(t *testing.T) {
 		t.Fatal(err)
 	}
 	tester.Frame()
-	if shell.quickPanelAgent != nil || !tester.HasText("Agent Activity") {
+	if shell.quickPanelAgent != nil || !tester.HasText("Agents & Services") {
 		t.Fatalf("Back must show the all-agents overview: %q", tester.Texts())
 	}
 }

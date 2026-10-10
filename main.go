@@ -201,7 +201,7 @@ func main() {
 					{Label: "Close Tab", Accelerator: "CmdOrCtrl+W", Click: func(*mygo.MenuItem, *mygo.Window) {
 						shell.CloseTabFromMenu()
 					}},
-					{Label: "Toggle Right Panel", Click: func(*mygo.MenuItem, *mygo.Window) {
+					{Label: "Browse Files", Click: func(*mygo.MenuItem, *mygo.Window) {
 						shell.ToggleRightPanelFromMenu()
 					}},
 					{Label: "Command Center", Accelerator: "CmdOrCtrl+Shift+P", Click: func(*mygo.MenuItem, *mygo.Window) {

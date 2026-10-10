@@ -42,7 +42,7 @@ func (s *Shell) gitWorkbenchActionBar(c *ui.Context) {
 	sp := Spacing()
 	t := c.Theme()
 	width, _ := c.Size()
-	compact := gitActionBarCompact(width, !s.sidebarCollapsed, s.contextPanelVisible(width), s.rightPanel.width)
+	compact := gitActionBarCompact(width, !s.sidebarCollapsed, false, 0) // retired right rail never consumes center width
 	ui.Row(c).FillWidth().MinWidth(0).Gap(sp.S).AlignItems(ui.Center).Children(func() {
 		// The branch selector already lives in the repo bar. Don't render
 		// the same branch label a second time in the Diff toolbar.

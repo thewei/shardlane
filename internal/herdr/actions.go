@@ -1,5 +1,12 @@
 package herdr
 
+/**
+ * [INPUT]: 依赖 Herdr protocol 22 的 workspace.move/tab.move/pane.swap 与既有 mutateAndProject RPC
+ * [OUTPUT]: 提供结构排序、Pane 交换以及已有 Workspace/Tab/Pane 操作
+ * [POS]: Herdr 运行时 mutation 适配器；提交后只从 session.snapshot 获取权威布局
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
+
 import (
 	"fmt"
 	"strings"
@@ -35,6 +42,39 @@ func (m *Manager) CloseProject(session, projectID string) (Projection, error) {
 	}
 	return m.mutateAndProject(session, "workspace.close", map[string]any{
 		"workspace_id": projectID,
+	})
+}
+
+// MoveProject reorders a Herdr workspace in its session; insert_index is
+// the final index after removing it from its old position.
+func (m *Manager) MoveProject(session, projectID string, index uint) (Projection, error) {
+	if strings.TrimSpace(projectID) == "" {
+		return Projection{}, fmt.Errorf("project id is required")
+	}
+	return m.mutateAndProject(session, "workspace.move", map[string]any{
+		"workspace_id": projectID, "insert_index": index,
+	})
+}
+
+// MoveTab reorders a Tab within its current Herdr workspace. This protocol
+// method cannot move Tabs between Projects; callers must fence the parent.
+func (m *Manager) MoveTab(session, tabID string, index uint) (Projection, error) {
+	if strings.TrimSpace(tabID) == "" {
+		return Projection{}, fmt.Errorf("tab id is required")
+	}
+	return m.mutateAndProject(session, "tab.move", map[string]any{
+		"tab_id": tabID, "insert_index": index,
+	})
+}
+
+// SwapPanes exchanges two positions in one Herdr-owned Pane layout.
+// The explicit pair avoids inferring neighbors from the local visual grid.
+func (m *Manager) SwapPanes(session, sourceID, targetID string) (Projection, error) {
+	if strings.TrimSpace(sourceID) == "" || strings.TrimSpace(targetID) == "" || sourceID == targetID {
+		return Projection{}, fmt.Errorf("two distinct pane ids are required")
+	}
+	return m.mutateAndProject(session, "pane.swap", map[string]any{
+		"source_pane_id": sourceID, "target_pane_id": targetID,
 	})
 }
 

@@ -1,10 +1,18 @@
 # Shardlane MyGo 统一界面与交互优化方案
 
 **日期**：2026-10-09  
-**状态**：分阶段实施，UI-001～UI-005 已完成 headless；UI-006 搜索/筛选已实现；UI-007～UI-009 的核心 UI/导航链路已完成 headless，UI-010 的右栏宽度策略已实现；排序控件、Commit Dirty Guard、完整焦点/实机验收仍待完成  
+**状态**：历史分阶段审计 + 当前执行记录。**2026-10-09 最新产品决策已撤销此前的整个右栏方案**，以 Header Files 独立页面、Agent/Services 合并浮层为现行结构；以下早期右栏记录保留为历史审计，不再作为当前 UI 规范。真实焦点/实机验收仍待完成
 **基线**：Go / MyGo Native UI，Herdr 为唯一终端与 Agent 运行时  
 **架构权威**：[client-product-architecture.md](client-product-architecture.md)；本文仅规定交互细节与实施顺序，不重定义运行时归属。  
 **输入**：用户提供的 6 张现状截图；`internal/nativeui` 当前真实代码；MyGo 0.10 Closure Audit；2026-10-06 UI 发现台账。
+
+## 最新产品决定（覆盖旧右栏规划）
+
+- **不再绘制任何右侧栏**：main shell 只有标题栏、可收起左栏和一个中心区；⌥⌘B / Toggle Right Panel 旧入口退役。
+- Header 右侧新增 Files icon，进入 `/files`；左侧目录浏览树绑定当前 Herdr Tab 的工作目录，右侧（主内容区）是 read-only 文件预览，支持 Copy Path / Reveal in Finder、受限读取和二进制空态。切 Tab 清除旧缓存、旧选中文件和预览。
+- Header Agent Activity 原有浮层重新组织为 **Agents | Services**；Agents 保留概览统计、过滤、详情与 tray/标题栏共用；Services 显示当前选中 Tab 的 Script 和真实监听端口，复用既有 Herdr Script 启动与 URL Preview，不建立第二套服务监测器。
+- Git Changes 仍是左侧 Staged/Unstaged/Commit 导航 + 中央 Diff；合并冲突文件定位已从删除的 Inspector 改为中央冲突 Banner 展开项，Continue/Abort 不变。
+- Headless 合约覆盖 `/files` 路由、实际文件预览/切根隔离、Services 标签、无旧右栏、窄窗布局及 Git 冲突导航。若下面历史页面地图、UX-01/11、UI-010 文案与本节矛盾，**以本节为准**。
 
 ## 0. 产品结论
 

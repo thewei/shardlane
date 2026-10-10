@@ -6,7 +6,7 @@ import (
 )
 
 /**
- * [INPUT]: 依赖 mygo/ui 的 Context/Theme/Popover, herdr-client/internal/history, gorex_style, agent_visual, proc_brands
+ * [INPUT]: 依赖 mygo/ui 的 Context/Theme/Popover, herdr-client/internal/history, gorex_style, agent_visual, proc_brands 与 Herdr Pane layout 排序
  * [OUTPUT]: 对外提供 crumbSegment, Shell.breadcrumbSegments, Shell.breadcrumbSegmentsWithTheme, Shell.breadcrumbRow, crumbItemRow
  * [POS]: nativeui 标题栏面包屑与快速切换弹层所有者，展示工作区/Tab/Pane层次并呈现 Agent 与进程品牌图标
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
@@ -212,9 +212,8 @@ func (s *Shell) crumbTabRows(c *ui.Context, projectID string) {
 
 func (s *Shell) crumbPaneRows(c *ui.Context, tabID string) {
 	panes := panesForTab(s.projection, tabID)
-	// The switcher is a jump surface: the same actionable-first order as
-	// the sidebar tree, so the pane to reach is on top.
-	s.sortPanesActionable(panes)
+	// Mirror the Herdr split order, including user-driven pane swaps.
+	sortPanesByLayout(s.projection, tabID, panes)
 	for _, pane := range panes {
 		pane := pane
 		dark := c.Theme().Dark

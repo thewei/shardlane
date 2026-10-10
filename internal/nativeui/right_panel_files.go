@@ -1,7 +1,6 @@
 package nativeui
 
 import (
-	"fmt"
 	"path/filepath"
 	"time"
 
@@ -61,7 +60,9 @@ func (s *Shell) requestDirectory(dir string) {
 		}
 		return
 	}
-	s.beginDirectoryLoad(dir, root, s.rightPanel.filesGen.Add(1))
+	// One generation per root, not per directory: expanding siblings
+	// concurrently must not invalidate one another's completed reads.
+	s.beginDirectoryLoad(dir, root, s.rightPanel.filesGen.Load())
 }
 
 // beginDirectoryLoad is the production lane: mark in-flight, read in the
@@ -122,7 +123,10 @@ func (s *Shell) renderDirectoryLevel(c *ui.Context, dir string, depth int) {
 		var row ui.Element
 		ui.Box(c).Children(func() {
 			r := ui.Row(c).Height(28).FillWidth().Padding(0, 8, 0, paddingLeft).Gap(5).
-				Radius(6).MinWidth(0).AlignItems(ui.Center)
+				Radius(6).MinWidth(0).AlignItems(ui.Center).Tooltip(e.Path)
+			if !isDir && s.rightPanel.selectedFilePath == e.Path {
+				r.Background(t.Accent.Alpha(0.15))
+			}
 			if r.Hovered() {
 				r.Background(ui.RGBA(127, 127, 127, 0.08))
 			}
@@ -192,59 +196,5 @@ func (s *Shell) openFilePreview(path string) {
 	s.rightPanel.previewOpen = true
 }
 
-// filePreviewModal renders a modal for inspecting the file, copying path,
-// and opening in Finder.
-func (s *Shell) filePreviewModal(c *ui.Context) {
-	preview := s.rightPanel.preview
-	if preview == nil {
-		return
-	}
-	t := c.Theme()
-	sp := Spacing()
-
-	ui.Modal(c, &s.rightPanel.previewOpen, func() {
-		ui.Column(c).Width(640).Height(500).Padding(sp.L).Gap(sp.M).
-			Radius(Radius().Card).Background(designTokens(t.Dark).Panel).
-			Border(1, designTokens(t.Dark).BorderSubtle).Children(func() {
-
-			ui.Row(c).FillWidth().AlignItems(ui.Center).Children(func() {
-				ui.Column(c).Grow(1).Children(func() {
-					ui.Text(c, filepath.Base(preview.Path)).FontSize(Typography().Section).FontWeight(650).SingleLine()
-					ui.Text(c, preview.Path).FontSize(Typography().Caption).TextColor(t.TextMuted).SingleLine()
-				})
-
-				ui.Row(c).Gap(sp.S).Children(func() {
-					if ui.Button(c, "Copy Path").Clicked() {
-						s.copyToClipboard(preview.Path)
-					}
-					if ui.Button(c, "Reveal in Finder").Clicked() {
-						s.openExternalPathParent(preview.Path)
-					}
-					if ui.Button(c, "Close").Clicked() {
-						s.rightPanel.previewOpen = false
-					}
-				})
-			})
-
-			ui.Scroll(c).Grow(1).Children(func() {
-				if preview.IsBinary {
-					emptyState(c, "Binary File", fmt.Sprintf("Size: %s. Binary files cannot be previewed in text mode.", filesview.FormatFileSize(preview.SizeBytes)))
-				} else {
-					ui.Column(c).FillWidth().Padding(sp.S).Background(designTokens(t.Dark).Content).
-						Radius(Radius().Control).Children(func() {
-						if preview.Truncated {
-							ui.Text(c, "⚠ File truncated to 1 MiB").FontSize(Typography().Caption).
-								TextColor(designTokens(t.Dark).StatusColor(ToneAttention, t.Dark))
-						}
-						ui.Text(c, preview.Content).FontSize(Typography().BodySmall)
-					})
-				}
-			})
-		})
-	})
-}
-
-// copyToClipboard is a small helper using platform tools.
-func (s *Shell) copyToClipboard(text string) {
-	s.copyTextToClipboard(text)
-}
+// copyToClipboard is shared by the dedicated Files page and other native views.
+func (s *Shell) copyToClipboard(text string) { s.copyTextToClipboard(text) }

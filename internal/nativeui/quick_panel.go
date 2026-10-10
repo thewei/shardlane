@@ -121,13 +121,35 @@ func (s *Shell) QuickPanelView(c *ui.Context) {
 	}
 	entries := s.filterStatusEntries(snapshot)
 	header := QuickPanelHeader(snapshot, !s.offline)
+	if s.quickPanelTab == 1 {
+		header = "Scripts and listening ports for the selected project"
+	}
 	ui.Column(c).Grow(1).Background(designTokens(t.Dark).Content).Children(func() {
 		ui.Column(c).FillWidth().Padding(sp.M, sp.L).Gap(sp.XS).
 			BorderWidth(0, 0, 1, 0).BorderColor(designTokens(t.Dark).BorderSubtle).Children(func() {
 			ui.Text(c, "Shardlane").FontSize(Typography().Micro).TextColor(t.TextMuted)
-			ui.Text(c, "Agent Activity").FontSize(Typography().Section + 1).FontWeight(700)
+			ui.Text(c, "Agents & Services").FontSize(Typography().Section + 1).FontWeight(700)
 			ui.Text(c, header).FontSize(Typography().Caption).TextColor(t.TextMuted).SingleLine()
 		})
+		ui.Row(c).FillWidth().Padding(sp.S, sp.L, 0).Children(func() {
+			view := s.quickPanelTab
+			if ui.Segmented(c, &view, "Agents", "Services").FillWidth().Changed() {
+				s.quickPanelTab = view
+				s.positionQuickPanel()
+			}
+		})
+		if s.quickPanelTab == 1 {
+			s.quickPanelServices(c)
+			return
+		}
+		if s.offline {
+			ui.Row(c).FillWidth().Padding(sp.M, sp.L, 0).Gap(sp.S).AlignItems(ui.Center).Children(func() {
+				ui.Text(c, "Herdr disconnected").FontSize(Typography().Caption).Grow(1).TextColor(t.TextMuted)
+				if ui.Button(c, "Reconnect").Clicked() {
+					s.reloadInstances(false)
+				}
+			})
+		}
 		s.quickPanelSummary(c, snapshot)
 		// The status tab group switches the agent list (2026-10-07); a
 		// change resizes the panel window to the new content height.
@@ -325,6 +347,9 @@ func (s *Shell) positionQuickPanel() {
 		return
 	}
 	height := QuickPanelHeightFor(len(s.filterStatusEntries(s.BuildStatusCenterSnapshot())))
+	if s.quickPanelTab == 1 {
+		height = QuickPanelHeight
+	}
 	if s.quickPanelAgent != nil {
 		height = quickPanelAgentHeight
 	}

@@ -79,6 +79,17 @@ MyGo Native UI
   authoritative geometry/topology for the focused Tab. The native shell maps
   those rectangles into same-window MyGo `terminal.View` elements; it does not
   create a client-side Pane layout model.
+- **Native drag ordering (2026-10-09):** The Workspace tree presents Herdr's
+  persisted Workspace and Tab order (`workspace.move` / `tab.move`) and the
+  actual per-Tab Pane layout order; the header of a split Pane card can be
+  dragged onto a sibling to exchange their positions via `pane.swap`.
+  Native MyGo drag ghosts, insertion slots, hover targets and layout
+  transitions are visual projections only: releasing a valid drop issues
+  exactly one Herdr mutation, and the resulting snapshot determines the
+  settled order. Reordering is scoped to a single Session and one parent
+  (Tabs never cross Workspaces, Panes never cross Tabs); zoomed Panes are
+  not swappable. The client must not persist a competing order or resize
+  live terminals during hover.
 - Each visible native Terminal uses Herdr's supported
   `terminal attach <terminal_id>` client. Herdr owns the PTY, process,
   scrollback, terminal identity, resize semantics and persistence; Shardlane
@@ -234,16 +245,21 @@ Normative 0.10 boundaries:
   but its editor renders in a native modal over the Diff Review; it is not a
   second Router, PTY, or competing Git transaction. Discarding the modal
   protects unsaved message fields; successful commit retains the existing
-  stale-state fence and returns to Diff. Right-panel visibility never
-  implicitly changes the center surface.
+  stale-state fence and returns to Diff. Files navigation and Agent/Services
+  popovers never create a second terminal/diff surface or Git transaction.
 - While Diff/Commit is visible and `/workspace` remains active, Herdr-owned
   terminal processes and the client's current terminal attachments may remain
   alive for fast restoration, but `terminal.View` is not rendered and hidden
   terminals receive no keyboard, mouse, shortcut or file-drop input.
-- The Right Panel becomes **Changes / Files / Services**. Changes is a compact
-  navigator/summary over the selected Tab's Git repository; it never renders
-  a second full diff. Files and Services must consume background immutable
-  snapshots only; render-time filesystem/process/Git work is forbidden.
+- **As built 2026-10-09: the persistent right sidebar is removed.** The
+  Header's Files action navigates to a dedicated `/files` page, whose left
+  sidebar browses the selected Herdr Tab's CWD and whose center owns the
+  bounded, read-only preview. Changes stays a left-tree/center-Diff workbench.
+  The existing Header/tray Agent activity floating window has an Agents /
+  Services switch: Services displays the active Tab's configured Scripts and
+  observed ports, with explicit Run/Preview actions, not a new runtime.
+  Directory and port snapshots are root-scoped; no render-time filesystem,
+  process or Git access may be added.
 - Git facts and mutations are local client capabilities over the selected
   Tab's resolved repository root. They do not create another Workspace,
   Project, Tab or process authority. One Git Workbench service/cache owns
@@ -281,18 +297,17 @@ Normative 0.10 boundaries:
   Godiff's compact macOS-native patterns without adding a second navigation
   hierarchy.
 
-**As built 2026-10-09, route-scoped native inspector.** The main window's
-single Right Panel host is a page-context projection, not a second Router:
-`/workspace` owns Changes/Files/Services tools, `/history` and its detail or
-Project-grouping routes own History metadata context, and Settings/Agent
-Inspector routes have no right-side tool host. Workspace and History remember
-their own inspector visibility; switching pages never changes the Workspace
-primary surface or Herdr state. The left Sidebar's Agent card opens a focused
-view in the **same** native activity popover used by the titlebar and tray;
-its explicit Open Terminal action retains the established Agent destination
-semantics. All Agent facts come from the existing Status Center / Agent card
-projection, never a new client-owned runtime monitor. Interaction details,
-remaining accessibility/responsive work and real-app acceptance gates live in
+**As built 2026-10-09, header-destination navigation.** The window has
+one contextual left sidebar and one center work surface, with no docked
+right panel. `/workspace` owns Terminal/Chat/Changes, `/files` owns a
+left directory tree and central read-only preview; History, Settings and
+Agent Inspector remain independent top-level routes. The Header Agent
+button and macOS tray share a single anchored native popup with Agents /
+Services tabs, and clicking a sidebar Agent focuses a detail view in that
+same popup. Services consumes real Herdr-backed Script launches and scoped
+observed ports; it never creates a second process/Agent monitor. Retired
+right-panel session settings are decode-compatible but have no visible UI
+effect. Interaction details and real-app acceptance gates live in
 `mygo-native-unified-ui-ux-plan-2026-10-09.md`.
 
 Detailed execution/audit documents:
@@ -351,8 +366,8 @@ V1 does not add:
 - cloud accounts;
 - telemetry.
 
-One narrow exception exists: the right panel ships a local web preview
-surface (WKWebView) for developer workflows already rooted in a Project —
+One narrow exception exists: the Agent/Services panel can open a local
+preview via the existing platform preview controller for developer workflows already rooted in a Project —
 previewing a local dev-server port, rendered documents, and similar
 localhost artifacts. It is an inspect surface, not a browser product: no
 tabs/history/bookmarks beyond the per-surface Omnibox, no remote browsing

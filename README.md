@@ -65,7 +65,7 @@ internal/
 ├─ history/          — read-only coding-agent history (catalog, transcripts, live tailing)
 ├─ gitworkbench/     — local Git review model (status, diff review, commit)
 ├─ conversation/     — Conversation/Chat domain
-├─ filesview/        — Right Panel Files tool
+├─ filesview/        — standalone Files workbench directory + bounded read-only preview
 ├─ preview/          — local web preview
 ├─ services/         — resident service monitoring
 ├─ commandcenter/    — fast command entry point

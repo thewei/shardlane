@@ -158,6 +158,8 @@ type Shell struct {
 	// quickPanelAgent selects one exact Agent for the shared quick panel;
 	// nil means the tray/titlebar's full activity overview.
 	quickPanelAgent *agent.AgentKey
+	// 0: Agent activity, 1: workspace Services; one anchored native panel.
+	quickPanelTab int
 	// quickPanelPlacement remembers the anchor + work area the panel was
 	// last shown at, so a status-tab change re-fits the height in place.
 	quickPanelPlacement quickPanelPlacement
@@ -202,6 +204,7 @@ type Shell struct {
 	// portsState caches the observed ports snapshot for the Services view.
 	observedPortsList []uint16
 	portsRefreshedAt  time.Time
+	portsForRoot      string
 	// serviceIndex caches per-Pane service activity for the sidebar tree
 	// (foreground processes crossed with the listener snapshot), refreshed
 	// on the scan lane; render reads the map only.
@@ -234,9 +237,10 @@ type Shell struct {
 	unstagedOpen     bool
 	stagedOpen       bool
 	// commitsMode shows the All Commits pane instead of the split panes.
-	commitsMode     bool
-	commitsList     ui.ListState
-	commitsSelected int
+	gitConflictFilesExpanded bool
+	commitsMode              bool
+	commitsList              ui.ListState
+	commitsSelected          int
 	// repo bar menus (diff-mode top bar).
 	tagsMenuOpen      bool
 	stashesMenuOpen   bool
@@ -474,7 +478,8 @@ func (s *Shell) Navigate(path string) {
 // ⌥⌘B binding stays in-app only, so the menu item carries no accelerator
 // that could double-fire with it.
 func (s *Shell) ToggleRightPanelFromMenu() {
-	s.applyOnWindow(func() { s.toggleRightPanel() })
+	// Legacy menu action opens the standalone Files workbench instead.
+	s.applyOnWindow(func() { s.showViewFiles() })
 }
 
 // OpenCommandCenterFromMenu opens the palette from the menu bar; opening an
@@ -535,10 +540,8 @@ func (s *Shell) View(c *ui.Context) {
 		c.Toast(s.status)
 		s.statusShown = s.status
 	}
-	if c.Shortcut(ui.Super|ui.Alt, ui.KeyB) {
-		windowWidth, _ := c.Size()
-		s.toggleRightPanelForViewport(windowWidth)
-	}
+	// ⌥⌘B no longer toggles a competing right rail; Files and Services
+	// now have explicit Header destinations.
 	if c.Shortcut(ui.Super, ui.KeyB) {
 		s.toggleSidebar()
 	}
@@ -555,7 +558,6 @@ func (s *Shell) View(c *ui.Context) {
 		ui.Row(c).Grow(1).MinHeight(0).AlignItems(ui.Stretch).Children(func() {
 			s.sidebarSlide(c)
 			s.routeView(c)
-			s.rightPanelSlide(c)
 		})
 	})
 	s.dialogs(c)

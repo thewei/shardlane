@@ -5,6 +5,10 @@
 阶段：第五至七轮已完成基本 Git 工作流、Merge/Cherry-pick/冲突恢复、响应式 Toolbar 和 AI Prompt 预览；第八轮收敛重复按钮和分支菜单，支持 Git & AI 可编辑提交规范与一次性 Pi CLI 无工具消息生成。**第九轮将 Commit 主操作固定在弹窗底部、Pi 区域分级披露、支持文件全选/清空，分支 Popover 加本地搜索和受限滚动列表（headless 960/1200 DIP 验证）**。真正 macOS GUI/Provider 授权实测及高级三方冲突编辑器仍待做。  
 依赖：[客户端架构](client-product-architecture.md)、[统一 UI/UX 计划](mygo-native-unified-ui-ux-plan-2026-10-09.md)。**本文不是架构真值，只规定 Git 产品设计与执行。**
 
+## 2026-10-09 后续布局决定（覆盖本文件旧右侧 Inspector 设计）
+
+用户明确移除 docked Right Panel：Git Changes 保留左侧导航/中央 Diff，原右栏 Review Inspector 不再绘制，Git 冲突文件定位通过中央 Banner 的可展开列表完成。Header Files 独立路由 `/files`；Scripts/Services 已合并到 Header Agent 浮层的 Services tab。本文件涉及「右侧 Review Inspector」的功能表/示意图仅作为历史迭代记录，不再作为当前布局规范。
+
 ## 1. 方向：一处 Git Workbench，三个责任区
 
 - **左侧 Repo Navigator**：Local Changes / All Commits（继续保留已有单导航）；Local Changes 下 Staged / Unstaged 文件树；左侧顶部 Branch / Tags / Stashes / Worktrees 的紧凑锚定菜单。操作关联到**当前 Tab 的 repo root**，不与全局 Workspace、History 左侧栏串味。

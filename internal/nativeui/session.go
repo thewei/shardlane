@@ -22,7 +22,7 @@ import (
 // their targets may no longer exist.
 func persistableRoute(path string) string {
 	switch path {
-	case routeWorkspace, routeHistory, "/history-projects":
+	case routeWorkspace, routeFiles, routeHistory, "/history-projects":
 		return path
 	}
 	if strings.HasPrefix(path, "/settings/") {

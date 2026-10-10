@@ -5,24 +5,30 @@
 icons.go: 矢量图标字典，inline SVG 定义，提供常用及跨平台窗格/窗口控制图标（iconMinus/iconSquare）
 proc_brands.go: 进程与工具品牌标识解析器，将前台进程与 Agent CLI 映射为矢量图标与友好名称
 gorex_style.go: Gorex 风格视觉设计系统，提供渐变背景/卡片配色/shortDir/samePath 等跨平台路径处理
-terminal.go: 终端画布与 Gorex 窗格卡片主渲染器，管理活动终端连接并投影 Agent/进程品牌视觉头部
-breadcrumb_switcher.go: 标题栏面包屑与快速切换弹层所有者，展示项目/Tab/Pane层级并渲染品牌图标
+terminal.go: 终端画布与 Gorex 窗格卡片渲染器，Pane 标题原生拖动交换、悬停目标占位提示及确认后位置动画，保持 Herdr 终端连接权威
+breadcrumb_switcher.go: 标题栏面包屑与快速切换弹层所有者，Pane 顺序与 Herdr 实际布局对齐并展示品牌图标
 titlebar.go: 窗口标题栏组件，红绿灯与工具区对齐、视图切换（History 内页先返回根）与 Windows 平台窗口控件支持
 router.go: 单一 Router 的页面归属、精确 History 路径分类与窗口标题路由语义
 navigation_semantics_test.go: UI-009 顶栏/侧栏同级返回、重复点击、深链接与浏览历史回归
-panel_motion.go: 左右侧栏动画与 UI-010 中心至少 560 DIP 的响应式右栏规则
-panel_motion_test.go: Reduce Motion、窄窗口右栏自动隐藏/恢复、显式开栏宽度门禁验证
-right_panel.go: Workspace/History 各自独立的右栏状态，狭窄窗口显式打开的腾挪/提示行为；Git Diff/Commit 时 Changes 切换为 Review
-right_panel_git.go: Git Diff/Commit 的右侧 Review Inspector，读取缓存仓库/文件/Commit 元数据，Terminal 不复用此内容
-right_panel_git_test.go: Terminal Changes 与 Git Review 互斥、历史 Commit 只读状态的 headless 验证
-command_center_ui.go: Command Center 路由 / Agent / Files 工具动作入口，Files 遵从与标题栏相同的宽度和上下文规则
-project_tree.go: 侧边栏工作区与会话树渲染器，展示项目、Tab 及 Pane 层次与运行状态
+panel_motion.go: 只动画左侧导航栏；无右栏布局宿主
+panel_motion_test.go: Reduce Motion 下左导航收起/恢复，以及各窗口宽度无右栏回归
+right_panel.go: 旧会话设置兼容字段及 Files 缓存、根目录 identity fence、URL Preview 管理；**不绘制右栏**
+right_panel_files.go: /files 左侧目录缓存/树及点击加载预览的适配器
+page_files.go: Header Files 独立页面：左树/中预览、当前 Tab CWD 归属和空态
+quick_panel_services.go: Agent 浮层里的 Services 内容：当前 Tab Scripts 与观测端口
+right_panel_git_test.go: Diff/历史 Commit 保留左导航/中预览而不绘制旧 Review Inspector
+command_center_ui.go: Command Center Files 操作直达独立 /files 页面，不受旧右栏宽度限制
+project_tree.go: 侧栏 Workspace/Tab/Pane 原生拖拽入口及运行状态树，尊重 Herdr 权威顺序而非按 Agent 状态重排
+reorder.go: 作用域隔离的拖放语义与目标插入索引、Herdr mutation 分发和 Pane layout 顺序投影
+reorder_test.go: Drag/Drop 真正鼠标事件、插入索引、跨 Session/父级边界和投影排序回归
+components.go: 共用导航树行与视觉组件，拖动时提供原生浮动预览、插入占位、动画及命中目标
 workbench.go: 桌面工作台状态中枢，Agent 目录与运行时事件分发
 page_history.go: History 左侧筛选与中心列表/详情布局，SearchField、结果计数和 Clear filters 回到同一个查询入口
 history_state.go: HistoryService 查询/详情的生成代际隔离，筛选清空旧可选行及 Provider 元数据选择
 history_test.go: History 页面真实 Catalog 场景和会话详情渲染回归
 history_filter_test.go: History 筛选空态、结果计数、Provider 选项与旧行不可点击的 headless 验证
-shell.go: 核心 Shell 宿主，协调 Router、Window、Titlebar 与各页面组件
+detail_fact.go: Agent 详情复用的只读字段样式，从退役 Inspector 解耦
+shell.go: 核心 Shell 宿主，协调 Router、Window、Titlebar 与各页面组件；主布局只有左栏/中央内容
 page_settings.go: 五个 Settings section 统一 settingsPage Header/Scroll/最大内容宽度，单一设置项来源
 page_providers.go: Provider Integration 设置页仅绘制内容，跟随 settingsPage 的公共头部和滚动容器
 workspace.go: Terminal/Chat/Diff/Commit 唯一主表面及 Chat 的当前 Agent 身份门禁
