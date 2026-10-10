@@ -1,14 +1,16 @@
+// [INPUT]: Git staged-file row selections and existing tag/stash/worktree operations.
+// [OUTPUT]: Git file click handlers and group operation popovers.
+// [POS]: Shared popover behavior, no repository chips or competing sidebar navigation.
+// [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 package nativeui
 
 import (
-	"fmt"
-
 	"github.com/egoist/mygo/ui"
 	"github.com/wh-studio/herdr-client/internal/gitworkbench"
 )
 
-// The diff-mode repo bar (the sidebar's top row): Branches, Tags, Stashes
-// and Worktrees, each a chip opening its menu of operations.
+// Git tree reuse of the existing branch/tag/stash/worktree operation popovers.
+// The former cramped repository chips no longer render.
 
 // changesClickSide opens a tree row from one of the sidebar's split panes:
 // files open the center review on that pane's side of the change.
@@ -28,41 +30,6 @@ func (s *Shell) openChangesSide(path string, view gdViewSide) {
 	if f, _ := s.gdFileForPath(path); f != nil {
 		f.view = view
 		s.git.gdRowsDirty = true
-	}
-}
-
-// repoBar is the diff-mode top bar: the four repo menus. Every chip is
-// width-capped so the 250px sidebar never clips the trailing chip (the
-// Worktrees pill used to overflow past the panel edge).
-func (s *Shell) repoBar(c *ui.Context) {
-	ui.Row(c).FillWidth().Gap(4).AlignItems(ui.Center).Children(func() {
-		s.branchChip(c)
-		s.repoChip(c, "Tags", &s.tagsMenuOpen, len(s.git.tags), 46, s.tagsMenuPanel)
-		s.repoChip(c, "Stashes", &s.stashesMenuOpen, len(s.git.stashes), 58, s.stashesMenuPanel)
-		s.repoChip(c, "Worktrees", &s.worktreesMenuOpen, len(s.git.worktrees), 62, s.worktreesMenuPanel)
-	})
-}
-
-// repoChip is a neutral pill opening one repo menu.
-func (s *Shell) repoChip(c *ui.Context, label string, open *bool, count int, maxWidth float32, panel func(*ui.Context)) {
-	t := c.Theme()
-	text := label
-	if count > 0 {
-		text = fmt.Sprintf("%s %d", label, count)
-	}
-	anchor := ui.Button(c, text).FontSize(11).TextColor(t.TextMuted).MaxWidth(maxWidth).
-		// The chip truncates before its count at 250px (F4/F114); the
-		// tooltip keeps "Tags 7" recoverable.
-		Tooltip(text)
-	anchor.Background(ui.RGBA(127, 127, 127, 0.08)).Radius(Radius().Pill).Padding(2, 7).
-		Border(1, ui.RGBA(127, 127, 127, 0.12))
-	toggleMenu(open, anchor)
-	if *open {
-		// The backdrop closes it; the content must not touch *open while
-		// building, or the menu would close the frame it opens.
-		ui.Popover(c, anchor, open, func() {
-			panel(c)
-		})
 	}
 }
 

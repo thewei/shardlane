@@ -5,6 +5,19 @@
 阶段：第五至七轮已完成基本 Git 工作流、Merge/Cherry-pick/冲突恢复、响应式 Toolbar 和 AI Prompt 预览；第八轮收敛重复按钮和分支菜单，支持 Git & AI 可编辑提交规范与一次性 Pi CLI 无工具消息生成。**第九轮将 Commit 主操作固定在弹窗底部、Pi 区域分级披露、支持文件全选/清空，分支 Popover 加本地搜索和受限滚动列表（headless 960/1200 DIP 验证）**。真正 macOS GUI/Provider 授权实测及高级三方冲突编辑器仍待做。  
 依赖：[客户端架构](client-product-architecture.md)、[统一 UI/UX 计划](mygo-native-unified-ui-ux-plan-2026-10-09.md)。**本文不是架构真值，只规定 Git 产品设计与执行。**
 
+## 2026-10-10 Changes 页面布局落地（最新规范，覆盖下方旧布局示意）
+
+按 Fork 风格参考截图，Changes 不新建 Git 应用或 docked 右栏。当前实现：
+
+- 左侧导航栏：仓库名、当前分支、刷新；Local Changes / All Commits 两个入口；可筛选、可逐层折叠的 Worktrees、Branches、Remotes、Tags、Stashes 树。Branches/Remotes/Tags 的 `/` 路径呈文件夹层次；本地分支点击执行原有安全切换确认，右键继续提供合并/删除；远程跟踪分支从本地 `refs/remotes` 只读读取，排除符号 HEAD，不触发网络或隐式 checkout；Tags / Stashes / Worktrees 的创建、删除、Pop、打开等仍使用原有弹层和安全确认。
+- **Local Changes**：中央水平分栏，左侧为 Unstaged / Staged 文件树和对应 Stage/Unstage 操作；右侧为唯一 Godiff Review，底部固定精简提交区（Subject / Description / Amend / Commit + AI Commit 下拉）。普通提交仍经现有 Commit Modal 的 preflight/选择/确认事务；AI Commit 使用现有 Pi，默认安全元数据、异步门禁，仅生成并填写 Subject，绝不自动提交或覆盖后台生成期间用户改过的草稿。目录行可直接 +/− Stage/Unstage 目录的全部匹配变更，也可右键一次选中目录下所有文件；不会把前缀相似但不同目录的文件算进去。水平分隔可拖动、最小窗口保护 Diff 空间。工具栏 Split/Unified 始终可点，Refresh 只在侧栏仓库头，更多操作使用 ⋯ 图标按钮，常用动作不拥挤。Git 侧栏与 Terminal 统一 252 DIP 宽度。
+- **All Commits**：上部是提交历史图谱和列表，Git 父节点 SHA 构建真实线条/merge lane，本地/远程分支在指向提交时显示装饰；表格有提交说明、作者、短 Hash、时间和搜索。下部有 Commit / Changes / File Tree 三视图，Changes 使用左侧选中提交文件树及右侧只读 Godiff，垂直分隔条可以拖动。空历史和读取中也不会泄漏工作树操作按钮。
+- **首次工作区加载**：Loading 独占整个窗口，隐藏侧栏/顶部菜单，保持绝对居中；完成 Herdr 初次 Projection 和 Terminal 协调后才展示工作台并由 MyGo Ease Out 淡入。CLI 列举/路径定位不再允许无限等待；启动失败提供可重试的独立错误页面。
+- 文件/提交列表及搜索各保留独立状态；仓库切换清理树折叠、筛选及旧仓库提交/远程引用缓存，异步加载按 root 和 generation 门禁。2026-10-10 交互复查修复：Git 引用树搜索时折叠不再无效，独立 query-scoped 折叠键支持重复关闭/展开；Staged/Unstaged/Commit 文件树的目录不再错误依赖选中项变化，点击同一目录多次仍能正常开关；菜单和树行拥有稳定键，防止前方节点折叠时状态错位。
+- 本轮验证：MyGo headless 测试涵盖 960×640 / 1200×800 基础布局、上下拖动、refs 树折叠/筛选、Git 原生远程引用读取和历史 Diff 只读。真实 macOS 窗口的视觉/VoiceOver 操作还需专门验收。
+
+下文涉及顶部 Branch/Tags/Stashes/Worktrees chips、左栏 Changed Files 或旧右栏 Review Inspector 的结构示意均属于历史设计记录，不作为最新布局规范。
+
 ## 2026-10-09 后续布局决定（覆盖本文件旧右侧 Inspector 设计）
 
 用户明确移除 docked Right Panel：Git Changes 保留左侧导航/中央 Diff，原右栏 Review Inspector 不再绘制，Git 冲突文件定位通过中央 Banner 的可展开列表完成。Header Files 独立路由 `/files`；Scripts/Services 已合并到 Header Agent 浮层的 Services tab。本文件涉及「右侧 Review Inspector」的功能表/示意图仅作为历史迭代记录，不再作为当前布局规范。

@@ -251,10 +251,17 @@ Normative 0.10 boundaries:
   terminal processes and the client's current terminal attachments may remain
   alive for fast restoration, but `terminal.View` is not rendered and hidden
   terminals receive no keyboard, mouse, shortcut or file-drop input.
+- **As built 2026-10-10: initial Herdr bootstrap has a dedicated full-window
+  centered loading/error surface.** Until the first projection and initial
+  terminal coordination finish, no workspace sidebar or navigation toolbar is
+  mounted; the main shell fades in using MyGo's native Reduce-Motion-aware
+  animation. CLI discovery/list calls have explicit deadlines and startup
+  errors are retryable rather than leaving an indefinite spinner. Ordinary
+  in-workspace mutations keep existing UI visible.
 - **As built 2026-10-09: the persistent right sidebar is removed.** The
   Header's Files action navigates to a dedicated `/files` page, whose left
   sidebar browses the selected Herdr Tab's CWD and whose center owns the
-  bounded, read-only preview. Changes stays a left-tree/center-Diff workbench.
+  bounded, read-only preview. Changes uses the left Git-reference tree and a Fork-style center: Local Changes places staged/unstaged files beside Diff with a bottom commit composer; All Commits places the ancestry-aware history graph above a changed-file tree and read-only Diff.
   The existing Header/tray Agent activity floating window has an Agents /
   Services switch: Services displays the active Tab's configured Scripts and
   observed ports, with explicit Run/Preview actions, not a new runtime.
@@ -265,6 +272,16 @@ Normative 0.10 boundaries:
   Project, Tab or process authority. One Git Workbench service/cache owns
   repository state; the transitional `gitintel` cache must be migrated or
   removed rather than duplicated.
+- **As built 2026-10-10, Changes layout:** the contextual left sidebar
+  shows Local Changes / All Commits, collapsible Worktrees, local Branches,
+  read-only cached Remotes, Tags and Stashes. Slash-delimited refs form nested
+  folders; collapse/filter state is local to the bound repository. The
+  central Git primary surface has two screenshot-grounded layouts:
+  Local Changes uses a resizable file-tree/Diff row and a bottom lightweight
+  composer that opens the existing protected Commit modal; All Commits uses
+  a resizable history graph/table above a changed-file tree and read-only
+  Godiff review. Neither layout changes Herdr pane topology or creates a
+  second Git runner, router or docked right inspector.
 - Native Git review supports working-tree/index changes versus HEAD plus
   untracked files, bounded patch parsing, virtualized unified/split rendering,
   syntax highlighting, bounded word-level presentation differences and

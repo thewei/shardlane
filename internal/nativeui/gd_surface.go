@@ -1,3 +1,7 @@
+// [INPUT]: Current Git snapshot, selected commit or worktree, existing Godiff row model.
+// [OUTPUT]: Lower Diff reviewer with gated mutations and read-only commit history rendering.
+// [POS]: The sole code Diff surface beneath the resizable Git navigation pane.
+// [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 package nativeui
 
 import (
@@ -92,7 +96,7 @@ func (s *Shell) gdDiffSurface(c *ui.Context) {
 		}
 		s.gdEmptyPanel(c, pal, title, detail, func() {
 			if !s.gdReviewingCommit() && ui.Button(c, "View Commits").Clicked() {
-				s.commitsMode = true
+				s.showGitCommits()
 			}
 			if ui.PrimaryButton(c, "Open Terminal").Clicked() {
 				s.showSurface(WorkspaceSurfaceTerminal)
@@ -837,12 +841,7 @@ func (s *Shell) gdChangedPill(c *ui.Context, pal *gdPalette) {
 		ui.Row(c).Gap(6).Padding(5, 6, 5, 12).Radius(16).Background(pal.viewed.Alpha(0.1).Over(pal.codeBg)).
 			Border(1, pal.viewed.Alpha(0.2)).Children(func() {
 			ui.Text(c, "Local changes detected,").FontSize(13).FontWeight(600).TextColor(pal.viewed.Mix(t.Text, 0.6))
-			ref := ui.ButtonBase(c).FocusRing(true).Children(func() {
-				ui.Text(c, "refresh to see them.").FontSize(13).FontWeight(600).Underline().TextColor(pal.viewed.Mix(t.Text, 0.6))
-			})
-			if ref.Clicked() {
-				s.refreshGitChanges()
-			}
+			ui.Text(c, "use sidebar ↻ to refresh.").FontSize(12).TextColor(t.TextMuted)
 			if gdIconButton(c, iconClose, "Dismiss").Size(22, 22).Clicked() {
 				s.git.staleBanner = false
 			}
@@ -853,26 +852,29 @@ func (s *Shell) gdChangedPill(c *ui.Context, pal *gdPalette) {
 // gdLayoutControl switches between split and unified diffs.
 func (s *Shell) gdLayoutControl(c *ui.Context, pal *gdPalette) {
 	t := c.Theme()
-	choice := 0
-	if !s.git.splitLayout {
-		choice = 1
-	}
-	seg := ui.SegmentedBase(c, &choice, 2)
-	seg.Track.Padding(2).Gap(2).Radius(8).Background(ui.RGBA(127, 127, 127, 0.1)).Label("Diff layout").Children(func() {
-		for i, it := range []struct {
-			ic   *ui.SVG
-			name string
-		}{{iconSplit, "Split"}, {iconUnified, "Unified"}} {
-			seg2 := seg.Segment(i).Size(30, 24).Radius(6).Center().Label(it.name).Tooltip(it.name).TextColor(t.TextMuted)
-			if i == choice {
-				seg2.Background(pal.headerBg).Shadow(0, 1, 2, 0, ui.RGBA(0, 0, 0, 0.12)).TextColor(t.Text)
+	ui.Row(c).Shrink(0).Gap(2).Padding(2).Radius(7).
+		Background(ui.RGBA(127, 127, 127, 0.1)).Label("Diff layout").Children(func() {
+		for _, mode := range []struct {
+			label string
+			svg   *ui.SVG
+			split bool
+		}{
+			{"Split", iconSplit, true}, {"Unified", iconUnified, false},
+		} {
+			selected := s.git.splitLayout == mode.split
+			button := ui.ButtonBase(c).Size(30, 24).Radius(5).Center().
+				Label(mode.label).Tooltip(mode.label).FocusRing(true)
+			if selected {
+				button.Background(pal.headerBg).TextColor(t.Text)
+			} else {
+				button.TextColor(t.TextMuted)
 			}
-			seg2.Children(func() { ui.Icon(c, it.ic).FontSize(15) })
+			button.Children(func() { ui.Icon(c, mode.svg).FontSize(15) })
+			if button.Clicked() && !selected {
+				s.setDiffLayout(mode.split)
+			}
 		}
 	})
-	if (choice == 0) != s.git.splitLayout {
-		s.toggleDiffLayout()
-	}
 }
 
 // gdShortcuts handles the surface's keys.

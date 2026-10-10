@@ -154,9 +154,6 @@ func (s *Shell) surfaceOverflowItems(m *ui.Menu) {
 // diffOverflowItems mirrors the diff actions of the removed content
 // header (plan §8.3).
 func (s *Shell) diffOverflowItems(m *ui.Menu) {
-	if m.Item("Refresh").Chosen() {
-		s.refreshGitChanges()
-	}
 	findLabel := "Find"
 	if s.git != nil && s.git.gdFinding {
 		findLabel = "Hide Find"

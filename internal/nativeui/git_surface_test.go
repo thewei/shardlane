@@ -173,7 +173,7 @@ func TestSidebarSplitPanesAndRepoBar(t *testing.T) {
 	if !tester.HasText("Stage") || !tester.HasText("Unstage") {
 		t.Fatalf("pane headers missing the Stage/Unstage actions; texts=%q", tester.Texts())
 	}
-	for _, label := range []string{"Stage All", "Unstage All", "Commit…", "More…"} {
+	for _, label := range []string{"Split", "Unified", "Commit subject draft", "Commit", "More Git actions"} {
 		if !tester.HasText(label) {
 			t.Fatalf("Git Workbench toolbar missing %s: %q", label, tester.Texts())
 		}
@@ -181,7 +181,7 @@ func TestSidebarSplitPanesAndRepoBar(t *testing.T) {
 
 	shell.showSurface(WorkspaceSurfaceTerminal)
 	tester.Frame()
-	if tester.HasText("Unstaged Files") || tester.HasText("Stashes") || tester.HasText("More…") {
+	if tester.HasText("Unstaged Files") || tester.HasText("Stashes") || tester.HasText("More Git actions") {
 		t.Fatalf("terminal must drop Git-specific controls: texts=%q", tester.Texts())
 	}
 	// The runtime sections return outside the git surface.

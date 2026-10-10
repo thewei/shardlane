@@ -44,7 +44,7 @@ func (s *Shell) gitSequencerActions(c *ui.Context) {
 		continueButton := ui.Button(c, "Continue "+gitOperationLabel(state.Kind))
 		continueButton.Disabled(s.git.opBusy || state.Unmerged > 0)
 		if state.Unmerged > 0 {
-			continueButton.Tooltip("Resolve and stage all unmerged files, then Refresh Changes")
+			continueButton.Tooltip("Resolve and stage all unmerged files, then refresh from Git sidebar")
 		}
 		if continueButton.Clicked() {
 			s.continueSequencer()
@@ -54,10 +54,6 @@ func (s *Shell) gitSequencerActions(c *ui.Context) {
 		if abortButton.Clicked() {
 			s.confirmAbortSequencer()
 		}
-	}
-	refresh := ui.Button(c, "Refresh Git State")
-	if refresh.Clicked() && !s.git.opBusy {
-		s.refreshGitChanges()
 	}
 }
 

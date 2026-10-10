@@ -39,7 +39,7 @@ func TestGitToolbarCompactKeepsPrimaryActions(t *testing.T) {
 	s.showSurface(WorkspaceSurfaceDiff)
 	tester := ui.NewTester(s.View, 960, 640)
 	tester.Frame()
-	for _, want := range []string{"Commit…", "More…"} {
+	for _, want := range []string{"Commit subject draft", "Commit", "More Git actions"} {
 		if !tester.HasText(want) {
 			t.Fatalf("compact toolbar lacks %q: %q", want, tester.Texts())
 		}

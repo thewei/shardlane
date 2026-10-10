@@ -53,6 +53,7 @@ func slideWidth(host ui.Element, key any, closed bool, openWidth float32) float3
 // sidebarSlide mounts the sidebar — plus its zone gutter to the content
 // column — inside the persistent slide host.
 func (s *Shell) sidebarSlide(c *ui.Context) {
+	// The reference tree and Terminal must have identical sidebar geometry.
 	host := ui.Row(c.Key("sidebar-slide")).Shrink(0).AlignItems(ui.Stretch)
 	w := slideWidth(host, "width", s.sidebarCollapsed, sidebarWidth+gorexGap)
 	if w <= panelSlideEpsilon {

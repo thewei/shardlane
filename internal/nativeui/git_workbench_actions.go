@@ -42,7 +42,13 @@ func (s *Shell) gitWorkbenchActionBar(c *ui.Context) {
 	sp := Spacing()
 	t := c.Theme()
 	width, _ := c.Size()
-	compact := gitActionBarCompact(width, !s.sidebarCollapsed, false, 0) // retired right rail never consumes center width
+	// The file navigator is a separate column inside the center: don't
+	// overestimate the actual Diff toolbar space at common window widths.
+	actualDiffWidth := width - 2*gorexGap - gitFilePaneDefaultWidth
+	if !s.sidebarCollapsed {
+		actualDiffWidth -= sidebarWidth + gorexGap
+	}
+	compact := actualDiffWidth < gitActionBarMinExpandedCenterWidth
 	ui.Row(c).FillWidth().MinWidth(0).Gap(sp.S).AlignItems(ui.Center).Children(func() {
 		// The branch selector already lives in the repo bar. Don't render
 		// the same branch label a second time in the Diff toolbar.
@@ -63,21 +69,13 @@ func (s *Shell) gitWorkbenchActionBar(c *ui.Context) {
 			}
 		}
 		ui.Box(c).Grow(1)
-		if !compact {
-			s.gdLayoutControl(c, gdPaletteFor(t))
-		}
-		refresh := ui.Button(c, "Refresh").FontSize(Typography().Caption)
-		refresh.Disabled(s.git.opBusy)
-		if refresh.Clicked() {
-			s.refreshGitChanges()
-		}
-		commit := ui.PrimaryButton(c, "Commit…").FontSize(Typography().Caption)
-		commit.Disabled(s.git.opBusy || s.git.committing || s.git.branchBusy || busySequencer || len(snap.Files) == 0)
-		if commit.Clicked() {
-			s.openCommitSurface()
-		}
-		more := ui.Button(c, "More…").FontSize(Typography().Caption).
-			Tooltip("Fetch, Pull, Push, stash, undo, history and Git settings")
+		// Split/Unified must remain reachable even when actions compact.
+		s.gdLayoutControl(c, gdPaletteFor(t))
+		// The local worktree's bottom composer is the single Commit entry.
+		// This toolbar only carries review/batch actions and overflow.
+		more := ui.ButtonBase(c).Size(28, 26).Center().Radius(5).
+			Label("More Git actions").Tooltip("More Git actions")
+		more.Children(func() { ui.Icon(c, iconEllipsis).FontSize(17) })
 		more.Menu(func(m *ui.Menu) {
 			if compact {
 				if m.Item("Stage All").Disabled(!canStage).Chosen() {
@@ -87,15 +85,6 @@ func (s *Shell) gitWorkbenchActionBar(c *ui.Context) {
 					s.unstageFiles(unstage)
 				}
 				m.Separator()
-			}
-			if compact {
-				if m.Item("Diff layout: Split / Unified").Chosen() {
-					s.toggleDiffLayout()
-				}
-				m.Separator()
-			}
-			if m.Item("Refresh Changes").Chosen() {
-				s.refreshGitChanges()
 			}
 			if m.Item("Fetch").Disabled(s.git.opBusy || busySequencer).Chosen() {
 				s.fetchRepo()
@@ -114,7 +103,7 @@ func (s *Shell) gitWorkbenchActionBar(c *ui.Context) {
 				s.undoLastCommit()
 			}
 			if m.Item("View All Commits").Chosen() {
-				s.commitsMode = true
+				s.showGitCommits()
 			}
 			m.Separator()
 			if m.Item("Git Preferences…").Chosen() {

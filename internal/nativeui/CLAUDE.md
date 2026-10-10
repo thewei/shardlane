@@ -28,13 +28,33 @@ history_state.go: HistoryService 查询/详情的生成代际隔离，筛选清�
 history_test.go: History 页面真实 Catalog 场景和会话详情渲染回归
 history_filter_test.go: History 筛选空态、结果计数、Provider 选项与旧行不可点击的 headless 验证
 detail_fact.go: Agent 详情复用的只读字段样式，从退役 Inspector 解耦
-shell.go: 核心 Shell 宿主，协调 Router、Window、Titlebar 与各页面组件；主布局只有左栏/中央内容
+shell.go: 核心 Shell 宿主，协调 Router/Window/Titlebar；首次 Herdr 加载独占中心展示并淡入工作区，Git sidebar 与双模式分栏展示态仅本地持有
 page_settings.go: 五个 Settings section 统一 settingsPage Header/Scroll/最大内容宽度，单一设置项来源
 page_providers.go: Provider Integration 设置页仅绘制内容，跟随 settingsPage 的公共头部和滚动容器
-workspace.go: Terminal/Chat/Diff/Commit 唯一主表面及 Chat 的当前 Agent 身份门禁
+workspace.go: Terminal/Chat/Diff/Commit 唯一主表面，Changes 主内容采用上下可调 Git Review，Chat 保持 Agent 身份门禁
 chat_ui.go: Chat Timeline/Composer 和身份消失时的安全空态，不得泄漏旧 transcript
-gd_surface.go: Git Diff、无仓库/无变更/无匹配状态，clean 时直达 All Commits 或 Terminal；工作树 Git toolbar 单一调用点
-git_workbench_actions.go: Git 唯一主操作条（Stage/Unstage、Diff 布局、Refresh、Commit、More…），按中央可用宽度折叠，repo snapshot 绑定不变
+gd_surface.go: 下方 Git Diff、无仓库/无变更/无匹配状态，clean 时直达 All Commits 或 Terminal；历史模式只读，工作树工具栏单一调用点
+git_workbench_actions.go: Git 视图操作条（Stage/Unstage All、始终可见 Split/Unified、⋯ 更多菜单）；仓库 Refresh 唯一入口在 Git 侧栏，按 Diff 实际宽度折叠批量操作
+git_sidebar_tree.go: 左侧 Git 引用导航入口、分组操作弹窗和仓库身份展示，Worktrees/Branches/Remotes/Tags/Stashes 使用同一树组件
+git_ref_tree.go: Git 引用按斜线构树、目录键稳定、筛选时独立折叠/再次展开、右键菜单，不执行 Git IO
+git_review_split.go: Changes 双模式主工作台，Local Changes 文件树+Diff+底部 Commit 分离按钮（AI Commit 经 Pi 只填 Subject）；All Commits 为图谱上层+只读文件树/Diff 下层
+git_review_split_test.go: Git 双模式分栏、960 DIP 几何、拖拽、历史只读与底部草稿统一 Commit Modal 测试
+git_tree_interaction_test.go: 所有 Git 引用组反复折叠/展开、筛选后目录折叠与恢复回归
+git_file_tree_fold_test.go: Local Changes/All Commits 中重复点击相同文件目录的折叠与再展开回归
+git_directory_actions.go: Staged/Unstaged 独立目录子文件解析，路径边界准确，不以目录路径批量 Git add
+git_quick_ai.go: 底部 AI Commit Pi 生成器；异步 root/snapshot/草稿门禁、仅安全元数据、只填 Subject，拒绝自动提交
+git_workbench_polish_test.go: Split/Unified 真实点击、目录选中与边界、唯一 Refresh、⋯ 菜单和异步 AI 草稿门禁回归
+git_commit_graph.go: 历史提交真实父 SHA 的 merge lanes 纯渲染投影；无运行时 Git IO
+git_commit_graph_test.go: 提交父节点拓扑及合并分支回归
+git_layout_render_test.go: 仅显式启用时输出 Local Changes/All Commits 实际 MyGo 渲染截图
+changes_panel.go: Changed File Tree 目录每次直接点击均切换折叠，不依赖 List.Changed；文件行保留多选及 Diff 导航
+bootstrap_page.go: 启动时全屏居中 Loading 或可重试的错误页面，尚未初次完成 Herdr projection 时不挂载侧栏或顶部菜单
+bootstrap_page_test.go: 初次加载/故障时隐藏交互、中心位置与就绪后切换的 headless 回归
+runtime.go: 首次 Herdr 列举、异步 Projection、初次 terminal coordination 完成前的 bootstrap gate；移除第二次阻塞枚举
+panel_motion.go: Git/Terminal 左栏统一 252 DIP 宽度和折叠动画，不再依路由改变宽度
+repo_bar.go: 仅保留 Git 树分组弹窗、变更文件点击和菜单辅助函数，不再绘制顶部压缩 chips
+branch_menu.go: 分支管理的可搜索弹窗及安全切换动作，入口由左侧 Git 树分组菜单持有
+git_service_snapshot.go: 仓库绑定快照/提交历史及本地远程跟踪引用的分离异步获取与 generation root 隔离
 commit_surface.go: 原生 Commit Dialog 唯一草稿，滚动正文 + 固定底部 Commit/Cancel、Select all/Clear selection
 commit_ai_ui.go: Commit 内折叠的 Pi 生成、敏感路径受限 Prompt 原文预览与复制、手动候选消息编辑；默认只展示必要选项
 commit_modal_layout_test.go: 960×640/1200×800 长文件与 Pi 展开后固定 CTA 几何、文件选择批量操作回归

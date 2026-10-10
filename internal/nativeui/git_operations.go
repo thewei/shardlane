@@ -381,6 +381,10 @@ func (s *Shell) reviewLocalChanges() {
 	if s.git == nil {
 		return
 	}
+	// A commit-card Back or an operation fallback must switch both the
+	// navigator and review source, not leave All Commits selected above
+	// a mutable working-tree Diff.
+	s.commitsMode = false
 	if s.git.source == gdSourceWorktree {
 		return
 	}

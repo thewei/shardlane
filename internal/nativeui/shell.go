@@ -28,7 +28,9 @@ import (
 	"github.com/wh-studio/herdr-client/internal/settings"
 )
 
-const sidebarWidth float32 = 252
+const (
+	sidebarWidth float32 = 252
+)
 
 // Shell is the native presentation state for one Shardlane window. Long-lived
 // runtime facts are never authored here: projection is a disposable Herdr
@@ -63,6 +65,10 @@ type Shell struct {
 	expandedProjects map[string]bool
 	expandedTabs     map[string]bool
 	loading          bool
+	// Bootstrap screen hides the entire workspace chrome until the first
+	// Herdr projection is reconciled (ordinary mutations never hide it).
+	bootstrapPending bool
+	bootstrapFailed  bool
 	// offline marks the last failure as Herdr-unreachable rather than a
 	// failed presentation surface; it feeds shellState classification.
 	offline bool
@@ -96,6 +102,10 @@ type Shell struct {
 	commitAIResponse           string
 	commitAIError              string
 	commitAIReplaceConfirm     bool
+	piQuickRunning             bool
+	piQuickError               string
+	piQuickGen                 uint64
+	piQuickCancel              context.CancelFunc
 	piCommitRunning            bool
 	piCommitError              string
 	piCommitCancel             context.CancelFunc
@@ -234,8 +244,20 @@ type Shell struct {
 	stagedSelected   int
 	stagedChoice     ui.Selection[string]
 	stagedPaneHeight float32
-	unstagedOpen     bool
-	stagedOpen       bool
+	// The Changes center is split between commits/files and the existing Diff viewer.
+	gitUpperHeight       float32
+	gitFilePaneWidth     float32
+	gitLowerTab          int
+	gitQuickSubject      string
+	gitQuickBody         string
+	gitQuickAmend        bool
+	gitCommitFilesFilter string
+	// The Git reference tree is a presentation projection, scoped to the bound repo.
+	gitTreeClosed   map[string]bool
+	gitRefsFilter   string
+	gitCommitFilter string
+	unstagedOpen    bool
+	stagedOpen      bool
 	// commitsMode shows the All Commits pane instead of the split panes.
 	gitConflictFilesExpanded bool
 	commitsMode              bool
@@ -392,6 +414,10 @@ func NewShell(opts ...ShellOption) *Shell {
 	s.stagedSelected = -1
 	s.stagedList.Selected = &s.stagedSelected
 	s.stagedPaneHeight = 220
+	s.gitUpperHeight = gitSplitDefaultTop
+	s.gitFilePaneWidth = gitFilePaneDefaultWidth
+	s.gitLowerTab = 1
+	s.gitTreeClosed = make(map[string]bool)
 	s.unstagedOpen, s.stagedOpen = true, true
 	s.git.splitLayout = s.settings.Workbench.SplitDiff
 	// Stores fall back to memory when no user-data dir is injected
@@ -438,6 +464,8 @@ func (s *Shell) Launch() *app.LaunchService { return s.launch }
 
 func (s *Shell) AttachWindow(win *mygo.Window) {
 	s.win = win
+	s.bootstrapPending = true
+	s.bootstrapFailed = false
 	slog.Debug("native shell attached", "window_id", win.ID())
 	if s.launch != nil {
 		// The follow-up delivery worker owns the queue's state machine for
@@ -500,6 +528,8 @@ func (s *Shell) Close() {
 	// Persist the session while the state is still intact: this is the menu
 	// Quit path (the close button hides the window without closing it).
 	s.SaveSession()
+	s.cancelQuickAICommit()
+	s.cancelPiCommitSuggestion()
 	if s.watchCancel != nil {
 		s.watchCancel()
 		s.watchCancel = nil
@@ -526,10 +556,12 @@ func (s *Shell) View(c *ui.Context) {
 	} else {
 		c.Root().Background(theme.Background)
 	}
-	s.handleMRUShortcuts(c)
-	s.handleRouteShortcuts(c)
-	s.handleCommandCenterShortcuts(c)
-	s.handleSurfaceShortcuts(c)
+	if !s.bootstrapPending && !s.bootstrapFailed {
+		s.handleMRUShortcuts(c)
+		s.handleRouteShortcuts(c)
+		s.handleCommandCenterShortcuts(c)
+		s.handleSurfaceShortcuts(c)
+	}
 	if s.pendingToast != "" {
 		c.Toast(s.pendingToast)
 		s.pendingToast = ""
@@ -540,12 +572,14 @@ func (s *Shell) View(c *ui.Context) {
 		c.Toast(s.status)
 		s.statusShown = s.status
 	}
-	// ⌥⌘B no longer toggles a competing right rail; Files and Services
-	// now have explicit Header destinations.
-	if c.Shortcut(ui.Super, ui.KeyB) {
-		s.toggleSidebar()
+	// During startup the workspace and all navigation remain unmounted.
+	// This also prevents invisible keyboard shortcuts from mutating state.
+	if !s.bootstrapPending && !s.bootstrapFailed {
+		if c.Shortcut(ui.Super, ui.KeyB) {
+			s.toggleSidebar()
+		}
+		s.syncRouteVisibility()
 	}
-	s.syncRouteVisibility()
 
 	// The gorex background gradient runs under the whole window: the
 	// title bar, the sidebar and the workspace's terminal cards all sit
@@ -554,13 +588,27 @@ func (s *Shell) View(c *ui.Context) {
 	ui.Column(c).Fill().Draw(func(p *ui.Painter, r ui.Rect) {
 		paintGorexBackground(p, r, gorexColorsOf(theme.Dark))
 	}).Children(func() {
-		s.titlebar(c)
-		ui.Row(c).Grow(1).MinHeight(0).AlignItems(ui.Stretch).Children(func() {
-			s.sidebarSlide(c)
-			s.routeView(c)
-		})
+		// Prime the persistent container's entrance animation at zero
+		// without fading the loader itself. The first ready frame eases in
+		// only the real workspace chrome, respecting Reduce Motion.
+		content := ui.Column(c).Fill()
+		if s.bootstrapPending || s.bootstrapFailed {
+			_ = content.Animate("workspace-enter", 0, 260*time.Millisecond)
+			content.Children(func() { s.bootstrapPage(c) })
+		} else {
+			content.Opacity(content.Animate("workspace-enter", 1, 260*time.Millisecond))
+			content.Children(func() {
+				s.titlebar(c)
+				ui.Row(c).Grow(1).MinHeight(0).AlignItems(ui.Stretch).Children(func() {
+					s.sidebarSlide(c)
+					s.routeView(c)
+				})
+			})
+		}
 	})
-	s.dialogs(c)
-	s.agentSwitcherOverlay(c)
-	s.commandCenterOverlay(c)
+	if !s.bootstrapPending && !s.bootstrapFailed {
+		s.dialogs(c)
+		s.agentSwitcherOverlay(c)
+		s.commandCenterOverlay(c)
+	}
 }

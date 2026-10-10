@@ -23,7 +23,7 @@ func TestGitConflictBannerAndInspectorFollowActiveRepo(t *testing.T) {
 	tester := ui.NewTester(s.View, 1280, 800)
 	tester.SetPreferences(ui.Preferences{ReduceMotion: true})
 	tester.Frame()
-	for _, want := range []string{"Merge needs attention", "2 unresolved", "Continue Merge", "Abort Merge", "Refresh Git State", "Show conflict files"} {
+	for _, want := range []string{"Merge needs attention", "2 unresolved", "Continue Merge", "Abort Merge", "Show conflict files"} {
 		if !tester.HasText(want) {
 			t.Fatalf("Git conflict UX missing %q: %q", want, tester.Texts())
 		}

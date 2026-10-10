@@ -1,3 +1,7 @@
+// [INPUT]: Root-scoped Git cache, Branch/RemoteBranch/Tag/Worktree/Stash/Commit readers.
+// [OUTPUT]: Background Git data refresh and generation-fenced UI projection.
+// [POS]: Shared data loader for Git tree and center review, never render-time Git IO.
+// [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 package nativeui
 
 import (
@@ -44,8 +48,8 @@ func (s *Shell) ensureGitSnapshot(force bool) {
 
 // applyGitSnapshot swaps the visible change snapshot when the context still
 // matches (stale results may populate the cache but never the view, plan §36).
-// The right-panel Changes tree is invalidated so it rebuilds from the new
-// snapshot (P1-12); the stale banner only clears when no drift was detected
+// The upper Changes file tree is invalidated for the next projection;
+// the stale banner clears only when no drift was detected
 // or the user explicitly refreshed (P2-01).
 func (s *Shell) applyGitSnapshot(snap *gitworkbench.ChangesSnapshot) {
 	if snap == nil || snap.Root != s.git.root {
@@ -110,12 +114,14 @@ func (s *Shell) loadBranches() {
 	}
 	root := s.git.root
 	s.git.branchesLoading = true
+	s.git.commitsLoading = true
 	gen := s.git.branchesGen.Add(1)
 
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), gitworkbench.ReadTimeout)
 		defer cancel()
 		branches, err := s.git.runner.ListBranches(ctx, root)
+		remoteBranches, _ := s.git.runner.ListRemoteBranches(ctx, root)
 		upstream, _ := s.git.runner.Upstream(ctx, root)
 		stashes, _ := s.git.runner.StashList(ctx, root)
 		tags, _ := s.git.runner.ListTags(ctx, root)
@@ -124,15 +130,22 @@ func (s *Shell) loadBranches() {
 		sequencer, sequencerErr := s.git.runner.SequencerState(ctx, root)
 		s.applyGuarded(s.git.branchesGen.Load, gen, func() {
 			s.git.branchesLoading = false
+			s.git.commitsLoading = false
 			if err != nil || root != s.git.root {
 				return
 			}
 			s.git.branches = branches
+			s.git.remoteBranches = remoteBranches
 			s.git.upstream = upstream
 			s.git.stashes = stashes
 			s.git.tags = tags
 			s.git.worktrees = worktrees
 			s.git.commits = commits
+			// A history view opened before refs finished loading gets its
+			// first read-only commit after the root/generation fence.
+			if s.commitsMode && !s.gdReviewingCommit() && len(commits) > 0 {
+				s.reviewCommit(commits[0].Hash)
+			}
 			s.git.sequencer = sequencer
 			s.git.sequencerChecked = sequencerErr == nil
 		})

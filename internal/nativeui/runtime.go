@@ -2,6 +2,7 @@ package nativeui
 
 import (
 	"log/slog"
+	"time"
 
 	"github.com/wh-studio/herdr-client/internal/herdr"
 )
@@ -11,11 +12,13 @@ func (s *Shell) reloadInstances(autoOpen bool) {
 		return
 	}
 	s.loading = true
+	s.bootstrapFailed = false
 	s.errText = ""
 	s.status = "Loading Herdr workspaces…"
-	slog.Debug("reload Herdr instances", "auto_open", autoOpen)
+	slog.Info("Herdr instance loading started", "auto_open", autoOpen)
 	generation := s.generation.Add(1)
 	go func() {
+		started := time.Now()
 		// The combined list includes one entry per saved remote machine; a
 		// machine CLI read failure degrades to the local list only.
 		instances, err := s.runtime.ListAllInstances()
@@ -23,6 +26,7 @@ func (s *Shell) reloadInstances(autoOpen bool) {
 			s.updateError(generation, err)
 			return
 		}
+		slog.Info("Herdr instance list loaded", "count", len(instances), "elapsed_ms", time.Since(started).Milliseconds())
 		// The session hint only steers startup (autoOpen): a stale hint
 		// falls back to the default instance. A mid-session refresh keeps
 		// the current instance and surfaces the failure if it is gone.
@@ -39,11 +43,16 @@ func (s *Shell) reloadInstances(autoOpen bool) {
 				return
 			}
 			s.instances = instances
-			s.loading = false
-			s.offline = false
 			if preferred == "" {
+				s.loading = false
+				s.bootstrapPending = false
 				s.status = "Choose a Herdr workspace"
+			} else {
+				// Remain in the bootstrap screen until Projection and initial
+				// attachment have finished. Do not flash empty navigation.
+				s.loading = true
 			}
+			s.offline = false
 		})
 		if preferred != "" {
 			s.openInstanceAsync(preferred, generation)
@@ -76,12 +85,16 @@ func (s *Shell) instanceLabel(name string) string {
 
 func (s *Shell) openInstanceAsync(name string, generation uint64) {
 	go func() {
+		started := time.Now()
 		projection, err := s.runtime.Projection(name)
 		if err != nil {
 			s.updateError(generation, err)
 			return
 		}
-		instances, _ := s.runtime.ListAllInstances()
+		slog.Info("Herdr projection received", "instance", name, "elapsed_ms", time.Since(started).Milliseconds())
+		// Bootstrap already fetched the instance list. Re-enumerating all
+		// sessions/machines here held the ready UI behind another CLI call,
+		// which may stall independently of a successful Herdr snapshot.
 		s.win.Update(func() {
 			if generation != s.generation.Load() {
 				return
@@ -94,14 +107,12 @@ func (s *Shell) openInstanceAsync(name string, generation uint64) {
 				s.serviceIndex = sidebarServiceIndex{}
 			}
 			s.activeInstance = name
-			if len(instances) > 0 {
-				s.instances = instances
-			}
-			s.loading = false
 			s.errText = ""
 			s.offline = false
 			s.status = "Native Terminal"
 			s.applyProjection(projection, true)
+			s.loading = false
+			s.bootstrapPending = false
 		})
 	}()
 }
@@ -156,6 +167,8 @@ func (s *Shell) updateError(generation uint64, err error) {
 			return
 		}
 		s.loading = false
+		s.bootstrapFailed = s.bootstrapPending && s.projection.Protocol == 0
+		s.bootstrapPending = false
 		s.offline = true
 		s.errText = err.Error()
 		s.status = "Herdr unavailable"

@@ -96,7 +96,7 @@ func (s *Shell) gdChangedTreeList(c *ui.Context, pal *gdPalette, rows []gitworkb
 		if i < 0 || i >= len(rows) {
 			return
 		}
-		s.renderChangesRow(c, pal, rows[i], state, pane, choice)
+		s.renderChangesRow(c, pal, rows[i], state, pane, choice, onClick)
 	}).Grow(1).MinHeight(0).Padding(3, 8).Gap(3)
 	// A plain click opens the file: the list replaced the choice with that
 	// one row. Choice-growing clicks (Cmd, Shift) stay preview-free.
@@ -141,7 +141,7 @@ func (s *Shell) currentChangesTree(snap *gitworkbench.ChangesSnapshot) *gitworkb
 // chevron · icon · name · +N -N · status letter (GWB-141..143).
 // state is the owning list, for the focused-selection tint. choice is the
 // pane's multi-selection, whose rows tint like an extended selection.
-func (s *Shell) renderChangesRow(c *ui.Context, pal *gdPalette, row gitworkbench.FlatRow, state *ui.ListState, pane gdViewSide, choice *ui.Selection[string]) {
+func (s *Shell) renderChangesRow(c *ui.Context, pal *gdPalette, row gitworkbench.FlatRow, state *ui.ListState, pane gdViewSide, choice *ui.Selection[string], onClick func(gitworkbench.FlatRow)) {
 	t := c.Theme()
 	node := row.Node
 
@@ -187,6 +187,25 @@ func (s *Shell) renderChangesRow(c *ui.Context, pal *gdPalette, row gitworkbench
 			})
 			ui.Icon(c, iconFolder).FontSize(14).TextColor(muted)
 			ui.Text(c, node.Name).FontSize(13).SingleLine().Grow(1).Shrink(1).MinWidth(0).Tooltip(node.Path)
+			if !s.gdReviewingCommit() && (pane == gdViewUnstaged || pane == gdViewStaged) {
+				paths := gitDirectoryPaths(s.gitSnapshot(), node.Path, pane)
+				if len(paths) > 0 {
+					label, action := "+", s.stageFiles
+					if pane == gdViewStaged {
+						label, action = "−", s.unstageFiles
+					}
+					button := ui.ButtonBase(c).Size(20, 20).Radius(4).Center().Shrink(0).
+						Label("Stage/Unstage directory " + node.Path).Tooltip(label + " " + node.Path + " (" + itoa(len(paths)) + " files)")
+					if button.Hovered() {
+						button.Background(pal.hover)
+					}
+					button.Children(func() { ui.Text(c, label).FontSize(13).FontWeight(700) })
+					button.Disabled(s.git.opBusy)
+					if button.Clicked() {
+						action(paths)
+					}
+				}
+			}
 			return
 		}
 		cf := *node.File
@@ -229,6 +248,28 @@ func (s *Shell) renderChangesRow(c *ui.Context, pal *gdPalette, row gitworkbench
 		ui.Text(c, gdStatusLetter(&cf)).Font(gdCodeFont()).FontSize(11).FontWeight(700).TextColor(letter).
 			Width(12).TextAlign(ui.Center).Shrink(0)
 	})
+	// Directory disclosure is independent of List.Changed: selecting the
+	// same directory twice does not change selection, so the old handler
+	// could never reliably reopen a collapsed folder.
+	if node.Dir && r.Clicked() {
+		onClick(row)
+	}
+	if node.Dir && !s.gdReviewingCommit() && (pane == gdViewUnstaged || pane == gdViewStaged) {
+		paths := gitDirectoryPaths(s.gitSnapshot(), node.Path, pane)
+		r.ContextMenu(func(m *ui.Menu) {
+			if choice != nil && m.Item("Select all files in folder").Disabled(len(paths) == 0).Chosen() {
+				for _, path := range paths {
+					choice.Add(path)
+				}
+			}
+			if pane == gdViewUnstaged && m.Item("Stage folder ("+itoa(len(paths))+" files)").Disabled(len(paths) == 0 || s.git.opBusy).Chosen() {
+				s.stageFiles(paths)
+			}
+			if pane == gdViewStaged && m.Item("Unstage folder ("+itoa(len(paths))+" files)").Disabled(len(paths) == 0 || s.git.opBusy).Chosen() {
+				s.unstageFiles(paths)
+			}
+		})
+	}
 	if !node.Dir && node.File != nil {
 		cf := *node.File
 		r.ContextMenu(func(m *ui.Menu) {

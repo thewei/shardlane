@@ -1,3 +1,7 @@
+// [INPUT]: Git Runner, cache, presentation selection and generation guards.
+// [OUTPUT]: One repository-bound Git UI service with local/remote ref and commit history snapshots.
+// [POS]: UI coordination only; Git authority remains internal/gitworkbench.
+// [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 package nativeui
 
 import (
@@ -74,11 +78,12 @@ type gitService struct {
 
 	// diff surface presentation
 	splitLayout bool
-	// collapsedDirs is the Right Panel tree's collapse state (tree only).
+	// collapsedDirs belongs to the changed-file tree, distinct from the Git refs tree.
 	collapsedDirs map[string]bool
 
 	// branches
 	branches        []gitworkbench.Branch
+	remoteBranches  []gitworkbench.RemoteBranch
 	branchesLoading bool
 	branchBusy      bool
 	// upstream is the tracking state of the current branch (ahead/behind),
@@ -87,8 +92,7 @@ type gitService struct {
 	// stashes lists the repository's stash entries for the branch menu.
 	stashes        []gitworkbench.Stash
 	stashesLoading bool
-	// tags and worktrees feed the diff-mode repo bar, refreshed alongside
-	// the branches.
+	// tags/worktrees are read once for the sidebar tree and its action popovers.
 	tags      []gitworkbench.Tag
 	worktrees []gitworkbench.Worktree
 	// commit history for the All Commits pane.
@@ -286,6 +290,7 @@ func (s *Shell) syncGitContext() {
 
 // resetGitContextState clears transient presentation state on context change.
 func (s *Shell) resetGitContextState() {
+	s.cancelQuickAICommit()
 	s.git.snapshot = nil
 	s.git.staleBanner = false
 	s.git.gdFiles = nil
@@ -301,6 +306,21 @@ func (s *Shell) resetGitContextState() {
 	s.git.gdMatches, s.git.gdMatchesFor = nil, ""
 	s.git.gdMatch = 0
 	s.git.branches = nil
+	s.gitTreeClosed = make(map[string]bool)
+	s.gitRefsFilter = ""
+	s.gitCommitFilter = ""
+	s.gitCommitFilesFilter = ""
+	s.gitQuickSubject, s.gitQuickBody, s.gitQuickAmend = "", "", false
+	s.gitLowerTab = 1
+	s.git.remoteBranches = nil
+	s.git.tags = nil
+	s.git.worktrees = nil
+	s.git.stashes = nil
+	s.git.commits = nil
+	s.git.source = gdSourceWorktree
+	s.git.commitHash = ""
+	s.git.commitSnap = nil
+	s.git.commitMeta = nil
 	s.branchFilter = ""
 	s.branchDraft = ""
 	s.branchMenuOpen = false

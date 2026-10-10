@@ -1,6 +1,7 @@
 package herdr
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -44,9 +45,14 @@ func (m *Manager) ListMachines() ([]Machine, error) {
 	if err != nil {
 		return nil, err
 	}
-	cmd := exec.Command(cli, "machine", "list", "--json")
+	ctx, cancel := context.WithTimeout(context.Background(), herdrListTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, cli, "machine", "list", "--json")
 	cmd.Stdin = nil
 	out, err := cmd.Output()
+	if ctx.Err() != nil {
+		return nil, fmt.Errorf("herdr machine list timed out after %s: %w", herdrListTimeout, ctx.Err())
+	}
 	if err != nil {
 		var exit *exec.ExitError
 		if ok := asExitError(err, &exit); ok {

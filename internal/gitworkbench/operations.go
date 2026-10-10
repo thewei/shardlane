@@ -411,6 +411,7 @@ type CommitInfo struct {
 	Subject string
 	Author  string
 	Time    time.Time
+	Parents []string // real Git ancestry for native graph projection
 }
 
 // ListCommits reads the history of HEAD, newest first, bounded.
@@ -420,7 +421,7 @@ func (r *Runner) ListCommits(ctx context.Context, root string, limit int) ([]Com
 	}
 	out, err := r.Read(ctx, root,
 		"log", "-n", strconv.Itoa(limit),
-		"--format=%H%x09%h%x09%s%x09%an%x09%at")
+		"--format=%H%x09%h%x09%s%x09%an%x09%at%x09%P")
 	if err != nil {
 		return nil, err
 	}
@@ -429,12 +430,16 @@ func (r *Runner) ListCommits(ctx context.Context, root string, limit int) ([]Com
 		if line == "" {
 			continue
 		}
-		f := strings.SplitN(line, "\t", 5)
+		f := strings.SplitN(line, "\t", 6)
 		if len(f) < 5 {
 			continue
 		}
 		sec, _ := strconv.ParseInt(f[4], 10, 64)
-		commits = append(commits, CommitInfo{Hash: f[0], Short: f[1], Subject: f[2], Author: f[3], Time: time.Unix(sec, 0)})
+		cm := CommitInfo{Hash: f[0], Short: f[1], Subject: f[2], Author: f[3], Time: time.Unix(sec, 0)}
+		if len(f) > 5 {
+			cm.Parents = strings.Fields(f[5])
+		}
+		commits = append(commits, cm)
 	}
 	return commits, nil
 }

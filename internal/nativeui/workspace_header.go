@@ -20,18 +20,24 @@ func (s *Shell) workspaceTitle() string {
 	return "Workspace"
 }
 
-// toggleDiffLayout flips unified/split and persists the choice (GWB-174).
-func (s *Shell) toggleDiffLayout() {
-	if s.git == nil {
+// setDiffLayout updates only when the requested layout differs, making both
+// icon buttons and compact overflow routes obey one source of truth.
+func (s *Shell) setDiffLayout(split bool) {
+	if s.git == nil || s.git.splitLayout == split {
 		return
 	}
-	s.git.splitLayout = !s.git.splitLayout
-	split := s.git.splitLayout
-	s.applySettings(func(settings *settings.Settings) error {
-		settings.Workbench.SplitDiff = split
+	s.git.splitLayout = split
+	s.applySettings(func(cfg *settings.Settings) error {
+		cfg.Workbench.SplitDiff = split
 		return nil
 	})
 	s.rebuildDiffRows()
+}
+
+func (s *Shell) toggleDiffLayout() {
+	if s.git != nil {
+		s.setDiffLayout(!s.git.splitLayout)
+	}
 }
 
 // openCommitSurface retains the existing stale-state preflight, but moves

@@ -6,6 +6,7 @@
 package herdr
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -21,6 +22,7 @@ import (
 const (
 	defaultSession       = "default"
 	minSupportedProtocol = 22
+	herdrListTimeout     = 6 * time.Second
 )
 
 var nestedTUIEnvKeys = []string{
@@ -76,9 +78,14 @@ func (m *Manager) ListInstances() ([]Instance, error) {
 	if err != nil {
 		return nil, err
 	}
-	cmd := exec.Command(cli, "session", "list", "--json")
+	ctx, cancel := context.WithTimeout(context.Background(), herdrListTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, cli, "session", "list", "--json")
 	cmd.Stdin = nil
 	out, err := cmd.Output()
+	if ctx.Err() != nil {
+		return nil, fmt.Errorf("herdr session list timed out after %s: %w", herdrListTimeout, ctx.Err())
+	}
 	if err != nil {
 		var exit *exec.ExitError
 		if errors.As(err, &exit) {
@@ -296,14 +303,18 @@ func resolveCLI() (string, error) {
 		return path, nil
 	}
 	if runtime.GOOS != "windows" {
-		if out, err := exec.Command("/bin/zsh", "-lic", "command -v herdr").Output(); err == nil {
-			if path := strings.TrimSpace(string(out)); path != "" {
+		for _, dir := range []string{"/opt/homebrew/bin", "/usr/local/bin", filepath.Join(os.Getenv("HOME"), ".local/bin")} {
+			path := filepath.Join(dir, "herdr")
+			if info, err := os.Stat(path); err == nil && !info.IsDir() {
 				return path, nil
 			}
 		}
-		for _, dir := range []string{"/opt/homebrew/bin", "/usr/local/bin"} {
-			path := filepath.Join(dir, "herdr")
-			if info, err := os.Stat(path); err == nil && !info.IsDir() {
+		// LaunchServices has a minimal PATH. Probe known locations before
+		// spawning a login shell; the latter may execute user dotfiles.
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		if out, err := exec.CommandContext(ctx, "/bin/zsh", "-lic", "command -v herdr").Output(); err == nil {
+			if path := strings.TrimSpace(string(out)); path != "" {
 				return path, nil
 			}
 		}

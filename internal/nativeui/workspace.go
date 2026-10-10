@@ -1,3 +1,7 @@
+// [INPUT]: WorkspacePrimarySurface state, native shell and Git split reviewer.
+// [OUTPUT]: Terminal/Chat/Diff/Commit workspace center without a competing runtime.
+// [POS]: Central surface switch; Git uses its own resizable upper navigator and lower Diff.
+// [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 package nativeui
 
 import (
@@ -19,13 +23,12 @@ func (s *Shell) workspacePage(c *ui.Context) {
 
 		switch s.surface.current() {
 		case WorkspaceSurfaceDiff:
-			// The diff content sits in a gorex card on the gradient; its
-			// old opaque app sheet is gone (2026-10-06).
-			gorexContentCard(c, gorexColorsOf(t.Dark), func() { s.gdDiffSurface(c) })
+			// Git references stay in the left sidebar. Commit/file navigation
+			// occupies the upper center and Diff Review stays below.
+			gorexContentCard(c, gorexColorsOf(t.Dark), func() { s.gitSplitReviewSurface(c) })
 		case WorkspaceSurfaceCommit:
-			// Commit is a modal editing task above the last Git review. Never
-			// render Terminal alongside it or rebuild the commit transaction.
-			gorexContentCard(c, gorexColorsOf(t.Dark), func() { s.gdDiffSurface(c) })
+			// Commit is a modal above the same Git review, never a second editor.
+			gorexContentCard(c, gorexColorsOf(t.Dark), func() { s.gitSplitReviewSurface(c) })
 		case WorkspaceSurfaceChat:
 			gorexContentCard(c, gorexColorsOf(t.Dark), func() { s.workspaceChatSurface(c) })
 		default:

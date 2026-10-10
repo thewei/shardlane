@@ -1,3 +1,7 @@
+// [INPUT]: Cached local branches and existing safe branch mutation/confirmation flows.
+// [OUTPUT]: Searchable local-branch management popover used by the Git sidebar tree.
+// [POS]: Git branch actions only; the sidebar owns reference navigation and grouping.
+// [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 package nativeui
 
 import (
@@ -6,32 +10,6 @@ import (
 	"github.com/egoist/mygo/ui"
 	"github.com/wh-studio/herdr-client/internal/gitworkbench"
 )
-
-// branchChip renders the interactive branch identity chip (plan §23).
-// Without a bound repository it degrades to a muted non-chip label.
-func (s *Shell) branchChip(c *ui.Context) {
-	t := c.Theme()
-	branch := s.currentBranchName()
-	if s.git == nil || s.git.root == "" {
-		return
-	}
-	if branch == "" {
-		if s.git.rootBusy {
-			ui.Text(c, "resolving…").FontSize(Typography().Micro).TextColor(t.TextMuted)
-		}
-		return
-	}
-
-	anchor := ui.Button(c, branch).FontSize(Typography().Micro)
-	anchor.Background(t.Accent.Alpha(0.14)).Radius(Radius().Pill).Padding(2, 8).TextColor(t.Accent).
-		MaxWidth(120).Tooltip(branch) // preserve full identity without crushing the repository toolbar
-	toggleMenu(&s.branchMenuOpen, anchor)
-	if s.branchMenuOpen {
-		ui.Popover(c, anchor, &s.branchMenuOpen, func() {
-			s.branchMenuPanel(c)
-		})
-	}
-}
 
 // matchingLocalBranches keeps the current branch visible first when
 // it matches the query. The filter is local presentation only.

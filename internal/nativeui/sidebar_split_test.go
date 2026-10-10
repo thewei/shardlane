@@ -234,7 +234,7 @@ func writeRepoFile(t *testing.T, dir, name, content string) {
 func TestSidebarRepoChipPopoverReopens(t *testing.T) {
 	shell, tester := sidebarSplitTestShell(t, t.TempDir())
 
-	if err := tester.Click("Stashes"); err != nil {
+	if err := tester.Click("Stashes actions"); err != nil {
 		t.Fatal(err)
 	}
 	tester.Frame()
@@ -253,7 +253,7 @@ func TestSidebarRepoChipPopoverReopens(t *testing.T) {
 	}
 
 	// The pin: after the close, the chip opens the popover again.
-	if err := tester.Click("Stashes"); err != nil {
+	if err := tester.Click("Stashes actions"); err != nil {
 		t.Fatal(err)
 	}
 	tester.Frame()

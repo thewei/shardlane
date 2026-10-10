@@ -2,8 +2,8 @@ package nativeui
 
 /**
  * [INPUT]: 依赖 Shell 当前 Router/Workspace/Agent 投影、共享 agentCardRow 和 native Quick Panel
- * [OUTPUT]: 提供 Sidebar 的 Workspace 树、History/Settings 导航与 Agent 行点击/右键动作
- * [POS]: 唯一左栏实现，导航负责编排目标，Agent 单击交给共享 Quick Panel 做上下文预览
+ * [OUTPUT]: 提供 Sidebar 的 Workspace 树、Git 引用导航、History/Settings 导航与 Agent 行点击/右键动作
+ * [POS]: 唯一左栏宿主，Git 引用树由 git_sidebar_tree 负责，Agent 详情复用 Quick Panel
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 
@@ -27,11 +27,9 @@ func (s *Shell) sidebar(c *ui.Context) {
 	// switch (2026-10-07).
 	ui.Column(c).Width(sidebarWidth).Shrink(0).Children(func() {
 		if s.sidebarInDiffMode() {
-			// The diff-mode repo bar: Branches, Tags, Stashes and Worktrees
-			// with their operations. First row of the sidebar here, so it
-			// carries the top inset the action row left behind.
-			ui.Row(c).FillWidth().Padding(9, 8, 7).Children(func() {
-				s.repoBar(c)
+			// Git references are full-height navigation, not compressed toolbar chips.
+			ui.Row(c).FillWidth().Padding(8, 9, 6).Children(func() {
+				s.gitSidebarHeader(c)
 			})
 			ui.Divider(c)
 		} else if s.sidebarInnerPage() {
@@ -47,12 +45,11 @@ func (s *Shell) sidebar(c *ui.Context) {
 		// (2026-10-07 user report) — the sidebar and the header are one
 		// continuous gradient surface there.
 
-		// The sidebar body is route-scoped: on the Diff/Commit surface it is
-		// Godiff's Files navigator, on an inner page (Settings/History/New
-		// Task) it is that page's navigation, and everywhere else it stays
-		// the canonical runtime navigator.
+		// The sidebar body is route-scoped: Diff/Commit use the Git reference
+		// tree, inner pages use their own navigation, and the default remains
+		// the canonical Herdr runtime navigator.
 		if s.sidebarInDiffMode() {
-			s.sidebarFilesView(c)
+			s.gitRepositorySidebar(c)
 		} else if s.router.Path() == routeFiles {
 			s.syncRightPanelRoot()
 			s.filesToolView(c)
@@ -134,35 +131,22 @@ func (s *Shell) sidebarInnerNav(c *ui.Context) {
 	})
 }
 
-// sidebarFilesView is the sidebar's Diff-mode body: Fork's staged/unstaged
-// split — the filter, the Unstaged pane on top, a draggable divider, and the
-// Staged pane below — or the All Commits list, per the mode toggle.
+// sidebarFilesView renders staged/unstaged file lists in the UPPER CENTER
+// Git pane. The left sidebar manages repository references independently.
 func (s *Shell) sidebarFilesView(c *ui.Context) {
 	t := c.Theme()
 	pal := gdPaletteFor(t)
 
 	snap := s.gdActiveSnapshot()
 	ui.Column(c).Grow(1).MinHeight(0).Children(func() {
-		// The Local Changes | All Commits toggle, as Fork's sidebar tabs.
-		ui.Row(c).FillWidth().Padding(8, 10, 2).Justify(ui.Center).Children(func() {
-			mode := 0
-			if s.commitsMode {
-				mode = 1
-			}
-			if ui.Segmented(c, &mode, "Local Changes", "All Commits").Changed() {
-				s.commitsMode = mode == 1
-				if !s.commitsMode {
-					s.reviewLocalChanges()
-				}
+		ui.Row(c).FillWidth().Padding(6, 12, 2).AlignItems(ui.Center).Children(func() {
+			ui.Text(c, "Local Changes").FontSize(12).FontWeight(650)
+			if snap != nil {
+				ui.Textf(c, "  %d files", len(snap.Files)).FontSize(11).TextColor(t.TextMuted)
 			}
 		})
 
-		if s.commitsMode {
-			s.commitsPane(c, pal)
-			return
-		}
-
-		ui.Row(c).FillWidth().Padding(0, 10, 2).Children(func() {
+		ui.Row(c).FillWidth().Padding(8, 10, 10).Children(func() {
 			if gdSearchInput(c, &s.changes.filter, "Filter files", &s.changes.filterFocus, &s.git.gdTyping) {
 				s.changesTree = nil
 				s.git.gdRowsDirty = true
@@ -226,7 +210,7 @@ func (s *Shell) sidebarFilesView(c *ui.Context) {
 					}
 				})
 				if s.unstagedOpen && len(unstagedFiles) > 0 {
-					list.Height(s.stagedPaneHeight)
+					list.Height(clampF(s.stagedPaneHeight, 60, s.gitUpperHeight-138))
 				} else {
 					list.Grow(1).MinHeight(0)
 				}
@@ -242,10 +226,9 @@ func (s *Shell) sidebarFilesView(c *ui.Context) {
 // search field, each row opening the commit's diff in the review.
 func (s *Shell) commitsPane(c *ui.Context, pal *gdPalette) {
 	t := c.Theme()
-	sp := Spacing()
 
 	var entries []gitworkbench.CommitInfo
-	q := strings.ToLower(strings.TrimSpace(s.changes.filter))
+	q := strings.ToLower(strings.TrimSpace(s.gitCommitFilter))
 	for _, cm := range s.git.commits {
 		if q == "" ||
 			strings.Contains(strings.ToLower(cm.Subject), q) ||
@@ -263,6 +246,11 @@ func (s *Shell) commitsPane(c *ui.Context, pal *gdPalette) {
 		}
 	}
 
+	graphs := gitHistoryGraph(s.git.commits)
+	graphByHash := make(map[string]gitGraphRow, len(graphs))
+	for i, cm := range s.git.commits {
+		graphByHash[cm.Hash] = graphs[i]
+	}
 	focused := s.commitsList.FocusWithin(c)
 	if s.git.commitsLoading && len(entries) == 0 {
 		ui.Column(c).Grow(1).Center().Padding(16).Children(func() {
@@ -276,7 +264,7 @@ func (s *Shell) commitsPane(c *ui.Context, pal *gdPalette) {
 		}
 		cm := entries[i]
 		current := s.gdReviewingCommit() && s.git.commitHash == cm.Hash
-		row := ui.Row(c).Gap(8).Padding(5, 8).Radius(6).AlignItems(ui.Start).MinWidth(0)
+		row := ui.Row(c).Gap(9).Padding(5, 9).Radius(5).AlignItems(ui.Center).MinWidth(0)
 		muted, ref := t.TextMuted, pal.ref
 		switch {
 		case current && focused:
@@ -290,7 +278,7 @@ func (s *Shell) commitsPane(c *ui.Context, pal *gdPalette) {
 		if row.Clicked() {
 			s.reviewCommit(cm.Hash)
 		}
-		// The pane is narrow: resting on a row shows the full details.
+		// Long commit subjects preserve the full metadata in the tooltip.
 		row.Tooltip(cm.Subject + "\n" + cm.Author + " · " +
 			cm.Time.Format("2006-01-02 15:04") + "\n" + cm.Hash)
 		row.ContextMenu(func(m *ui.Menu) {
@@ -305,14 +293,31 @@ func (s *Shell) commitsPane(c *ui.Context, pal *gdPalette) {
 			}
 		})
 		row.Children(func() {
-			ui.Text(c, cm.Short).Font(gdCodeFont()).FontSize(12).TextColor(ref).Width(62).Shrink(0).SingleLine()
-			ui.Column(c).Grow(1).MinWidth(0).Gap(2).Children(func() {
-				ui.Text(c, cm.Subject).FontSize(12).SingleLine()
-				ui.Row(c).Gap(6).Children(func() {
-					ui.Text(c, cm.Author).FontSize(10).SingleLine().TextColor(muted).Grow(1).MinWidth(0)
-					ui.Text(c, gdRelativeTime(cm.Time)).FontSize(10).TextColor(muted).Shrink(0)
-				})
-			})
+			gitGraphGlyph(c, graphByHash[cm.Hash])
+			// Real local/remote-tracking decorations follow cached ref
+			// object hashes, never guessed from the commit subject.
+			labels := 0
+			for _, branch := range s.git.branches {
+				if branch.HeadShort != "" && strings.HasPrefix(cm.Hash, branch.HeadShort) && labels < 2 {
+					ui.Text(c, branch.Name).FontSize(10).FontWeight(650).
+						Padding(2, 5).Radius(3).Background(t.Accent.Alpha(0.18)).
+						TextColor(t.Accent).MaxWidth(140).SingleLine().Tooltip(branch.Name)
+					labels++
+				}
+			}
+			for _, branch := range s.git.remoteBranches {
+				if branch.HeadShort != "" && strings.HasPrefix(cm.Hash, branch.HeadShort) && labels < 2 {
+					name := branch.Remote + "/" + branch.Name
+					ui.Text(c, name).FontSize(10).FontWeight(650).
+						Padding(2, 5).Radius(3).Background(t.SurfaceHover).
+						TextColor(ref).MaxWidth(140).SingleLine().Tooltip(name)
+					labels++
+				}
+			}
+			ui.Text(c, cm.Subject).FontSize(12).Grow(1).MinWidth(0).SingleLine()
+			ui.Text(c, cm.Author).FontSize(11).TextColor(muted).Width(90).SingleLine()
+			ui.Text(c, cm.Short).Font(gdCodeFont()).FontSize(11).TextColor(ref).Width(64).SingleLine()
+			ui.Text(c, gdRelativeTime(cm.Time)).FontSize(11).TextColor(muted).Width(62).SingleLine()
 		})
 	}).Grow(1).MinHeight(0).Padding(4, 8).Gap(4)
 	s.commitsList.Key = func(i int) any {
@@ -326,7 +331,6 @@ func (s *Shell) commitsPane(c *ui.Context, pal *gdPalette) {
 			ui.Text(c, "No matching commits").FontSize(12).TextColor(t.TextMuted).Padding(12)
 		}
 	})
-	_ = sp
 }
 
 // gdRelativeTime writes how long ago t was: just now, 5m ago, 3d ago.
