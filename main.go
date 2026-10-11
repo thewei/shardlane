@@ -90,14 +90,10 @@ func main() {
 	// The close button only hides the window (session stays alive); a real
 	// quit comes from the app menu (RoleQuit → App.Quit), which fires
 	// OnBeforeQuit before closing windows. The flag lets OnClose tell the
-	// two apart. MarkQuitting also reaches the close-preventing windows:
-	// mygo aborts the whole quit when any window prevents its close, so a
-	// prevented quick-panel close would strand a windowless process on the
-	// single-instance lock (2026-10-07 user report).
+	// two apart.
 	quitting := false
 	mygo.App.OnBeforeQuit(func(e *mygo.QuitEvent) {
 		quitting = true
-		shell.MarkQuitting()
 	})
 
 	mygo.App.WhenReady(func() {
@@ -149,28 +145,13 @@ func main() {
 		// macOS status tray (0.7 §17-18) and Dock badge (0.9 P12). Either
 		// binding may fail outside packaged macOS runs; the tray click is
 		// then simply absent, and the titlebar agent button stays the
-		// in-window anchor for the floating panel.
+		// in-window anchor for the quick-panel flyout.
 		if tray, err := mygo.NewTray(mygo.TrayOptions{Title: "Shardlane"}); err != nil {
 			slog.Warn("attach status tray failed", "error", err)
 		} else {
 			shell.AttachTray(tray)
 		}
 		shell.AttachDock(mygo.App.Dock)
-
-		// Floating Agent activity panel (0.7 §17.1): the shared surface
-		// behind the tray click and the titlebar's agent button. Created
-		// hidden and frameless; toggles anchor beneath their trigger.
-		if panel := mygo.NewWindow(mygo.WindowOptions{
-			Width:         nativeui.QuickPanelWidth,
-			Height:        nativeui.QuickPanelHeight,
-			Hidden:        true,
-			Frameless:     true,
-			AlwaysOnTop:   true,
-			DisableResize: true,
-			Content:       ui.View(shell.QuickPanelView),
-		}); panel != nil {
-			shell.AttachQuickPanel(panel)
-		}
 
 		// macOS app menu with a Check for Updates item (truthful status via
 		// the updater plugin), plus a Go menu so the core commands are

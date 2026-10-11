@@ -9,51 +9,6 @@ import (
 	"github.com/wh-studio/herdr-client/internal/herdr"
 )
 
-func mygoRectangle(x, y, width, height int) mygo.Rectangle {
-	return mygo.Rectangle{X: x, Y: y, Width: width, Height: height}
-}
-
-// TestQuickPanelBounds pins the §17.1 anchoring geometry: centered beneath
-// the anchor rect, clamped into the work area, flipped above when the bottom
-// would overflow, and sane on a degenerate work area.
-func TestQuickPanelBounds(t *testing.T) {
-	workArea := QuickRect{X: 0, Y: 25, Width: 1440, Height: 900}
-
-	// Centered beneath the anchor.
-	anchor := QuickRect{X: 700, Y: 0, Width: 22, Height: 24}
-	x, y := QuickPanelBounds(anchor, workArea, QuickPanelWidth, QuickPanelHeight)
-	if x != 700+22/2-QuickPanelWidth/2 || y != 24+quickPanelGap {
-		t.Fatalf("centered anchor = %d,%d", x, y)
-	}
-
-	// Right-edge anchor: clamped into the work area.
-	anchor = QuickRect{X: 1430, Y: 0, Width: 22, Height: 24}
-	x, _ = QuickPanelBounds(anchor, workArea, QuickPanelWidth, QuickPanelHeight)
-	if x != workArea.Width-QuickPanelWidth {
-		t.Fatalf("right clamp = %d, want %d", x, workArea.Width-QuickPanelWidth)
-	}
-
-	// Left-edge anchor: clamped to the work-area origin.
-	anchor = QuickRect{X: 0, Y: 0, Width: 22, Height: 24}
-	x, _ = QuickPanelBounds(anchor, workArea, QuickPanelWidth, QuickPanelHeight)
-	if x != 0 {
-		t.Fatalf("left clamp = %d", x)
-	}
-
-	// Dock-adjacent anchor near the bottom: the panel flips above it.
-	anchor = QuickRect{X: 700, Y: 880, Width: 22, Height: 24}
-	_, y = QuickPanelBounds(anchor, workArea, QuickPanelWidth, QuickPanelHeight)
-	if want := 880 - quickPanelGap - QuickPanelHeight; y != want {
-		t.Fatalf("flip-above = %d, want %d", y, want)
-	}
-
-	// Degenerate work area: raw anchor, no crash.
-	x, y = QuickPanelBounds(anchor, QuickRect{}, QuickPanelWidth, QuickPanelHeight)
-	if x != 700+11-QuickPanelWidth/2 || y != 880+24+quickPanelGap {
-		t.Fatalf("degenerate anchor = %d,%d", x, y)
-	}
-}
-
 // TestQuickPanelHeightFor pins the 2026-10-07 content-driven height: the
 // panel grows with its row count up to the fixed cap, sizes to the empty
 // state when there are no rows, and never exceeds the cap (the list scrolls
@@ -223,42 +178,41 @@ func TestQuickPanelViewEmptyWithoutAgents(t *testing.T) {
 	}
 }
 
-// TestToggleQuickPanelWithoutPanel pins the §17 adapter rule: without an
-// attached panel window the tray click (and the titlebar anchor click) is a
-// safe no-op — the deleted in-window Status Center is no longer a fallback.
-func TestToggleQuickPanelWithoutPanel(t *testing.T) {
+// TestQuickPanelToggleWithoutPanel pins the §17.1 adapter rule: without a
+// bound tray (and without a main window) the tray click (and the titlebar
+// anchor click) is a safe no-op — the deleted in-window Status Center is no
+// longer a fallback.
+func TestQuickPanelToggleWithoutPanel(t *testing.T) {
 	shell := quickPanelShell(t)
 	shell.router.Replace("/history")
-	shell.ToggleQuickPanel(mygoRectangle(700, 0, 22, 24))
+	shell.ToggleQuickPanel()
 	if shell.router.Path() != "/history" {
 		t.Fatalf("fallback route = %q, want no navigation", shell.router.Path())
 	}
 	shell.toggleAgentActivityPanel(ui.Element{})
 
-	// With a panel attached, hideQuickPanel is nil-safe pre-attach and the
-	// Escape path in the view never panics.
+	// hideQuickPanel is nil-safe without an open panel.
 	bare := NewShell()
 	bare.hideQuickPanel()
-	escapeTester := ui.NewTester(bare.QuickPanelView, QuickPanelWidth, QuickPanelHeight)
-	escapeTester.Frame()
 }
 
-// TestQuickPanelToggleOff pins the §17.1 anchor toggle against the
-// focus-stealing click: a click lands after the panel already lost key
-// status (blur-hide), and must still close rather than re-open.
-func TestQuickPanelToggleOff(t *testing.T) {
+// TestQuickPanelToggleCloses pins the §17.1 anchor toggle against the
+// pass-through click: on macOS the outside press that dismissed the flyout
+// goes on to the element under it, so a click landing within the dismiss
+// grace must still close (stay closed) rather than re-open.
+func TestQuickPanelToggleCloses(t *testing.T) {
 	now := time.Now()
-	if !quickPanelToggleOff(true, time.Time{}, now) {
-		t.Fatal("visible panel must toggle off")
+	if !quickPanelToggleCloses(&mygo.Window{}, time.Time{}, now) {
+		t.Fatal("open panel must toggle off")
 	}
-	if quickPanelToggleOff(false, time.Time{}, now) {
-		t.Fatal("hidden panel with no recent blur must toggle on")
+	if quickPanelToggleCloses(nil, time.Time{}, now) {
+		t.Fatal("no open panel with no recent dismissal must toggle on")
 	}
-	if !quickPanelToggleOff(false, now.Add(-quickPanelToggleGrace/2), now) {
-		t.Fatal("a click inside the blur grace must toggle off")
+	if !quickPanelToggleCloses(nil, now.Add(-quickPanelDismissGrace/2), now) {
+		t.Fatal("a click inside the dismiss grace must toggle off")
 	}
-	if quickPanelToggleOff(false, now.Add(-2*quickPanelToggleGrace), now) {
-		t.Fatal("a click after the blur grace must toggle on")
+	if quickPanelToggleCloses(nil, now.Add(-2*quickPanelDismissGrace), now) {
+		t.Fatal("a click after the dismiss grace must toggle on")
 	}
 }
 
@@ -279,28 +233,5 @@ func TestFilterStatusEntries(t *testing.T) {
 	entries = shell.filterStatusEntries(snapshot)
 	if len(entries) != 1 || entries[0].Card.Title != "Sleeper" {
 		t.Fatalf("idle entries = %+v", entries)
-	}
-}
-
-// TestQuickPanelCloseYieldsToQuit pins the ⌘Q fix (2026-10-07 user
-// report): the panel downgrades ordinary close requests to hide, but a
-// close that arrives while the application is quitting goes through —
-// a prevented close during quit aborts the whole application quit in
-// mygo's prepareQuit and strands a windowless process on the
-// single-instance lock.
-func TestQuickPanelCloseYieldsToQuit(t *testing.T) {
-	shell := quickPanelShell(t)
-
-	ordinary := &mygo.CloseEvent{}
-	shell.quickPanelCloseRequest(ordinary)
-	if !ordinary.DefaultPrevented() {
-		t.Fatal("an ordinary close must be downgraded to hide")
-	}
-
-	shell.MarkQuitting()
-	quitting := &mygo.CloseEvent{}
-	shell.quickPanelCloseRequest(quitting)
-	if quitting.DefaultPrevented() {
-		t.Fatal("the close must go through while the application is quitting")
 	}
 }

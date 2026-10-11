@@ -49,11 +49,11 @@ func (t *statusTray) apply(snapshot StatusCenterSnapshot, connected bool) {
 }
 
 // AttachTray binds the macOS menu-bar tray (0.7 §17): the normal click
-// toggles the §17.1 floating Status Quick Panel anchored beneath the
-// menu-bar item; without an attached panel the in-window Status Center
-// stays the surface. The click routes as an action — never a direct
-// runtime mutation.
+// toggles the §17.1 quick-panel flyout anchored beneath the menu-bar item;
+// without a bound tray the in-window Status Center stays the surface. The
+// click routes as an action — never a direct runtime mutation.
 func (s *Shell) AttachTray(tray *mygo.Tray) {
+	s.trayHandle = tray
 	s.tray = newStatusTray(tray)
 	// The status-first title is empty when nothing is actionable; the
 	// template glyph is the always-visible menu-bar mark, so bind it once
@@ -65,7 +65,7 @@ func (s *Shell) AttachTray(tray *mygo.Tray) {
 	}
 	tray.OnClick(func() {
 		s.applyOnWindow(func() {
-			s.ToggleQuickPanel(tray.Bounds())
+			s.ToggleQuickPanel()
 		})
 	})
 	s.updateTray()

@@ -1,6 +1,7 @@
 package nativeui
 
 import (
+	"runtime"
 	"time"
 
 	"github.com/egoist/mygo"
@@ -8,24 +9,26 @@ import (
 )
 
 /**
- * [INPUT]: 依赖 mygo 的第二个无边框窗口与 Screen 工作区、ui.Segmented、agent_card 共享卡片、tray_model 的计数
- * [OUTPUT]: 对外提供 Shell.QuickPanelView（Agent 概览或聚焦详情）、AttachQuickPanel、ToggleQuickPanel（托盘锚点）、Shell.toggleAgentActivityPanel（标题栏按钮锚点）、QuickPanelHeightFor（内容驱动高度纯函数）
- * [POS]: Agent 活动的唯一浮层：托盘/标题栏浏览概览，侧栏/列表卡片浏览精确 Agent；同一原生窗口与高度管理，焦点与路由归属独立
+ * [INPUT]: 依赖 mygo 的 Flyout（Tray/Parent 锚定、Popover 系统材质、菜单式关闭与 Escape）、ui.Segmented、agent_card 共享卡片、tray_model 的计数
+ * [OUTPUT]: 对外提供 Shell.QuickPanelView（Agent 概览或聚焦详情）、Shell.ToggleQuickPanel（托盘）、Shell.toggleAgentActivityPanel（标题栏按钮）、QuickPanelHeightFor（内容驱动高度纯函数）
+ * [POS]: Agent 活动的唯一浮层：托盘/标题栏浏览概览，侧栏/列表卡片浏览精确 Agent；同一 Flyout 生命周期，锚定/贴边/翻转/关闭归框架
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 
-// Floating Agent activity panel (0.7 §17.1/§17.2, 2026-10-07 revision): a
-// dedicated frameless MyGo window anchored beneath the menu-bar item or the
-// titlebar's agent button, never in the Dock/taskbar, hidden on blur and
-// Escape. One shared StatusCenterSnapshot, a status tab group switching the
-// agent list, and the sidebar's compact agent cards. The height follows the
-// content up to the fixed cap — beyond it the list scrolls inside.
+// Floating Agent activity panel (0.7 §17.1/§17.2, 2026-10-11 revision): one
+// MyGo flyout at a time — a system Popover on macOS — anchored beneath the
+// menu-bar item, the titlebar's agent button, or a sidebar Agent card. It
+// takes the keyboard while shown and closes like a menu: outside click,
+// focus moving away, app deactivation, or Escape. One shared
+// StatusCenterSnapshot, a status tab group switching the agent list, and the
+// sidebar's compact agent cards. The height follows the content up to the
+// fixed cap — beyond it the list scrolls inside.
 
 // QuickPanelWidth is the §17.1 suggested panel width (360–420 DIP).
 const QuickPanelWidth = 400
 
 // QuickPanelHeight caps the content-driven height; the rows scroll inside
-// beyond it. It is clamped to the display work area at anchor time.
+// beyond it. The flyout shrinks to fit a small work area on its own.
 const QuickPanelHeight = 480
 
 // quickPanelGap keeps breathing room between the anchor and the panel.
@@ -43,7 +46,7 @@ const (
 // quickPanelMinHeight keeps the panel presentable when it is nearly empty.
 const quickPanelMinHeight = 160
 
-// The focused Agent card uses the same floating window but a shorter,
+// The focused Agent card uses the same flyout but a shorter,
 // action-oriented detail layout, rather than a second popup implementation.
 const quickPanelAgentHeight = 328
 
@@ -64,69 +67,38 @@ func QuickPanelHeightFor(rows int) int {
 	return budget
 }
 
-// QuickRect is the pure geometry rectangle (mygo.Rectangle coordinates).
-type QuickRect struct {
-	X, Y, Width, Height int
-}
-
-// QuickPanelBounds computes the §17.1 screen-safe panel origin anchored
-// beneath the anchor rect: horizontally centered on it, clamped into
-// the work area, and flipped above when the panel would overflow the
-// work-area bottom. A degenerate work area falls back to the raw anchor.
-func QuickPanelBounds(anchor, workArea QuickRect, width, height int) (int, int) {
-	x := anchor.X + anchor.Width/2 - width/2
-	y := anchor.Y + anchor.Height + quickPanelGap
-	if workArea.Width <= 0 || workArea.Height <= 0 {
-		return x, y
-	}
-	// Horizontal clamp.
-	if x+width > workArea.X+workArea.Width {
-		x = workArea.X + workArea.Width - width
-	}
-	if x < workArea.X {
-		x = workArea.X
-	}
-	// Vertical: flip above the anchor when the bottom would overflow.
-	if y+height > workArea.Y+workArea.Height {
-		y = anchor.Y - quickPanelGap - height
-	}
-	if y+height > workArea.Y+workArea.Height {
-		y = workArea.Y + workArea.Height - height
-	}
-	if y < workArea.Y {
-		y = workArea.Y
-	}
-	return x, y
-}
-
-// quickRectOf converts the mygo geometry types.
-func quickRectOf(r mygo.Rectangle) QuickRect {
-	return QuickRect{X: r.X, Y: r.Y, Width: r.Width, Height: r.Height}
-}
-
-// QuickPanelView renders the floating panel content (§17.2, 2026-10-07):
-// the product name and shared summary header, a status tab group switching
-// the agent list, and the sidebar's compact agent cards over the shared
-// StatusCenterSnapshot. Escape hides the panel (§17.1).
+// QuickPanelView renders the floating panel content (§17.2): over the
+// popover's material on macOS the content draws no background of its own;
+// elsewhere it draws the panel (Windows 11 rounds and outlines the flyout,
+// so no radius or border there). The shared StatusCenterSnapshot feeds the
+// summary header, the status tab group and the agent cards; a focused Agent
+// swaps the whole body for its detail layout. Escape closes through the
+// flyout itself (§17.1) — the view deliberately does not take it.
 func (s *Shell) QuickPanelView(c *ui.Context) {
 	t := c.Theme()
 	sp := Spacing()
-	if c.Shortcut(0, ui.KeyEscape) {
-		s.hideQuickPanel()
+	tokens := designTokens(t.Dark)
+	c.Root().Background(ui.Transparent)
+	body := ui.Column(c).Fill()
+	if !c.Vibrancy() {
+		body = body.Background(tokens.Content)
+		if runtime.GOOS != "windows" {
+			body = body.Radius(10).Border(1, tokens.BorderSubtle)
+		}
 	}
-	snapshot := s.BuildStatusCenterSnapshot()
-	if s.quickPanelAgent != nil {
-		s.agentQuickPanelDetail(c, snapshot)
-		return
-	}
-	entries := s.filterStatusEntries(snapshot)
-	header := QuickPanelHeader(snapshot, !s.offline)
-	if s.quickPanelTab == 1 {
-		header = "Scripts and listening ports for the selected project"
-	}
-	ui.Column(c).Grow(1).Background(designTokens(t.Dark).Content).Children(func() {
+	body.Children(func() {
+		snapshot := s.BuildStatusCenterSnapshot()
+		if s.quickPanelAgent != nil {
+			s.agentQuickPanelDetail(c, snapshot)
+			return
+		}
+		entries := s.filterStatusEntries(snapshot)
+		header := QuickPanelHeader(snapshot, !s.offline)
+		if s.quickPanelTab == 1 {
+			header = "Scripts and listening ports for the selected project"
+		}
 		ui.Column(c).FillWidth().Padding(sp.M, sp.L).Gap(sp.XS).
-			BorderWidth(0, 0, 1, 0).BorderColor(designTokens(t.Dark).BorderSubtle).Children(func() {
+			BorderWidth(0, 0, 1, 0).BorderColor(tokens.BorderSubtle).Children(func() {
 			ui.Text(c, "Shardlane").FontSize(Typography().Micro).TextColor(t.TextMuted)
 			ui.Text(c, "Agents & Services").FontSize(Typography().Section + 1).FontWeight(700)
 			ui.Text(c, header).FontSize(Typography().Caption).TextColor(t.TextMuted).SingleLine()
@@ -135,7 +107,7 @@ func (s *Shell) QuickPanelView(c *ui.Context) {
 			view := s.quickPanelTab
 			if ui.Segmented(c, &view, "Agents", "Services").FillWidth().Changed() {
 				s.quickPanelTab = view
-				s.positionQuickPanel()
+				s.fitQuickPanel()
 			}
 		})
 		if s.quickPanelTab == 1 {
@@ -152,12 +124,12 @@ func (s *Shell) QuickPanelView(c *ui.Context) {
 		}
 		s.quickPanelSummary(c, snapshot)
 		// The status tab group switches the agent list (2026-10-07); a
-		// change resizes the panel window to the new content height.
+		// change re-fits the open flyout to the new content height.
 		ui.Row(c).FillWidth().Padding(sp.S, sp.L, 0).Children(func() {
 			chosen := s.workbench.filterChoice()
 			if ui.Segmented(c, &chosen, workbenchFilterLabels...).Changed() {
 				s.workbench.setFilterChoice(chosen)
-				s.positionQuickPanel()
+				s.fitQuickPanel()
 			}
 		})
 		ui.Scroll(c).Grow(1).Children(func() {
@@ -183,7 +155,7 @@ func (s *Shell) QuickPanelView(c *ui.Context) {
 					if row.Clicked() {
 						key := entry.Card.Key
 						s.quickPanelAgent = &key
-						s.positionQuickPanel()
+						s.fitQuickPanel()
 						s.invalidateQuickPanel()
 					}
 				}
@@ -208,151 +180,140 @@ func (s *Shell) filterStatusEntries(snapshot StatusCenterSnapshot) []StatusCente
 	return entries
 }
 
-// AttachQuickPanel binds the §17.1 floating panel window: blur hides it,
-// and a close request (e.g. Cmd-W from the Window menu) is downgraded to
-// hide so the reusable panel survives. A real quit must NOT be downgraded:
-// the application quit aborts when any window prevents its close, and a
-// prevented close here left a windowless process holding the
-// single-instance lock — ⌘Q never quit and relaunching surfaced nothing
-// (2026-10-07 user report). MarkQuitting flips the flag from the quit path.
-func (s *Shell) AttachQuickPanel(window *mygo.Window) {
-	s.quickPanel = window
-	window.OnBlur(func() {
-		if window.IsVisible() {
-			s.quickPanelBlurHideAt = time.Now()
-		}
-		s.hideQuickPanel()
-	})
-	window.OnClose(func(e *mygo.CloseEvent) {
-		s.quickPanelCloseRequest(e)
-	})
+// quickPanelDismissGrace is the window in which an anchor click right after
+// the flyout dismissed still counts as "close": on macOS the outside press
+// that dismissed the panel goes on to the element under it, so clicking the
+// tray item or the titlebar button closes the panel first and only then
+// delivers its action — without this grace the click would re-open the
+// panel it meant to close.
+const quickPanelDismissGrace = 250 * time.Millisecond
+
+// quickPanelToggleCloses decides whether an anchor click closes the panel
+// instead of opening it: either a panel is open, or one just dismissed.
+func quickPanelToggleCloses(panel *mygo.Window, dismissedAt, now time.Time) bool {
+	return panel != nil || now.Sub(dismissedAt) < quickPanelDismissGrace
 }
 
-// quickPanelCloseRequest applies the panel's close policy: while the
-// application is quitting the close goes through (mygo aborts the whole
-// quit when any window prevents its close), any other close request —
-// ⌘W, the system send-to-close — is downgraded to hide so the reusable
-// panel survives.
-func (s *Shell) quickPanelCloseRequest(e *mygo.CloseEvent) {
-	if s.quitting {
+// ToggleQuickPanel is the tray click action (§17.1 lifecycle): an open
+// panel closes; otherwise one opens beneath the menu-bar item — the
+// framework centers it under the icon and keeps it in the work area. The
+// icon's own press does not dismiss a focusable flyout, so the click keeps
+// toggling.
+func (s *Shell) ToggleQuickPanel() {
+	if s.trayHandle == nil {
 		return
 	}
-	e.PreventDefault()
-	s.hideQuickPanel()
-}
-
-// quickPanelToggleGrace is the window in which an anchor click right after
-// a blur-hide still counts as "close": clicking the tray item or the
-// titlebar button first strips the panel's key status (blur-hide) and only
-// then delivers its action, so without this grace the click would re-open
-// the panel it meant to close.
-const quickPanelToggleGrace = 250 * time.Millisecond
-
-// quickPanelToggleOff decides whether the anchor click should close the
-// panel instead of opening it: either it is still visible, or blur just
-// hid it.
-func quickPanelToggleOff(visible bool, blurHideAt, now time.Time) bool {
-	return visible || now.Sub(blurHideAt) < quickPanelToggleGrace
-}
-
-// hideQuickPanel hides the panel when visible (blur/Escape lifecycle).
-func (s *Shell) hideQuickPanel() {
+	if quickPanelToggleCloses(s.quickPanel, s.quickPanelDismissedAt, time.Now()) {
+		s.closeQuickPanel()
+		return
+	}
 	s.quickPanelAgent = nil
-	if s.quickPanel != nil && s.quickPanel.IsVisible() {
-		s.quickPanel.Hide()
+	s.openQuickPanelFlyout(mygo.FlyoutOptions{
+		Tray:      s.trayHandle,
+		Placement: mygo.PlacementBottom,
+		Gap:       quickPanelGap,
+	})
+}
+
+// toggleAgentActivityPanel is the titlebar button's action: the same
+// flyout, anchored beneath the button — ui.Element.Bounds is already the
+// content-area rectangle the flyout anchor wants. No main window (headless
+// tests, platform fallback) keeps the click a no-op.
+func (s *Shell) toggleAgentActivityPanel(anchor ui.Element) {
+	if s.win == nil {
+		return
+	}
+	if quickPanelToggleCloses(s.quickPanel, s.quickPanelDismissedAt, time.Now()) {
+		s.closeQuickPanel()
+		return
+	}
+	s.quickPanelAgent = nil
+	s.openQuickPanelFlyout(mygo.FlyoutOptions{
+		Parent:    s.win,
+		Anchor:    quickAnchorRect(anchor.Bounds()),
+		Placement: mygo.PlacementBottom,
+		Gap:       quickPanelGap,
+	})
+}
+
+// quickAnchorRect converts the element bounds (content-area DIPs) into the
+// flyout anchor rectangle.
+func quickAnchorRect(b ui.Rect) mygo.Rectangle {
+	return mygo.Rectangle{X: int(b.X), Y: int(b.Y), Width: int(b.W), Height: int(b.H)}
+}
+
+// openQuickPanelFlyout creates and shows the panel (§17.1): a focusable
+// Popover — the system's material, arrow and animation on macOS — that
+// closes as the user clicks elsewhere, another window takes the keyboard,
+// the app deactivates, or Escape reaches it. A panel still open closes
+// first; its OnClosed is identity-guarded so a replacement created here
+// survives the stale callback.
+func (s *Shell) openQuickPanelFlyout(base mygo.FlyoutOptions) {
+	if prev := s.quickPanel; prev != nil {
+		prev.Close()
+		s.quickPanel = nil
+	}
+	// The actionable rows' usage captions refresh right before showing,
+	// forced past the throttle.
+	s.refreshUsageProjection(true)
+	base.Width = QuickPanelWidth
+	base.Height = s.quickPanelContentHeight()
+	base.Focusable = true
+	base.Popover = true
+	base.Shadow = true
+	base.Content = ui.View(s.QuickPanelView)
+	panel := mygo.NewFlyout(base)
+	s.quickPanel = panel
+	panel.OnClosed(func() {
+		s.quickPanelDismissedAt = time.Now()
+		if s.quickPanel == panel {
+			s.quickPanel = nil
+			s.quickPanelAgent = nil
+		}
+	})
+}
+
+// closeQuickPanel closes the open panel; the OnClosed listener resets the
+// selection. Nil-safe (headless sessions, tests, already-closed panel).
+func (s *Shell) closeQuickPanel() {
+	if s.quickPanel != nil {
+		s.quickPanel.Close()
 	}
 }
 
-// invalidateQuickPanel repaints the floating panel while it is visible.
-// The panel window is created hidden and receives no input between user
-// interactions, so MyGo never repaints it on its own: without this push it
-// would keep showing the frame it first built at startup.
+// hideQuickPanel is the action-button path (open Terminal / Chat /
+// Inspector): close the panel and let OnClosed reset its state, so the
+// content does not flicker to another layout during the close animation.
+func (s *Shell) hideQuickPanel() {
+	s.closeQuickPanel()
+}
+
+// invalidateQuickPanel repaints the open panel after an interaction or a
+// background projection change.
 func (s *Shell) invalidateQuickPanel() {
 	if s.quickPanel != nil && s.quickPanel.IsVisible() {
 		s.quickPanel.Invalidate()
 	}
 }
 
-// quickPanelAnchor / quickPanelWorkArea remember where the panel was last
-// opened from, so a tab-group change can re-fit the height in place.
-type quickPanelPlacement struct {
-	anchor   QuickRect
-	workArea QuickRect
-}
-
-// ToggleQuickPanel is the tray click action (§17.1 lifecycle): a visible
-// panel hides; otherwise the panel anchors beneath the menu-bar item.
-func (s *Shell) ToggleQuickPanel(trayBounds mygo.Rectangle) {
-	s.toggleQuickPanelAnchored(quickRectOf(trayBounds))
-}
-
-// toggleAgentActivityPanel is the titlebar button's action: the same
-// floating panel, anchored beneath the button (2026-10-07). The element
-// bounds are window coordinates; the window bounds make them screen
-// coordinates. No attached panel (headless tests, platform fallback) keeps
-// the click a no-op.
-func (s *Shell) toggleAgentActivityPanel(anchor ui.Element) {
-	if s.quickPanel == nil || s.win == nil {
-		return
-	}
-	if quickPanelToggleOff(s.quickPanel.IsVisible(), s.quickPanelBlurHideAt, time.Now()) {
-		s.hideQuickPanel()
-		return
-	}
-	rect := anchor.Bounds()
-	win := s.win.Bounds()
-	s.toggleQuickPanelAnchored(QuickRect{
-		X:      win.X + int(rect.X),
-		Y:      win.Y + int(rect.Y),
-		Width:  int(rect.W),
-		Height: int(rect.H),
-	})
-}
-
-// toggleQuickPanelAnchored shows the panel beneath the given screen anchor
-// or hides it (§17.1 toggle). The actionable rows' usage captions refresh
-// right before showing, forced past the throttle.
-func (s *Shell) toggleQuickPanelAnchored(anchor QuickRect) {
-	if s.quickPanel == nil {
-		return
-	}
-	if quickPanelToggleOff(s.quickPanel.IsVisible(), s.quickPanelBlurHideAt, time.Now()) {
-		s.hideQuickPanel()
-		return
-	}
-	s.quickPanelAgent = nil
-	s.showQuickPanelAnchored(anchor)
-}
-
-// showQuickPanelAnchored opens (or retargets) the one reusable popover.
-func (s *Shell) showQuickPanelAnchored(anchor QuickRect) {
-	s.refreshUsageProjection(true)
-	display := mygo.Screen.DisplayNearestPoint(mygo.Point{
-		X: anchor.X + anchor.Width/2,
-		Y: anchor.Y + anchor.Height/2,
-	})
-	s.quickPanelPlacement = quickPanelPlacement{anchor: anchor, workArea: quickRectOf(display.WorkArea)}
-	s.positionQuickPanel()
-	// Show() does not repaint: rebuild the frame from the current snapshot
-	// so the panel never opens on a stale (e.g. startup) render.
-	s.quickPanel.Invalidate()
-	s.quickPanel.Show()
-	s.quickPanel.Focus()
-}
-
-// positionQuickPanel resizes the panel window to the current content
-// height, anchored at its remembered placement. No-op without a panel.
-func (s *Shell) positionQuickPanel() {
-	if s.quickPanel == nil {
-		return
-	}
-	height := QuickPanelHeightFor(len(s.filterStatusEntries(s.BuildStatusCenterSnapshot())))
-	if s.quickPanelTab == 1 {
-		height = QuickPanelHeight
-	}
+// quickPanelContentHeight is the panel height for the current content
+// (§17.1): the focused detail layout, the fixed Services tab, or the
+// overview's content-driven height.
+func (s *Shell) quickPanelContentHeight() int {
 	if s.quickPanelAgent != nil {
-		height = quickPanelAgentHeight
+		return quickPanelAgentHeight
 	}
-	x, y := QuickPanelBounds(s.quickPanelPlacement.anchor, s.quickPanelPlacement.workArea, QuickPanelWidth, height)
-	s.quickPanel.SetBounds(mygo.Rectangle{X: x, Y: y, Width: QuickPanelWidth, Height: height})
+	if s.quickPanelTab == 1 {
+		return QuickPanelHeight
+	}
+	return QuickPanelHeightFor(len(s.filterStatusEntries(s.BuildStatusCenterSnapshot())))
+}
+
+// fitQuickPanel resizes the open flyout to the current content height; the
+// framework re-places it against its anchor and the work area.
+func (s *Shell) fitQuickPanel() {
+	if s.quickPanel == nil {
+		return
+	}
+	s.quickPanel.SetSize(QuickPanelWidth, s.quickPanelContentHeight())
 }

@@ -159,29 +159,25 @@ type Shell struct {
 	// tray owns the 0.7 §17-18 macOS menu-bar projection; nil when no tray
 	// is bound (headless sessions, tests, platform fallback).
 	tray *statusTray
+	// trayHandle is the bound mygo.Tray itself: the quick panel flyout
+	// anchors to it (Tray option), not to a screen rectangle.
+	trayHandle *mygo.Tray
 	// dock controls the 0.9 P12 macOS Dock badge (NeedsAttention + ReviewPending).
 	dock *dockController
-	// quickPanel is the floating Agent activity panel window (0.7 §17.1);
-	// nil means headless (tests, platform fallback) and the anchor clicks
-	// stay no-ops.
+	// quickPanel is the open quick-panel flyout (0.7 §17.1); nil means no
+	// panel is open — the flyout is created on demand, and headless
+	// sessions (tests, platform fallback) keep the anchor clicks no-ops.
 	quickPanel *mygo.Window
 	// quickPanelAgent selects one exact Agent for the shared quick panel;
 	// nil means the tray/titlebar's full activity overview.
 	quickPanelAgent *agent.AgentKey
-	// 0: Agent activity, 1: workspace Services; one anchored native panel.
+	// 0: Agent activity, 1: workspace Services; one anchored flyout.
 	quickPanelTab int
-	// quickPanelPlacement remembers the anchor + work area the panel was
-	// last shown at, so a status-tab change re-fits the height in place.
-	quickPanelPlacement quickPanelPlacement
-	// quickPanelBlurHideAt records when the panel last hid because it lost
-	// key status: the anchor click that steals that focus lands moments
-	// later and must count as "close", not as a fresh open (§17.1 toggle).
-	quickPanelBlurHideAt time.Time
-	// quitting is set from the application quit path (OnBeforeQuit) so
-	// close-preventing windows (the quick panel) yield to a real quit
-	// instead of aborting it. Main-thread only, like the events that set
-	// and read it.
-	quitting bool
+	// quickPanelDismissedAt records when the panel last closed: on macOS
+	// the outside press that dismissed it goes on to the element under it,
+	// so the anchor click that lands moments later must count as "close",
+	// not as a fresh open (§17.1 toggle).
+	quickPanelDismissedAt time.Time
 	// commandCenter owns the 0.9 P1 palette state; the index cache is
 	// rebuilt from the snapshot on every open (zero IO). commandCenterReveal
 	// is the row the keyboard moved to and the list must reveal (-1 none);
@@ -514,13 +510,6 @@ func (s *Shell) ToggleRightPanelFromMenu() {
 // already-open palette is a no-op re-render, never a toggle.
 func (s *Shell) OpenCommandCenterFromMenu() {
 	s.applyOnWindow(func() { s.openCommandCenter(commandcenter.ScopeAll) })
-}
-
-// MarkQuitting records that the application quit has started (fired from
-// OnBeforeQuit before any window closes): close-preventing windows check
-// it to yield to the quit.
-func (s *Shell) MarkQuitting() {
-	s.quitting = true
 }
 
 func (s *Shell) Close() {

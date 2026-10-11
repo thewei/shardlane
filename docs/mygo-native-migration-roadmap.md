@@ -647,6 +647,13 @@ Fast verification: `GOTOOLCHAIN=go1.27.1 go test ./...`; `GOTOOLCHAIN=auto go to
 - Complete the repository Go tests, framework SearchField and optional-`nil` focus regressions, MyGo vet and macOS app packaging build against the revised vendored tree. Initial rebase placed `focusTo` ahead of `hasState` and failed `TestOptionalElementInput/nil`; the delegation is now behind the nil-safe guard. Treat actual application keyboard/terminal smoke and the other OS builds as distinct acceptance gates.
 - WebView remains frozen: [upstream evaluation](mygo-webview-upstream-evaluation-2026-10-10.md) records the unmerged #60/#189/#200 alternatives. No PR cherry-pick or second native hosting path is approved.
 
+## N18 — MyGo v0.4.1 refresh + Flyout quick panel (2026-10-11)
+
+- Pin `github.com/egoist/mygo` v0.4.1, keep the single vendored `replace` and re-apply both documented compatibility fixes on the new base (F146/F147 `LocalDragSelect`, WIX-021 field editor-focus delegation). Neither is in upstream v0.4.1; `third_party/mygo/LOCAL-PATCH.md` records the rebase.
+- Migrate the §17.1 quick panel from the hand-positioned frameless `AlwaysOnTop` window to the upstream Flyout API: the tray click opens `NewFlyout{Tray, PlacementBottom}`; the titlebar Agent button and sidebar Agent cards open `NewFlyout{Parent, Anchor: element.Bounds()}`. `Popover: true` gives the system NSPopover material/arrow/animation, `Focusable: true` the menu-like dismissal (outside click, focus loss, app deactivation, Escape), and `c.Vibrancy()` decides whether the content draws its own panel background. The window-era machinery is deleted with it: startup `NewWindow`, screen-coordinate anchor math, `QuickPanelBounds` clamping, blur-grace via `OnBlur`, and the quit-yielding close-downgrade (`MarkQuitting`, the 2026-10-07 ⌘Q strand fix is moot — the flyout never prevents close). The toggle keeps a 250 ms post-dismiss grace (`quickPanelToggleCloses`) for the macOS pass-through click.
+- Upstream v0.4.x ships an official `ui.WebView` element; adopting it for History/Chat/Preview stays frozen pending an explicit product decision (see the architecture baseline). The terminal plugin's new `OpenLink`/`OnPaste` options stay unadopted until a task takes them.
+- Gates run: repository Go tests (16 packages), MyGo vet, `mygo build` with `Shardlane.app` structural verification (Info.plist lint, Mach-O, codesign), framework `ui`/`terminal` tests against the patched tree. Real-app tray/flyout interaction (popover material, toggle, dismissal) remains the manual acceptance gate; the startup smoke was blocked by the user's running instance holding the single-instance lock.
+
 # M7 — Remote / Mobile API v2
 
 Keep current wire compatibility; reuse Go app services.

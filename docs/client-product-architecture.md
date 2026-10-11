@@ -4,7 +4,7 @@ Status: **Canonical / as-built + approved-next architecture**
 Baseline: 2026-08-25
 Runtime baseline: Herdr 0.8.x. Current transitional code still accepts socket protocol 19; the approved TUI-only cutover raises the minimum fully supported protocol to 20 because native shell → hosted TUI navigation uses protocol-20 focus operations. Known wrapper contracts remain version-checked rather than assuming unlimited forward compatibility.
 Current shipped UI baseline: GPUI 0.2.2, gpui-component 0.5.1 + gpui-component-assets 0.5.1
-Current migration UI baseline (pin advanced 2026-10-10): MyGo v0.3.7 Native UI with two documented local compatibility deltas, Go 1.27.1, and the official MyGo Terminal/Ghostty surface in this repository (the former `next/` module, now the repository root); this path gates on Herdr 0.9.3 / socket protocol 22 for the audited snapshot/direct-attach capabilities.
+Current migration UI baseline (pin advanced 2026-10-11): MyGo v0.4.1 Native UI with two documented local compatibility deltas re-applied (F146/F147 `LocalDragSelect`, WIX-021 field focus delegation — both still absent upstream), Go 1.27.1, and the official MyGo Terminal/Ghostty surface in this repository (the former `next/` module, now the repository root); this path gates on Herdr 0.9.3 / socket protocol 22 for the audited snapshot/direct-attach capabilities. Upstream v0.4.x additions are adopted only when a task takes them: the Flyout API backs the Header/tray quick panel, and `ui.WebView` exists but does not by itself unfreeze the WebView presentation freeze below.
 
 This file is the single architectural source of truth for Shardlane. Other documents may define interaction details, execution order, progress evidence, or handoff context, but they must not redefine ownership.
 
@@ -102,12 +102,12 @@ MyGo Native UI
   reconciliation trigger. It is an implementation replacement for the Rust
   adapter, not a second runtime or client-side Workspace registry.
 - **History UI and Chat UI are Native UI for the current migration.** WebView
-  presentation for either surface is frozen. MyGo v0.3.7 does not provide an
-  official WebView element embedded inside the Native UI tree, and the migration
+  presentation for either surface is frozen. Upstream MyGo v0.4.1 now ships an
+  official `ui.WebView` element embedded inside the Native UI tree, but the
+  freeze stands until an explicit product decision adopts it: the migration
   must not invent private AppKit/GTK/HWND embedding or a second localhost
-  presentation backend. This freeze may be reconsidered only after MyGo ships an
-  official supported Native-UI-embeddable WebView capability and a later explicit
-  product decision unfreezes it. Runtime/domain ownership would remain unchanged.
+  presentation backend in the meantime. Runtime/domain ownership would remain
+  unchanged either way.
 - Daily development of the new desktop path must not require compiling the
   Rust GUI. Current `shardlane-host`, `shardlane-history` and
   `shardlane-remote` remain compatibility/parity references until each domain
@@ -179,12 +179,13 @@ Normative boundaries for this milestone:
   auxiliary tool process/PTY per window, visibility/project scoped, never a
   replacement for or member of the Herdr Pane runtime.
 - The retained Browser product scope remains **local Project Preview only**.
-  MyGo v0.3.7 still has no official Native-UI-embedded WebView element, so the
-  migration may render Preview in a separate project-scoped MyGo WebView
-  window until an official embedded capability exists. Private AppKit/GTK/HWND
-  embedding is forbidden. Preview accepts local dev targets only and hands
-  external navigation to the system browser; it does not become general
-  browser tabs/history/bookmarks.
+  Preview continues to render in its separate project-scoped MyGo WebView
+  window: an official embedded element (`ui.WebView`) exists since v0.4.1,
+  but adopting it for Preview (or History/Chat) stays frozen pending an
+  explicit product decision. Private AppKit/GTK/HWND embedding is forbidden.
+  Preview accepts local dev targets only and hands external navigation to
+  the system browser; it does not become general browser
+  tabs/history/bookmarks.
 - Local Git status is a client-side read projection cached off the render path.
   Optional GitHub PR enrichment is read-only first and must reuse an approved
   authentication source (initially an already-authenticated official `gh` CLI
@@ -262,7 +263,8 @@ Normative 0.10 boundaries:
   Header's Files action navigates to a dedicated `/files` page, whose left
   sidebar browses the selected Herdr Tab's CWD and whose center owns the
   bounded, read-only preview. Changes uses the left Git-reference tree and a Fork-style center: Local Changes places staged/unstaged files beside Diff with a bottom commit composer; All Commits places the ancestry-aware history graph above a changed-file tree and read-only Diff.
-  The existing Header/tray Agent activity floating window has an Agents /
+  The existing Header/tray Agent activity flyout (a MyGo Flyout, shown as a
+  system popover on macOS) has an Agents /
   Services switch: Services displays the active Tab's configured Scripts and
   observed ports, with explicit Run/Preview actions, not a new runtime.
   Directory and port snapshots are root-scoped; no render-time filesystem,
@@ -319,9 +321,10 @@ one contextual left sidebar and one center work surface, with no docked
 right panel. `/workspace` owns Terminal/Chat/Changes, `/files` owns a
 left directory tree and central read-only preview; History, Settings and
 Agent Inspector remain independent top-level routes. The Header Agent
-button and macOS tray share a single anchored native popup with Agents /
-Services tabs, and clicking a sidebar Agent focuses a detail view in that
-same popup. Services consumes real Herdr-backed Script launches and scoped
+button and macOS tray share a single anchored MyGo flyout (a system
+popover on macOS) with Agents / Services tabs, and clicking a sidebar
+Agent focuses a detail view in that same flyout. Services consumes real
+Herdr-backed Script launches and scoped
 observed ports; it never creates a second process/Agent monitor. Retired
 right-panel session settings are decode-compatible but have no visible UI
 effect. Interaction details and real-app acceptance gates live in

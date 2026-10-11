@@ -3,12 +3,13 @@ package nativeui
 import (
 	"fmt"
 
+	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 	"github.com/wh-studio/herdr-client/internal/agent"
 )
 
 /**
- * [INPUT]: 依赖共享 StatusCenterSnapshot、AgentCardModel 与 QuickPanel 原生窗口锚点
+ * [INPUT]: 依赖共享 StatusCenterSnapshot、AgentCardModel 与 quick panel 的 Flyout 锚点
  * [OUTPUT]: 提供 Agent Activity 可点击统计、单 Agent 详情浮层和 Sidebar Agent 打开动作
  * [POS]: quick_panel 的可复用详情/概览内容；状态由同一目录投影生成，无第二套弹层窗口或运行时状态
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
@@ -45,44 +46,46 @@ func (s *Shell) quickPanelStat(c *ui.Context, label string, count int, tone Stat
 	})
 	if button.Clicked() {
 		s.workbench.setFilterChoice(filter)
-		s.positionQuickPanel()
+		s.fitQuickPanel()
 	}
 }
 
-// openAgentQuickPanel anchors the existing status/tray popup beside the
-// selected sidebar card. The headless/native-unavailable fallback retains
-// the existing Open Agent behavior, without creating a second window.
+// openAgentQuickPanel anchors the existing status/tray flyout beside the
+// selected sidebar card — ui.Element.Bounds is already the content-area
+// rectangle the flyout anchor wants; a second click on the same card
+// closes it. The headless/native-unavailable fallback retains the existing
+// Open Agent behavior, without creating a second window.
 func (s *Shell) openAgentQuickPanel(anchor ui.Element, card agent.AgentCardModel) {
-	if s.quickPanel == nil || s.win == nil {
+	if s.win == nil {
 		s.openAgentCard(card)
 		return
 	}
-	if s.quickPanel.IsVisible() && s.quickPanelAgent != nil && *s.quickPanelAgent == card.Key {
-		s.hideQuickPanel()
+	if s.quickPanel != nil && s.quickPanelAgent != nil && *s.quickPanelAgent == card.Key {
+		s.closeQuickPanel()
 		return
 	}
 	key := card.Key
 	s.quickPanelAgent = &key
-	rect := anchor.Bounds()
-	win := s.win.Bounds()
-	s.showQuickPanelAnchored(QuickRect{
-		X: win.X + int(rect.X), Y: win.Y + int(rect.Y),
-		Width: int(rect.W), Height: int(rect.H),
+	s.openQuickPanelFlyout(mygo.FlyoutOptions{
+		Parent:    s.win,
+		Anchor:    quickAnchorRect(anchor.Bounds()),
+		Placement: mygo.PlacementBottom,
+		Gap:       quickPanelGap,
 	})
 }
 
 // agentQuickPanelDetail uses an identity fence on every paint. If the Agent
 // disappears between the click and rendering, no stale action is offered.
+// It draws no background of its own: the quick panel chrome already paints
+// (or defers to the popover's material).
 func (s *Shell) agentQuickPanelDetail(c *ui.Context, snapshot StatusCenterSnapshot) {
 	t := c.Theme()
-	tokens := s.tokens(t.Dark)
 	sp := Spacing()
 	ui.Scroll(c).Grow(1).Children(func() {
-		ui.Column(c).FillWidth().Padding(sp.L).Gap(sp.L).
-			Background(tokens.Content).Children(func() {
+		ui.Column(c).FillWidth().Padding(sp.L).Gap(sp.L).Children(func() {
 			if ui.Button(c, "← All Agents").Clicked() {
 				s.quickPanelAgent = nil
-				s.positionQuickPanel()
+				s.fitQuickPanel()
 				s.invalidateQuickPanel()
 			}
 			var card *agent.AgentCardModel
