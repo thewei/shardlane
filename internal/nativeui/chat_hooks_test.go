@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/wh-studio/herdr-client/internal/conversation"
+	"github.com/wh-studio/herdr-client/internal/herdr"
 )
 
 // The fixture is the real visible screen of a Claude Code AskUserQuestion
@@ -100,5 +101,101 @@ func TestDetectClaudeInteractionIgnoresNumberedTranscript(t *testing.T) {
 	}, "\n")
 	if _, _, _, ok := detectClaudeInteraction(screen); ok {
 		t.Fatal("plain numbered transcript must not detect")
+	}
+}
+
+// TestProjectionEquivalent pins the hook-refresh dedupe: identical agent
+// status surfaces skip the apply; status, revision or membership changes
+// must apply.
+func TestProjectionEquivalent(t *testing.T) {
+	base := herdr.Projection{
+		Agents: []herdr.Agent{
+			{PaneID: "p1", Status: "idle", Revision: 3},
+			{PaneID: "p2", Status: "working", Revision: 8},
+		},
+		Panes: []herdr.Pane{{ID: "p1"}, {ID: "p2"}},
+		Tabs:  []herdr.Tab{{ID: "t1"}},
+	}
+	if !projectionEquivalent(base, base) {
+		t.Fatal("identical projections must compare equivalent")
+	}
+	flip := base
+	agents := append([]herdr.Agent(nil), base.Agents...)
+	agents[1].Status = "idle"
+	flip.Agents = agents
+	if projectionEquivalent(base, flip) {
+		t.Fatal("a status change must not compare equivalent")
+	}
+	bump := base
+	agents = append([]herdr.Agent(nil), base.Agents...)
+	agents[0].Revision = 4
+	bump.Agents = agents
+	if projectionEquivalent(base, bump) {
+		t.Fatal("a revision bump must not compare equivalent")
+	}
+	grow := base
+	grow.Panes = append(grow.Panes, herdr.Pane{ID: "p3"})
+	if projectionEquivalent(base, grow) {
+		t.Fatal("a pane membership change must not compare equivalent")
+	}
+}
+
+// TestScheduleProjectionRefreshHeadlessGuard pins the guard: without a
+// runtime the hook-driven refresh is a no-op and never latches the debounce.
+func TestScheduleProjectionRefreshHeadlessGuard(t *testing.T) {
+	shell := NewShell()
+	shell.scheduleProjectionRefresh()
+	shell.chatRefreshMu.Lock()
+	pending := shell.chatRefreshPending
+	shell.chatRefreshMu.Unlock()
+	if pending {
+		t.Fatal("headless shell must not latch the refresh debounce")
+	}
+}
+
+// TestReconcileBlockedInteractionsDeduplicates pins the pending-guard: a
+// pane with a live pending interaction is not re-detected, so repeated
+// projection applies can never duplicate interaction cards.
+func TestReconcileBlockedInteractionsDeduplicates(t *testing.T) {
+	shell := NewShell()
+	shell.projection = herdr.Projection{
+		Agents: []herdr.Agent{
+			{TerminalID: "term-1", PaneID: "p1", Status: "blocked"},
+		},
+	}
+	shell.interactionBroker.Publish(conversation.PendingInteraction{
+		ID:             "ia-seed",
+		ConversationID: "live:claude:term-1",
+		AgentPaneID:    "p1",
+		Kind:           conversation.InteractionQuestion,
+		Prompt:         "seeded",
+		Options:        []string{"a", "b"},
+	})
+	for range 3 {
+		shell.reconcileBlockedInteractions()
+		if pending := len(shell.interactionBroker.PendingForPane("p1")); pending != 1 {
+			t.Fatalf("pending interactions = %d, want 1", pending)
+		}
+	}
+}
+
+// TestReconcileBlockedInteractionsDispatchesSourceless pins the other side:
+// a blocked pane without a pending interaction is scheduled for detection
+// (headless: detect is a no-op on the nil runtime, but the reconcile must
+// not touch paned that are not blocked).
+func TestReconcileBlockedInteractionsDispatchesSourceless(t *testing.T) {
+	shell := NewShell()
+	shell.projection = herdr.Projection{
+		Agents: []herdr.Agent{
+			{TerminalID: "term-1", PaneID: "p1", Status: "blocked"},
+			{TerminalID: "term-2", PaneID: "p2", Status: "idle"},
+		},
+	}
+	shell.reconcileBlockedInteractions()
+	if pending := len(shell.interactionBroker.PendingForPane("p1")); pending != 0 {
+		t.Fatalf("detection without a runtime must not publish: %d", pending)
+	}
+	if pending := len(shell.interactionBroker.PendingForPane("p2")); pending != 0 {
+		t.Fatalf("idle pane must never be detected: %d", pending)
 	}
 }

@@ -127,9 +127,22 @@ func (s *Shell) openWorkspaceChat() {
 func (s *Shell) rebindWorkspaceChat() {
 	if card, ok := s.agentCardForSelectedPane(); ok {
 		if s.chatPaneID == card.PaneID && s.chatConversationID != "" {
+			// A later direct live bind (sidebar path) supersedes the
+			// sourceless latch.
+			s.chatSourcelessPaneID = ""
 			return
 		}
+		if s.chatPaneID == card.PaneID && s.chatSourcelessPaneID == card.PaneID {
+			// The latch holds only while the pane still has no chat source:
+			// once the agent establishes a session (card carries the
+			// conversation identity), rebind for real.
+			if card.ConversationID == "" {
+				return
+			}
+			s.chatSourcelessPaneID = ""
+		}
 		s.chatPaneID = card.PaneID
+		s.chatSourcelessPaneID = ""
 		if card.Key.TerminalID != "" && s.bindLiveAgent(card.Key) {
 			return
 		}
@@ -137,8 +150,23 @@ func (s *Shell) rebindWorkspaceChat() {
 			s.bindChatConversation(card.ConversationID)
 			return
 		}
+		// An Agent without any chat source must not inherit the previous
+		// pane's conversation: drop to the empty state. The render path
+		// re-enters while the pane stays sourceless, so the notice is
+		// latched per pane (the guard above exits early).
+		s.stopLiveTail()
+		s.chatConversationID = ""
+		s.chatTurns = nil
+		s.chatWindowMessages = nil
+		s.chatWindowStart = 0
+		s.chatHasOlder = false
+		s.chatSourcelessPaneID = card.PaneID
+		s.pendingToast = "No chat source for this agent yet — use its Terminal."
+		s.publishChatBridge()
+		return
 	} else if s.selectedPaneID != "" && s.selectedPaneID != s.chatPaneID {
 		s.chatPaneID = s.selectedPaneID
+		s.chatSourcelessPaneID = ""
 		s.stopLiveTail()
 		s.chatConversationID = ""
 		s.chatTurns = nil

@@ -134,9 +134,13 @@ func (b *ChatBridge) Send(ctx context.Context, text string) (ChatBridgeState, er
 }
 
 // chatInterruptSettle is the pause between the interrupting Escape and the
-// follow-up prompt: the TUI needs a beat to tear down the running turn
-// before the input box can accept a new prompt.
+// line clear: the TUI needs a beat to tear down the running turn (and, in
+// Claude Code, to restore the interrupted message into its input box).
 const chatInterruptSettle = 600 * time.Millisecond
+
+// chatInterruptClearSettle is the pause between the clearing control-C and
+// the prompt paste — one TUI frame for the line to actually empty.
+const chatInterruptClearSettle = 200 * time.Millisecond
 
 // InterruptAndSend is the explicit "cut in" path (the moshi barge-in analog):
 // one Escape stops the running turn, a short settle lets the TUI land on its
@@ -178,6 +182,18 @@ func (b *ChatBridge) InterruptAndSend(ctx context.Context, text string) (ChatBri
 		case <-ctx.Done():
 			return b.shell.chatBridgeStateOnWindow(), ctx.Err()
 		case <-time.After(chatInterruptSettle):
+		}
+		// Claude Code restores the interrupted message into its input box:
+		// without clearing the line, the pasted prompt would append to that
+		// stale text and submit both. One control-C clears a non-empty line
+		// and is a harmless no-op arm on an empty one (never sent twice).
+		if err := b.shell.runtime.SendAgentKeys(ctx, instance, paneID, []string{"ctrl+c"}); err != nil {
+			return b.shell.chatBridgeStateOnWindow(), fmt.Errorf("interrupt failed: %w", err)
+		}
+		select {
+		case <-ctx.Done():
+			return b.shell.chatBridgeStateOnWindow(), ctx.Err()
+		case <-time.After(chatInterruptClearSettle):
 		}
 	}
 	var state ChatBridgeState

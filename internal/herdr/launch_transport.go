@@ -298,13 +298,15 @@ func (m *Manager) ReadPane(ctx context.Context, session, paneID, source string) 
 	}, true, &raw); err != nil {
 		return "", err
 	}
-	var read struct {
-		Text string `json:"text"`
+	var result struct {
+		Read struct {
+			Text string `json:"text"`
+		} `json:"read"`
 	}
-	if err := decodeTypedResult(raw, "read", &read); err != nil {
+	if err := decodeTypedResult(raw, "pane_read", &result); err != nil {
 		return "", err
 	}
-	return read.Text, nil
+	return result.Read.Text, nil
 }
 
 // AgentInfo is the exported verified subset for consumers above the adapter.

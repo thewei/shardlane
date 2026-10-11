@@ -233,3 +233,29 @@ func TestLaunchTransportRejectsWrongResultType(t *testing.T) {
 		t.Fatal("a mismatching result discriminator must fail loudly")
 	}
 }
+
+// TestReadPaneDecodesTypedResult pins the pane.read contract: the result is
+// the discriminated "pane_read" envelope with the payload nested under
+// "read". Both the discriminator ("read") and the missing nesting drifted
+// once, which silently disabled every hook-layer detection in production —
+// the parse unit tests alone could not see it.
+func TestReadPaneDecodesTypedResult(t *testing.T) {
+	server := startFakeHerdr(t, func(method string, params map[string]any) (json.RawMessage, error) {
+		if method != "pane.read" {
+			return nil, errorsUnexpected(method)
+		}
+		if params["source"] != "visible" {
+			return nil, errorsNew("pane.read must read the visible source")
+		}
+		return json.RawMessage(`{"type":"pane_read","read":{"pane_id":"p1","revision":7,"format":"text","source":"visible","text":"Enter to select"}}`), nil
+	})
+defer server.close()
+manager := NewManager()
+text, err := manager.ReadPane(context.Background(), "default", "p1", "visible")
+if err != nil {
+t.Fatal(err)
+}
+if text != "Enter to select" {
+t.Fatalf("read text = %q", text)
+}
+}

@@ -9,3 +9,4 @@
 # Frontend workspace (N19): deps and build output are reproducible.
 frontend/node_modules/
 frontend/dist/
+.mac-shots/

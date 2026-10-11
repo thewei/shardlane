@@ -325,6 +325,13 @@ type Shell struct {
 	// hooksStop releases the hook spool tailer (our herdr plugin's event
 	// forwarder); nil when not started (headless sessions).
 	hooksStop func()
+	// chatRefreshPending debounces hook-driven projection refetches: status
+	// transitions arrive in tight pairs and one refetch covers the burst.
+	chatRefreshMu      sync.Mutex
+	chatRefreshPending bool
+	// chatSourcelessPaneID latches the pane whose "no chat source" cleanup
+	// already ran, so the render-path rebind is a cheap early return.
+	chatSourcelessPaneID string
 	// paneSurfaceMemo remembers the surface each pane was last used on, so
 	// a sidebar Agent click lands where the user left it (N19 #4).
 	paneSurfaceMemo map[string]WorkspaceSurfaceKind

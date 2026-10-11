@@ -180,6 +180,11 @@ func (s *Shell) applyProjection(projection herdr.Projection, restartWatcher bool
 	s.reconcileLocalSelection(projection)
 	s.projection = projection
 	s.reconcileWorkbench()
+	// Blocked agents must surface their structured prompts even when they
+	// were blocked before this window existed: the spool only reports
+	// transitions, so the freshly landed projection is the reconcile point.
+	// Idempotent (pending-interaction guard inside).
+	s.reconcileBlockedInteractions()
 	s.wakeLiveTail()
 	// Status edges (working→idle, blocked, …) must reach the WebView chat
 	// even when this reconcile carries no transcript change: the composer
