@@ -777,36 +777,105 @@ function TurnRow({ turn }: { turn: ChatBridgeState["turns"][number] }) {
         ) : null}
       </div>
       {turn.live ? <div className="work-live">{livePhaseLabel(turn)}<span className="dots" /></div> : null}
-      {turn.narration ? <Markdown text={turn.narration} /> : null}
-      {turn.thinking ? (
-        <details className="block">
-          <summary>Thinking</summary>
-          <div className="block-body muted">{turn.thinking}</div>
-        </details>
-      ) : null}
-      {turn.tools?.length ? (
-        <details className="block" open={turn.live || turn.tools.length === 1}>
-          <summary>
-            <WorkSummary turn={turn} failedCount={failedCount} />
-          </summary>
-          <div className="block-body">
-            {turn.tools.map((tool, index) => (
-              <details
-                key={index}
-                className={tool.isError ? "tool error" : "tool"}
-              >
-                <summary>
-                  {toolVerb(tool.name)} {tool.name}
-                </summary>
-                {tool.input ? <pre>{tool.input}</pre> : null}
-                {tool.output ? <pre>{tool.output}</pre> : null}
-              </details>
-            ))}
-          </div>
-        </details>
-      ) : null}
+      {turn.steps?.length ? (
+        <StepChain turn={turn} steps={turn.steps} />
+      ) : (
+        <>
+          {turn.narration ? <Markdown text={turn.narration} /> : null}
+          {turn.thinking ? (
+            <details className="block">
+              <summary>Thinking</summary>
+              <div className="block-body muted">{turn.thinking}</div>
+            </details>
+          ) : null}
+          {turn.tools?.length ? (
+            <details className="block" open={turn.live || turn.tools.length === 1}>
+              <summary>
+                <WorkSummary turn={turn} failedCount={failedCount} />
+              </summary>
+              <div className="block-body">
+                {turn.tools.map((tool, index) => (
+                  <details
+                    key={index}
+                    className={tool.isError ? "tool error" : "tool"}
+                  >
+                    <summary>
+                      {toolVerb(tool.name)} {tool.name}
+                    </summary>
+                    {tool.input ? <pre>{tool.input}</pre> : null}
+                    {tool.output ? <pre>{tool.output}</pre> : null}
+                  </details>
+                ))}
+              </div>
+            </details>
+          ) : null}
+        </>
+      )}
     </div>
   );
+}
+
+// StepChain renders the turn's ordered time chain: narration and thinking
+// blocks in their original interleaving, with consecutive tool steps grouped
+// into one collapsible block (the reference work-block, order-preserving).
+function StepChain({
+  turn,
+  steps,
+}: {
+  turn: ChatBridgeState["turns"][number];
+  steps: NonNullable<ChatBridgeState["turns"][number]["steps"]>;
+}) {
+  const blocks: React.ReactNode[] = [];
+  let toolRun: typeof steps | null = null;
+  const flushTools = (key: string) => {
+    if (!toolRun || toolRun.length === 0) return;
+    const tools = toolRun.map((step) => ({
+      name: step.toolName ?? "",
+      input: step.toolInput,
+      output: step.toolOutput,
+      isError: !!step.toolError,
+    }));
+    const failed = tools.filter((tool) => tool.isError).length;
+    blocks.push(
+      <details className="block" key={key} open={turn.live || tools.length === 1}>
+        <summary>
+          <WorkSummary turn={{ tools }} failedCount={failed} />
+        </summary>
+        <div className="block-body">
+          {tools.map((tool, index) => (
+            <details key={index} className={tool.isError ? "tool error" : "tool"}>
+              <summary>
+                {toolVerb(tool.name)} {tool.name}
+              </summary>
+              {tool.input ? <pre>{tool.input}</pre> : null}
+              {tool.output ? <pre>{tool.output}</pre> : null}
+            </details>
+          ))}
+        </div>
+      </details>,
+    );
+    toolRun = null;
+  };
+  steps.forEach((step, index) => {
+    if (step.kind === "tool") {
+      toolRun = toolRun ?? [];
+      toolRun.push(step);
+      return;
+    }
+    flushTools(`tools-${index}`);
+    if (step.kind === "thinking") {
+      blocks.push(
+        <details className="block" key={index}>
+          <summary>Thinking</summary>
+          <div className="block-body muted">{step.text}</div>
+        </details>,
+      );
+      return;
+    }
+    blocks.push(<Markdown key={index} text={step.text ?? ""} />);
+  });
+  flushTools("tools-tail");
+  return <>{blocks}</>;
 }
 
 // WorkSummary is the folded work-block header: the live "Working…" state
@@ -815,7 +884,7 @@ function WorkSummary({
   turn,
   failedCount,
 }: {
-  turn: ChatBridgeState["turns"][number];
+  turn: Pick<ChatBridgeState["turns"][number], "tools">;
   failedCount: number;
 }) {
   const counts = new Map<string, number>();

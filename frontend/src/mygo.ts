@@ -54,6 +54,19 @@ export interface ChatBridgeState {
   turns: ChatBridgeTurn[];
 }
 
+/**
+ * ChatBridgeStep is one ordered segment of a turn's time chain: the page
+ * renders thinking / narration / tool calls in their original interleaving.
+ */
+export interface ChatBridgeStep {
+  kind: string;
+  text?: string;
+  toolName?: string;
+  toolInput?: string;
+  toolOutput?: string;
+  toolError?: boolean;
+}
+
 /** ChatBridgeTool is one tool run rendered inside an assistant turn. */
 export interface ChatBridgeTool {
   name: string;
@@ -65,7 +78,8 @@ export interface ChatBridgeTool {
 /**
  * ChatBridgeTurn is one derived timeline row (0.6 §13 contract): user rows
  * verbatim; assistant turns carry visible narration, consolidated thinking
- * and the (possibly grouped) tool activity.
+ * and the (possibly grouped) tool activity. Steps preserves the original
+ * interleaving for the timeline rendering.
  */
 export interface ChatBridgeTurn {
   user: boolean;
@@ -77,6 +91,7 @@ export interface ChatBridgeTurn {
   live?: boolean;
   tsMs?: number;
   tools?: ChatBridgeTool[];
+  steps?: ChatBridgeStep[];
 }
 
 // ---- Services ----

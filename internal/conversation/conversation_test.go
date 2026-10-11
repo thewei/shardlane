@@ -265,3 +265,69 @@ func TestFollowUpQueueHasUnresolvedForConversation(t *testing.T) {
 		t.Fatal("missing conversation reported unresolved")
 	}
 }
+
+// TestDeriveTimelineStepOrder pins the turn's time chain: narration,
+// thinking and tool segments keep their original interleaving in Steps;
+// consecutive same-kind text merges, tools never do.
+func TestDeriveTimelineStepOrder(t *testing.T) {
+	firstThinking := "look around"
+	items := []ConversationItem{
+		{Seq: 1, Kind: KindAssistant, Text: "On it.", Thinking: &firstThinking},
+		{Seq: 2, Kind: KindTool, ToolCalls: []ConversationToolCall{{ID: "t1", Name: "grep"}}},
+		{Seq: 3, Kind: KindReasoning, Text: "verify result"},
+		{Seq: 4, Kind: KindAssistant, Text: "Found it."},
+	}
+	turns := DeriveTimeline(items)
+	if len(turns) != 1 {
+		t.Fatalf("turns = %d", len(turns))
+	}
+	steps := turns[0].Steps
+	want := []struct {
+		kind string
+		text string
+		tool string
+	}{
+		{StepThinking, "look around", ""},
+		{StepNarration, "On it.", ""},
+		{StepTool, "", "grep"},
+		{StepThinking, "verify result", ""},
+		{StepNarration, "Found it.", ""},
+	}
+	if len(steps) != len(want) {
+		t.Fatalf("steps = %d, want %d: %+v", len(steps), len(want), steps)
+	}
+	for i, w := range want {
+		if steps[i].Kind != w.kind {
+			t.Fatalf("step %d kind = %q, want %q", i, steps[i].Kind, w.kind)
+		}
+		if w.kind == StepTool {
+			if steps[i].Tool == nil || steps[i].Tool.Name != w.tool {
+				t.Fatalf("step %d tool = %+v", i, steps[i].Tool)
+			}
+			continue
+		}
+		if steps[i].Text != w.text {
+			t.Fatalf("step %d text = %q, want %q", i, steps[i].Text, w.text)
+		}
+	}
+	// Consecutive same-kind text merges (chunking must not fragment the chain).
+	merged := []ConversationItem{
+		{Seq: 1, Kind: KindAssistant, Text: "one"},
+		{Seq: 2, Kind: KindAssistant, Text: "two"},
+		{Seq: 3, Kind: KindAssistant, Text: "three"},
+	}
+	mergeTurns := DeriveTimeline(merged)
+	if len(mergeTurns[0].Steps) != 1 || mergeTurns[0].Steps[0].Text != "one\n\ntwo\n\nthree" {
+		t.Fatalf("consecutive narration must merge into one step: %+v", mergeTurns[0].Steps)
+	}
+	// Tools never merge.
+	tools := []ConversationItem{
+		{Seq: 1, Kind: KindTool, ToolCalls: []ConversationToolCall{
+			{ID: "t1", Name: "grep"}, {ID: "t2", Name: "sed"},
+		}},
+	}
+	toolTurns := DeriveTimeline(tools)
+	if len(toolTurns[0].Steps) != 2 || toolTurns[0].Steps[0].Tool == nil || toolTurns[0].Steps[1].Tool == nil {
+		t.Fatalf("tool steps must stay separate: %+v", toolTurns[0].Steps)
+	}
+}

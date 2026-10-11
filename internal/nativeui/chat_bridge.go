@@ -42,9 +42,21 @@ type ChatBridgeTool struct {
 	IsError bool   `json:"isError,omitempty"`
 }
 
+// ChatBridgeStep is one ordered segment of a turn's time chain: the page
+// renders thinking / narration / tool calls in their original interleaving.
+type ChatBridgeStep struct {
+	Kind      string `json:"kind"`
+	Text      string `json:"text,omitempty"`
+	ToolName  string `json:"toolName,omitempty"`
+	ToolInput string `json:"toolInput,omitempty"`
+	ToolOutput string `json:"toolOutput,omitempty"`
+	ToolError bool   `json:"toolError,omitempty"`
+}
+
 // ChatBridgeTurn is one derived timeline row (0.6 §13 contract): user rows
 // verbatim; assistant turns carry visible narration, consolidated thinking
-// and the (possibly grouped) tool activity.
+// and the (possibly grouped) tool activity. Steps preserves the original
+// interleaving for the timeline rendering.
 type ChatBridgeTurn struct {
 	User      bool             `json:"user"`
 	Text      string           `json:"text,omitempty"`
@@ -55,6 +67,7 @@ type ChatBridgeTurn struct {
 	Live      bool             `json:"live,omitempty"`
 	TsMS      *int64           `json:"tsMs,omitempty"`
 	Tools     []ChatBridgeTool `json:"tools,omitempty"`
+	Steps     []ChatBridgeStep `json:"steps,omitempty"`
 }
 
 // ChatBridgeState is the full chat projection the page renders. It is
@@ -555,6 +568,18 @@ func (s *Shell) chatBridgeState() ChatBridgeState {
 				tool.Output = *run.Output
 			}
 			bridgeTurn.Tools = append(bridgeTurn.Tools, tool)
+		}
+		for _, step := range turn.Steps {
+			bridgeStep := ChatBridgeStep{Kind: step.Kind, Text: step.Text}
+			if step.Tool != nil {
+				bridgeStep.ToolName = step.Tool.Name
+				bridgeStep.ToolInput = step.Tool.InputPreview
+				bridgeStep.ToolError = step.Tool.IsError
+				if step.Tool.Output != nil {
+					bridgeStep.ToolOutput = *step.Tool.Output
+				}
+			}
+			bridgeTurn.Steps = append(bridgeTurn.Steps, bridgeStep)
 		}
 		state.Turns = append(state.Turns, bridgeTurn)
 	}
