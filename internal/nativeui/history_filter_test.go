@@ -48,13 +48,13 @@ func TestHistoryNoResultsCanClearFilters(t *testing.T) {
 	shell.router.Replace(routeHistory)
 	tester := ui.NewTester(shell.View, 1200, 800)
 	tester.Frame() // the rail renders before the initial History page load
-	if !tester.HasText("Build history") || !tester.HasText("1 result · Newest first") {
+	if !tester.HasText("Build history") || !tester.HasText("1 sessions") {
 		t.Fatalf("initial list missing: %q", tester.Texts())
 	}
 	shell.hist.query = "session-not-present"
 	shell.applyHistoryFilters()
 	tester.Frame()
-	if !tester.HasText("No matching conversations") || !tester.HasText("0 results · Newest first") {
+	if !tester.HasText("No matching sessions") {
 		t.Fatalf("search result feedback missing: %q", tester.Texts())
 	}
 	if err := tester.Click("Clear filters"); err != nil {
@@ -73,7 +73,7 @@ func TestHistoryFiltersOnlyRenderWhereTheyApply(t *testing.T) {
 	shell, _, _ := newHistoryTestShell(t)
 	shell.router.Replace(routeHistory)
 	tester := ui.NewTester(shell.View, 1200, 800)
-	if !tester.HasText("Search History") {
+	if !tester.HasText("Search sessions") {
 		t.Fatalf("History list must offer search: %q", tester.Texts())
 	}
 	shell.router.Replace("/history-projects")

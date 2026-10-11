@@ -64,6 +64,12 @@ type historyState struct {
 	listState    ui.ListState
 	listSelected int
 
+	// N19 #9: the grouped Sessions view state — collapsed project groups,
+	// expanded row fact sheets, and the recycle toggle.
+	groupCollapsed map[string]bool
+	rowExpanded    map[string]bool
+	showHidden     bool
+
 	detail *historyDetail
 
 	listGen    atomic.Uint64

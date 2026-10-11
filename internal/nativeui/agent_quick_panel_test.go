@@ -15,11 +15,18 @@ import (
  */
 
 func TestAgentQuickPanelOverviewStats(t *testing.T) {
+	// N19 #5: the quick panel is a simple agent list like the sidebar's —
+	// no stat tiles, no status filter rail.
 	shell := quickPanelShell(t)
 	tester := ui.NewTester(shell.QuickPanelView, QuickPanelWidth, QuickPanelHeight)
-	for _, want := range []string{"Agents & Services", "Attention", "Review", "Working"} {
+	for _, want := range []string{"Agents & Services", "Scout", "Ranger", "Sleeper"} {
 		if !tester.HasText(want) {
 			t.Fatalf("missing overview label %q: %q", want, tester.Texts())
+		}
+	}
+	for _, gone := range []string{"Attention (1)", "Review", "All"} {
+		if tester.HasText(gone) {
+			t.Fatalf("simplified panel still shows %q: %q", gone, tester.Texts())
 		}
 	}
 }

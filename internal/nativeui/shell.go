@@ -288,12 +288,6 @@ type Shell struct {
 
 	// inspector owns the 0.8 read-only Agent inspector state.
 	inspector inspectorState
-	// historyProjects caches the 0.8 grouped management view's bounded
-	// metadata; refreshed on the dispatch lane, read-only at render.
-	historyProjects         []history.SessionSummary
-	historyProjectsLoading  bool
-	historyProjectsLoaded   bool
-	historyProjectsInflight bool
 
 	// diagnostics state (0.9 P16/P17)
 	diagLogLevelFilter string
@@ -331,6 +325,9 @@ type Shell struct {
 	// hooksStop releases the hook spool tailer (our herdr plugin's event
 	// forwarder); nil when not started (headless sessions).
 	hooksStop func()
+	// paneSurfaceMemo remembers the surface each pane was last used on, so
+	// a sidebar Agent click lands where the user left it (N19 #4).
+	paneSurfaceMemo map[string]WorkspaceSurfaceKind
 	chatDraft          string
 	chatQueuedText     string
 	chatOutcome        string
@@ -416,7 +413,6 @@ func NewShell(opts ...ShellOption) *Shell {
 		statusShown:      "Loading Herdr workspaces…",
 		terminals:        make(map[string]*terminalSurface),
 
-		historyProjectsLoading: true,
 		rightPanel:             defaultRightPanelState(),
 	}
 	// The agent activity panel opens on All: the bucket enum's zero value

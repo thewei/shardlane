@@ -45,7 +45,7 @@ func (s *Shell) routeView(c *ui.Context) {
 			r.Title("Files")
 			gorexContentCard(c, gorexColorsOf(c.Theme().Dark), func() { s.filesPage(c) })
 		case r.Match(routeHistory):
-			r.Title("History")
+			r.Title("Sessions")
 			gorexContentCard(c, gorexColorsOf(c.Theme().Dark), func() { s.historyPage(c) })
 		case r.Match("/history/{id}"):
 			r.Title("History Detail")
@@ -54,8 +54,10 @@ func (s *Shell) routeView(c *ui.Context) {
 			r.Title("Agent Inspector")
 			s.inspectorPage(c, r.Param("pane"))
 		case r.Match("/history-projects"):
-			r.Title("History by Project")
-			gorexContentCard(c, gorexColorsOf(c.Theme().Dark), func() { s.historyProjectsPage(c) })
+			// N19 #9: the grouped view IS the sessions page now; the old
+			// route serves it for compatibility (command palette, links).
+			r.Title("Sessions")
+			gorexContentCard(c, gorexColorsOf(c.Theme().Dark), func() { s.historyPage(c) })
 		case r.Match("/chat"):
 			r.Title("Chat")
 			s.chatPage(c)
@@ -78,13 +80,13 @@ func (s *Shell) currentRouteTitle() string {
 	case path == routeWorkspace:
 		return "Workspace"
 	case path == routeHistory:
-		return "History"
+		return "Sessions"
 	case path == routeFiles:
 		return "Files"
 	case strings.HasPrefix(path, "/history/"):
 		return "History Detail"
 	case path == "/history-projects":
-		return "History by Project"
+		return "Sessions"
 	case strings.HasPrefix(path, "/inspector/"):
 		return "Agent Inspector"
 	case path == "/chat":

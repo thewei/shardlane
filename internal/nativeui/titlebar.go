@@ -172,13 +172,9 @@ func (s *Shell) toggleWindowPinned() {
 // Accessible labels remain stable for shortcuts and assistive technologies;
 // tooltips describe the action that will actually occur.
 func (s *Shell) titlebarViewSwitch(c *ui.Context, k *gorexColors) {
-	onTerminal, onChat, onChanges, onHistory := s.viewSwitchActive()
-	if gorexIconButton(c, k, iconTerminal, "Terminal view", "Terminal view", onTerminal, gorexIconBtn, 15).Clicked() {
-		s.showViewTerminal()
-	}
-	if gorexIconButton(c, k, iconChat, "Chat view", "Chat (⇧⌘C)", onChat, gorexIconBtn, 15).Clicked() {
-		s.showViewChat()
-	}
+	_, _, onChanges, onHistory := s.viewSwitchActive()
+	// N19 #7: Terminal and Chat switched inside their card headers now; the
+	// window header keeps the app-level views.
 	if gorexIconButton(c, k, iconChanges, "Changes view", "Changes", onChanges, gorexIconBtn, 15).Clicked() {
 		s.showViewChanges()
 	}

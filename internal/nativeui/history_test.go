@@ -107,7 +107,7 @@ func TestHistoryEmptyStateWhenCatalogIsEmpty(t *testing.T) {
 	shell.router.Replace("/history")
 	tester := ui.NewTester(shell.View, 1200, 800)
 
-	if !tester.HasText("No conversations found") {
+	if !tester.HasText("No sessions yet") {
 		t.Fatalf("missing empty state; texts=%q", tester.Texts())
 	}
 }
@@ -198,7 +198,7 @@ func TestHistoryListSearchNarrowsSessions(t *testing.T) {
 	if tester.HasText("Build history") {
 		t.Fatal("search filter did not narrow the list")
 	}
-	if !tester.HasText("No matching conversations") {
+	if !tester.HasText("No matching sessions") {
 		t.Fatalf("filtered empty state missing; texts=%q", tester.Texts())
 	}
 }

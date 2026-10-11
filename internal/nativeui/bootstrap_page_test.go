@@ -39,7 +39,7 @@ func TestHerdrBootstrapHidesWorkspaceChromeAndCentersLoader(t *testing.T) {
 	s.instances = []herdr.Instance{{Name: "default", DisplayName: "Default", Default: true}}
 	s.projection = herdr.Projection{Protocol: 22}
 	tt.Frame()
-	if !tt.HasText("Terminal view") || !tt.HasText("Agents") || tt.HasText("Loading Herdr workspaces…") {
+	if !tt.HasText("Changes view") || !tt.HasText("Agents") || tt.HasText("Loading Herdr workspaces…") {
 		t.Fatalf("workbench failed to appear after ready: %q", tt.Texts())
 	}
 }

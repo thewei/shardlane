@@ -92,7 +92,7 @@ func (s *Shell) QuickPanelView(c *ui.Context) {
 			s.agentQuickPanelDetail(c, snapshot)
 			return
 		}
-		entries := s.filterStatusEntries(snapshot)
+		entries := snapshot.Entries
 		header := QuickPanelHeader(snapshot, !s.offline)
 		if s.quickPanelTab == 1 {
 			header = "Scripts and listening ports for the selected project"
@@ -122,16 +122,8 @@ func (s *Shell) QuickPanelView(c *ui.Context) {
 				}
 			})
 		}
-		s.quickPanelSummary(c, snapshot)
-		// The status tab group switches the agent list (2026-10-07); a
-		// change re-fits the open flyout to the new content height.
-		ui.Row(c).FillWidth().Padding(sp.S, sp.L, 0).Children(func() {
-			chosen := s.workbench.filterChoice()
-			if ui.Segmented(c, &chosen, workbenchFilterLabels...).Changed() {
-				s.workbench.setFilterChoice(chosen)
-				s.fitQuickPanel()
-			}
-		})
+		// N19 #5: a simple agent list, like the sidebar's — no stat tiles,
+		// no status filter rail.
 		ui.Scroll(c).Grow(1).Children(func() {
 			ui.Column(c).FillWidth().Padding(sp.S, sp.L, sp.L).Gap(sp.S).Children(func() {
 				if len(entries) == 0 {

@@ -15,6 +15,7 @@ import (
 
 	"github.com/egoist/mygo/ui"
 	"github.com/wh-studio/herdr-client/internal/history"
+	"github.com/wh-studio/herdr-client/internal/settings"
 )
 
 // distinctAgents returns the agent kinds present in the summaries, in
@@ -33,50 +34,14 @@ func distinctAgents(summaries []history.SessionSummary) []history.AgentID {
 	return out
 }
 
-// historyNav is the History sidebar body (inner-page style): the view
-// navigation plus the list filters that used to be the page's own toolbar
-// row. Filter intents keep issuing through the same request path.
+// historyNav is the Sessions sidebar body (N19 #9: History is now the
+// Sessions view): the index entry and refresh — search, provider filters,
+// the recycle toggle and the count live in the page toolbar.
 func (s *Shell) historyNav(c *ui.Context) {
 	path := s.router.Path()
-	ui.Text(c, "History").FontSize(13).Bold().Padding(6, 8, 8)
-	if navButton(c, iconHistory, "All conversations", "", path == routeHistory).Clicked() {
+	ui.Text(c, "Sessions").FontSize(13).Bold().Padding(6, 8, 8)
+	if navButton(c, iconHistory, "All sessions", "", path == routeHistory).Clicked() {
 		s.showHistoryIndex()
-	}
-	if navButton(c, iconFolder, "By Project", "", path == "/history-projects").Clicked() && path != "/history-projects" {
-		if strings.HasPrefix(path, routeHistory+"/") {
-			s.cancelHistoryDetailRequest()
-		}
-		s.router.Push("/history-projects")
-	}
-	// The grouped page and transcript detail don't consume list search,
-	// Provider filters, or the list refresh action. Never render a control
-	// whose effect cannot be seen in the currently selected page.
-	if path != routeHistory {
-		ui.Spacer(c)
-		return
-	}
-	sectionLabel(c, "Filter")
-	field := ui.SearchField(c, &s.hist.query).Label("Search History").FillWidth()
-	if field.Changed() || field.Submitted() {
-		s.applyHistoryFilters()
-	}
-	ui.Text(c, historyResultLabel(s.hist.loading, s.hist.loaded, s.hist.errText, len(s.hist.sessions))).
-		FontSize(Typography().Caption).TextColor(c.Theme().TextMuted).Padding(2, 8, 5)
-	if navButton(c, nil, "All", "", s.hist.provider == "").Clicked() && s.hist.provider != "" {
-		s.hist.provider = ""
-		s.applyHistoryFilters()
-	}
-	for _, id := range s.hist.providers {
-		id := id
-		if navButton(c, nil, id.DisplayName(), "", s.hist.provider == string(id)).Clicked() && s.hist.provider != string(id) {
-			s.hist.provider = string(id)
-			s.applyHistoryFilters()
-		}
-	}
-	if historyFiltersActive(s.hist.query, s.hist.provider) {
-		if ui.Button(c, "Clear filters").Clicked() {
-			s.clearHistoryFilters()
-		}
 	}
 	ui.Spacer(c)
 	if navButton(c, iconRefresh, "Refresh", "", false).Clicked() {
@@ -88,10 +53,10 @@ func (s *Shell) historyPage(c *ui.Context) {
 	if !s.hist.loaded && !s.hist.loading && s.hist.errText == "" {
 		s.requestHistoryList()
 	}
-	// The sheet is gone (2026-10-06): the page rides in a gorex card on
-	// the window gradient.
+	sp := Spacing()
+	k := gorexColorsOf(c.Theme().Dark)
 	ui.Column(c).Grow(1).MinWidth(0).Children(func() {
-		pageHeader(c, "History", "Read-only conversations from provider sources, indexed into Shardlane's disposable catalog.")
+		pageHeader(c, "Sessions", "Read-only conversations from provider sources, grouped by project.")
 		if s.hist.errText != "" {
 			inlineNotice(c, ToneError, s.hist.errText, func() {
 				s.hist.loading = false
@@ -99,6 +64,51 @@ func (s *Shell) historyPage(c *ui.Context) {
 				s.requestHistoryList()
 			})
 		}
+		// The toolbar (N19 #9): search, provider filter, the recycle toggle
+		// and the count — inside the page, over the grouped project list.
+		ui.Row(c).FillWidth().Padding(0, sp.XL, 0).Gap(sp.S).AlignItems(ui.Center).Children(func() {
+			field := ui.SearchField(c, &s.hist.query).Label("Search sessions").FillWidth()
+			if field.Changed() || field.Submitted() {
+				s.applyHistoryFilters()
+			}
+			if gorexIconButton(c, k, iconTrash, "Recycle bin", "Hidden sessions", s.hist.showHidden, gorexIconBtn, 15).Clicked() {
+				s.hist.showHidden = !s.hist.showHidden
+			}
+			if gorexIconButton(c, k, iconRefresh, "Refresh", "Refresh", false, gorexIconBtn, 15).Clicked() {
+				s.refreshHistoryScan()
+			}
+		})
+		groups := s.groupedSessionView()
+		shown := 0
+		for _, group := range groups {
+			shown += len(group.sessions)
+		}
+		count := fmt.Sprintf("%d sessions", shown)
+		if s.hist.showHidden {
+			count = fmt.Sprintf("%d hidden", shown)
+		}
+		ui.Row(c).FillWidth().Padding(0, sp.XL, 0).Gap(sp.S).AlignItems(ui.Center).Children(func() {
+			ui.Text(c, count).FontSize(Typography().Caption).TextColor(c.Theme().TextMuted)
+			chosen := 0
+			for i, id := range s.hist.providers {
+				if string(id) == s.hist.provider {
+					chosen = i + 1
+				}
+			}
+			options := make([]string, 0, len(s.hist.providers)+1)
+			options = append(options, "All providers")
+			for _, id := range s.hist.providers {
+				options = append(options, id.DisplayName())
+			}
+			if ui.Segmented(c, &chosen, options...).Changed() {
+				if chosen == 0 {
+					s.hist.provider = ""
+				} else if chosen <= len(s.hist.providers) {
+					s.hist.provider = string(s.hist.providers[chosen-1])
+				}
+				s.applyHistoryFilters()
+			}
+		})
 		s.historyListBody(c)
 	})
 }
@@ -106,78 +116,282 @@ func (s *Shell) historyPage(c *ui.Context) {
 func (s *Shell) historyListBody(c *ui.Context) {
 	switch {
 	case s.hist.service == nil:
-		emptyState(c, "History is unavailable", "The read-only history catalog could not be opened in this session.")
+		emptyState(c, "Sessions are unavailable", "The read-only history catalog could not be opened in this session.")
 	case s.hist.loading && len(s.hist.sessions) == 0:
-		loadingState(c, "Loading History…")
+		loadingState(c, "Loading sessions…")
 	case s.hist.errText != "" && len(s.hist.sessions) == 0:
-		emptyState(c, "History could not load", "Use Retry above to reload the conversations.")
+		emptyState(c, "Sessions could not load", "Use Refresh above to reload the conversations.")
 	case s.hist.loaded && len(s.hist.sessions) == 0 && historyFiltersActive(s.hist.query, s.hist.provider):
 		ui.Column(c).Grow(1).Center().Gap(Spacing().M).Children(func() {
-			ui.Text(c, "No matching conversations").Bold()
+			ui.Text(c, "No matching sessions").Bold()
 			ui.Text(c, "Try another search or provider.").FontSize(Typography().BodySmall).TextColor(c.Theme().TextMuted)
 			if ui.Button(c, "Clear filters").Clicked() {
 				s.clearHistoryFilters()
 			}
 		})
 	case s.hist.loaded && len(s.hist.sessions) == 0:
-		emptyState(c, "No conversations found", "Conversations appear here once provider history sources are indexed.")
+		emptyState(c, "No sessions yet", "Sessions appear here once provider history sources are indexed.")
 	default:
 		sp := Spacing()
-		ui.Column(c).Grow(1).Padding(0, sp.XL, sp.L).Children(func() {
-			// RENDER-01: one persistent native List owns row construction and
-			// keyboard/selection behavior for the bounded result set.
-			s.hist.listState.Key = func(row int) any { return s.hist.sessions[row].Meta.Key }
-			s.hist.listState.Label = func(row int) string { return s.hist.sessions[row].Meta.Title }
-			s.hist.listState.Selected = &s.hist.listSelected
-			list := ui.List(c, &s.hist.listState, len(s.hist.sessions), func(i int) {
-				s.historyRow(c, s.hist.sessions[i])
-			}).Gap(6)
-			if list.Changed() && s.hist.listSelected >= 0 && s.hist.listSelected < len(s.hist.sessions) {
-				s.router.Push("/history/" + s.hist.sessions[s.hist.listSelected].Meta.Key)
-			}
-			if s.hist.loading {
-				ui.Text(c, "Updating…").FontSize(Typography().Caption).TextColor(c.Theme().TextMuted)
-			}
+		ui.Scroll(c).Grow(1).Children(func() {
+			ui.Column(c).FillWidth().Padding(0, sp.XL, sp.L).Gap(sp.S).Children(func() {
+				for _, group := range s.groupedSessionView() {
+					s.sessionGroup(c, group)
+				}
+				if s.hist.loading {
+					ui.Text(c, "Updating…").FontSize(Typography().Caption).TextColor(c.Theme().TextMuted)
+				}
+			})
 		})
 	}
 }
 
-func (s *Shell) historyRow(c *ui.Context, summary history.SessionSummary) {
-	t := c.Theme()
-	tokens := designTokens(t.Dark)
-	sp := Spacing()
-	typ := Typography()
-	selected := s.hist.detail != nil && s.hist.detail.key == summary.Meta.Key
-	row := ui.ButtonBase(c).FillWidth().Padding(10, sp.L).Gap(10).Radius(Radius().Row).Label(summary.Meta.Title)
-	if tint, ok := rowTint(tokens, selected, row.Hovered()); ok {
-		row.Background(tint)
-	}
-	row.Border(1, tokens.BorderSubtle)
-	row.Children(func() {
-		ui.Column(c).Grow(1).MinWidth(0).Gap(3).Children(func() {
-			ui.Row(c).Gap(sp.S).AlignItems(ui.Center).Children(func() {
-				ui.Text(c, fallbackText(summary.Meta.Title, history.Untitled)).FontSize(typ.Body + 0.5).FontWeight(600).Grow(1).SingleLine().Tooltip(fallbackText(summary.Meta.Title, history.Untitled))
-				providerBadge(c, summary.Meta.Agent)
-			})
-			// F102: the title is derived from the first user message and so is
-			// the catalog description — when one is a prefix of the other the
-			// second line read the same text twice. Show only genuinely new
-			// description content; the project already has its own metadata row.
-			description := historyRowDescription(summary)
-			if description != "" {
-				ui.Text(c, description).FontSize(typ.BodySmall).TextColor(t.TextMuted).SingleLine().Tooltip(description)
+// sessionGroupView is one project's slice of the filtered session list.
+type sessionGroupView struct {
+	path     string
+	name     string
+	sessions []history.SessionSummary
+}
+
+// groupedSessionView groups the filtered sessions by project path — the
+// Sessions view is project-grouped, only (N19 #9) — the group order
+// following each project's most recent session.
+func (s *Shell) groupedSessionView() []sessionGroupView {
+	hidden := s.hiddenSessionSet()
+	groups := map[string]*sessionGroupView{}
+	order := []string{}
+	for _, summary := range s.hist.sessions {
+		if summary.Meta.Archived {
+			continue
+		}
+		if s.hist.showHidden != hidden[summary.Meta.Key] {
+			continue
+		}
+		path := summary.Meta.ProjectPath
+		if path == "" {
+			path = "No project"
+		}
+		group, seen := groups[path]
+		if !seen {
+			name := summary.Meta.ProjectName
+			if name == "" {
+				name = path
 			}
-			ui.Row(c).Gap(sp.S).Children(func() {
-				if summary.Meta.ProjectName != "" {
-					ui.Text(c, summary.Meta.ProjectName).FontSize(typ.Caption).TextColor(t.TextMuted).SingleLine().Tooltip(summary.Meta.ProjectName)
-				}
-				if stamp := historyTimestamp(summary.Meta.UpdatedAt); stamp != "" {
-					ui.Text(c, stamp).FontSize(typ.Caption).TextColor(t.TextMuted)
-				}
-				ui.Text(c, fmt.Sprintf("%d message%s", summary.Meta.MessageCount, pluralS(int(summary.Meta.MessageCount)))).FontSize(typ.Caption).TextColor(t.TextMuted)
-			})
+			group = &sessionGroupView{path: path, name: name}
+			groups[path] = group
+			order = append(order, path)
+		}
+		group.sessions = append(group.sessions, summary)
+	}
+	view := make([]sessionGroupView, 0, len(order))
+	for _, path := range order {
+		view = append(view, *groups[path])
+	}
+	for i := 0; i < len(view); i++ {
+		for j := i + 1; j < len(view); j++ {
+			if sessionGroupLatest(view[j]) > sessionGroupLatest(view[i]) {
+				view[i], view[j] = view[j], view[i]
+			}
+		}
+	}
+	return view
+}
+
+func sessionGroupLatest(group sessionGroupView) int64 {
+	latest := int64(0)
+	for _, summary := range group.sessions {
+		if summary.Meta.UpdatedAt > latest {
+			latest = summary.Meta.UpdatedAt
+		}
+	}
+	return latest
+}
+
+// sessionGroup renders one collapsible project group (name, path, count).
+func (s *Shell) sessionGroup(c *ui.Context, group sessionGroupView) {
+	sp := Spacing()
+	tokens := designTokens(c.Theme().Dark)
+	collapsed := s.hist.groupCollapsed[group.path]
+	header := ui.ButtonBase(c).FillWidth().Padding(8, sp.L).Gap(8).AlignItems(ui.Center).
+		Radius(Radius().Row).Border(1, tokens.BorderSubtle).Background(tokens.Panel).
+		Label("Project " + group.name)
+	header.Children(func() {
+		ui.Text(c, map[bool]string{true: "▸", false: "▾"}[collapsed]).FontSize(11).TextColor(c.Theme().TextMuted)
+		ui.Text(c, group.name).FontSize(Typography().Body).FontWeight(650).SingleLine().Shrink(0)
+		ui.Text(c, group.path).FontSize(Typography().Caption).TextColor(c.Theme().TextMuted).
+			SingleLine().Ellipsis("…").Grow(1).MinWidth(0).Tooltip(group.path)
+		ui.Text(c, fmt.Sprintf("%d sessions", len(group.sessions))).FontSize(Typography().Caption).TextColor(c.Theme().TextMuted).Shrink(0)
+	})
+	if header.Clicked() {
+		s.hist.groupCollapsed[group.path] = !collapsed
+	}
+	if collapsed {
+		return
+	}
+	for _, summary := range group.sessions {
+		summary := summary
+		s.sessionRow(c, summary)
+	}
+}
+
+// sessionRow renders one session: title strip (expand toggle + view /
+// copy-resume / hide-restore actions) and the expanded fact sheet.
+func (s *Shell) sessionRow(c *ui.Context, summary history.SessionSummary) {
+	sp := Spacing()
+	tokens := designTokens(c.Theme().Dark)
+	expanded := s.hist.rowExpanded[summary.Meta.Key]
+	hidden := s.hiddenSessionSet()[summary.Meta.Key]
+	row := ui.Column(c).FillWidth().Padding(6, sp.M, 8).Gap(3).Radius(Radius().Row).
+		Border(1, tokens.BorderSubtle).Background(tokens.Content)
+	row.Children(func() {
+		strip := ui.Row(c).FillWidth().Gap(sp.S).AlignItems(ui.Center)
+		strip.Children(func() {
+			if ui.Button(c, map[bool]string{true: "▾", false: "▸"}[expanded]).FontSize(Typography().Caption).Clicked() {
+				s.hist.rowExpanded[summary.Meta.Key] = !expanded
+			}
+			providerBadge(c, summary.Meta.Agent)
+			ui.Text(c, fallbackText(summary.Meta.Title, history.Untitled)).
+				FontSize(Typography().BodySmall).FontWeight(600).Grow(1).MinWidth(0).
+				SingleLine().Ellipsis("…").Tooltip(fallbackText(summary.Meta.Title, history.Untitled))
+			if stamp := historyTimestamp(summary.Meta.UpdatedAt); stamp != "" {
+				ui.Text(c, stamp).FontSize(Typography().Caption).TextColor(c.Theme().TextMuted).Shrink(0)
+			}
+			if ui.Button(c, "View").FontSize(Typography().Caption).Clicked() {
+				s.router.Push("/history/" + summary.Meta.Key)
+			}
+			if ui.Button(c, "Copy resume").FontSize(Typography().Caption).Clicked() {
+				s.copySessionResume(summary.Meta)
+			}
+			label := "Hide"
+			if hidden {
+				label = "Restore"
+			}
+			if ui.Button(c, label).FontSize(Typography().Caption).Clicked() {
+				s.toggleSessionHidden(summary.Meta.Key)
+			}
+		})
+		meta := ui.Row(c).FillWidth().Gap(sp.S).AlignItems(ui.Center).Padding(0, 0, 0, 22)
+		meta.Children(func() {
+			if summary.Meta.Model != nil && *summary.Meta.Model != "" {
+				ui.Text(c, *summary.Meta.Model).FontSize(Typography().Caption).TextColor(c.Theme().TextMuted).SingleLine()
+			}
+			ui.Text(c, fmt.Sprintf("%d message%s", summary.Meta.MessageCount, pluralS(int(summary.Meta.MessageCount)))).
+				FontSize(Typography().Caption).TextColor(c.Theme().TextMuted)
+			if summary.Meta.TokensUsed != nil && *summary.Meta.TokensUsed > 0 {
+				ui.Text(c, fmt.Sprintf("%d tokens", *summary.Meta.TokensUsed)).FontSize(Typography().Caption).TextColor(c.Theme().TextMuted)
+			}
+		})
+		if expanded {
+			s.sessionFacts(c, summary)
+		}
+	})
+}
+
+// sessionFacts is the expanded fact sheet: time range, folder, session id,
+// resume command and the provider source file (the screenshot's 继续条目).
+func (s *Shell) sessionFacts(c *ui.Context, summary history.SessionSummary) {
+	sp := Spacing()
+	ui.Column(c).FillWidth().Padding(2, sp.M, 4, 22).Gap(3).Children(func() {
+		s.sessionFactRow(c, "Time", sessionTimeRange(summary.Meta))
+		s.sessionFactRow(c, "Folder", summary.Meta.ProjectPath)
+		s.sessionFactRow(c, "Session ID", summary.Meta.ID)
+		s.sessionFactRow(c, "Resume", sessionResumeCommand(summary.Meta))
+		s.sessionFactRow(c, "File", summary.Meta.FilePath)
+		ui.Row(c).FillWidth().Gap(sp.S).Padding(0, 0, 2).Children(func() {
+			if ui.Button(c, "View session").FontSize(Typography().Caption).Clicked() {
+				s.router.Push("/history/" + summary.Meta.Key)
+			}
+			if ui.Button(c, "Copy resume command").FontSize(Typography().Caption).Clicked() {
+				s.copySessionResume(summary.Meta)
+			}
 		})
 	})
+}
+
+// sessionFactRow renders one label/value line with a copy for long values.
+func (s *Shell) sessionFactRow(c *ui.Context, label, value string) {
+	if value == "" {
+		return
+	}
+	sp := Spacing()
+	ui.Row(c).FillWidth().Gap(sp.S).AlignItems(ui.Center).Children(func() {
+		ui.Text(c, label).FontSize(Typography().Caption).TextColor(c.Theme().TextMuted).
+			Width(72).Shrink(0)
+		ui.Text(c, value).FontSize(Typography().Caption).Grow(1).MinWidth(0).
+			SingleLine().Ellipsis("…").Tooltip(value)
+		if len(value) > 24 {
+			if ui.Button(c, "Copy").FontSize(Typography().Caption).Clicked() {
+				s.copyToClipboard(value)
+			}
+		}
+	})
+}
+
+// sessionTimeRange formats created→updated when they differ.
+func sessionTimeRange(meta history.SessionMeta) string {
+	created := historyTimestamp(meta.CreatedAt)
+	updated := historyTimestamp(meta.UpdatedAt)
+	switch {
+	case created == "":
+		return updated
+	case created == updated:
+		return created
+	default:
+		return created + " → " + updated
+	}
+}
+
+// sessionResumeCommand builds the provider's own resume invocation prefixed
+// with the project folder — the copyable "继续" command.
+func sessionResumeCommand(meta history.SessionMeta) string {
+	cd := ""
+	if meta.ProjectPath != "" {
+		cd = fmt.Sprintf("cd %q && ", meta.ProjectPath)
+	}
+	switch meta.Agent {
+	case history.AgentClaudeCode:
+		return cd + fmt.Sprintf("claude --resume %s", meta.ID)
+	case history.AgentCodex:
+		return cd + fmt.Sprintf("codex resume %s", meta.ID)
+	case history.AgentPi:
+		return cd + fmt.Sprintf("pi --resume %s", meta.ID)
+	default:
+		return cd + fmt.Sprintf("# no known resume command for %s (session %s)", meta.Agent, meta.ID)
+	}
+}
+
+// hiddenSessionSet reads the local recycle list as a set.
+func (s *Shell) hiddenSessionSet() map[string]bool {
+	hidden := map[string]bool{}
+	for _, key := range s.settings.Session.HiddenSessions {
+		hidden[key] = true
+	}
+	return hidden
+}
+
+// toggleSessionHidden hides or restores one session locally — provider
+// files are never touched (the history catalog is read-only).
+func (s *Shell) toggleSessionHidden(key string) {
+	s.applySettings(func(v *settings.Settings) error {
+		next := make([]string, 0, len(v.Session.HiddenSessions)+1)
+		for _, existing := range v.Session.HiddenSessions {
+			if existing != key {
+				next = append(next, existing)
+			}
+		}
+		if !s.hiddenSessionSet()[key] {
+			if len(next) < 500 {
+				next = append(next, key)
+			}
+		}
+		v.Session.HiddenSessions = next
+		return nil
+	})
+}
+
+// copySessionResume copies the resume command for one session.
+func (s *Shell) copySessionResume(meta history.SessionMeta) {
+	s.copyToClipboard(sessionResumeCommand(meta))
 }
 
 // historyFiltersActive indicates a scoped view, not an empty catalog.

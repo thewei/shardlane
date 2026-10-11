@@ -91,70 +91,45 @@ func TestInspectorUnboundConversationStillRenders(t *testing.T) {
 	}
 }
 
-// TestHistoryProjectsGroupsByProject pins the 0.8 grouped management view:
-// sessions group under their normalized project with counts, Open routes to
-// the session detail, and a missing project path falls back to "unknown".
-func TestHistoryProjectsGroupsByProject(t *testing.T) {
+// TestSessionsGroupsByProject pins the N19 #9 grouped Sessions view:
+// sessions group under their project with counts, the "No project" fallback
+// catches sessions without a path, and rows carry the resume-ready facts.
+func TestSessionsGroupsByProject(t *testing.T) {
 	shell := NewShell()
-	shell.historyProjectsLoading = false
-	shell.historyProjectsLoaded = true // pre-seeded cache: the render must not re-query
-	shell.historyProjects = []history.SessionSummary{
+	shell.hist.service = newFakeHistoryView()
+	shell.hist.loaded = true // pre-seeded list: the render must not re-query
+	shell.hist.sessions = []history.SessionSummary{
 		{Meta: history.SessionMeta{Key: "claude-code:a", Title: "First", Agent: history.AgentClaudeCode,
 			ProjectPath: "/work/alpha", ProjectName: "alpha", UpdatedAt: 1_760_000_000_000}},
 		{Meta: history.SessionMeta{Key: "codex:b", Title: "Second", Agent: history.AgentCodex,
 			ProjectPath: "/work/alpha", ProjectName: "alpha", UpdatedAt: 1_759_000_000_000}},
 		{Meta: history.SessionMeta{Key: "codex:c", Title: "Loose", Agent: history.AgentCodex}},
 	}
-	shell.router.Replace("/history-projects")
+	shell.router.Replace(routeHistory)
 	tester := ui.NewTester(shell.View, 1200, 800)
 	for _, want := range []string{
-		"History by Project",
-		"alpha (2)",
+		"Sessions",
+		"alpha",
+		"2 sessions",
 		"First",
 		"Second",
-		"unknown (1)",
+		"No project",
+		"1 sessions",
 		"Loose",
 	} {
 		if !tester.HasText(want) {
 			t.Fatalf("grouped view missing %q; texts=%q", want, tester.Texts())
 		}
 	}
-}
-
-// TestHistoryProjectsRefreshFromService pins the cached refresh: the grouped
-// view loads through the dispatch lane (single inflight) and renders the
-// returned metadata; before the first load it shows the loading state.
-func TestHistoryProjectsRefreshFromService(t *testing.T) {
-	shell := NewShell()
-	fake := newFakeHistoryView()
-	shell.hist.service = fake
-
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		shell.refreshHistoryProjects()
-	}()
-	call := <-fake.calls
-	// While inflight, a second refresh is a no-op.
-	shell.refreshHistoryProjects()
-	call.release <- listResult{summaries: []history.SessionSummary{
-		{Meta: history.SessionMeta{Key: "claude-code:a", Title: "Cached", Agent: history.AgentClaudeCode,
-			ProjectPath: "/work/beta", ProjectName: "beta"}},
-	}}
-	<-done
-
-	if len(shell.historyProjects) != 1 || shell.historyProjects[0].Meta.Title != "Cached" {
-		t.Fatalf("cached projects = %+v", shell.historyProjects)
+	// Hidden by default: the recycle toggle reveals them, Restore returns.
+	shell.toggleSessionHidden("codex:c")
+	tester = ui.NewTester(shell.View, 1200, 800)
+	if tester.HasText("Loose") {
+		t.Fatalf("hidden session leaked into the list; texts=%q", tester.Texts())
 	}
-	if shell.historyProjectsInflight {
-		t.Fatal("inflight flag must clear after the load")
-	}
-	shell.router.Replace("/history-projects")
-	tester := ui.NewTester(shell.View, 1200, 800)
-	if !tester.HasText("beta (1)") || !tester.HasText("Cached") {
-		t.Fatalf("grouped render missing cached session; texts=%q", tester.Texts())
-	}
-	if !tester.HasText("History by Project") {
-		t.Fatalf("page header missing")
+	shell.hist.showHidden = true
+	tester = ui.NewTester(shell.View, 1200, 800)
+	if !tester.HasText("1 hidden") || !tester.HasText("Loose") {
+		t.Fatalf("recycle view missing the hidden session; texts=%q", tester.Texts())
 	}
 }

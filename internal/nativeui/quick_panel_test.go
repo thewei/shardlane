@@ -88,7 +88,6 @@ func TestQuickPanelViewRendersAgentsWithStatusTabGroup(t *testing.T) {
 	for _, want := range []string{
 		"Shardlane",
 		"1 needs attention · 1 working · 3 agents",
-		"All", "Attention", "Review", "Working", "Idle",
 		"Scout", "Ranger", "Sleeper",
 	} {
 		if !tester.HasText(want) {
@@ -107,41 +106,6 @@ func TestQuickPanelViewRendersAgentsWithStatusTabGroup(t *testing.T) {
 	}
 }
 
-// TestQuickPanelStatusTabFilters pins the tab group: Attention keeps only
-// the blocked agent, Idle only the idle one, All restores every agent.
-func TestQuickPanelStatusTabFilters(t *testing.T) {
-	shell := quickPanelShell(t)
-	tester := ui.NewTester(shell.QuickPanelView, QuickPanelWidth, QuickPanelHeight)
-
-	if err := tester.Click("Attention"); err != nil {
-		t.Fatal(err)
-	}
-	tester.Frame()
-	if !tester.HasText("Ranger") {
-		t.Fatalf("attention filter hid the blocked agent; texts=%q", tester.Texts())
-	}
-	if tester.HasText("Scout") || tester.HasText("Sleeper") {
-		t.Fatalf("attention filter kept other agents; texts=%q", tester.Texts())
-	}
-
-	if err := tester.Click("Idle"); err != nil {
-		t.Fatal(err)
-	}
-	tester.Frame()
-	if !tester.HasText("Sleeper") || tester.HasText("Ranger") {
-		t.Fatalf("idle filter wrong; texts=%q", tester.Texts())
-	}
-
-	if err := tester.Click("All"); err != nil {
-		t.Fatal(err)
-	}
-	tester.Frame()
-	for _, want := range []string{"Scout", "Ranger", "Sleeper"} {
-		if !tester.HasText(want) {
-			t.Fatalf("all filter missing %q; texts=%q", want, tester.Texts())
-		}
-	}
-}
 
 // TestQuickPanelCardClickOpensAgentDetail pins the two-level popover:
 // selecting an Agent in the overview reveals its exact details without

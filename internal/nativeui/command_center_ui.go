@@ -8,7 +8,6 @@ import (
 	"github.com/egoist/mygo/ui"
 	"github.com/wh-studio/herdr-client/internal/agent"
 	"github.com/wh-studio/herdr-client/internal/commandcenter"
-	"github.com/wh-studio/herdr-client/internal/history"
 )
 
 // Command Center (0.9 P1) over the shared Action Registry (0.9 P2): the
@@ -108,13 +107,6 @@ func (s *Shell) buildCommandCenterActions() []commandcenter.Action {
 	}
 
 	// Recent History from the already-loaded management cache (no IO).
-	for _, summary := range s.historyProjects {
-		actions = append(actions, commandcenter.Action{
-			ID: "history.open." + summary.Meta.Key, Title: "History: " + fallbackText(summary.Meta.Title, history.Untitled),
-			Section: "History", Kind: commandcenter.TargetHistory, TargetID: summary.Meta.Key,
-			Available: true,
-		})
-	}
 
 	// App actions.
 	actions = append(actions,

@@ -95,8 +95,7 @@ func TestHistoryDeepLinkBackTargetsParentNotPreviousPage(t *testing.T) {
 
 func TestActiveSettingsAndHistorySidebarSelectionDoesNotGrowHistory(t *testing.T) {
 	for _, tc := range []struct{ route, label string }{
-		{routeHistory, "All conversations"},
-		{"/history-projects", "By Project"},
+		{routeHistory, "All sessions"},
 		{"/settings/general", "General"},
 	} {
 		t.Run(tc.route, func(t *testing.T) {

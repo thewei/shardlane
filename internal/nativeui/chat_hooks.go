@@ -137,5 +137,3 @@ func detectClaudeInteraction(screen string) (conversation.InteractionKind, strin
 	}
 	return "", "", nil, false
 }
-
-

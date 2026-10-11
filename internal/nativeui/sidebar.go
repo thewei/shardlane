@@ -511,7 +511,11 @@ func (s *Shell) agentItems(c *ui.Context) {
 		selected := card.PaneID != "" && card.PaneID == s.selectedPaneID
 		row := s.agentCardRow(c, card, selected)
 		if row.Clicked() {
-			s.openAgentQuickPanel(row, card)
+			// N19 #4: a sidebar Agent click jumps straight to the pane's
+			// remembered surface (Chat or Terminal) instead of the detail
+			// popover; the popover stays on the tray and header entry
+			// points.
+			s.openAgentFromSidebar(card)
 		}
 		row.ContextMenu(func(m *ui.Menu) {
 			if m.Item("Open Chat").Chosen() {

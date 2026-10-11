@@ -128,26 +128,10 @@ func (s *Shell) workspaceChatSurface(c *ui.Context) {
 	}
 
 	ui.Column(c).Grow(1).MinWidth(0).Background(designTokens(t.Dark).Content).Children(func() {
-		// Header band within the workspace card
-		ui.Row(c).FillWidth().Padding(sp.S, sp.XL).Gap(sp.M).AlignItems(ui.Center).
-			BorderWidth(0, 0, 1, 0).BorderColor(designTokens(t.Dark).BorderSubtle).Children(func() {
-			if hasCard {
-				providerBadge(c, card.Provider)
-				ui.Text(c, card.Title).FontSize(Typography().Body).FontWeight(600).SingleLine()
-				if s.chatConversationID != "" {
-					summary := s.chatDispositionSummary()
-					statusPill(c, summary, dispositionTone(s.chatDispositionNow()))
-					ui.Text(c, s.chatConversationID).FontSize(Typography().Micro).TextColor(t.TextMuted).SingleLine()
-				}
-			} else {
-				ui.Icon(c, iconChat).Size(15, 15).TextColor(t.TextMuted)
-				ui.Text(c, "Agent Chat").FontSize(Typography().Body).FontWeight(600).SingleLine()
-			}
-			ui.Spacer(c)
-			if ui.Button(c, "Terminal").Clicked() {
-				s.showSurface(WorkspaceSurfaceTerminal)
-			}
-		})
+		// Unified card header (N19 #3/#8): the same anatomy as the terminal
+		// pane card — Agent mark, name, live status dot, chat disposition,
+		// and the single Terminal⇄Chat toggle. Double-click zooms (#6).
+		s.chatSurfaceHeader(c, gorexColorsOf(t.Dark))
 
 		// The selected Agent may disappear while Chat is visible. Do not
 		// reveal a previously bound pane's transcript or composer in that

@@ -79,7 +79,7 @@ func TestNativeShellSkeleton(t *testing.T) {
 	s.selected = "tab:t1"
 
 	tester := ui.NewTester(s.View, 1200, 800)
-	for _, text := range []string{"Shardlane", "Terminal view", "Chat view", "Changes view", "History view", "Agents", "Workspace", "Default", "main", "Settings"} {
+	for _, text := range []string{"Shardlane", "Changes view", "History view", "Agents", "Workspace", "Default", "main", "Settings"} {
 		if !tester.HasText(text) {
 			t.Fatalf("native shell missing %q; texts=%q", text, tester.Texts())
 		}

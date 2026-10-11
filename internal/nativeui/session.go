@@ -74,7 +74,7 @@ func clampSessionWidth(width int) int {
 // snapshot. Pure read over presentation state; safe from any lane that
 // already owns the shell.
 func (s *Shell) captureSession() settings.SessionSettings {
-	return settings.SessionSettings{
+	snapshot := settings.SessionSettings{
 		Route:             persistableRoute(s.router.Path()),
 		Instance:          s.activeInstance,
 		ProjectID:         s.selectedProjectID,
@@ -89,6 +89,15 @@ func (s *Shell) captureSession() settings.SessionSettings {
 		RightPanelSurface: string(s.rightPanel.surface),
 		RightPanelWidth:   s.rightPanel.width,
 	}
+	// N19 #4: the per-pane surface memory persists, so sidebar Agent clicks
+	// land where the user left them across launches.
+	for paneID, kind := range s.paneSurfaceMemo {
+		if snapshot.PaneSurfaces == nil {
+			snapshot.PaneSurfaces = map[string]string{}
+		}
+		snapshot.PaneSurfaces[paneID] = string(kind)
+	}
+	return snapshot
 }
 
 // SaveSession persists the current session snapshot through the settings
@@ -122,6 +131,17 @@ func (s *Shell) restoreSession() {
 	s.selectedProjectID = session.ProjectID
 	s.selectedTabID = session.TabID
 	s.selectedPaneID = session.PaneID
+	if len(session.PaneSurfaces) > 0 {
+		s.paneSurfaceMemo = make(map[string]WorkspaceSurfaceKind, len(session.PaneSurfaces))
+		for paneID, kind := range session.PaneSurfaces {
+			switch WorkspaceSurfaceKind(kind) {
+			case WorkspaceSurfaceChat:
+				s.paneSurfaceMemo[paneID] = WorkspaceSurfaceChat
+			case WorkspaceSurfaceTerminal:
+				s.paneSurfaceMemo[paneID] = WorkspaceSurfaceTerminal
+			}
+		}
+	}
 	s.projectsOpen = session.ProjectsOpen
 	s.agentsOpen = session.AgentsOpen
 	s.pinsOpen = session.PinsOpen
