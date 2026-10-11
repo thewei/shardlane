@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -28,7 +29,7 @@ const (
 
 /**
  * [INPUT]: 依赖 Shell 的 0.6 Chat 状态（chatTurns/chatDisposition/chatOutcome/chatQueuedText）、launch 发送路径、mygo Bind 事件
- * [OUTPUT]: 对外提供 ChatBridge 绑定服务（Snapshot/Send/InterruptAndSend/CancelQueued）与 chat:updated 事件、Shell.publishChatBridge、sendChatText 共享发送路径
+ * [OUTPUT]: 对外提供 ChatBridge 绑定服务（Snapshot/Send/InterruptAndSend/AnswerInteraction[Text]/CancelQueued）与 chat:updated 事件、Shell.publishChatBridge、sendChatText 共享发送路径
  * [POS]: WebView Chat 的唯一表现层桥：投影与动作编组到窗口 UI 通道，会话运行时/Herdr 方法零改动；页面只能通过此桥读取聊天投影
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -345,12 +346,42 @@ func (b *ChatBridge) Transcribe(ctx context.Context, audioBase64 string, mime st
 	return strings.TrimSpace(payload.Text), nil
 }
 
+// chatAnswerTextSettle is the pause between selecting a free-text option
+// ("Type something." / "Chat about this") and pasting the answer: the TUI
+// must land in its text field first.
+const chatAnswerTextSettle = 500 * time.Millisecond
+
+// chatAboutOption matches the "discuss instead of picking" affordance.
+// Selecting it makes Claude Code tear the question down (resolved as
+// declined) and return to its normal input, so the typed answer delivers
+// as an ordinary prompt after an Escape — never as arrow navigation.
+var chatAboutOption = regexp.MustCompile(`(?i)^chat about`)
+
 // AnswerInteraction claims the interaction (CAS, first answer wins) and
 // delivers the choice as the option's arrow-navigation key sequence —
 // arrows, never digits, which would type into the TUI (the reference
 // transport's rule). The interaction is consumed even if the delivery
 // fails: the agent stays blocked and may re-ask.
 func (b *ChatBridge) AnswerInteraction(ctx context.Context, interactionID, option string) (ChatBridgeState, error) {
+	return b.answerInteraction(ctx, interactionID, option, "")
+}
+
+// AnswerInteractionText answers a free-text option: the option is selected
+// by the same arrow navigation, then the typed answer is pasted and
+// submitted through the canonical agent.prompt once the TUI's text field
+// has focus. An empty answer is refused — selecting without text is what
+// produced "no answer provided".
+func (b *ChatBridge) AnswerInteractionText(ctx context.Context, interactionID, option, text string) (ChatBridgeState, error) {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return b.shell.chatBridgeStateOnWindow(), errors.New("this option needs a typed answer")
+	}
+	return b.answerInteraction(ctx, interactionID, option, text)
+}
+
+// answerInteraction is the shared delivery: locate the pending interaction,
+// claim it (CAS), navigate to the option, optionally paste the typed answer.
+func (b *ChatBridge) answerInteraction(ctx context.Context, interactionID, option, text string) (ChatBridgeState, error) {
 	var paneID string
 	var keys []string
 	var prepareErr error
@@ -383,6 +414,14 @@ func (b *ChatBridge) AnswerInteraction(ctx context.Context, interactionID, optio
 			return
 		}
 		paneID = chosen.AgentPaneID
+		if text != "" && chatAboutOption.MatchString(option) {
+			// "Chat about this" declines the question and refocuses the
+			// ordinary input: Escape, then the answer pastes as a normal
+			// prompt. Navigating to the row and pasting into the teardown
+			// swallows the text.
+			keys = []string{"esc"}
+			return
+		}
 		keys = make([]string, 0, index+1)
 		for i := 0; i < index; i++ {
 			keys = append(keys, "down")
@@ -393,6 +432,18 @@ func (b *ChatBridge) AnswerInteraction(ctx context.Context, interactionID, optio
 		return b.shell.chatBridgeStateOnWindow(), prepareErr
 	}
 	err := b.shell.runtime.SendAgentKeys(ctx, b.shell.activeInstance, paneID, keys)
+	if err == nil && text != "" {
+		settle := chatAnswerTextSettle
+		if len(keys) == 1 && keys[0] == "esc" {
+			settle = chatInterruptSettle
+		}
+		select {
+		case <-ctx.Done():
+			err = ctx.Err()
+		case <-time.After(settle):
+			err = b.shell.runtime.PromptAgent(ctx, b.shell.activeInstance, paneID, text)
+		}
+	}
 	var state ChatBridgeState
 	b.shell.callOnWindow(func() {
 		b.shell.publishChatBridge()

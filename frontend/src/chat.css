@@ -740,6 +740,71 @@ details.tool.error > summary {
   flex-shrink: 0;
 }
 
+/* Free-text answer ("Type something." / "Chat about this") */
+
+.interaction-answer {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.interaction-answer textarea {
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--text);
+  background: var(--code-bg);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  padding: 7px 10px;
+  resize: none;
+  min-height: 40px;
+  max-height: 120px;
+}
+
+.interaction-answer textarea:focus {
+  outline: 1px solid var(--accent);
+}
+
+.interaction-answer-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.interaction-answer-row button {
+  font: inherit;
+  font-size: 12px;
+  background: var(--panel);
+  border: 1px solid var(--border-subtle);
+  border-radius: 7px;
+  color: var(--text);
+  padding: 4px 12px;
+  cursor: pointer;
+}
+
+.interaction-answer-row button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.interaction-answer-row .answer-send {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-contrast);
+  font-weight: 600;
+  margin-left: auto;
+}
+
+.interaction-answer-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-left: auto;
+}
+
+.interaction-answer-row .answer-send + .interaction-answer-hint {
+  margin-left: 0;
+}
+
 .completions {
   display: flex;
   flex-direction: column;

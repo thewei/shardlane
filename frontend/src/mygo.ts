@@ -98,6 +98,16 @@ export const chat = {
     return call("chat.AnswerInteraction", interactionID, option);
   },
   /**
+   * AnswerInteractionText answers a free-text option: the option is selected
+   * by the same arrow navigation, then the typed answer is pasted and
+   * submitted through the canonical agent.prompt once the TUI's text field
+   * has focus. An empty answer is refused — selecting without text is what
+   * produced "no answer provided".
+   */
+  answerInteractionText(interactionID: string, option: string, text: string): Promise<ChatBridgeState> {
+    return call("chat.AnswerInteractionText", interactionID, option, text);
+  },
+  /**
    * CancelQueued cancels the queued follow-up (only possible before its
    * delivery commit) and returns the projection.
    */

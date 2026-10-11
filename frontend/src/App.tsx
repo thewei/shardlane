@@ -33,6 +33,9 @@ export function App() {
   const [transcribing, setTranscribing] = useState(false);
   const [voiceError, setVoiceError] = useState("");
   const [interrupting, setInterrupting] = useState(false);
+  const [textPrompt, setTextPrompt] = useState<{ id: string; option: string } | null>(null);
+  const [textAnswer, setTextAnswer] = useState("");
+  const [answering, setAnswering] = useState(false);
   const composingRef = useRef(false);
   const logRef = useRef<HTMLDivElement>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
@@ -206,10 +209,46 @@ export function App() {
   };
 
   const answerInteraction = async (id: string, option: string) => {
+    if (isFreeTextOption(option)) {
+      setTextPrompt({ id, option });
+      setTextAnswer("");
+      return;
+    }
     try {
       setState(await chat.answerInteraction(id, option));
     } catch {
       refresh(); // lost a CAS race or the prompt moved on: re-read
+    }
+  };
+
+  // submitTextAnswer delivers the typed answer for a free-text option: the
+  // bridge selects the option, settles for the TUI's text field, then pastes
+  // and submits the text through agent.prompt.
+  const submitTextAnswer = async () => {
+    const text = textAnswer.trim();
+    if (!textPrompt || text === "" || answering) return;
+    setAnswering(true);
+    try {
+      setState(await chat.answerInteractionText(textPrompt.id, textPrompt.option, text));
+      setTextPrompt(null);
+      setTextAnswer("");
+    } catch {
+      refresh(); // lost a race or the delivery failed: re-read
+    } finally {
+      setAnswering(false);
+    }
+  };
+
+  const onKeyDownAnswerText = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (composingRef.current || event.nativeEvent.isComposing) return;
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      void submitTextAnswer();
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      setTextPrompt(null);
+      setTextAnswer("");
     }
   };
 
@@ -455,18 +494,53 @@ export function App() {
                 </span>
                 <span className="interaction-prompt">{interaction.prompt}</span>
               </div>
-              <div className="interaction-options">
-                {interaction.options.map((option, index) => (
-                  <button
-                    key={option}
-                    type="button"
-                    onClick={() => void answerInteraction(interaction.id, option)}
-                  >
-                    <span className="keycap">{index + 1}</span>
-                    {option}
-                  </button>
-                ))}
-              </div>
+              {textPrompt?.id === interaction.id ? (
+                <div className="interaction-answer">
+                  <textarea
+                    autoFocus
+                    value={textAnswer}
+                    placeholder={`Answering “${textPrompt.option}” — type your answer…`}
+                    aria-label="Free-text answer"
+                    onChange={(event) => setTextAnswer(event.target.value)}
+                    onKeyDown={onKeyDownAnswerText}
+                    onCompositionStart={() => (composingRef.current = true)}
+                    onCompositionEnd={() => (composingRef.current = false)}
+                  />
+                  <div className="interaction-answer-row">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setTextPrompt(null);
+                        setTextAnswer("");
+                      }}
+                    >
+                      Back
+                    </button>
+                    <span className="interaction-answer-hint">Enter submits · Esc goes back</span>
+                    <button
+                      type="button"
+                      className="answer-send"
+                      disabled={textAnswer.trim() === "" || answering}
+                      onClick={() => void submitTextAnswer()}
+                    >
+                      {answering ? "Sending…" : "Send answer"}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="interaction-options">
+                  {interaction.options.map((option, index) => (
+                    <button
+                      key={option}
+                      type="button"
+                      onClick={() => void answerInteraction(interaction.id, option)}
+                    >
+                      <span className="keycap">{index + 1}</span>
+                      {option}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -579,6 +653,14 @@ export function App() {
 
 function turnKey(turn: ChatBridgeState["turns"][number], index: number): string {
   return `${index}:${turn.user ? "u" : "a"}`;
+}
+
+// isFreeTextOption matches the AskUserQuestion affordances that expect a
+// typed answer instead of a plain selection: the TUI's own "Type something."
+// / "Chat about this" rows and the auto-appended "Other". Picking one
+// without typing is exactly what produced "no answer provided".
+function isFreeTextOption(option: string): boolean {
+  return /^(type something|chat about|other)\b/i.test(option.trim());
 }
 
 function draftKey(conversationId: string): string {
