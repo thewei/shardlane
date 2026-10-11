@@ -184,6 +184,9 @@ func (s *Shell) paneCard(c *ui.Context, k *gorexColors, surface *terminalSurface
 	hovered := card.Hovered()
 	card.Children(func() {
 		s.paneCardHeader(c, k, surface, focused, hovered)
+		if s.findPaneID == surface.paneID {
+			s.paneFindBar(c, k, surface)
+		}
 		body := ui.Box(c).Grow(1).MinHeight(0).Padding(0, 5, 6, 5)
 		body.Children(func() {
 			// Real-terminal semantics (2026-10-06 F144, user-approved): the

@@ -1,8 +1,14 @@
 package nativeui
 
 import (
+	"context"
+	"fmt"
+	"strings"
+	"time"
+
 	"github.com/egoist/mygo/ui"
 	"github.com/wh-studio/herdr-client/internal/agent"
+	"github.com/wh-studio/herdr-client/internal/herdr"
 )
 
 /**
@@ -105,4 +111,104 @@ func (s *Shell) agentStatusDotForPane(c *ui.Context, k *gorexColors, paneID stri
 	case opNeedsAttention:
 		gorexAttentionDot(c, k.attention, "Needs attention")
 	}
+}
+
+// openPaneFind opens the find bar over one pane (fresh query).
+func (s *Shell) openPaneFind(paneID string) {
+	s.findPaneID = paneID
+	s.findQuery = ""
+	s.findMatch = nil
+	s.findTotal, s.findCurrent, s.findHasCurrent = 0, 0, false
+	s.findError = ""
+}
+
+// closePaneFind dismisses the bar.
+func (s *Shell) closePaneFind() {
+	s.findPaneID = ""
+	s.findMatch = nil
+	s.findError = ""
+}
+
+// paneFindBar renders the find row under a terminal card's header: the
+// query, prev/next over herdr's copy_search matches, the ordinal and the
+// dismissal (N19: find in terminal).
+func (s *Shell) paneFindBar(c *ui.Context, k *gorexColors, surface *terminalSurface) {
+	h := ui.Row(c).FillWidth().Height(30).Padding(0, gorexGap, 0, 12).Gap(6).AlignItems(ui.Center).
+		BorderWidth(0, 0, 1, 0).BorderColor(k.cardBorder).MinWidth(0)
+	h.Children(func() {
+		field := ui.TextInput(c, &s.findQuery).Grow(1).MinWidth(0).
+			Placeholder("Find in pane (Enter: previous, ⌥Enter: next)").Label("Find")
+		field.AutoFocus()
+		if field.Submitted() {
+			s.paneFindRun(surface.paneID, "backward", true)
+		}
+		if field.Shortcut(ui.Alt, ui.KeyEnter) {
+			s.paneFindRun(surface.paneID, "forward", false)
+		}
+		if field.Shortcut(0, ui.KeyEscape) {
+			s.closePaneFind()
+		}
+		if ui.Button(c, "Prev").FontSize(Typography().Caption).Clicked() {
+			s.paneFindRun(surface.paneID, "backward", false)
+		}
+		if ui.Button(c, "Next").FontSize(Typography().Caption).Clicked() {
+			s.paneFindRun(surface.paneID, "forward", false)
+		}
+		switch {
+		case s.findBusy:
+			ui.Text(c, "…").FontSize(Typography().Caption).TextColor(c.Theme().TextMuted).Shrink(0)
+		case s.findError != "":
+			ui.Text(c, s.findError).FontSize(Typography().Caption).TextColor(c.Theme().Danger).Shrink(0)
+		case s.findHasCurrent:
+			ui.Text(c, fmt.Sprintf("%d/%d", s.findCurrent, s.findTotal)).
+				FontSize(Typography().Caption).TextColor(c.Theme().TextMuted).Shrink(0)
+		case s.findQuery != "":
+			ui.Text(c, "No matches").FontSize(Typography().Caption).TextColor(c.Theme().TextMuted).Shrink(0)
+		}
+		if gorexIconButton(c, k, iconMinus, "Close find", "Close", false, 22, 13).Clicked() {
+			s.closePaneFind()
+		}
+	})
+}
+
+// paneFindRun executes one search step on the dispatch lane. A fresh query
+// searches backward from the viewport; Next/Prev continue from the last
+// match while the pane's content revision still matches.
+func (s *Shell) paneFindRun(paneID, direction string, restart bool) {
+	query := strings.TrimSpace(s.findQuery)
+	if query == "" || s.runtime == nil || s.activeInstance == "" || s.findBusy {
+		return
+	}
+	instance := s.activeInstance
+	var previous *herdr.PaneMatch
+	if !restart && s.findMatch != nil {
+		match := *s.findMatch
+		previous = &match
+	}
+	s.findBusy = true
+	s.findError = ""
+	s.dispatch(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+		defer cancel()
+		result, err := s.runtime.PaneFind(ctx, instance, paneID, query, direction, previous, true)
+		s.applyOnWindow(func() {
+			if s.findPaneID != paneID {
+				return
+			}
+			s.findBusy = false
+			if err != nil {
+				s.findError = err.Error()
+				return
+			}
+			s.findTotal = result.Total
+			s.findCurrent = result.Current
+			s.findHasCurrent = result.HasCurrent
+			if result.HasMatch {
+				match := result.Match
+				s.findMatch = &match
+			} else {
+				s.findMatch = nil
+			}
+		})
+	})
 }

@@ -13,9 +13,12 @@ import (
 	"strings"
 	"time"
 
+	"context"
+	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 	"github.com/wh-studio/herdr-client/internal/history"
 	"github.com/wh-studio/herdr-client/internal/settings"
+	"os"
 )
 
 // distinctAgents returns the agent kinds present in the summaries, in
@@ -304,6 +307,9 @@ func (s *Shell) sessionFacts(c *ui.Context, summary history.SessionSummary) {
 			if ui.Button(c, "Copy resume command").FontSize(Typography().Caption).Clicked() {
 				s.copySessionResume(summary.Meta)
 			}
+			if ui.Button(c, "Export Markdown").FontSize(Typography().Caption).Clicked() {
+				s.exportSessionMarkdown(summary.Meta)
+			}
 		})
 	})
 }
@@ -357,6 +363,109 @@ func sessionResumeCommand(meta history.SessionMeta) string {
 		return cd + fmt.Sprintf("pi --resume %s", meta.ID)
 	default:
 		return cd + fmt.Sprintf("# no known resume command for %s (session %s)", meta.Agent, meta.ID)
+	}
+}
+
+// exportSessionMarkdown assembles the full conversation as Markdown over
+// paged catalog windows and saves it through the native save dialog (the
+// reference view's 导出 Markdown). Provider files are read-only inputs.
+func (s *Shell) exportSessionMarkdown(meta history.SessionMeta) {
+	service := s.hist.service
+	if service == nil {
+		return
+	}
+	s.dispatch(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+		var b strings.Builder
+		fmt.Fprintf(&b, "# %s\n\n", fallbackText(meta.Title, history.Untitled))
+		if meta.ProjectPath != "" {
+			fmt.Fprintf(&b, "- Project: %s\n", meta.ProjectPath)
+		}
+		if meta.GitBranch != nil && *meta.GitBranch != "" {
+			fmt.Fprintf(&b, "- Branch: %s\n", *meta.GitBranch)
+		}
+		if meta.Model != nil && *meta.Model != "" {
+			fmt.Fprintf(&b, "- Model: %s\n", *meta.Model)
+		}
+		fmt.Fprintf(&b, "- Session: %s\n- Exported: %s\n\n---\n\n", meta.ID, time.Now().Format("2006-01-02 15:04"))
+
+		for start := 0; ; start += history.WindowLimit {
+			pageStart := start
+			window, err := service.Open(ctx, history.ConversationWindowRequest{
+				ConversationID: meta.Key,
+				StartIndex:     &pageStart,
+				Limit:          history.WindowLimit,
+			})
+			if err != nil {
+				s.applyOnWindow(func() { s.status = "Export failed: " + err.Error() })
+				return
+			}
+			for _, message := range window.Messages {
+				writeSessionMessage(&b, message)
+			}
+			if len(window.Messages) == 0 || window.Start+len(window.Messages) >= window.TotalMessages {
+				break
+			}
+		}
+
+		markdown := b.String()
+		s.applyOnWindow(func() {
+			name := strings.Map(func(r rune) rune {
+				if r == '/' || r == ':' || r == '\\' {
+					return '-'
+				}
+				return r
+			}, fallbackText(meta.Title, history.Untitled))
+			path, err := mygo.Dialog.Save(mygo.SaveDialogOptions{
+				Parent:      s.win,
+				Title:       "Export session as Markdown",
+				DefaultPath: name + ".md",
+				ButtonLabel: "Export",
+			})
+			if err != nil || path == "" {
+				return
+			}
+			if writeErr := os.WriteFile(path, []byte(markdown), 0o644); writeErr != nil {
+				s.status = "Export failed: " + writeErr.Error()
+				return
+			}
+			s.status = "Session exported to " + path
+		})
+	})
+}
+
+// writeSessionMessage renders one transcript message as Markdown.
+func writeSessionMessage(b *strings.Builder, message history.TranscriptMessage) {
+	switch message.Role {
+	case history.RoleUser:
+		fmt.Fprintf(b, "## User\n\n%s\n\n", message.Text)
+	case history.RoleAssistant:
+		fmt.Fprintf(b, "## Assistant\n\n")
+		if message.Thinking != nil && *message.Thinking != "" {
+			b.WriteString("> " + strings.ReplaceAll(*message.Thinking, "\n", "\n> ") + "\n\n")
+		}
+		if message.Text != "" {
+			b.WriteString(message.Text + "\n\n")
+		}
+		for _, call := range message.ToolCalls {
+			fmt.Fprintf(b, "**%s**", call.Name)
+			if call.IsError {
+				b.WriteString(" (error)")
+			}
+			b.WriteString("\n")
+			if call.InputPreview != "" {
+				fmt.Fprintf(b, "```\n%s\n```\n", call.InputPreview)
+			}
+			if call.Output != nil && *call.Output != "" {
+				fmt.Fprintf(b, "```\n%s\n```\n", *call.Output)
+			}
+			b.WriteString("\n")
+		}
+	default:
+		if message.Text != "" {
+			fmt.Fprintf(b, "> %s\n\n", message.Text)
+		}
 	}
 }
 
