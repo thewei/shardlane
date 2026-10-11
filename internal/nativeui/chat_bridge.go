@@ -1,11 +1,28 @@
 package nativeui
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
+	"mime/multipart"
+	"net/http"
+	"os"
+	"strings"
+	"time"
 
 	"github.com/egoist/mygo"
 	"github.com/wh-studio/herdr-client/internal/conversation"
+	"github.com/wh-studio/herdr-client/internal/history"
+)
+
+// Voice transcription defaults; both are overridable in Settings -> General.
+const (
+	voiceDefaultEndpoint = "https://api.openai.com/v1"
+	voiceDefaultModel    = "whisper-1"
 )
 
 /**
@@ -42,13 +59,13 @@ type ChatBridgeTurn struct {
 // presentation state only: the conversation runtime, the send path and the
 // follow-up ledger stay in Go (internal/agent + internal/herdr).
 type ChatBridgeState struct {
-	ConversationID string           `json:"conversationId"`
-	Title          string           `json:"title,omitempty"`
-	Provider       string           `json:"provider,omitempty"`
-	Loading        bool             `json:"loading"`
-	Disposition    string           `json:"disposition"`
-	Outcome        string           `json:"outcome,omitempty"`
-	QueuedText     string           `json:"queuedText,omitempty"`
+	ConversationID string `json:"conversationId"`
+	Title          string `json:"title,omitempty"`
+	Provider       string `json:"provider,omitempty"`
+	Loading        bool   `json:"loading"`
+	Disposition    string `json:"disposition"`
+	Outcome        string `json:"outcome,omitempty"`
+	QueuedText     string `json:"queuedText,omitempty"`
 	// Theme is the app-resolved appearance ("light" or "dark"), following
 	// Settings -> General -> Appearance through mygo.Theme — not the bare
 	// system preference.
@@ -58,8 +75,11 @@ type ChatBridgeState struct {
 	Model string `json:"model,omitempty"`
 	// HasOlder reports an earlier history page exists (history-bound chats
 	// only; the live tail is bounded by design).
-	HasOlder bool             `json:"hasOlder,omitempty"`
-	Turns    []ChatBridgeTurn `json:"turns"`
+	HasOlder bool `json:"hasOlder,omitempty"`
+	// ContextTokens is the provider-recorded size of the current request
+	// context, when the transcript states one (context ring only).
+	ContextTokens *int64           `json:"contextTokens,omitempty"`
+	Turns         []ChatBridgeTurn `json:"turns"`
 }
 
 // chatUpdated pushes the projection after every chat state mutation. Events
@@ -163,6 +183,83 @@ func (b *ChatBridge) PickAttachment(ctx context.Context) (string, error) {
 	return paths[0], nil
 }
 
+// Transcribe sends a recorded clip to the configured OpenAI-compatible
+// transcription endpoint (local proxies included) and returns the text.
+// The API key never reaches the page and is never logged.
+func (b *ChatBridge) Transcribe(ctx context.Context, audioBase64 string, mime string) (string, error) {
+	var endpoint, key, model string
+	b.shell.callOnWindow(func() {
+		voice := b.shell.settings.Voice
+		endpoint, key, model = voice.EndpointURL, voice.APIKey, voice.Model
+	})
+	if key == "" {
+		key = os.Getenv("OPENAI_API_KEY")
+	}
+	if endpoint == "" {
+		endpoint = voiceDefaultEndpoint
+	}
+	if model == "" {
+		model = voiceDefaultModel
+	}
+	audio, err := base64.StdEncoding.DecodeString(audioBase64)
+	if err != nil || len(audio) == 0 {
+		return "", errors.New("empty or malformed recording")
+	}
+	if mime == "" {
+		mime = "audio/webm"
+	}
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	part, err := writer.CreateFormFile("file", "clip."+strings.SplitN(mime, "/", 2)[1])
+	if err == nil {
+		part.Write(audio)
+		writer.WriteField("model", model)
+		writer.WriteField("response_format", "json")
+		err = writer.Close()
+	}
+	if err != nil {
+		return "", err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimSuffix(endpoint, "/")+"/audio/transcriptions", body)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req.Header.Set("Authorization", "Bearer "+key)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("could not reach the transcription endpoint: %w", err)
+	}
+	defer resp.Body.Close()
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return "", err
+	}
+	if resp.StatusCode != http.StatusOK {
+		detail := string(raw)
+		if payload := map[string]any{}; json.Unmarshal(raw, &payload) == nil {
+			if inner, ok := payload["error"].(map[string]any); ok {
+				if message, ok := inner["message"].(string); ok {
+					detail = message
+				}
+			}
+		}
+		if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+			return "", errors.New("transcription auth failed — check the voice API key")
+		}
+		return "", fmt.Errorf("transcription failed (%d): %s", resp.StatusCode, detail)
+	}
+	var payload struct {
+		Text string `json:"text"`
+	}
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(payload.Text), nil
+}
+
 // callOnWindow runs fn on the window UI lane and waits for it; inline when
 // no window exists (headless tests). Shell-bound methods run on their own
 // goroutines, so this is the only path back to Shell state.
@@ -196,6 +293,7 @@ func (s *Shell) chatBridgeState() ChatBridgeState {
 	}
 	state.Model = s.chatModel
 	state.HasOlder = s.chatHasOlder
+	state.ContextTokens = s.chatContextTokens
 	for _, turn := range s.chatTurns {
 		bridgeTurn := ChatBridgeTurn{
 			User:      turn.UserRow,
@@ -251,15 +349,58 @@ func chatBridgeDisposition(disposition conversation.PromptDisposition) string {
 	}
 }
 
+// chatPublishInterval is the minimum spacing between chat projection
+// events while the live tail streams. File appends land well below this
+// interval, so the page sees token-level updates without event flooding.
+const chatPublishInterval = 120 * time.Millisecond
+
 // publishChatBridge pushes the projection to the WebView chat page. Called
 // on the UI lane after every chat state mutation; a no-op without a window.
 // The guard is only on the window: an empty projection (a pane without a
 // conversation) must still reach the page, or it would keep rendering the
-// previously bound conversation's transcript.
+// previously bound conversation's transcript. Publishes coalesce to one
+// event per interval; the trailing state always wins.
 func (s *Shell) publishChatBridge() {
 	if s.win == nil {
 		return
 	}
+	s.chatPublishMu.Lock()
+	elapsed := time.Since(s.chatPublishAt)
+	if elapsed >= chatPublishInterval {
+		s.chatPublishAt = time.Now()
+		s.chatPublishMu.Unlock()
+		s.emitChatBridge()
+		return
+	}
+	if s.chatPublishTrailer == nil {
+		delay := chatPublishInterval - elapsed
+		s.chatPublishTrailer = time.AfterFunc(delay, func() {
+			s.applyOnWindow(func() {
+				s.chatPublishMu.Lock()
+				s.chatPublishTrailer = nil
+				s.chatPublishAt = time.Now()
+				s.chatPublishMu.Unlock()
+				s.emitChatBridge()
+			})
+		})
+	}
+	s.chatPublishMu.Unlock()
+}
+
+// emitChatBridge delivers the current state immediately (UI lane).
+func (s *Shell) emitChatBridge() {
 	// A closed window ends delivery; the page is gone with it.
 	_ = chatUpdated.Emit(s.win, s.chatBridgeState())
+}
+
+// lastContextFromMessages picks the latest provider-recorded context size.
+func lastContextFromMessages(messages []history.TranscriptMessage) *int64 {
+	var context *int64
+	for i := len(messages) - 1; i >= 0; i-- {
+		if messages[i].ContextTokens != nil {
+			context = messages[i].ContextTokens
+			break
+		}
+	}
+	return context
 }

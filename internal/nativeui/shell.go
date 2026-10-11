@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"path/filepath"
 	"runtime"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -136,6 +137,9 @@ type Shell struct {
 	settingsService        *app.SettingsService
 	settings               settings.Settings
 	settingsFontDraft      string
+	settingsVoiceEndpointDraft string
+	settingsVoiceKeyDraft        string
+	settingsVoiceModelDraft    string
 	settingsGitPromptDraft string
 	settingsPiBinaryDraft  string
 
@@ -315,6 +319,15 @@ type Shell struct {
 	chatWindowMessages []history.TranscriptMessage
 	chatWindowStart    int
 	chatHasOlder       bool
+	// chatContextTokens is the provider-recorded context size at the latest
+	// usage report in the window (context ring only).
+	chatContextTokens *int64
+	// chatPublishThrottle coalesces chat projection publishes while the
+	// live tail streams: at most one event per interval, trailing state
+	// wins (token-level streaming without event flooding).
+	chatPublishMu      sync.Mutex
+	chatPublishAt      time.Time
+	chatPublishTrailer *time.Timer
 	chatDraft          string
 	chatQueuedText     string
 	chatOutcome        string

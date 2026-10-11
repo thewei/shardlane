@@ -29,6 +29,7 @@ type claudePending struct {
 	tools     []ToolCall
 	timestamp *int64
 	model     *string
+	context   *int64
 }
 
 type claudeParseState struct {
@@ -39,6 +40,7 @@ type claudeParseState struct {
 	gitBranch     *string
 	model         *string
 	tokensUsed    int64
+	lastContext   *int64
 	createdAt     int64
 	updatedAt     int64
 	unknownLines  uint32
@@ -90,14 +92,15 @@ func materializeClaudePending(pending *claudePending) (TranscriptMessage, bool) 
 		thinking = &value
 	}
 	message := TranscriptMessage{
-		Role:      RoleAssistant,
-		Kind:      MessageText,
-		Text:      text,
-		Truncated: truncated,
-		ToolCalls: append([]ToolCall(nil), pending.tools...),
-		Thinking:  thinking,
-		Timestamp: pending.timestamp,
-		Model:     pending.model,
+		Role:          RoleAssistant,
+		Kind:          MessageText,
+		Text:          text,
+		Truncated:     truncated,
+		ToolCalls:     append([]ToolCall(nil), pending.tools...),
+		Thinking:      thinking,
+		Timestamp:     pending.timestamp,
+		Model:         pending.model,
+		ContextTokens: pending.context,
 	}
 	return message, true
 }

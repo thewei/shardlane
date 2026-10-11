@@ -701,15 +701,24 @@ InteractionBroker.
   parity. Gate results: **Chinese-IME smoke PASSED** (product owner, real
   app, 2026-10-11). Stop semantics decided 2026-10-11: one Escape via
   `agent.send_keys` ("esc") — implemented in the chat bridge.
-- **Deferrals (2026-10-11):** token-delta streaming (turn-granular
-  projections first); Stop semantics (native has no counterpart; needs a
-  product call); the **interaction dock — protocol gap at the Herdr
-  boundary**: the `InteractionBroker` (0.6 §17) is sourceless in production
-  (nothing publishes `PendingInteraction`; `ResolveCAS` has no production
-  caller), so a chat dock would render a permanently empty list. A source
-  means structured agent questions/approvals in the Herdr runtime, not
-  client work; screen scraping the TUI, as herdr-web-ui does, stays
-  rejected.
+- **Deferrals (updated 2026-10-11):** Stop semantics DECIDED and shipped
+  (one Escape via `agent.send_keys`). Token-level streaming shipped as
+  throttled coalesced publishes (120 ms, trailing state wins) over the live
+  pump's append cadence; per-token channel deltas remain an optional
+  refinement. Context ring shipped for claude-code transcripts (usage →
+  context size, 200k/1M heuristic; hidden when the transcript records no
+  usage). Voice dictation shipped against any OpenAI-compatible
+  /audio/transcriptions endpoint (local proxies included; key in Settings,
+  never logged). **Usage meters stay deferred**: they need provider plan
+  APIs with the user's provider authentication, which Shardlane does not
+  hold — no local transcript records them. The **interaction dock —
+  protocol gap at the Herdr boundary**: the `InteractionBroker` (0.6 §17)
+  is sourceless in production (nothing publishes `PendingInteraction`;
+  `ResolveCAS` has no production caller), so a chat dock would render a
+  permanently empty list. web-ui's equivalent is not a broker at all but
+  TUI screen scraping (`pane.read` parsing + `send_keys` arrow navigation);
+  porting that stays rejected pending a product call — a source means
+  structured agent questions/approvals in the Herdr runtime.
 
 # M7 — Remote / Mobile API v2
 

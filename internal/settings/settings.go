@@ -16,6 +16,19 @@ type Settings struct {
 	Workbench     WorkbenchSettings `json:"workbench"`
 	Shortcuts     ShortcutSettings  `json:"shortcuts"`
 	Session       SessionSettings   `json:"session,omitempty"`
+	// Voice configures dictation against an OpenAI-compatible
+	// transcription endpoint (local proxies included). The API key is a
+	// secret: never logged, never echoed.
+	Voice VoiceSettings `json:"voice,omitempty"`
+}
+
+// VoiceSettings points dictation at an OpenAI-compatible
+// /audio/transcriptions endpoint. An empty API key falls back to the
+// OPENAI_API_KEY environment variable.
+type VoiceSettings struct {
+	EndpointURL string `json:"endpoint_url,omitempty"`
+	APIKey      string `json:"api_key,omitempty"`
+	Model       string `json:"model,omitempty"`
 }
 
 type GeneralSettings struct {
@@ -115,6 +128,10 @@ func Default() Settings {
 			Density:       "default",
 			HighContrast:  false,
 			WebViewChat:   true,
+		},
+		Voice: VoiceSettings{
+			EndpointURL: "https://api.openai.com/v1",
+			Model:       "whisper-1",
 		},
 		Terminal: TerminalSettings{
 			FontFamily:  "SF Mono",

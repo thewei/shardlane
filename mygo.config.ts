@@ -19,5 +19,8 @@ export default {
   frontendDist: "frontend/dist",
   bindings: "frontend/src/mygo.ts",
 
-  macos: { minimumSystemVersion: "13.0" },
+  macos: {
+    minimumSystemVersion: "13.0",
+    infoPlist: { NSMicrophoneUsageDescription: "Shardlane uses the microphone for chat voice dictation." },
+  },
 };

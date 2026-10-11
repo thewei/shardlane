@@ -171,6 +171,46 @@ func (s *Shell) settingsGeneral(c *ui.Context) {
 				}).Description("Reopen the window where it was last placed, when that still intersects a display.")
 			})
 		})
+		settingsCard(c, "Voice dictation", func() {
+			ui.Form(c, func() {
+				ui.Field(c, "Endpoint", func() {
+					field := ui.TextInput(c, &s.settingsVoiceEndpointDraft).Width(260).Label("Endpoint")
+					if field.Submitted() {
+						s.applySettings(func(v *settings.Settings) error {
+							v.Voice.EndpointURL = strings.TrimSpace(s.settingsVoiceEndpointDraft)
+							return nil
+						})
+					}
+					if !field.Focused() {
+						s.settingsVoiceEndpointDraft = s.settings.Voice.EndpointURL
+					}
+				}).Description("OpenAI-compatible base URL; a local proxy works. Commit with Return.")
+				ui.Field(c, "API key", func() {
+					field := ui.TextInput(c, &s.settingsVoiceKeyDraft).Width(260).Password().Label("API key")
+					if field.Submitted() {
+						s.applySettings(func(v *settings.Settings) error {
+							v.Voice.APIKey = strings.TrimSpace(s.settingsVoiceKeyDraft)
+							return nil
+						})
+					}
+					if !field.Focused() {
+						s.settingsVoiceKeyDraft = s.settings.Voice.APIKey
+					}
+				}).Description("Stored locally, never logged. Empty falls back to OPENAI_API_KEY.")
+				ui.Field(c, "Model", func() {
+					field := ui.TextInput(c, &s.settingsVoiceModelDraft).Width(260).Label("Model")
+					if field.Submitted() {
+						s.applySettings(func(v *settings.Settings) error {
+							v.Voice.Model = strings.TrimSpace(s.settingsVoiceModelDraft)
+							return nil
+						})
+					}
+					if !field.Focused() {
+						s.settingsVoiceModelDraft = s.settings.Voice.Model
+					}
+				}).Description("Transcription model, e.g. whisper-1 or gpt-4o-transcribe.")
+			})
+		})
 		settingsCard(c, "Chat surface", func() {
 			ui.Form(c, func() {
 				ui.Field(c, "WebView chat", func() {

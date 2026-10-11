@@ -33,6 +33,11 @@ export interface ChatBridgeState {
    * only; the live tail is bounded by design).
    */
   hasOlder?: boolean;
+  /**
+   * ContextTokens is the provider-recorded size of the current request
+   * context, when the transcript states one (context ring only).
+   */
+  contextTokens?: number;
   turns: ChatBridgeTurn[];
 }
 
@@ -115,6 +120,14 @@ export const chat = {
    */
   stop(): Promise<ChatBridgeState> {
     return call("chat.Stop");
+  },
+  /**
+   * Transcribe sends a recorded clip to the configured OpenAI-compatible
+   * transcription endpoint (local proxies included) and returns the text.
+   * The API key never reaches the page and is never logged.
+   */
+  transcribe(audioBase64: string, mime: string): Promise<string> {
+    return call("chat.Transcribe", audioBase64, mime);
   },
 } as const;
 

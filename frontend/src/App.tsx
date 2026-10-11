@@ -27,9 +27,13 @@ export function App() {
   const [sending, setSending] = useState(false);
   const [showJump, setShowJump] = useState(false);
   const [loadingOlder, setLoadingOlder] = useState(false);
+  const [recording, setRecording] = useState(false);
+  const [transcribing, setTranscribing] = useState(false);
+  const [voiceError, setVoiceError] = useState("");
   const composingRef = useRef(false);
   const logRef = useRef<HTMLDivElement>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
+  const recorderRef = useRef<MediaRecorder | null>(null);
   const stickToBottom = useRef(true);
   const turnsRef = useRef(0);
 
@@ -199,24 +203,73 @@ export function App() {
     }
   };
 
-  const attach = async () => {
-    const path = await chat.pickAttachment().catch(() => "");
-    if (!path) return;
-    const mention = `@${path} `;
+  // insertAtCaret splices text into the draft at the caret (attachments,
+  // dictated text) and puts the caret after the insertion.
+  const insertAtCaret = useCallback((inserted: string) => {
     const el = composerRef.current;
     if (!el) {
-      setDraft((current) => current + mention);
+      setDraft((current) => current + inserted);
       return;
     }
     const start = el.selectionStart ?? draft.length;
     const end = el.selectionEnd ?? draft.length;
-    const next = draft.slice(0, start) + mention + draft.slice(end);
-    setDraft(next);
+    setDraft(draft.slice(0, start) + inserted + draft.slice(end));
     requestAnimationFrame(() => {
       el.focus();
-      const caret = start + mention.length;
+      const caret = start + inserted.length;
       el.setSelectionRange(caret, caret);
     });
+  }, [draft]);
+
+  const attach = async () => {
+    const path = await chat.pickAttachment().catch(() => "");
+    if (!path) return;
+    insertAtCaret(`@${path} `);
+  };
+
+  // Dictation: record in the page (WKWebView, secure context), then the
+  // bridge forwards the clip to the configured OpenAI-compatible endpoint.
+  const startDictation = async () => {
+    setVoiceError("");
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      const chunks: Blob[] = [];
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) chunks.push(event.data);
+      };
+      recorder.onstop = () => {
+        stream.getTracks().forEach((track) => track.stop());
+        const blob = new Blob(chunks, { type: recorder.mimeType || "audio/webm" });
+        if (blob.size < 1024) return; // an accidental tap: nothing to transcribe
+        setTranscribing(true);
+        blob.arrayBuffer()
+          .then((buffer) => {
+            const bytes = new Uint8Array(buffer);
+            let binary = "";
+            const step = 0x8000;
+            for (let i = 0; i < bytes.length; i += step) {
+              binary += String.fromCharCode(...bytes.subarray(i, i + step));
+            }
+            return chat.transcribe(btoa(binary), blob.type || "audio/webm");
+          })
+          .then((text) => {
+            if (text) insertAtCaret(text + " ");
+          })
+          .catch((err) => setVoiceError(err instanceof Error ? err.message : "Transcription failed"))
+          .finally(() => setTranscribing(false));
+      };
+      recorder.start();
+      recorderRef.current = recorder;
+      setRecording(true);
+    } catch (err) {
+      setVoiceError(err instanceof Error ? err.message : "Microphone unavailable");
+    }
+  };
+
+  const stopDictation = () => {
+    recorderRef.current?.stop();
+    setRecording(false);
   };
 
   return (
@@ -263,6 +316,15 @@ export function App() {
           >
             +
           </button>
+          <button
+            type="button"
+            className={`attach mic${recording ? " recording" : ""}`}
+            title={recording ? "Stop and transcribe" : "Dictate"}
+            disabled={transcribing}
+            onClick={() => (recording ? stopDictation() : void startDictation())}
+          >
+            {recording ? "■" : "Mic"}
+          </button>
           <textarea
             ref={composerRef}
             value={draft}
@@ -289,8 +351,13 @@ export function App() {
           )}
         </div>
         <div className="composer-status">
-          <span>{disposition === "terminal" ? "Blocked — use the terminal." : working ? "Working — Queue adds a follow-up." : ""}</span>
-          {state?.model ? <span className="model-pill">{state.model}</span> : null}
+          <span className="composer-note-text">
+            {voiceError || (disposition === "terminal" ? "Blocked — use the terminal." : working ? "Working — Queue adds a follow-up." : transcribing ? "Transcribing…" : recording ? "Listening… click ■ to transcribe." : "")}
+          </span>
+          <span className="composer-facts">
+            {state?.contextTokens ? <ContextRing used={state.contextTokens} /> : null}
+            {state?.model ? <span className="model-pill">{state.model}</span> : null}
+          </span>
         </div>
       </div>
     </div>
@@ -485,6 +552,35 @@ function toolVerb(name: string): string {
     case "plan": return "Planned with";
     default: return "Used";
   }
+}
+
+// ContextRing shows the provider-recorded context fill against the
+// standard window, switching to the long window past it (web-ui's
+// heuristic; hidden when the transcript records no usage).
+function ContextRing({ used }: { used: number }) {
+  const window = used > 200000 ? 1000000 : 200000;
+  const fraction = Math.min(1, used / window);
+  const low = fraction > 0.8;
+  const radius = 7;
+  const circumference = 2 * Math.PI * radius;
+  return (
+    <span
+      className="ring-wrap"
+      title={`Context ~${Math.round(used / 1000)}k of ${window / 1000}k tokens`}
+    >
+      <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden>
+        <circle cx="9" cy="9" r={radius} fill="none" stroke="var(--border-subtle)" strokeWidth="2.5" />
+        <circle
+          cx="9" cy="9" r={radius} fill="none"
+          stroke={low ? "var(--danger)" : "var(--working)"}
+          strokeWidth="2.5"
+          strokeDasharray={`${fraction * circumference} ${circumference}`}
+          strokeLinecap="round"
+          transform="rotate(-90 9 9)"
+        />
+      </svg>
+    </span>
+  );
 }
 
 function formatTime(tsMs: number): string {

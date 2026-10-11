@@ -201,6 +201,10 @@ type TranscriptMessage struct {
 	Thinking  *string     `json:"thinking,omitempty"`
 	Timestamp *int64      `json:"timestamp,omitempty"`
 	Model     *string     `json:"model,omitempty"`
+	// ContextTokens is the provider-recorded size of the request context at
+	// this message (input + cache + output of the last usage report), when
+	// the transcript states one. Presentation (context ring) only.
+	ContextTokens *int64 `json:"context_tokens,omitempty"`
 }
 
 type SidechainInfo struct {

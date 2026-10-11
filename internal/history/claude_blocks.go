@@ -124,9 +124,20 @@ func (s *claudeParseState) feedClaudeAssistant(row map[string]any, timestamp int
 		s.model = stringPointer(model)
 	}
 	if usage, _ := message["usage"].(map[string]any); usage != nil {
-		s.tokensUsed += numberI64(usage["input_tokens"])
-		s.tokensUsed += numberI64(usage["output_tokens"])
+		input := numberI64(usage["input_tokens"])
+		output := numberI64(usage["output_tokens"])
+		s.tokensUsed += input
+		s.tokensUsed += output
 		s.tokensUsed += numberI64(usage["cache_creation_input_tokens"])
+		// The context this request filled: the last usage report's full
+		// accounting (cache reads included), presentation only.
+		if used := input + output + numberI64(usage["cache_creation_input_tokens"]) + numberI64(usage["cache_read_input_tokens"]); used > 0 {
+			used := used
+			s.lastContext = &used
+			if s.pending != nil {
+				s.pending.context = s.lastContext
+			}
+		}
 	}
 
 	switch content := message["content"].(type) {

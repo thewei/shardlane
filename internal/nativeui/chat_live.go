@@ -141,6 +141,7 @@ func (s *Shell) bindLiveAgent(key agent.AgentKey) bool {
 	s.chatWindowMessages = nil
 	s.chatWindowStart = 0
 	s.chatHasOlder = false
+	s.chatContextTokens = nil
 	// A same-pane rebind preserves the pending submission (0.6 §12); any
 	// other pane's rebind dropped it at openChat's pane assignment.
 	s.retainPendingEchoForPane(s.chatPaneID)
@@ -238,6 +239,7 @@ func (s *Shell) applyLiveSync(decoder *history.LiveDecoder) {
 		s.chatTurns[len(s.chatTurns)-1].Live = true
 	}
 	s.chatModel = lastModelFromItems(items)
+	s.chatContextTokens = lastContextFromMessages(messages)
 	s.appendPendingEchoTurn()
 	s.publishChatBridge()
 }

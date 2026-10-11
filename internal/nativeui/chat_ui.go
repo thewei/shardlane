@@ -358,6 +358,7 @@ func (s *Shell) bindChatConversation(conversationID string) {
 	s.chatWindowMessages = nil
 	s.chatWindowStart = 0
 	s.chatHasOlder = false
+	s.chatContextTokens = nil
 	service := s.hist.service
 
 	s.dispatch(func() {
@@ -376,6 +377,7 @@ func (s *Shell) bindChatConversation(conversationID string) {
 				items := conversation.ItemsFromTranscript(window.Messages)
 				s.chatTurns = conversation.DeriveTimeline(items)
 				s.chatModel = lastModelFromItems(items)
+				s.chatContextTokens = lastContextFromMessages(window.Messages)
 			}
 			s.publishChatBridge()
 		})
