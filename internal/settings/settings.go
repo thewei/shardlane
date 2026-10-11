@@ -114,6 +114,7 @@ func Default() Settings {
 			RestoreWindow: true,
 			Density:       "default",
 			HighContrast:  false,
+			WebViewChat:   true,
 		},
 		Terminal: TerminalSettings{
 			FontFamily:  "SF Mono",

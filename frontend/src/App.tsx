@@ -1,9 +1,13 @@
 import React, {
+  memo,
   useCallback,
   useEffect,
   useRef,
   useState,
 } from "react";
+import ReactMarkdown from "react-markdown";
+import rehypeHighlight from "rehype-highlight";
+import remarkGfm from "remark-gfm";
 import { chat, events, type ChatBridgeState } from "./mygo";
 import "./chat.css";
 
@@ -154,6 +158,47 @@ function turnKey(turn: ChatBridgeState["turns"][number], index: number): string 
   return `${index}:${turn.user ? "u" : "a"}`;
 }
 
+// Markdown renders assistant narration (GFM tables/lists, fenced code with
+// highlighting). Raw HTML never passes through: react-markdown skips it.
+const Markdown = memo(function Markdown({ text }: { text: string }) {
+  return (
+    <div className="md">
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        rehypePlugins={[rehypeHighlight]}
+        components={{
+          pre: (props) => <CodeBlock {...props} />,
+        }}
+      >
+        {text}
+      </ReactMarkdown>
+    </div>
+  );
+});
+
+function CodeBlock({ children, ...rest }: React.HTMLAttributes<HTMLPreElement>) {
+  const ref = useRef<HTMLPreElement>(null);
+  const [copied, setCopied] = useState(false);
+  const copy = () => {
+    const text = ref.current?.textContent ?? "";
+    if (text === "") return;
+    void navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    });
+  };
+  return (
+    <div className="codeblock">
+      <button type="button" className="code-copy" onClick={copy}>
+        {copied ? "Copied" : "Copy"}
+      </button>
+      <pre ref={ref} {...rest}>
+        {children}
+      </pre>
+    </div>
+  );
+}
+
 function TurnRow({ turn }: { turn: ChatBridgeState["turns"][number] }) {
   if (turn.user) {
     return (
@@ -168,9 +213,7 @@ function TurnRow({ turn }: { turn: ChatBridgeState["turns"][number] }) {
         <span className="who">ASSISTANT</span>
         {turn.failed ? <span className="pill error">Stopped</span> : null}
       </div>
-      {turn.narration ? (
-        <div className="narration">{turn.narration}</div>
-      ) : null}
+      {turn.narration ? <Markdown text={turn.narration} /> : null}
       {turn.thinking ? (
         <details className="block">
           <summary>Thinking</summary>
