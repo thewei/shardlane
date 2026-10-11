@@ -29,7 +29,14 @@ type Event struct {
 	Payload json.RawMessage
 }
 
-// StatusPayload is the pane.agent_status_changed payload's fields the hook
+// Envelope is the forwarder line's JSON: Herdr injects the plugin event as
+// {"event": "<name>", "data": {…}} — the fields live under data.
+type Envelope struct {
+	Event string          `json:"event"`
+	Data  json.RawMessage `json:"data"`
+}
+
+// StatusPayload is the pane.agent_status_changed data's fields the hook
 // layer consumes.
 type StatusPayload struct {
 	PaneID      string `json:"pane_id"`

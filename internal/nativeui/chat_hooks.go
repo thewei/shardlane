@@ -22,7 +22,9 @@ import (
 
 // AttachHookSpool starts the hook spool tailer (production only: the spool
 // exists when the Shardlane herdr plugin is linked). Hook events reconcile
-// the interaction lifecycle and republish the chat projection.
+// the interaction lifecycle and republish the chat projection. The tailer
+// reads only NEW lines; agents already blocked at attach get a detection
+// pass here (restart mid-prompt).
 func (s *Shell) AttachHookSpool() {
 	stop, err := herdrhooks.Start(herdrhooks.DefaultSpoolPath(), func(event herdrhooks.Event) {
 		s.applyOnWindow(func() { s.handleHookEvent(event) })
@@ -32,6 +34,14 @@ func (s *Shell) AttachHookSpool() {
 		return
 	}
 	s.hooksStop = stop
+	s.dispatch(func() {
+		for index := range s.projection.Agents {
+			agent := &s.projection.Agents[index]
+			if agent.Status == "blocked" && agent.PaneID != "" {
+				s.detectPaneInteraction(agent.PaneID)
+			}
+		}
+	})
 }
 
 // handleHookEvent is the hook layer's dispatch (UI lane).
@@ -39,8 +49,12 @@ func (s *Shell) handleHookEvent(event herdrhooks.Event) {
 	if event.Name != "pane.agent_status_changed" {
 		return
 	}
+	var envelope herdrhooks.Envelope
+	if err := json.Unmarshal(event.Payload, &envelope); err != nil || len(envelope.Data) == 0 {
+		return
+	}
 	var payload herdrhooks.StatusPayload
-	if err := json.Unmarshal(event.Payload, &payload); err != nil || payload.PaneID == "" {
+	if err := json.Unmarshal(envelope.Data, &payload); err != nil || payload.PaneID == "" {
 		return
 	}
 	if payload.AgentStatus == "blocked" {
@@ -91,49 +105,93 @@ func (s *Shell) detectPaneInteraction(paneID string) {
 }
 
 // optionLine matches Claude Code's numbered option rows ("❯ 1. Yes",
-// "2. Yes, and don't ask again"), with or without the selector mark.
+// "  2. herdr adapter"), with or without the selector mark.
 var optionLine = regexp.MustCompile(`^[❯>•·\s]*(\d+)\.\s+(.+?)\s*$`)
 
+// promptFooter matches the AskUserQuestion/permission footer — the
+// strongest "an interactive prompt is showing" signal.
+var promptFooter = regexp.MustCompile(`Enter to select`)
+
+// dividerLine matches the full-width rule AskUserQuestion draws between
+// questions and extra options.
+var dividerLine = regexp.MustCompile(`^─+\s*$`)
+
+// questionLine matches a prompt question in ASCII or full-width punctuation.
+var questionSuffix = regexp.MustCompile(`[?？]\s*$`)
+
 // detectClaudeInteraction parses Claude Code's visible TUI text for its
-// approval and question prompts — a minimal port of the reference parser's
-// core (the full provider table lives in herdr-web-ui's prompt.ts and ports
-// incrementally). It takes the last numbered-option run on screen and the
-// nearest question line above it.
+// interactive prompts — AskUserQuestion (tabs + numbered options with
+// description rows) and the permission sheet ("Do you want …"). A minimal
+// port of the reference parser's core; the full provider table lives in
+// herdr-web-ui's prompt.ts and ports incrementally.
 func detectClaudeInteraction(screen string) (conversation.InteractionKind, string, []string, bool) {
 	lines := strings.Split(strings.ReplaceAll(screen, "\r\n", "\n"), "\n")
-	for i := len(lines) - 1; i >= 0; i-- {
-		if !optionLine.MatchString(lines[i]) {
-			continue
-		}
-		start := i
-		for start > 0 && optionLine.MatchString(lines[start-1]) {
-			start--
-		}
-		// The prompt line sits within a few rows above the option run.
-		for j := start - 1; j >= 0 && j >= start-6; j-- {
-			prompt := strings.TrimSpace(lines[j])
-			if prompt == "" {
-				continue
-			}
-			if !strings.HasSuffix(prompt, "?") && !strings.HasPrefix(prompt, "Do you want") {
-				break // a non-question line ends this run's candidacy
-			}
-			options := make([]string, 0, i-start+1)
-			for k := start; k <= i; k++ {
-				if match := optionLine.FindStringSubmatch(lines[k]); match != nil {
-					options = append(options, match[2])
-				}
-			}
-			if len(options) < 2 {
-				break
-			}
-			kind := conversation.InteractionQuestion
-			if strings.Contains(prompt, "Do you want") {
-				kind = conversation.InteractionPermission
-			}
+	// Drop trailing empties so the last row is meaningful.
+	for len(lines) > 0 && strings.TrimSpace(lines[len(lines)-1]) == "" {
+		lines = lines[:len(lines)-1]
+	}
+	// Strong signal: the footer. Collect the numbered options between the
+	// footer (and its divider) and the question line above them.
+	if footer := lastLineIndex(lines, promptFooter); footer != -1 {
+		if kind, prompt, options, ok := parseOptionRun(lines, footer-1); ok {
 			return kind, prompt, options, true
 		}
-		i = start
 	}
-	return "", "", nil, false
+	// Fallback: the last numbered-option run anywhere, with a question line
+	// above it.
+	return parseOptionRun(lines, len(lines)-1)
+}
+
+// parseOptionRun walks up from `from`, collecting the numbered-option run —
+// description rows, blanks and dividers between options are part of the
+// block — and then picks the closest row below-reading-as-a-question: the
+// first candidate (bottom-up) ending in ?/？ or opening "Do you want".
+// Plain numbered transcript content never qualifies, so the fallback pass
+// cannot misfire on ordinary lists.
+func parseOptionRun(lines []string, from int) (conversation.InteractionKind, string, []string, bool) {
+	options := make([]string, 0, 4)
+	var candidates []string
+	for i := from; i >= 0 && i > from-40; i-- {
+		line := lines[i]
+		trimmed := strings.TrimSpace(line)
+		if dividerLine.MatchString(trimmed) {
+			continue
+		}
+		if match := optionLine.FindStringSubmatch(line); match != nil {
+			options = append([]string{strings.TrimSpace(match[2])}, options...)
+			continue
+		}
+		if trimmed == "" {
+			continue
+		}
+		candidates = append(candidates, trimmed)
+	}
+	if len(options) < 2 {
+		return "", "", nil, false
+	}
+	prompt := ""
+	for _, candidate := range candidates {
+		if questionSuffix.MatchString(candidate) || strings.HasPrefix(candidate, "Do you want") {
+			prompt = candidate
+			break
+		}
+	}
+	if prompt == "" {
+		return "", "", nil, false
+	}
+	kind := conversation.InteractionQuestion
+	if strings.Contains(prompt, "Do you want") {
+		kind = conversation.InteractionPermission
+	}
+	return kind, prompt, options, true
+}
+
+// lastLineIndex returns the last line matching re, or -1.
+func lastLineIndex(lines []string, re *regexp.Regexp) int {
+	for i := len(lines) - 1; i >= 0; i-- {
+		if re.MatchString(lines[i]) {
+			return i
+		}
+	}
+	return -1
 }

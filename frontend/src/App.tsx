@@ -386,7 +386,17 @@ export function App() {
         </div>
         <div className="composer-status">
           <span className="composer-note-text">
-            {voiceError || (disposition === "terminal" ? "Blocked — use the terminal." : working ? "Working — Queue adds a follow-up." : transcribing ? "Transcribing…" : recording ? "Listening… click ■ to transcribe." : "")}
+            {voiceError || (state?.interactions?.length
+              ? "Waiting for your answer above — no need to touch the terminal."
+              : disposition === "terminal"
+                ? "Blocked — use the terminal."
+                : working
+                  ? "Working — Queue adds a follow-up."
+                  : transcribing
+                    ? "Transcribing…"
+                    : recording
+                      ? "Listening… click ■ to transcribe."
+                      : "")}
           </span>
           <span className="composer-facts">
             {state?.contextTokens ? <ContextRing used={state.contextTokens} /> : null}
