@@ -4,7 +4,7 @@ Status: **Canonical / as-built + approved-next architecture**
 Baseline: 2026-08-25
 Runtime baseline: Herdr 0.8.x. Current transitional code still accepts socket protocol 19; the approved TUI-only cutover raises the minimum fully supported protocol to 20 because native shell → hosted TUI navigation uses protocol-20 focus operations. Known wrapper contracts remain version-checked rather than assuming unlimited forward compatibility.
 Current shipped UI baseline: GPUI 0.2.2, gpui-component 0.5.1 + gpui-component-assets 0.5.1
-Current migration UI baseline (pin advanced 2026-10-11): MyGo v0.4.1 Native UI with two documented local compatibility deltas re-applied (F146/F147 `LocalDragSelect`, WIX-021 field focus delegation — both still absent upstream), Go 1.27.1, and the official MyGo Terminal/Ghostty surface in this repository (the former `next/` module, now the repository root); this path gates on Herdr 0.9.3 / socket protocol 22 for the audited snapshot/direct-attach capabilities. Upstream v0.4.x additions are adopted only when a task takes them: the Flyout API backs the Header/tray quick panel, and `ui.WebView` exists but does not by itself unfreeze the WebView presentation freeze below.
+Current migration UI baseline (pin advanced 2026-10-11): MyGo v0.4.1 Native UI with two documented local compatibility deltas re-applied (F146/F147 `LocalDragSelect`, WIX-021 field focus delegation — both still absent upstream), Go 1.27.1, and the official MyGo Terminal/Ghostty surface in this repository (the former `next/` module, now the repository root); this path gates on Herdr 0.9.3 / socket protocol 22 for the audited snapshot/direct-attach capabilities. Upstream v0.4.x additions are adopted only when a task takes them: the Flyout API backs the Header/tray quick panel, and the product decision of 2026-10-11 (below) adopts the official `ui.WebView` for Chat presentation with a bound-service bridge.
 
 This file is the single architectural source of truth for Shardlane. Other documents may define interaction details, execution order, progress evidence, or handoff context, but they must not redefine ownership.
 
@@ -101,13 +101,28 @@ MyGo Native UI
   runtime state from `session.snapshot`, and consumes `events.subscribe` as a
   reconciliation trigger. It is an implementation replacement for the Rust
   adapter, not a second runtime or client-side Workspace registry.
-- **History UI and Chat UI are Native UI for the current migration.** WebView
-  presentation for either surface is frozen. Upstream MyGo v0.4.1 now ships an
-  official `ui.WebView` element embedded inside the Native UI tree, but the
-  freeze stands until an explicit product decision adopts it: the migration
-  must not invent private AppKit/GTK/HWND embedding or a second localhost
-  presentation backend in the meantime. Runtime/domain ownership would remain
-  unchanged either way.
+- **Decision 2026-10-11: Chat presentation moves to the official `ui.WebView`.**
+  With MyGo v0.4.1 shipping a documented, cross-platform embedded WebView
+  (the reconsideration gate of the 2026-10-10 evaluation), the product owner
+  approved adopting it for the surfaces where HTML genuinely fits — Chat
+  first ("Chat View 等"). The contract:
+  - Presentation only. The conversation runtime, Agent semantics and every
+    Herdr method stay exactly where they are; the WebView talks to Go through
+    one bound-service bridge (`mygo.Bind` + streaming `mygo.Channel` +
+    typed events, TS client via `mygo generate`). No invented Herdr protocol,
+    no second runtime, no direct socket access from the page.
+  - The page is served from the app's own content origin (`mygo://localhost`
+    embedded by `mygo build`; `devUrl` hot reload under `mygo dev`). No
+    private AppKit/WKWebView injection and **no localhost HTTP backend**;
+    only that origin may call bound methods (`TrustedOrigins` stays empty),
+    and a Preview page must never inherit a privileged bridge.
+  - History/Terminal/Git surfaces remain Native UI until a separate explicit
+    task moves an HTML-suited piece of them; the native Chat implementation
+    is retired only when the WebView Chat reaches acceptance parity.
+  - Acceptance gates (real app, isolated HOME + dedicated Herdr socket):
+    route enter/leave with live streams, IME/keyboard/focus/shortcuts,
+    theme sync, memory/process cleanup on close, startup/idle/resize cost
+    against the Native baseline.
 - Daily development of the new desktop path must not require compiling the
   Rust GUI. Current `shardlane-host`, `shardlane-history` and
   `shardlane-remote` remain compatibility/parity references until each domain
@@ -180,9 +195,8 @@ Normative boundaries for this milestone:
   replacement for or member of the Herdr Pane runtime.
 - The retained Browser product scope remains **local Project Preview only**.
   Preview continues to render in its separate project-scoped MyGo WebView
-  window: an official embedded element (`ui.WebView`) exists since v0.4.1,
-  but adopting it for Preview (or History/Chat) stays frozen pending an
-  explicit product decision. Private AppKit/GTK/HWND embedding is forbidden.
+  window; the 2026-10-11 `ui.WebView` adoption covers Chat presentation, not
+  a general browser. Private AppKit/GTK/HWND embedding is forbidden.
   Preview accepts local dev targets only and hands external navigation to
   the system browser; it does not become general browser
   tabs/history/bookmarks.

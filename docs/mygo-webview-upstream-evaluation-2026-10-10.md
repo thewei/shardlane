@@ -1,6 +1,6 @@
 # MyGo Native UI × WebView — 2026-10-10 upstream decision record
 
-Status: **Investigated / not adopted**. This is framework capability reconnaissance, not permission to unfreeze Shardlane Chat/History WebView presentation.
+Status: **Investigated / not adopted. Superseded 2026-10-11**: MyGo v0.4.1 shipped the official embedded `ui.WebView` (gate 1 met, cross-platform backends, docs, tests), and the product owner approved Chat-first adoption — recorded in `docs/client-product-architecture.md` (Decision 2026-10-11) and roadmap N19. The constraints below that survive the decision: presentation-only bridge, app-content origin only, no localhost HTTP backend, no private embedding, real-app acceptance before retiring the native Chat. This is framework capability reconnaissance, not permission to unfreeze Shardlane Chat/History WebView presentation.
 
 ## Current verified facts
 
