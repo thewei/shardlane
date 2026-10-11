@@ -225,11 +225,10 @@ export function App() {
             </button>
           )}
         </div>
-        {disposition === "terminal" ? (
-          <div className="composer-note">Blocked — use the terminal.</div>
-        ) : disposition === "queue" ? (
-          <div className="composer-note">Working — the prompt will queue.</div>
-        ) : null}
+        <div className="composer-status">
+          <span>{disposition === "terminal" ? "Blocked — use the terminal." : working ? "Working — Queue adds a follow-up." : ""}</span>
+          {state?.model ? <span className="model-pill">{state.model}</span> : null}
+        </div>
       </div>
     </div>
   );
@@ -308,16 +307,28 @@ function TurnRow({ turn }: { turn: ChatBridgeState["turns"][number] }) {
   if (turn.user) {
     return (
       <div className="turn user">
-        <div className="bubble">{turn.text}</div>
+        <div className="bubble">
+          {turn.text}
+          <CopyButtons text={turn.text ?? ""} className="bubble-copy" />
+        </div>
       </div>
     );
   }
+  const failedCount = turn.tools?.filter((tool) => tool.isError).length ?? 0;
   return (
-    <div className="turn assistant">
+    <div className={`turn assistant${turn.live ? " live" : ""}`}>
       <div className="meta">
         <span className="who">ASSISTANT</span>
         {turn.failed ? <span className="pill error">Stopped</span> : null}
+        {turn.tsMs ? (
+          <span className="ts">{formatTime(turn.tsMs)}</span>
+        ) : null}
+        <span className="spacer" />
+        {turn.narration ? (
+          <CopyButtons text={turn.narration} markdown={turn.narration} />
+        ) : null}
       </div>
+      {turn.live ? <div className="work-live">Working<span className="dots" /></div> : null}
       {turn.narration ? <Markdown text={turn.narration} /> : null}
       {turn.thinking ? (
         <details className="block">
@@ -326,10 +337,9 @@ function TurnRow({ turn }: { turn: ChatBridgeState["turns"][number] }) {
         </details>
       ) : null}
       {turn.tools?.length ? (
-        <details className="block" open={turn.tools.length === 1}>
+        <details className="block" open={turn.live || turn.tools.length === 1}>
           <summary>
-            {turn.compacted ? "Tool activity (grouped)" : "Tool activity"} (
-            {turn.tools.length})
+            <WorkSummary turn={turn} failedCount={failedCount} />
           </summary>
           <div className="block-body">
             {turn.tools.map((tool, index) => (
@@ -337,7 +347,9 @@ function TurnRow({ turn }: { turn: ChatBridgeState["turns"][number] }) {
                 key={index}
                 className={tool.isError ? "tool error" : "tool"}
               >
-                <summary>{tool.name}</summary>
+                <summary>
+                  {toolVerb(tool.name)} {tool.name}
+                </summary>
                 {tool.input ? <pre>{tool.input}</pre> : null}
                 {tool.output ? <pre>{tool.output}</pre> : null}
               </details>
@@ -347,4 +359,116 @@ function TurnRow({ turn }: { turn: ChatBridgeState["turns"][number] }) {
       ) : null}
     </div>
   );
+}
+
+// WorkSummary is the folded work-block header: the live "Working…" state
+// settles into a per-category step count with failures carried out.
+function WorkSummary({
+  turn,
+  failedCount,
+}: {
+  turn: ChatBridgeState["turns"][number];
+  failedCount: number;
+}) {
+  const counts = new Map<string, number>();
+  for (const tool of turn.tools ?? []) {
+    const category = toolCategory(tool.name);
+    counts.set(category, (counts.get(category) ?? 0) + 1);
+  }
+  const order = ["edit", "command", "search", "read", "web", "agent", "plan"];
+  const parts: string[] = [];
+  for (const category of order) {
+    const count = counts.get(category);
+    if (count) {
+      parts.push(`${count} ${category}${count > 1 ? "s" : ""}`);
+    }
+  }
+  const uncategorized = counts.get("step") ?? 0;
+  if (uncategorized) {
+    parts.push(`${uncategorized} step${uncategorized > 1 ? "s" : ""}`);
+  }
+  const total = turn.tools?.length ?? 0;
+  const label = parts.length > 0 ? parts.join(" · ") : `${total} step${total === 1 ? "" : "s"}`;
+  return (
+    <span className="work-summary">
+      {label}
+      {failedCount > 0 ? <span className="pill error">{failedCount} failed</span> : null}
+    </span>
+  );
+}
+
+// Category vocabulary over the providers' tool names (reference:
+// herdr-web-ui toolVerbs/workBlocks).
+function toolCategory(name: string): string {
+  if (/edit|write|patch|notebook|apply/i.test(name)) return "edit";
+  if (/bash|command|exec|shell|terminal|run/i.test(name)) return "command";
+  if (/grep|glob|search|find|list/i.test(name)) return "search";
+  if (/read|view|cat\b/i.test(name)) return "read";
+  if (/web|fetch|http|browse/i.test(name)) return "web";
+  if (/task|agent|dispatch|spawn/i.test(name)) return "agent";
+  if (/todo|plan/i.test(name)) return "plan";
+  return "step";
+}
+
+function toolVerb(name: string): string {
+  const category = toolCategory(name);
+  switch (category) {
+    case "edit": return "Edited with";
+    case "command": return "Ran";
+    case "search": return "Searched with";
+    case "read": return "Read with";
+    case "web": return "Fetched with";
+    case "agent": return "Delegated to";
+    case "plan": return "Planned with";
+    default: return "Used";
+  }
+}
+
+function formatTime(tsMs: number): string {
+  return new Date(tsMs).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+// CopyButtons is the hover meta copy pair: Markdown source and stripped
+// plain text (reference: herdr-web-ui's dual MD/TXT copy).
+function CopyButtons({
+  text,
+  markdown,
+  className,
+}: {
+  text: string;
+  markdown?: string;
+  className?: string;
+}) {
+  const [copied, setCopied] = useState("");
+  const copy = (value: string, kind: string) => {
+    void navigator.clipboard.writeText(value).then(() => {
+      setCopied(kind);
+      window.setTimeout(() => setCopied(""), 1500);
+    });
+  };
+  if (text === "") return null;
+  return (
+    <span className={`copybtns${className ? ` ${className}` : ""}`}>
+      {markdown !== undefined ? (
+        <button type="button" onClick={() => copy(markdown, "md")}>
+          {copied === "md" ? "Copied" : "MD"}
+        </button>
+      ) : null}
+      <button type="button" onClick={() => copy(plainText(text), "txt")}>
+        {copied === "txt" ? "Copied" : "TXT"}
+      </button>
+    </span>
+  );
+}
+
+// plainText strips common markdown syntax for the TXT copy variant.
+function plainText(markdown: string): string {
+  return markdown
+    .replace(/```[^\n]*\n?/g, "")
+    .replace(/`([^`]*)`/g, "$1")
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/^#{1,6}\s+/gm, "")
+    .replace(/[*_]{1,3}([^*_]+)[*_]{1,3}/g, "$1")
+    .replace(/^\s*[-*+]\s+/gm, "• ");
 }

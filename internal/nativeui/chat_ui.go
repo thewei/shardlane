@@ -367,7 +367,9 @@ func (s *Shell) bindChatConversation(conversationID string) {
 			if err != nil {
 				s.chatOutcome = "Load failed: " + err.Error()
 			} else {
-				s.chatTurns = conversation.DeriveTimeline(conversation.ItemsFromTranscript(window.Messages))
+				items := conversation.ItemsFromTranscript(window.Messages)
+				s.chatTurns = conversation.DeriveTimeline(items)
+				s.chatModel = lastModelFromItems(items)
 			}
 			s.publishChatBridge()
 		})

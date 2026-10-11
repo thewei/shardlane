@@ -33,6 +33,8 @@ type ChatBridgeTurn struct {
 	Thinking  *string          `json:"thinking,omitempty"`
 	Failed    bool             `json:"failed,omitempty"`
 	Compacted bool             `json:"compacted,omitempty"`
+	Live      bool             `json:"live,omitempty"`
+	TsMS      *int64           `json:"tsMs,omitempty"`
 	Tools     []ChatBridgeTool `json:"tools,omitempty"`
 }
 
@@ -50,7 +52,10 @@ type ChatBridgeState struct {
 	// Theme is the app-resolved appearance ("light" or "dark"), following
 	// Settings -> General -> Appearance through mygo.Theme — not the bare
 	// system preference.
-	Theme string           `json:"theme"`
+	Theme string `json:"theme"`
+	// Model is the provider model the transcript last recorded, when known
+	// (presentation pill only; never a runtime fact source).
+	Model string           `json:"model,omitempty"`
 	Turns []ChatBridgeTurn `json:"turns"`
 }
 
@@ -160,6 +165,7 @@ func (s *Shell) chatBridgeState() ChatBridgeState {
 		state.Title = card.Title
 		state.Provider = card.ProviderLabel
 	}
+	state.Model = s.chatModel
 	for _, turn := range s.chatTurns {
 		bridgeTurn := ChatBridgeTurn{
 			User:      turn.UserRow,
@@ -168,6 +174,8 @@ func (s *Shell) chatBridgeState() ChatBridgeState {
 			Thinking:  turn.Thinking,
 			Failed:    turn.Failed,
 			Compacted: turn.Compacted,
+			Live:      turn.Live,
+			TsMS:      turn.TsMS,
 		}
 		for _, run := range turn.ToolRuns {
 			tool := ChatBridgeTool{Name: run.Name, Input: run.InputPreview, IsError: run.IsError}

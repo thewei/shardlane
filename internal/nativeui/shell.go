@@ -304,6 +304,9 @@ type Shell struct {
 	chatConversationID string
 	chatPaneID         string
 	chatTurns          []conversation.TimelineTurn
+	// chatModel is the last model the transcript window recorded
+	// (presentation pill only).
+	chatModel string
 	chatDraft          string
 	chatQueuedText     string
 	chatOutcome        string

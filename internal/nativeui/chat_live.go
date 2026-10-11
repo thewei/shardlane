@@ -229,8 +229,25 @@ func (s *Shell) applyLiveSync(decoder *history.LiveDecoder) {
 		items = append(items, conversation.ProvisionalItem(*pending))
 	}
 	s.chatTurns = conversation.DeriveTimeline(items)
+	// The provisional tail renders as the live turn (work-block headers
+	// show "Working…" until the next role boundary commits it).
+	if pending := decoder.PendingTail(); pending != nil && len(s.chatTurns) > 0 {
+		s.chatTurns[len(s.chatTurns)-1].Live = true
+	}
+	s.chatModel = lastModelFromItems(items)
 	s.appendPendingEchoTurn()
 	s.publishChatBridge()
+}
+
+// lastModelFromItems picks the last model the window's items recorded.
+func lastModelFromItems(items []conversation.ConversationItem) string {
+	model := ""
+	for _, item := range items {
+		if item.Model != nil && *item.Model != "" {
+			model = *item.Model
+		}
+	}
+	return model
 }
 
 // appendPendingEchoTurn renders the unconsumed pending submission as the

@@ -26,6 +26,13 @@ type TimelineTurn struct {
 	FirstSeq   uint64
 	LastSeq    uint64
 	Streamable bool
+	// TsMS is the turn's first item timestamp, when the provider recorded
+	// one; presentation only (hover meta, work-block summaries).
+	TsMS *int64 `json:"ts_ms,omitempty"`
+	// Live marks the provisional streaming tail turn: still uncommitted in
+	// the live decoder, replaced at the next role boundary. Set by the live
+	// bind path after derivation.
+	Live bool
 }
 
 // DeriveTimeline turns the normalized item stream into Chat presentation
@@ -51,11 +58,15 @@ func DeriveTimeline(items []ConversationItem) []TimelineTurn {
 				UserRow:  true,
 				Text:     item.Text,
 				FirstSeq: item.Seq, LastSeq: item.Seq,
+				TsMS: item.TimestampMS,
 			})
 		case KindAssistant:
 			if current == nil || current.UserRow {
 				flush()
-				current = &TimelineTurn{FirstSeq: item.Seq}
+				current = &TimelineTurn{FirstSeq: item.Seq, TsMS: item.TimestampMS}
+			}
+			if current.TsMS == nil {
+				current.TsMS = item.TimestampMS
 			}
 			if item.Text != "" {
 				if current.Narration != "" {
@@ -78,7 +89,10 @@ func DeriveTimeline(items []ConversationItem) []TimelineTurn {
 		case KindTool:
 			if current == nil || current.UserRow {
 				flush()
-				current = &TimelineTurn{FirstSeq: item.Seq}
+				current = &TimelineTurn{FirstSeq: item.Seq, TsMS: item.TimestampMS}
+			}
+			if current.TsMS == nil {
+				current.TsMS = item.TimestampMS
 			}
 			for _, call := range item.ToolCalls {
 				current.ToolRuns = append(current.ToolRuns, call)

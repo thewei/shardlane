@@ -23,6 +23,11 @@ export interface ChatBridgeState {
    * system preference.
    */
   theme: string;
+  /**
+   * Model is the provider model the transcript last recorded, when known
+   * (presentation pill only; never a runtime fact source).
+   */
+  model?: string;
   turns: ChatBridgeTurn[];
 }
 
@@ -46,6 +51,8 @@ export interface ChatBridgeTurn {
   thinking?: string;
   failed?: boolean;
   compacted?: boolean;
+  live?: boolean;
+  tsMs?: number;
   tools?: ChatBridgeTool[];
 }
 

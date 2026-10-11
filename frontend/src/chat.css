@@ -57,6 +57,107 @@
   gap: 8px;
 }
 
+.meta .ts {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.meta .spacer {
+  flex: 1;
+}
+
+.copybtns {
+  display: inline-flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+
+.turn:hover .copybtns,
+.copybtns:focus-within {
+  opacity: 1;
+}
+
+.copybtns button {
+  font-size: 10px;
+  padding: 1px 7px;
+  border-radius: 5px;
+  border: 1px solid var(--border-subtle);
+  background: var(--panel);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.turn.user .bubble {
+  position: relative;
+}
+
+.bubble-copy {
+  position: absolute;
+  top: 4px;
+  right: 6px;
+}
+
+.bubble-copy button {
+  background: rgba(255, 255, 255, 0.18);
+  border-color: transparent;
+  color: inherit;
+}
+
+.work-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.work-live {
+  font-size: 12px;
+  color: var(--working);
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.work-live .dots::after {
+  content: "…";
+  animation: workdots 1.2s steps(3) infinite;
+}
+
+@keyframes workdots {
+  0% { content: ""; }
+  66% { content: "…"; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .work-live .dots::after {
+    animation: none;
+    content: "…";
+  }
+}
+
+.composer-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 16px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.model-pill {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 10.5px;
+  background: var(--code-bg);
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  padding: 1px 8px;
+  max-width: 50%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .who {
   font-size: 10px;
   font-weight: 700;
