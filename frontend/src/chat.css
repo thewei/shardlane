@@ -209,6 +209,34 @@
   66% { content: "…"; }
 }
 
+/* The waiting placeholder between the sent user row and the first live
+   tail content: skeleton lines breathe while the agent picks up. */
+
+.turn.assistant.pending .skeleton {
+  height: 9px;
+  border-radius: 4px;
+  background: var(--code-bg);
+  animation: skeletonBreath 1.6s ease-in-out infinite;
+}
+
+.turn.assistant.pending .skeleton.short {
+  width: 62%;
+  animation-delay: 0.25s;
+}
+
+@keyframes skeletonBreath {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .turn.assistant.pending .skeleton {
+    animation: none;
+    opacity: 0.5;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .work-live .dots::after {
     animation: none;

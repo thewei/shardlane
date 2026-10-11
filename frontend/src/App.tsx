@@ -180,6 +180,13 @@ export function App() {
 
   const disposition = state?.disposition ?? "unknown";
   const working = disposition === "queue";
+  // The waiting placeholder stands in for the assistant card between the
+  // user's sent row and the first live tail content (the agent's own TUI
+  // shows the same "waiting → thinking → working" progression).
+  const lastTurn = state?.turns[state.turns.length - 1];
+  const showPendingAssistant = Boolean(
+    working && !state?.loading && lastTurn && lastTurn.user,
+  );
   const canSend =
     disposition === "ready" && draft.trim() !== "" && !sending && !state?.loading;
   const canQueue = working && draft.trim() !== "" && !sending;
@@ -478,6 +485,13 @@ export function App() {
             </TurnBoundary>
           ))
         )}
+        {showPendingAssistant ? (
+          <div className="turn assistant pending" role="status" aria-live="polite">
+            <div className="work-live">Waiting<span className="dots" /></div>
+            <div className="skeleton" />
+            <div className="skeleton short" />
+          </div>
+        ) : null}
       </div>
       {showJump ? (
         <button type="button" className="jump" onClick={jumpToLatest}>
@@ -728,6 +742,15 @@ function CodeBlock({ children, ...rest }: React.HTMLAttributes<HTMLPreElement>) 
   );
 }
 
+// livePhaseLabel names the in-flight turn's stage the way the agent's own
+// TUI does: nothing landed yet → Waiting; only thinking → Thinking; narration
+// or tool runs → Working (the streaming caret takes over from there).
+function livePhaseLabel(turn: ChatBridgeState["turns"][number]): string {
+  if (turn.narration || (turn.tools?.length ?? 0) > 0) return "Working";
+  if (turn.thinking) return "Thinking";
+  return "Waiting";
+}
+
 function TurnRow({ turn }: { turn: ChatBridgeState["turns"][number] }) {
   if (turn.user) {
     return (
@@ -753,7 +776,7 @@ function TurnRow({ turn }: { turn: ChatBridgeState["turns"][number] }) {
           <CopyButtons text={turn.narration} markdown={turn.narration} />
         ) : null}
       </div>
-      {turn.live ? <div className="work-live">Working<span className="dots" /></div> : null}
+      {turn.live ? <div className="work-live">{livePhaseLabel(turn)}<span className="dots" /></div> : null}
       {turn.narration ? <Markdown text={turn.narration} /> : null}
       {turn.thinking ? (
         <details className="block">
