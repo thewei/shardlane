@@ -168,6 +168,12 @@ func (s *Shell) agentCardForSelectedPane() (agent.AgentCardModel, bool) {
 	if targetPaneID == "" {
 		targetPaneID = s.projection.FocusedPaneID
 	}
+	return s.agentCardForPane(targetPaneID)
+}
+
+// agentCardForPane projects one pane's Agent card from the workbench
+// directory, falling back to the raw projection.
+func (s *Shell) agentCardForPane(targetPaneID string) (agent.AgentCardModel, bool) {
 	if targetPaneID == "" {
 		return agent.AgentCardModel{}, false
 	}

@@ -43,16 +43,27 @@ export function App() {
     return off;
   }, [refresh]);
 
-  // Follow the system appearance so the body sits seamlessly under the
-  // native header band.
+  // Follow the app-resolved appearance (Settings -> General -> Appearance,
+  // carried by the bridge state once it arrives); until then, the system
+  // preference.
+  const stateRef = useRef(state);
+  stateRef.current = state;
   useEffect(() => {
     const media = window.matchMedia("(prefers-color-scheme: dark)");
-    const apply = () =>
-      document.documentElement.dataset.theme = media.matches ? "dark" : "light";
+    const apply = () => {
+      const theme = stateRef.current?.theme;
+      document.documentElement.dataset.theme =
+        theme ?? (media.matches ? "dark" : "light");
+    };
     apply();
     media.addEventListener("change", apply);
     return () => media.removeEventListener("change", apply);
   }, []);
+  useEffect(() => {
+    if (state?.theme) {
+      document.documentElement.dataset.theme = state.theme;
+    }
+  }, [state?.theme]);
 
   // Sticky bottom: follow the tail until the user scrolls up; turns added
   // while scrolled up raise the "New messages" pill instead.
@@ -105,8 +116,14 @@ export function App() {
   }, [draft]);
 
   const disposition = state?.disposition ?? "unknown";
+  const working = disposition === "queue";
   const canSend =
     disposition === "ready" && draft.trim() !== "" && !sending && !state?.loading;
+  const canQueue = working && draft.trim() !== "" && !sending;
+  // One composer action, as in the reference chat: while the agent works
+  // with an empty box it is Stop (one Escape through the bridge); typing
+  // swaps it back to Queue/Send.
+  const showStop = working && draft.trim() === "" && !sending;
 
   const send = async () => {
     const text = draft.trim();
@@ -122,6 +139,17 @@ export function App() {
     } catch {
       // The bridge keeps the draft on hard failures; the outcome line in the
       // next projection explains what happened.
+      refresh();
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const stop = async () => {
+    setSending(true);
+    try {
+      setState(await chat.stop());
+    } catch {
       refresh();
     } finally {
       setSending(false);
@@ -182,14 +210,20 @@ export function App() {
             onCompositionStart={() => (composingRef.current = true)}
             onCompositionEnd={() => (composingRef.current = false)}
           />
-          <button
-            type="button"
-            className="primary"
-            disabled={!canSend}
-            onClick={() => void send()}
-          >
-            Send
-          </button>
+          {showStop ? (
+            <button type="button" className="primary stop" onClick={() => void stop()}>
+              Stop
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="primary"
+              disabled={!(canSend || canQueue)}
+              onClick={() => void send()}
+            >
+              {working ? "Queue" : "Send"}
+            </button>
+          )}
         </div>
         {disposition === "terminal" ? (
           <div className="composer-note">Blocked — use the terminal.</div>

@@ -395,7 +395,6 @@ func TestChatQueuedDispositionEnqueuesInLedger(t *testing.T) {
 	shell, _ := liveBindShell(t, "claude-code", path)
 	shell.chatPaneID = "p1"
 	shell.chatConversationID = "live:claude-code:term-1"
-	shell.chatPhase = agent.AgentRuntimePhase("working")
 
 	fingerprint := shell.liveFingerprintForPane("p1")
 	if fingerprint == "" {
@@ -435,7 +434,6 @@ func TestChatQueuedDispositionEnqueuesInLedger(t *testing.T) {
 
 	// Unresolved identity refuses to queue instead of guessing: the pane
 	// holds no provable session identity.
-	shell.chatPhase = agent.AgentRuntimePhase("working")
 	shell.chatDraft = "again"
 	shell.projection = herdr.Projection{}
 	shell.sendChatPrompt()

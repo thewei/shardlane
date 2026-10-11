@@ -695,10 +695,12 @@ InteractionBroker.
   Phase 3.
 - **Phase 3 — acceptance, then retire native Chat.** Real-app run (isolated
   HOME + dedicated Herdr socket): route enter/leave with live streams,
-  Chinese-IME input, focus/shortcuts (⌘K palette over the page), theme
-  switch, repeated route changes, window close cleanup, startup/idle/resize
-  cost against the Native baseline. Retirement of the native chat page is a
-  separate commit after parity.
+  focus/shortcuts (⌘K palette over the page), theme switch, repeated route
+  changes, window close cleanup, startup/idle/resize cost against the Native
+  baseline. Retirement of the native chat page is a separate commit after
+  parity. Gate results: **Chinese-IME smoke PASSED** (product owner, real
+  app, 2026-10-11). Stop semantics decided 2026-10-11: one Escape via
+  `agent.send_keys` ("esc") — implemented in the chat bridge.
 - **Deferrals (2026-10-11):** token-delta streaming (turn-granular
   projections first); Stop semantics (native has no counterpart; needs a
   product call); the **interaction dock — protocol gap at the Herdr

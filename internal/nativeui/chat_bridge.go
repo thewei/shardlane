@@ -2,6 +2,7 @@ package nativeui
 
 import (
 	"context"
+	"errors"
 
 	"github.com/egoist/mygo"
 	"github.com/wh-studio/herdr-client/internal/conversation"
@@ -46,7 +47,11 @@ type ChatBridgeState struct {
 	Disposition    string           `json:"disposition"`
 	Outcome        string           `json:"outcome,omitempty"`
 	QueuedText     string           `json:"queuedText,omitempty"`
-	Turns          []ChatBridgeTurn `json:"turns"`
+	// Theme is the app-resolved appearance ("light" or "dark"), following
+	// Settings -> General -> Appearance through mygo.Theme — not the bare
+	// system preference.
+	Theme string           `json:"theme"`
+	Turns []ChatBridgeTurn `json:"turns"`
 }
 
 // chatUpdated pushes the projection after every chat state mutation. Events
@@ -99,6 +104,31 @@ func (b *ChatBridge) CancelQueued(ctx context.Context) (ChatBridgeState, error) 
 	return state, nil
 }
 
+// Stop interrupts the agent's current turn with one Escape (the product
+// decision of 2026-10-11): agent.send_keys with the named key "esc", the
+// same verified named-key operation the terminal's Esc uses — an interrupt,
+// never a process kill. The RPC runs off the UI lane; the projection
+// refreshes after it settles.
+func (b *ChatBridge) Stop(ctx context.Context) (ChatBridgeState, error) {
+	var paneID string
+	var ready bool
+	b.shell.callOnWindow(func() {
+		if b.shell.launch != nil && b.shell.activeInstance != "" && b.shell.chatPaneID != "" {
+			paneID, ready = b.shell.chatPaneID, true
+		}
+	})
+	if !ready {
+		return b.shell.chatBridgeStateOnWindow(), errors.New("no agent bound to this chat")
+	}
+	err := b.shell.runtime.SendAgentKeys(ctx, b.shell.activeInstance, paneID, []string{"esc"})
+	var state ChatBridgeState
+	b.shell.callOnWindow(func() {
+		b.shell.publishChatBridge()
+		state = b.shell.chatBridgeState()
+	})
+	return state, err
+}
+
 // callOnWindow runs fn on the window UI lane and waits for it; inline when
 // no window exists (headless tests). Shell-bound methods run on their own
 // goroutines, so this is the only path back to Shell state.
@@ -120,9 +150,10 @@ func (s *Shell) chatBridgeState() ChatBridgeState {
 	state := ChatBridgeState{
 		ConversationID: s.chatConversationID,
 		Loading:        s.chatLoading,
-		Disposition:    chatBridgeDisposition(s.chatDisposition),
+		Disposition:    chatBridgeDisposition(s.chatDispositionNow()),
 		Outcome:        s.chatOutcome,
 		QueuedText:     s.chatQueuedText,
+		Theme:          s.chatBridgeTheme(),
 		Turns:          make([]ChatBridgeTurn, 0, len(s.chatTurns)),
 	}
 	if card, ok := s.agentCardForSelectedPane(); ok {
@@ -147,6 +178,24 @@ func (s *Shell) chatBridgeState() ChatBridgeState {
 		}
 		state.Turns = append(state.Turns, bridgeTurn)
 	}
+	return state
+}
+
+// chatBridgeTheme reports the app-resolved appearance for the page. The
+// framework call blocks on the main thread, so it only runs with a window
+// attached and always on the UI lane (chatBridgeState's contract);
+// headless sessions (tests) report light without touching the framework.
+func (s *Shell) chatBridgeTheme() string {
+	if s.win != nil && mygo.Theme.IsDark() {
+		return "dark"
+	}
+	return "light"
+}
+
+// chatBridgeStateOnWindow marshals the projection read onto the window lane.
+func (s *Shell) chatBridgeStateOnWindow() ChatBridgeState {
+	var state ChatBridgeState
+	s.callOnWindow(func() { state = s.chatBridgeState() })
 	return state
 }
 

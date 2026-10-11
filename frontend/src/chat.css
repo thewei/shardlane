@@ -195,6 +195,11 @@ details.tool.error > summary {
   cursor: default;
 }
 
+.composer button.primary.stop {
+  background: var(--danger);
+  color: #fff;
+}
+
 .composer-note {
   color: var(--text-muted);
   font-size: 12px;

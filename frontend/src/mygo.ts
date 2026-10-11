@@ -17,6 +17,12 @@ export interface ChatBridgeState {
   disposition: string;
   outcome?: string;
   queuedText?: string;
+  /**
+   * Theme is the app-resolved appearance ("light" or "dark"), following
+   * Settings -> General -> Appearance through mygo.Theme — not the bare
+   * system preference.
+   */
+  theme: string;
   turns: ChatBridgeTurn[];
 }
 
@@ -71,6 +77,16 @@ export const chat = {
   /** Snapshot returns the current chat projection. */
   snapshot(): Promise<ChatBridgeState> {
     return call("chat.Snapshot");
+  },
+  /**
+   * Stop interrupts the agent's current turn with one Escape (the product
+   * decision of 2026-10-11): agent.send_keys with the named key "esc", the
+   * same verified named-key operation the terminal's Esc uses — an interrupt,
+   * never a process kill. The RPC runs off the UI lane; the projection
+   * refreshes after it settles.
+   */
+  stop(): Promise<ChatBridgeState> {
+    return call("chat.Stop");
   },
 } as const;
 

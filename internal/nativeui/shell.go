@@ -296,12 +296,13 @@ type Shell struct {
 	diagSearchQuery    string
 	diagExportStatus   string
 
-	// chat owns the 0.6 Native Conversation surface state (bounded).
+	// chat owns the 0.6 Native Conversation surface state (bounded). The
+	// composer disposition is derived live from the projection (0.6 §10):
+	// chatPhase/chatLaunchPending/chatDisposition were stored fields that
+	// nothing ever assigned, which left the native Send permanently
+	// disabled until 2026-10-11.
 	chatConversationID string
 	chatPaneID         string
-	chatPhase          agent.AgentRuntimePhase
-	chatLaunchPending  bool
-	chatDisposition    conversation.PromptDisposition
 	chatTurns          []conversation.TimelineTurn
 	chatDraft          string
 	chatQueuedText     string
@@ -354,6 +355,8 @@ func WithSettings(service *app.SettingsService) ShellOption {
 			s.settingsService = service
 			s.settings = service.Current()
 			s.settingsFontDraft = s.settings.Terminal.FontFamily
+			// The saved appearance applies at AttachWindow (SetSource waits
+			// on the main loop, which does not exist before the window).
 			s.settingsGitPromptDraft = commitPromptPreference(s.settings.Workbench.CommitPrompt)
 			s.settingsPiBinaryDraft = s.settings.Workbench.PiExecutable
 		}
@@ -456,6 +459,28 @@ func (s *Shell) applySettings(mutate func(*settings.Settings) error) {
 	}
 	s.settings = updated
 	s.settingsFontDraft = updated.Terminal.FontFamily
+	if s.win != nil {
+		// SetSource marshals to the main thread and waits; headless tests
+		// have no main loop, so only apply with a window attached.
+		s.syncThemeSource()
+	}
+}
+
+// syncThemeSource applies Settings -> General -> Appearance to the
+// framework's theme (the setting's own promise: "applies to the native
+// shell chrome"), which the whole app — native chrome and the chat
+// WebView — follows through mygo.Theme.
+func (s *Shell) syncThemeSource() {
+	var source mygo.ThemeSource
+	switch s.settings.General.Appearance {
+	case "light":
+		source = mygo.ThemeLight
+	case "dark":
+		source = mygo.ThemeDark
+	default:
+		source = mygo.ThemeSystem
+	}
+	mygo.Theme.SetSource(source)
 }
 
 // Launch exposes the launch service for the desktop entrypoint's durable
@@ -467,6 +492,13 @@ func (s *Shell) AttachWindow(win *mygo.Window) {
 	s.bootstrapPending = true
 	s.bootstrapFailed = false
 	slog.Debug("native shell attached", "window_id", win.ID())
+	// Appearance changes (system or Settings) re-publish the chat
+	// projection, whose theme field carries the resolved appearance to the
+	// WebView chat page.
+	s.syncThemeSource()
+	mygo.Theme.OnUpdated(func() {
+		s.applyOnWindow(func() { s.publishChatBridge() })
+	})
 	if s.launch != nil {
 		// The follow-up delivery worker owns the queue's state machine for
 		// the window's lifetime (0.6 §11.3).

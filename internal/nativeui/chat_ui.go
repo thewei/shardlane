@@ -91,7 +91,7 @@ func (s *Shell) chatComposerRow(c *ui.Context) {
 			// disposition is SentNow; multiline TextArea otherwise keeps
 			// Enter as a newline, and queued/terminal-needed states stay
 			// on the explicit buttons (2026-10-06 F82).
-			if field.Shortcut(0, ui.KeyEnter) && s.chatDisposition == conversation.DispositionSentNow {
+			if field.Shortcut(0, ui.KeyEnter) && s.chatDispositionNow() == conversation.DispositionSentNow {
 				s.sendChatPrompt()
 			}
 			queued := s.chatQueuedText != ""
@@ -101,7 +101,7 @@ func (s *Shell) chatComposerRow(c *ui.Context) {
 				if ui.Button(c, "Cancel").Clicked() {
 					s.cancelChatFollowUp()
 				}
-			case s.chatDisposition == conversation.DispositionSentNow:
+			case s.chatDispositionNow() == conversation.DispositionSentNow:
 				// Empty drafts render disabled: sendChatPrompt would
 				// no-op, and a live Send on an empty box reads as broken
 				// (2026-10-06 F100). While an input method is composing,
@@ -136,7 +136,7 @@ func (s *Shell) workspaceChatSurface(c *ui.Context) {
 				ui.Text(c, card.Title).FontSize(Typography().Body).FontWeight(600).SingleLine()
 				if s.chatConversationID != "" {
 					summary := s.chatDispositionSummary()
-					statusPill(c, summary, dispositionTone(s.chatDisposition))
+					statusPill(c, summary, dispositionTone(s.chatDispositionNow()))
 					ui.Text(c, s.chatConversationID).FontSize(Typography().Micro).TextColor(t.TextMuted).SingleLine()
 				}
 			} else {
@@ -209,7 +209,7 @@ func (s *Shell) chatPage(c *ui.Context) {
 		}
 		ui.Row(c).Padding(0, sp.XL, sp.S).Gap(sp.M).AlignItems(ui.Center).Children(func() {
 			summary := s.chatDispositionSummary()
-			statusPill(c, summary, dispositionTone(s.chatDisposition))
+			statusPill(c, summary, dispositionTone(s.chatDispositionNow()))
 			ui.Text(c, s.chatConversationID).FontSize(Typography().Caption).TextColor(c.Theme().TextMuted).SingleLine()
 		})
 		// N19 Phase 2: with the WebView chat enabled the body is the
@@ -244,8 +244,7 @@ func (s *Shell) sendChatText(text string) ChatBridgeState {
 	if text == "" || s.launch == nil || s.activeInstance == "" || s.chatPaneID == "" {
 		return s.chatBridgeState()
 	}
-	disposition := conversation.DispositionFor(agent.ClassifySendability(
-		agent.ParseRuntimePhase(string(s.chatPhase), s.chatLaunchPending)))
+	disposition := s.chatDispositionNow()
 	switch disposition {
 	case conversation.DispositionSentNow:
 		requestID := fmt.Sprintf("chat-%s-%d", s.chatPaneID, time.Now().UnixNano())
@@ -375,9 +374,25 @@ func (s *Shell) bindChatConversation(conversationID string) {
 	})
 }
 
+// chatDispositionNow derives the composer disposition live from the
+// selected pane's projection card (0.6 §10): the sendability classifier is
+// the SSOT and the service decides again at commit time. The stored fields
+// this replaces were never assigned, which disabled the native Send.
+func (s *Shell) chatDispositionNow() conversation.PromptDisposition {
+	// The composer disposition belongs to the bound chat pane, which usually
+	// follows the selection but is its own coordinate (the pane the prompt
+	// would go to).
+	if card, ok := s.agentCardForPane(s.chatPaneID); ok {
+		// Classify from the phase, not the card's own Sendability: the
+		// projection-fallback card builder leaves it unset.
+		return conversation.DispositionFor(agent.ClassifySendability(card.RuntimePhase))
+	}
+	return conversation.DispositionUnknown
+}
+
 // chatDispositionSummary summarizes the current composer disposition.
 func (s *Shell) chatDispositionSummary() string {
-	switch s.chatDisposition {
+	switch s.chatDispositionNow() {
 	case conversation.DispositionSentNow:
 		return "Ready"
 	case conversation.DispositionQueuedAfterTurn:
