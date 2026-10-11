@@ -24,9 +24,12 @@ export function App() {
   const [state, setState] = useState<ChatBridgeState | null>(null);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
+  const [showJump, setShowJump] = useState(false);
   const composingRef = useRef(false);
   const logRef = useRef<HTMLDivElement>(null);
+  const composerRef = useRef<HTMLTextAreaElement>(null);
   const stickToBottom = useRef(true);
+  const turnsRef = useRef(0);
 
   const refresh = useCallback(() => {
     chat.snapshot().then(setState).catch(() => {});
@@ -51,19 +54,55 @@ export function App() {
     return () => media.removeEventListener("change", apply);
   }, []);
 
-  // Sticky bottom: follow the tail until the user scrolls up.
+  // Sticky bottom: follow the tail until the user scrolls up; turns added
+  // while scrolled up raise the "New messages" pill instead.
   useEffect(() => {
     const log = logRef.current;
+    const count = state?.turns.length ?? 0;
     if (log && stickToBottom.current) {
       log.scrollTop = log.scrollHeight;
+      setShowJump(false);
+    } else if (count > turnsRef.current) {
+      setShowJump(true);
     }
+    turnsRef.current = count;
   }, [state]);
 
   const onLogScroll = () => {
     const log = logRef.current;
     if (!log) return;
-    stickToBottom.current = log.scrollHeight - log.scrollTop - log.clientHeight < 48;
+    const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 48;
+    stickToBottom.current = atBottom;
+    if (atBottom) setShowJump(false);
   };
+
+  const jumpToLatest = () => {
+    const log = logRef.current;
+    if (!log) return;
+    stickToBottom.current = true;
+    setShowJump(false);
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    log.scrollTo({ top: log.scrollHeight, behavior: reduced ? "auto" : "smooth" });
+  };
+
+  // Drafts persist per conversation across pane switches and page reloads
+  // (session storage, keyed by conversation id).
+  const conversationId = state?.conversationId ?? "";
+  useEffect(() => {
+    if (!conversationId) return;
+    setDraft(sessionStorage.getItem(draftKey(conversationId)) ?? "");
+  }, [conversationId]);
+  useEffect(() => {
+    if (conversationId) sessionStorage.setItem(draftKey(conversationId), draft);
+  }, [draft, conversationId]);
+
+  // Auto-grow the composer up to the viewport cap.
+  useEffect(() => {
+    const el = composerRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, Math.floor(window.innerHeight * 0.4))}px`;
+  }, [draft]);
 
   const disposition = state?.disposition ?? "unknown";
   const canSend =
@@ -111,10 +150,17 @@ export function App() {
           <div className="chat-note">No conversation yet.</div>
         ) : (
           state.turns.map((turn, index) => (
-            <TurnRow key={turnKey(turn, index)} turn={turn} />
+            <TurnBoundary key={turnKey(turn, index)}>
+              <TurnRow turn={turn} />
+            </TurnBoundary>
           ))
         )}
       </div>
+      {showJump ? (
+        <button type="button" className="jump" onClick={jumpToLatest}>
+          New messages ↓
+        </button>
+      ) : null}
       <div className="composer">
         {state?.outcome ? <div className="outcome">{state.outcome}</div> : null}
         {state?.queuedText ? (
@@ -127,6 +173,7 @@ export function App() {
         ) : null}
         <div className="composer-row">
           <textarea
+            ref={composerRef}
             value={draft}
             placeholder="Follow up on this conversation…"
             aria-label="Chat prompt"
@@ -156,6 +203,30 @@ export function App() {
 
 function turnKey(turn: ChatBridgeState["turns"][number], index: number): string {
   return `${index}:${turn.user ? "u" : "a"}`;
+}
+
+function draftKey(conversationId: string): string {
+  return `shardlane:chat-draft:${conversationId}`;
+}
+
+// TurnBoundary contains one turn's render failures: a bad turn renders as
+// an inline notice and the rest of the transcript keeps working.
+class TurnBoundary extends React.Component<
+  { children: React.ReactNode },
+  { failed: boolean }
+> {
+  state = { failed: false };
+
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+
+  render() {
+    if (this.state.failed) {
+      return <div className="turn-error">This message can't be shown.</div>;
+    }
+    return this.props.children;
+  }
 }
 
 // Markdown renders assistant narration (GFM tables/lists, fenced code with

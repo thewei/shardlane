@@ -1,6 +1,7 @@
 /* The chat body fills the surface below the native header band. */
 
 .chat {
+  position: relative;
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -165,9 +166,8 @@ details.tool.error > summary {
 
 .composer-row textarea {
   flex: 1;
-  resize: vertical;
+  resize: none;
   min-height: 44px;
-  max-height: 40vh;
   font: inherit;
   color: var(--text);
   background: var(--panel);
@@ -390,4 +390,29 @@ details.tool.error > summary {
 
 [data-theme="dark"] .hljs-strong {
   font-weight: 700;
+}
+
+.turn-error {
+  background: var(--danger-bg);
+  color: var(--danger);
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
+.jump {
+  position: absolute;
+  bottom: 96px;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 1px solid var(--border-subtle);
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  border-radius: 999px;
+  padding: 4px 14px;
+  cursor: pointer;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.15);
+  z-index: 2;
 }

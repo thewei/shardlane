@@ -699,6 +699,15 @@ InteractionBroker.
   switch, repeated route changes, window close cleanup, startup/idle/resize
   cost against the Native baseline. Retirement of the native chat page is a
   separate commit after parity.
+- **Deferrals (2026-10-11):** token-delta streaming (turn-granular
+  projections first); Stop semantics (native has no counterpart; needs a
+  product call); the **interaction dock — protocol gap at the Herdr
+  boundary**: the `InteractionBroker` (0.6 §17) is sourceless in production
+  (nothing publishes `PendingInteraction`; `ResolveCAS` has no production
+  caller), so a chat dock would render a permanently empty list. A source
+  means structured agent questions/approvals in the Herdr runtime, not
+  client work; screen scraping the TUI, as herdr-web-ui does, stays
+  rejected.
 
 # M7 — Remote / Mobile API v2
 

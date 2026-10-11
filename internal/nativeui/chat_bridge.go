@@ -166,8 +166,11 @@ func chatBridgeDisposition(disposition conversation.PromptDisposition) string {
 
 // publishChatBridge pushes the projection to the WebView chat page. Called
 // on the UI lane after every chat state mutation; a no-op without a window.
+// The guard is only on the window: an empty projection (a pane without a
+// conversation) must still reach the page, or it would keep rendering the
+// previously bound conversation's transcript.
 func (s *Shell) publishChatBridge() {
-	if s.win == nil || s.chatConversationID == "" {
+	if s.win == nil {
 		return
 	}
 	// A closed window ends delivery; the page is gone with it.
