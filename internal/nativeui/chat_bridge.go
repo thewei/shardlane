@@ -28,7 +28,7 @@ const (
 
 /**
  * [INPUT]: 依赖 Shell 的 0.6 Chat 状态（chatTurns/chatDisposition/chatOutcome/chatQueuedText）、launch 发送路径、mygo Bind 事件
- * [OUTPUT]: 对外提供 ChatBridge 绑定服务（Snapshot/Send/CancelQueued）与 chat:updated 事件、Shell.publishChatBridge、sendChatText 共享发送路径
+ * [OUTPUT]: 对外提供 ChatBridge 绑定服务（Snapshot/Send/InterruptAndSend/CancelQueued）与 chat:updated 事件、Shell.publishChatBridge、sendChatText 共享发送路径
  * [POS]: WebView Chat 的唯一表现层桥：投影与动作编组到窗口 UI 通道，会话运行时/Herdr 方法零改动；页面只能通过此桥读取聊天投影
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -129,6 +129,63 @@ func (b *ChatBridge) Send(ctx context.Context, text string) (ChatBridgeState, er
 	var state ChatBridgeState
 	b.shell.callOnWindow(func() {
 		state = b.shell.sendChatText(text)
+	})
+	return state, nil
+}
+
+// chatInterruptSettle is the pause between the interrupting Escape and the
+// follow-up prompt: the TUI needs a beat to tear down the running turn
+// before the input box can accept a new prompt.
+const chatInterruptSettle = 600 * time.Millisecond
+
+// InterruptAndSend is the explicit "cut in" path (the moshi barge-in analog):
+// one Escape stops the running turn, a short settle lets the TUI land on its
+// input box, then the prompt delivers via the canonical agent.prompt
+// transaction regardless of the now-stale working disposition. A ready
+// disposition skips the Escape (plain send); terminal-bound agents are
+// refused; a failed Escape aborts instead of typing into a running turn.
+func (b *ChatBridge) InterruptAndSend(ctx context.Context, text string) (ChatBridgeState, error) {
+	text = strings.TrimSpace(text)
+	var instance, paneID string
+	var interrupt, blocked bool
+	var guardErr error
+	b.shell.callOnWindow(func() {
+		if text == "" || b.shell.launch == nil || b.shell.activeInstance == "" || b.shell.chatPaneID == "" {
+			guardErr = errors.New("no agent bound to this chat")
+			return
+		}
+		instance, paneID = b.shell.activeInstance, b.shell.chatPaneID
+		switch b.shell.chatDispositionNow() {
+		case conversation.DispositionSentNow:
+			interrupt = false
+		case conversation.DispositionNeedsTerminal:
+			blocked = true
+		default:
+			interrupt = true
+		}
+	})
+	if guardErr != nil {
+		return b.shell.chatBridgeStateOnWindow(), guardErr
+	}
+	if blocked {
+		return b.shell.chatBridgeStateOnWindow(), errors.New("this agent needs the terminal")
+	}
+	if interrupt {
+		if err := b.shell.runtime.SendAgentKeys(ctx, instance, paneID, []string{"esc"}); err != nil {
+			return b.shell.chatBridgeStateOnWindow(), fmt.Errorf("interrupt failed: %w", err)
+		}
+		select {
+		case <-ctx.Done():
+			return b.shell.chatBridgeStateOnWindow(), ctx.Err()
+		case <-time.After(chatInterruptSettle):
+		}
+	}
+	var state ChatBridgeState
+	b.shell.callOnWindow(func() {
+		requestID := fmt.Sprintf("chat-%s-%d", paneID, time.Now().UnixNano())
+		err := b.shell.launch.PromptLiveAgent(ctx, instance, paneID, text)
+		b.shell.chatAfterPrompt(requestID, text, conversation.DispositionSentNow, err)
+		state = b.shell.chatBridgeState()
 	})
 	return state, nil
 }

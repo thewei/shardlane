@@ -32,10 +32,14 @@ export function App() {
   const [recording, setRecording] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
   const [voiceError, setVoiceError] = useState("");
+  const [interrupting, setInterrupting] = useState(false);
   const composingRef = useRef(false);
   const logRef = useRef<HTMLDivElement>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
+  const meterRef = useRef<HTMLCanvasElement>(null);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const meterRafRef = useRef(0);
   const stickToBottom = useRef(true);
   const turnsRef = useRef(0);
 
@@ -220,6 +224,27 @@ export function App() {
     }
   };
 
+  // interruptSend is the explicit cut-in: the bridge stops the running turn
+  // (one Escape), settles briefly, then delivers this text now instead of
+  // queueing it behind the turn.
+  const interruptSend = async () => {
+    const text = draft.trim();
+    if (text === "" || interrupting) return;
+    setInterrupting(true);
+    try {
+      const next = await chat.interruptAndSend(text);
+      setState(next);
+      if (!next.outcome) {
+        setDraft("");
+        stickToBottom.current = true;
+      }
+    } catch {
+      refresh();
+    } finally {
+      setInterrupting(false);
+    }
+  };
+
   const onKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     // The @ completion list owns navigation keys while it is open.
     if (completions.length > 0) {
@@ -294,16 +319,28 @@ export function App() {
 
   // Dictation: record in the page (WKWebView, secure context), then the
   // bridge forwards the clip to the configured OpenAI-compatible endpoint.
+  // While recording, an AnalyserNode feeds the small level meter (the
+  // reference chat's live visualizer) so the mic state is visible evidence,
+  // not a pulsing button alone.
   const startDictation = async () => {
     setVoiceError("");
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const audioCtx = new AudioContext();
+      if (audioCtx.state === "suspended") void audioCtx.resume();
+      const analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 256;
+      analyser.smoothingTimeConstant = 0.75;
+      audioCtx.createMediaStreamSource(stream).connect(analyser);
+      audioCtxRef.current = audioCtx;
+      startMeter(analyser);
       const recorder = new MediaRecorder(stream);
       const chunks: Blob[] = [];
       recorder.ondataavailable = (event) => {
         if (event.data.size > 0) chunks.push(event.data);
       };
       recorder.onstop = () => {
+        stopMeter();
         stream.getTracks().forEach((track) => track.stop());
         const blob = new Blob(chunks, { type: recorder.mimeType || "audio/webm" });
         if (blob.size < 1024) return; // an accidental tap: nothing to transcribe
@@ -333,9 +370,55 @@ export function App() {
   };
 
   const stopDictation = () => {
+    stopMeter();
     recorderRef.current?.stop();
     setRecording(false);
   };
+
+  // startMeter runs the mirrored frequency-bar canvas for as long as the
+  // recording lasts; the canvas only exists while `recording`, so frames
+  // before it mounts are skipped.
+  const startMeter = (analyser: AnalyserNode) => {
+    const data = new Uint8Array(analyser.frequencyBinCount);
+    let color = "";
+    const frame = () => {
+      meterRafRef.current = requestAnimationFrame(frame);
+      const canvas = meterRef.current;
+      if (!canvas) return;
+      const g = canvas.getContext("2d");
+      if (!g) return;
+      analyser.getByteFrequencyData(data);
+      const { width, height } = canvas;
+      g.clearRect(0, 0, width, height);
+      if (!color) color = getComputedStyle(canvas).color;
+      g.fillStyle = color;
+      const bars = 14;
+      const barWidth = 2;
+      const gap = 2;
+      for (let i = 0; i < bars; i++) {
+        // Voice energy sits in the low bins; the power curve spreads the
+        // bars across it instead of lighting only the first few.
+        const bin = Math.min(
+          data.length - 1,
+          Math.floor(Math.pow(i / bars, 1.6) * (data.length * 0.5)) + 2,
+        );
+        const level = data[bin] / 255;
+        const barHeight = Math.max(2, level * height);
+        g.fillRect(i * (barWidth + gap), (height - barHeight) / 2, barWidth, barHeight);
+      }
+    };
+    cancelAnimationFrame(meterRafRef.current);
+    meterRafRef.current = requestAnimationFrame(frame);
+  };
+
+  const stopMeter = () => {
+    cancelAnimationFrame(meterRafRef.current);
+    void audioCtxRef.current?.close().catch(() => {});
+    audioCtxRef.current = null;
+  };
+
+  // Hard cleanup if the page unloads mid-recording.
+  useEffect(() => () => stopMeter(), []);
 
   return (
     <div className="chat">
@@ -433,6 +516,7 @@ export function App() {
           >
             {recording ? "■" : "Mic"}
           </button>
+          {recording ? <canvas ref={meterRef} className="mic-meter" width={44} height={28} aria-hidden /> : null}
           <textarea
             ref={composerRef}
             value={draft}
@@ -443,6 +527,17 @@ export function App() {
             onCompositionStart={() => (composingRef.current = true)}
             onCompositionEnd={() => (composingRef.current = false)}
           />
+          {working && draft.trim() !== "" ? (
+            <button
+              type="button"
+              className="interrupt"
+              title="Interrupt the agent and send this now"
+              disabled={sending || interrupting}
+              onClick={() => void interruptSend()}
+            >
+              {interrupting ? "Interrupting…" : "⚡ Interrupt & send"}
+            </button>
+          ) : null}
           {showStop ? (
             <button type="button" className="primary stop" onClick={() => void stop()}>
               Stop
@@ -465,7 +560,7 @@ export function App() {
               : disposition === "terminal"
                 ? "Blocked — use the terminal."
                 : working
-                  ? "Working — Queue adds a follow-up."
+                  ? "Working — Queue adds a follow-up; ⚡ Interrupt & send cuts in."
                   : transcribing
                     ? "Transcribing…"
                     : recording

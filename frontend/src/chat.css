@@ -59,6 +59,52 @@
 
 .turn {
   max-width: 100%;
+  animation: turnIn 160ms ease-out;
+}
+
+@keyframes turnIn {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+}
+
+/* The in-flight turn breathes on its left edge and types a caret after the
+   last narration block: the transcript reads as live, not repainted. */
+
+.turn.assistant.live {
+  border-left: 3px solid var(--working);
+  animation: livePulse 2.4s ease-in-out infinite;
+}
+
+@keyframes livePulse {
+  50% {
+    border-left-color: var(--border-subtle);
+  }
+}
+
+.turn.assistant.live .md > :last-child::after {
+  content: "▍";
+  color: var(--working);
+  margin-left: 1px;
+  animation: caretBlink 1s steps(1) infinite;
+}
+
+@keyframes caretBlink {
+  50% {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .turn,
+  .turn.assistant.live {
+    animation: none;
+  }
+
+  .turn.assistant.live .md > :last-child::after {
+    animation: none;
+  }
 }
 
 .turn.user {
@@ -334,6 +380,35 @@ details.tool.error > summary {
 .composer button.primary.stop {
   background: var(--danger);
   color: #fff;
+}
+
+/* The explicit cut-in action while the agent works (barge-in analog). */
+
+.composer button.interrupt {
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  padding: 9px 12px;
+  cursor: pointer;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.composer button.interrupt:hover {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.composer button.interrupt:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.mic-meter {
+  flex-shrink: 0;
+  align-self: center;
+  color: var(--danger);
 }
 
 .composer-note {

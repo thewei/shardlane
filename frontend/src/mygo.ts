@@ -105,6 +105,17 @@ export const chat = {
     return call("chat.CancelQueued");
   },
   /**
+   * InterruptAndSend is the explicit "cut in" path (the moshi barge-in analog):
+   * one Escape stops the running turn, a short settle lets the TUI land on its
+   * input box, then the prompt delivers via the canonical agent.prompt
+   * transaction regardless of the now-stale working disposition. A ready
+   * disposition skips the Escape (plain send); terminal-bound agents are
+   * refused; a failed Escape aborts instead of typing into a running turn.
+   */
+  interruptAndSend(text: string): Promise<ChatBridgeState> {
+    return call("chat.InterruptAndSend", text);
+  },
+  /**
    * ListFiles lists the chat pane's project directory entries matching the
    * composer's typed @ token (shallow; a "sub/dir/" prefix descends into the
    * subdirectory). Bounded, contains-match, dotfiles only when asked for.
