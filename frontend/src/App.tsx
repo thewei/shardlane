@@ -27,6 +27,8 @@ export function App() {
   const [sending, setSending] = useState(false);
   const [showJump, setShowJump] = useState(false);
   const [loadingOlder, setLoadingOlder] = useState(false);
+  const [completions, setCompletions] = useState<string[]>([]);
+  const [completionPick, setCompletionPick] = useState(0);
   const [recording, setRecording] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
   const [voiceError, setVoiceError] = useState("");
@@ -129,6 +131,38 @@ export function App() {
     if (conversationId) sessionStorage.setItem(draftKey(conversationId), draft);
   }, [draft, conversationId]);
 
+  // @ completion: when the draft ends in an @token (no whitespace after
+  // the last "@"), suggest the pane project's matching entries.
+  useEffect(() => {
+    const at = draft.lastIndexOf("@");
+    if (at === -1) {
+      setCompletions([]);
+      return;
+    }
+    const token = draft.slice(at + 1);
+    if (/\s/.test(token)) {
+      setCompletions([]);
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      chat.listFiles(token)
+        .then((list) => {
+          setCompletions(list ?? []);
+          setCompletionPick(0);
+        })
+        .catch(() => setCompletions([]));
+    }, 120);
+    return () => window.clearTimeout(timer);
+  }, [draft]);
+
+  const acceptCompletion = (index: number) => {
+    const at = draft.lastIndexOf("@");
+    if (at === -1 || completions[index] === undefined) return;
+    setDraft(`${draft.slice(0, at + 1)}${completions[index]} `);
+    setCompletions([]);
+    composerRef.current?.focus();
+  };
+
   // Auto-grow the composer up to the viewport cap.
   useEffect(() => {
     const el = composerRef.current;
@@ -187,6 +221,29 @@ export function App() {
   };
 
   const onKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // The @ completion list owns navigation keys while it is open.
+    if (completions.length > 0) {
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        setCompletionPick((pick) => (pick + 1) % completions.length);
+        return;
+      }
+      if (event.key === "ArrowUp") {
+        event.preventDefault();
+        setCompletionPick((pick) => (pick - 1 + completions.length) % completions.length);
+        return;
+      }
+      if (event.key === "Tab" || event.key === "Enter") {
+        event.preventDefault();
+        if (!event.nativeEvent.isComposing) acceptCompletion(completionPick);
+        return;
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setCompletions([]);
+        return;
+      }
+    }
     // Enter sends on the ready disposition (chat convention); IME
     // composition never sends — a half-typed candidate must not commit.
     if (event.key !== "Enter" || event.shiftKey) return;
@@ -339,6 +396,23 @@ export function App() {
             <button type="button" onClick={cancelQueued}>
               Cancel
             </button>
+          </div>
+        ) : null}
+        {completions.length > 0 ? (
+          <div className="completions">
+            {completions.map((name, index) => (
+              <button
+                key={name}
+                type="button"
+                className={index === completionPick ? "pick" : ""}
+                onMouseDown={(event) => {
+                  event.preventDefault(); // keep the textarea focus
+                  acceptCompletion(index);
+                }}
+              >
+                {name}
+              </button>
+            ))}
           </div>
         ) : null}
         <div className="composer-row">

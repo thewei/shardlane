@@ -11,6 +11,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -325,6 +326,48 @@ func (b *ChatBridge) AnswerInteraction(ctx context.Context, interactionID, optio
 		state = b.shell.chatBridgeState()
 	})
 	return state, err
+}
+
+// ListFiles lists the chat pane's project directory entries matching the
+// composer's typed @ token (shallow; a "sub/dir/" prefix descends into the
+// subdirectory). Bounded, contains-match, dotfiles only when asked for.
+func (b *ChatBridge) ListFiles(ctx context.Context, token string) ([]string, error) {
+	var dir string
+	b.shell.callOnWindow(func() {
+		if a := b.shell.paneAgent(b.shell.chatPaneID); a != nil && a.CWD != "" {
+			dir = a.CWD
+		}
+	})
+	if dir == "" {
+		return nil, nil
+	}
+	sub, name := "", strings.ToLower(strings.TrimPrefix(token, "./"))
+	if at := strings.LastIndex(name, "/"); at != -1 {
+		sub, name = name[:at], name[at+1:]
+	}
+	entries, err := os.ReadDir(filepath.Join(dir, filepath.FromSlash(sub)))
+	if err != nil {
+		return nil, nil // unreadable or gone: no suggestions, no error spam
+	}
+	found := make([]string, 0, 8)
+	for _, entry := range entries {
+		entryName := entry.Name()
+		if strings.HasPrefix(entryName, ".") && !strings.HasPrefix(name, ".") {
+			continue
+		}
+		if name != "" && !strings.Contains(strings.ToLower(entryName), name) {
+			continue
+		}
+		label := entryName
+		if entry.IsDir() {
+			label += "/"
+		}
+		found = append(found, label)
+		if len(found) >= 20 {
+			break
+		}
+	}
+	return found, nil
 }
 
 // callOnWindow runs fn on the window UI lane and waits for it; inline when

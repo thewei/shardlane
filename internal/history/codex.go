@@ -23,6 +23,7 @@ type codexParseState struct {
 	model          *string
 	source         *string
 	tokensUsed     int64
+	lastContext    *int64
 	createdAt      int64
 	updatedAt      int64
 	unknownLines   uint32
@@ -96,6 +97,7 @@ func rolloutNativeID(stem string) string {
 
 func (s *codexParseState) pushCodex(message TranscriptMessage) {
 	message.Seq = int64(len(s.messages))
+	message.ContextTokens = s.lastContext
 	s.messages = append(s.messages, message)
 }
 
@@ -235,6 +237,12 @@ func (s *codexParseState) feedCodexLine(line string) {
 				if usage, ok := info["total_token_usage"].(map[string]any); ok {
 					if total, ok := usage["total_tokens"].(float64); ok {
 						s.tokensUsed = int64(total)
+					}
+					if last, ok := usage["last_token_usage"].(map[string]any); ok {
+						if total, ok := last["total_tokens"].(float64); ok && total > 0 {
+							used := int64(total)
+							s.lastContext = &used
+						}
 					}
 				}
 			}

@@ -105,6 +105,14 @@ export const chat = {
     return call("chat.CancelQueued");
   },
   /**
+   * ListFiles lists the chat pane's project directory entries matching the
+   * composer's typed @ token (shallow; a "sub/dir/" prefix descends into the
+   * subdirectory). Bounded, contains-match, dotfiles only when asked for.
+   */
+  listFiles(token: string): Promise<string[]> {
+    return call("chat.ListFiles", token);
+  },
+  /**
    * Older pages the history-bound transcript one window up: the load runs on
    * the background lane and the refreshed projection arrives through the
    * chat:updated event; the returned state is the pre-load snapshot.
