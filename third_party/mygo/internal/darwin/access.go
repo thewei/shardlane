@@ -33,6 +33,8 @@ type accessElement struct {
 	node     platform.AccessNode
 	parent   id
 	children []uint64
+	// webView is the web view whose page is the first child.
+	webView *window
 	// chosen are the rows of a list or table that are chosen, and count
 	// its rows, built or not.
 	chosen []uint64
@@ -377,6 +379,7 @@ func (s *surface) UpdateAccessibility(tree *platform.AccessTree) {
 			children[n.Parent] = append(children[n.Parent], n.ID)
 			childObjs[n.Parent] = append(childObjs[n.Parent], objs[i])
 		}
+		grafted := map[*window]bool{}
 		for i, n := range tree.Nodes {
 			el := s.elements[n.ID]
 			parent := s.view
@@ -387,10 +390,25 @@ func (s *surface) UpdateAccessibility(tree *platform.AccessTree) {
 				el.parent = parent
 				send(el.obj, "setAccessibilityParent:", uintptr(parent))
 			}
-			if !slices.Equal(el.children, children[i]) {
-				el.children = children[i]
-				send(el.obj, "setAccessibilityChildren:", uintptr(nsArray(childObjs[i]...)))
+			// The page of a web view is inside the element showing it.
+			var web *window
+			if v, ok := n.WebView.(*window); ok && v.host == s.w && !v.closed && !grafted[v] {
+				web, grafted[v] = v, true
+				v.accessParent = el.obj
+			}
+			if !slices.Equal(el.children, children[i]) || el.webView != web {
+				el.children, el.webView = children[i], web
+				kids := childObjs[i]
+				if web != nil {
+					kids = append([]id{web.web}, kids...)
+				}
+				send(el.obj, "setAccessibilityChildren:", uintptr(nsArray(kids...)))
 				changed = true
+			}
+		}
+		for _, v := range s.w.webViews {
+			if !grafted[v] {
+				v.accessParent = 0
 			}
 		}
 		// Lists and tables: their rows, those that show, those chosen, and
@@ -478,6 +496,9 @@ func (s *surface) UpdateAccessibility(tree *platform.AccessTree) {
 
 // destroyAccess releases the elements of a surface.
 func (s *surface) destroyAccess() {
+	for _, v := range s.w.webViews {
+		v.accessParent = 0
+	}
 	for nid, el := range s.elements {
 		postNote(el.obj, "AXUIElementDestroyed")
 		delete(s.w.b.byAccess, el.obj)

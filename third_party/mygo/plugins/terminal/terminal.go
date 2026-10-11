@@ -38,6 +38,7 @@ import (
 
 	"github.com/egoist/mygo/plugins/terminal/internal/pty"
 	"github.com/egoist/mygo/plugins/terminal/internal/vt"
+	"github.com/egoist/mygo/ui"
 )
 
 // Options configure a terminal.
@@ -102,6 +103,32 @@ type Options struct {
 	OnExit   func(code int)
 	OnBell   func()
 	OnNotify func(title, body string)
+
+	// OpenLink takes what a Command+click (Control+click elsewhere)
+	// opens: a hyperlink (OSC 8), a URL printed as text, or, only with
+	// OpenLink set, a file path printed as text (absolute, ~/, ./ or ../,
+	// one with a slash, or a file name with a :line), as printed, a
+	// :line:col suffix included; a relative one is the program's, as of
+	// Dir. It runs on the main thread and reports whether it opened the
+	// link; a hyperlink or a URL it leaves, or every one when it is nil,
+	// opens with the system (Context.OpenURL), and a path it leaves does
+	// nothing.
+	OpenLink func(link string) bool
+	// OnPaste sees a paste (Command+V, Control+Shift+V elsewhere, or a
+	// Paste menu item) before the program gets it, on the main thread:
+	// text is the clipboard's text, empty when it holds none, as with an
+	// image. It reports whether it took the paste; a paste taken sends
+	// nothing, as when an app uploads the clipboard's files for a remote
+	// program and pastes their paths instead.
+	OnPaste func(text string) bool
+	// OnKey sees a key press before the terminal encodes it, on the main
+	// thread, and reports whether it took the key; a key taken sends
+	// nothing, neither the text it types nor its release. Unlike a
+	// shortcut of an element around the view, which runs with the next
+	// frame, it keeps its place among the keys typed after it, as does
+	// what it sends with Send. A key that only types text may come as its
+	// text alone, as on Linux, which OnKey does not see.
+	OnKey func(mods ui.Modifiers, key ui.Key) bool
 }
 
 // CursorStyle is the shape of the cursor.

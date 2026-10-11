@@ -150,13 +150,21 @@ type surface struct {
 	input     platform.TextInputState
 	// lastKey is a copy of the last key press, which a context menu the
 	// key opens shows for.
-	lastKey      ptr
+	lastKey ptr
+	// pressing is the key press being handled, which the Tab moving the
+	// focus to a web view passes on to it (TabInto).
+	pressing     ptr
 	lastPointer  ptr
 	dragContext  ptr
 	dragRequest  *platform.DragRequest
 	dragError    error
 	dragCanceled bool
 	dataDrop     *gtkDataDrop
+	// layers is the overlay of the area over web, the layout of the web
+	// views under it, and placed where the content shows them
+	// (webview.go), once the window has some.
+	layers, web ptr
+	placed      []platform.WebViewPlacement
 }
 
 // GDK event masks of the drawing area.
@@ -215,10 +223,14 @@ func (s *surface) newArea(gl bool) {
 }
 
 // contentWidget returns the widget showing the window's content: the web
-// view or the surface.
+// view or the surface, in the overlay over its web views once it has
+// some.
 func (w *window) contentWidget() ptr {
-	if w.surface != nil {
-		return w.surface.area
+	if s := w.surface; s != nil {
+		if s.layers != 0 {
+			return s.layers
+		}
+		return s.area
 	}
 	return w.web
 }
@@ -406,12 +418,16 @@ func (s *surface) PresentPixels(pix []byte, stride, width, height int) {
 	if len(pix) < stride*height || width == 0 || height == 0 {
 		return
 	}
-	const formatARGB32, operatorSource = 0, 1 // premultiplied, native endian: BGRA
+	const formatARGB32, operatorSource, operatorOver = 0, 1, 2 // premultiplied, native endian: BGRA
 	img := cairoImageSurfaceForData(&pix[0], formatARGB32, int32(width), int32(height), int32(stride))
 	scale := float64(max(gtkWidgetGetScaleFactor(s.area), 1))
 	cairoSurfaceSetDeviceScale(img, scale, scale)
 	cairoSetSourceSurface(s.cr, img, 0, 0)
-	cairoSetOperator(s.cr, operatorSource)
+	op := int32(operatorSource)
+	if s.layers != 0 {
+		op = operatorOver // over the web views, which holes show
+	}
+	cairoSetOperator(s.cr, op)
 	cairoPaint(s.cr)
 	cairoSurfaceDestroy(img)
 }
@@ -755,6 +771,10 @@ func initSurfaceCallbacks() {
 		k := keyvalKey(field[uint32](event, 28))
 		if k == platform.KeyUnknown {
 			return false
+		}
+		if kind == platform.KeyPressed {
+			s.pressing = event
+			defer func() { s.pressing = 0 }()
 		}
 		s.send(platform.SurfaceEvent{Kind: kind, Key: k, Mods: gdkMods(field[uint32](event, 24))})
 		return true

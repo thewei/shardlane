@@ -53,6 +53,8 @@ type editor struct {
 	readOnly           bool   // selectable text: selected and copied, not edited
 	source             string // the text of selectable text
 	password           bool
+	// onPaste sees a paste before it is inserted (OnPaste).
+	onPaste func(text string) bool
 	// leaveEmptyBackspace leaves Backspace to shortcuts while the text is
 	// empty, as a token field's input does to take out a token.
 	leaveEmptyBackspace bool

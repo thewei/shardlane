@@ -189,6 +189,9 @@ var (
 	gdkDeviceGetPosition        func(dev ptr, screen *ptr, x, y *int32)
 	gdkWindowGetDevicePosition  func(w, dev ptr, x, y *int32, mask *uint32) ptr
 	gdkWindowGetDisplay         func(w ptr) ptr
+	gdkWindowGetFrameExtents    func(w ptr, r *gdkRectangle)
+	gdkWindowGetOrigin          func(w ptr, x, y *int32) int32
+	gdkWindowGetGeometry        func(w ptr, x, y, width, height *int32)
 	gdkWindowGetCursor          func(w ptr) ptr
 	gdkWindowSetCursor          func(w, cursor ptr)
 	gdkCursorNewFromName        func(d ptr, name *byte) ptr
@@ -266,6 +269,7 @@ var (
 	gtkWidgetHide                       func(w ptr)
 	gtkWidgetDestroy                    func(w ptr)
 	gtkWidgetGetVisible                 func(w ptr) bool
+	gtkWidgetGetMapped                  func(w ptr) bool
 	gtkWidgetSetOpacity                 func(w ptr, v float64)
 	gtkWidgetGetOpacity                 func(w ptr) float64
 	gtkWidgetGrabFocus                  func(w ptr)
@@ -601,6 +605,9 @@ func load() error {
 	mustBind(d, &gdkDeviceGetPosition, "gdk_device_get_position")
 	mustBind(d, &gdkWindowGetDevicePosition, "gdk_window_get_device_position")
 	mustBind(d, &gdkWindowGetDisplay, "gdk_window_get_display")
+	mustBind(d, &gdkWindowGetFrameExtents, "gdk_window_get_frame_extents")
+	mustBind(d, &gdkWindowGetOrigin, "gdk_window_get_origin")
+	mustBind(d, &gdkWindowGetGeometry, "gdk_window_get_geometry")
 	mustBind(d, &gdkWindowGetCursor, "gdk_window_get_cursor")
 	mustBind(d, &gdkWindowSetCursor, "gdk_window_set_cursor")
 	mustBind(d, &gdkCursorNewFromName, "gdk_cursor_new_from_name")
@@ -666,6 +673,7 @@ func load() error {
 	mustBind(t, &gtkWidgetHide, "gtk_widget_hide")
 	mustBind(t, &gtkWidgetDestroy, "gtk_widget_destroy")
 	mustBind(t, &gtkWidgetGetVisible, "gtk_widget_get_visible")
+	mustBind(t, &gtkWidgetGetMapped, "gtk_widget_get_mapped")
 	mustBind(t, &gtkWidgetSetOpacity, "gtk_widget_set_opacity")
 	mustBind(t, &gtkWidgetGetOpacity, "gtk_widget_get_opacity")
 	mustBind(t, &gtkWidgetGrabFocus, "gtk_widget_grab_focus")

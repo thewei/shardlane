@@ -396,7 +396,7 @@ func TestRouterFocus(t *testing.T) {
 func TestRouterTransition(t *testing.T) {
 	r := NewRouter("/notes")
 	var shortcuts int
-	tt := coreNewTester(func(c *context) {
+	tt, now := clockTester(func(c *context) {
 		r.coreView(c, func(rt *Route) {
 			coreText(c, "Page "+rt.Path())
 			if c.Shortcut(Cmd, KeyS) {
@@ -405,11 +405,11 @@ func TestRouterTransition(t *testing.T) {
 		})
 	}, 400, 300)
 	partway := func() {
-		time.Sleep(60 * time.Millisecond)
+		*now = now.Add(60 * time.Millisecond)
 		tt.Frame()
 	}
 	settle := func() {
-		time.Sleep(300 * time.Millisecond)
+		*now = now.Add(300 * time.Millisecond)
 		tt.Frame()
 	}
 	// at returns where the text s is, unclipped.

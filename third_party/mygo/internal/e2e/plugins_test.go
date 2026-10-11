@@ -262,7 +262,7 @@ func TestSQLitePlugin(t *testing.T) {
 	}
 	waitFor(t, other, "window.plugins")
 	got, err = mygo.EvalAs[string](other.Page(), fmt.Sprintf(`mygo.call("plugin:sqlite.Query", %q, "SELECT 1", []).then(() => "allowed", e => e.message)`, id))
-	if err != nil || !strings.Contains(got, "another window") {
+	if err != nil || !strings.Contains(got, "another page") {
 		t.Fatalf("SQLite ownership: %q %v", got, err)
 	}
 	if err := w.Page().LoadURL("app://localhost/plugins.html"); err != nil {

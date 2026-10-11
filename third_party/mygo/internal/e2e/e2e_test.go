@@ -422,7 +422,12 @@ func TestEarlyWindow(t *testing.T) {
 // which may take longer than that on a slow runner.
 func waitFor(t testing.TB, w *mygo.Window, expr string) {
 	t.Helper()
-	p := w.Page()
+	waitForPage(t, w.Page(), expr)
+}
+
+// waitForPage is waitFor for a page, as a web view's.
+func waitForPage(t testing.TB, p *mygo.Page, expr string) {
+	t.Helper()
 	check := "!!(" + expr + ")"
 	start := time.Now()
 	first, cancel := context.WithTimeout(t.Context(), time.Minute)
@@ -553,6 +558,33 @@ func TestChannels(t *testing.T) {
 	}
 }
 
+// TestReloadLoadHTML checks that reloading a page LoadHTML loaded, by the
+// app or the page, loads the HTML again, where the web view would load its
+// URL: a blank page, or what its base URL serves.
+func TestReloadLoadHTML(t *testing.T) {
+	w := newWindow(t, mygo.WindowOptions{Hidden: true})
+	reloads := []struct {
+		name   string
+		reload func()
+	}{
+		{"Reload", w.Page().Reload},
+		{"location.reload()", func() { w.Page().Eval("setTimeout(() => location.reload())") }},
+	}
+	for _, base := range []string{"", "app://localhost/"} {
+		w.Page().LoadHTML(fmt.Sprintf("<p id=html data-base=%q>html</p>", base), base)
+		shown := fmt.Sprintf("document.getElementById('html')?.dataset.base === %q", base)
+		for _, r := range reloads {
+			t.Logf("base URL %q, %s", base, r.name)
+			waitFor(t, w, shown)
+			if _, err := w.Page().Eval("window.before = true"); err != nil {
+				t.Fatal(err)
+			}
+			r.reload()
+			waitFor(t, w, "!window.before && "+shown)
+		}
+	}
+}
+
 func TestEvalForms(t *testing.T) {
 	w := newWindow(t, mygo.WindowOptions{Hidden: true})
 	w.Page().LoadHTML("<p>eval</p>", "")
@@ -678,8 +710,9 @@ func TestFullScreenToolbar(t *testing.T) {
 	}
 }
 
-// AppKit lays the title bar out again when the title or the appearance
-// changes, which must not move the traffic lights back.
+// AppKit lays the title bar out again when the title or the appearance,
+// the application's or the window's own, changes, which must not move the
+// traffic lights back.
 func TestTrafficLightPosition(t *testing.T) {
 	w := newWindow(t, mygo.WindowOptions{Width: 400, Height: 240, TitleBarStyle: mygo.TitleBarHidden,
 		TrafficLightPosition: &mygo.Point{X: 18, Y: 19}})
@@ -704,6 +737,8 @@ func TestTrafficLightPosition(t *testing.T) {
 		mygo.Theme.SetSource(mygo.ThemeDark)
 	}
 	placed("after the appearance changed")
+	setWindowAppearance(w, !mygo.Theme.IsDark())
+	placed("after the window took an appearance of its own")
 }
 
 // GTK gives frameless windows no resize borders, so the outer pixels of
@@ -782,8 +817,8 @@ func TestWindowGeometryAndState(t *testing.T) {
 	}
 	cw, ch := w.ContentSize()
 	widthOK := cw == 420
-	if runtime.GOOS == "windows" {
-		widthOK = cw > 380 && cw <= 420 // the bounds include the resize borders
+	if runtime.GOOS != "darwin" {
+		widthOK = cw > 380 && cw <= 420 // the bounds include the borders
 	}
 	if !widthOK || ch > 320 || (runtime.GOOS != "linux" && ch == 320) {
 		t.Errorf("content size = %dx%d, expected the title bar to be excluded", cw, ch)
@@ -812,6 +847,45 @@ func TestWindowGeometryAndState(t *testing.T) {
 	if z := w.Page().ZoomFactor(); z != 1.5 {
 		t.Errorf("zoom = %v", z)
 	}
+}
+
+// ContentBounds is where the page is on the screen: inside Bounds, below
+// the title bar and borders of a window manager's frame and below a menu
+// bar. SetContentBounds puts the page there.
+func TestContentBounds(t *testing.T) {
+	mygo.App.SetMenu(mygo.NewMenu([]*mygo.MenuItem{{Label: "App", Submenu: []*mygo.MenuItem{{Label: "Item"}}}}))
+	defer mygo.App.SetMenu(nil)
+	w := newWindow(t, mygo.WindowOptions{Width: 400, Height: 300, X: 120, Y: 140})
+	w.Page().LoadHTML(`<body style="margin:0;height:100vh" onmousedown="window.at=[event.clientX,event.clientY]"></body>`, "")
+	waitFor(t, w, "document.readyState === 'complete'")
+	check := func(what string) {
+		t.Helper()
+		b, c := w.Bounds(), w.ContentBounds()
+		if c.X < b.X || c.Y < b.Y || c.X+c.Width > b.X+b.Width || c.Y+c.Height > b.Y+b.Height {
+			t.Fatalf("%s: content %+v not inside the window %+v", what, c, b)
+		}
+		page := func() [2]int {
+			got, _ := mygo.EvalAs[[2]int](w.Page(), "[innerWidth, innerHeight]")
+			return got
+		}
+		eventually(t, what+": the page as large as the content", func() bool { return page() == [2]int{c.Width, c.Height} })
+		// A press at the content's top-left corner lands there in the page.
+		if !movePointer(c.X+3, c.Y+2) {
+			return
+		}
+		pressButton(true)
+		pressButton(false)
+		waitFor(t, w, "window.at")
+		if at, _ := mygo.EvalAs[[2]int](w.Page(), "window.at"); at != [2]int{3, 2} {
+			t.Errorf("%s: a press at the content's (3, 2), content %+v in the window %+v, reached the page at %v", what, c, b, at)
+		}
+		w.Page().Eval("window.at = undefined")
+	}
+	check("a new window")
+	want := mygo.Rectangle{X: 200, Y: 180, Width: 360, Height: 240}
+	w.SetContentBounds(want)
+	eventually(t, "the content where it was put", func() bool { return w.ContentBounds() == want })
+	check("after SetContentBounds")
 }
 
 // A window the user cannot resize still takes the sizes the app gives it,
@@ -2378,6 +2452,17 @@ func TestContentWindowFileDrop(t *testing.T) {
 	if e := events.Load(); e == nil || !slices.Equal(e.Paths, []string{"/tmp/c.txt"}) || e.X != 300 || e.Y != 250 {
 		t.Errorf("OnFileDrop got %+v", e)
 	}
+	// Finder drags file reference URLs (file:///.file/id=…), which reach
+	// the app as paths.
+	file := filepath.Join(t.TempDir(), "a b.txt")
+	if err := os.WriteFile(file, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	file, _ = filepath.EvalSymlinks(file)
+	if _, dropped, _ := dropFiles(w, 50, 50, []string{file}); !dropped {
+		t.Fatal("the drop zone did not take a file that exists")
+	}
+	eventually(t, "the path of the file in the zone", func() bool { return slices.Equal(got(), []string{file}) })
 }
 
 // accessNode is an element as assistive technology reads it.

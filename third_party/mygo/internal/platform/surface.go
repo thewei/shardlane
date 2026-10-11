@@ -43,6 +43,16 @@ type Surface interface {
 	CancelDataDrag()
 	// SetDropFormats registers the formats the content can receive.
 	SetDropFormats([]transfer.Format)
+	// NewWebView creates a web view under the surface, hidden until
+	// PlaceWebViews shows it. Of opts, the options of a webview apply
+	// (UserScripts, Schemes, DevTools, UserAgent, Zoom, BackgroundColor,
+	// Transparent); h hears of its page.
+	NewWebView(opts *WindowOptions, h WindowHandler) (WebView, error)
+	// PlaceWebViews shows the web views of the surface where the content's
+	// last frame shows them, in the order it painted them, and hides the
+	// others, which keep their pages. A press on one, which takes it,
+	// comes as WebViewPress.
+	PlaceWebViews(views []WebViewPlacement)
 }
 
 // DamageSurface is a Surface that shows a frame drawn in memory by what
@@ -125,6 +135,11 @@ type SurfaceNative struct {
 // RectF is a rectangle in DIPs with fractional coordinates.
 type RectF struct{ X, Y, W, H float64 }
 
+// Contains reports whether the point is inside r.
+func (r RectF) Contains(x, y float64) bool {
+	return x >= r.X && y >= r.Y && x < r.X+r.W && y < r.Y+r.H
+}
+
 // SurfaceEventKind is the kind of a SurfaceEvent.
 type SurfaceEventKind uint8
 
@@ -185,6 +200,20 @@ const (
 	DataDragOver
 	DataDragLeave
 	DataDrop
+	// SurfaceRenew reports that the native objects a GPU renderer draws
+	// into changed (Surface.Native), as a window of Windows composes its
+	// frames once it has web views: the content makes its renderer again.
+	SurfaceRenew
+	// WebViewPress reports that Button went down at X, Y on a web view
+	// the content shows there (Surface.PlaceWebViews), which takes the
+	// press and what follows: the content notes it, as popovers close for
+	// a press outside them, but handles none of it.
+	WebViewPress
+	// WebViewTabOut reports that Tab moved the keyboard out of WebView
+	// past its page's last element, or Shift+Tab (Mods) past its first:
+	// the surface has the keyboard again, and the content moves the focus
+	// on from the web view's element.
+	WebViewTabOut
 )
 
 // SurfaceEvent is input on a Surface, or a change of it.
@@ -216,6 +245,8 @@ type SurfaceEvent struct {
 	// ID and Action are AccessAction's.
 	ID     uint64
 	Action AccessActionKind
+	// WebView is WebViewTabOut's.
+	WebView WebView
 }
 
 // Modifiers are the modifier keys held during an event.

@@ -42,6 +42,8 @@ func (rt *engine) event(ev platform.SurfaceEvent) (taken bool) {
 	case platform.PointerUp:
 		rt.pointerMove(x, y)
 		rt.pointerUp(ev.Button, ev.Clicks)
+	case platform.WebViewPress:
+		rt.webViewPress(x, y, ev.Button)
 	case platform.PointerLeave:
 		rt.pointerIn = false
 		if rt.pressed == nil {
@@ -663,10 +665,16 @@ func (rt *engine) moveFocus(back bool) {
 	rt.focused = order[next]
 	rt.focusVisible = true
 	rt.blinkStart = time.Now()
-	if s := rt.states[rt.focused]; s != nil && s.editor != nil {
+	s := rt.states[rt.focused]
+	if s != nil && s.editor != nil {
 		s.editor.selectAll()
 	}
 	rt.reveal(rt.focused)
+	if s != nil && s.webView != nil {
+		// Its page takes the keyboard, and Tab leaving it moves on from
+		// here (webViewTabOut).
+		rt.host.tabIntoWebView(s.webView, back)
+	}
 }
 
 // routeKeys delivers the keys pressed since the last frame to the
@@ -709,6 +717,8 @@ func (rt *engine) routeKeys() {
 		}
 		if found {
 			rt.delivered = append(rt.delivered, shortcutReg{id: target, mods: k.mods, key: k.key})
+		} else if k == (keyEvent{0, KeyEscape}) {
+			rt.host.escape()
 		}
 	}
 	rt.keys = rt.keys[:0]
@@ -1079,6 +1089,16 @@ func (e *node) Submitted() bool {
 	e.c.rt.applyInputs()
 	return e.st.submitted
 }
+
+// Dismissed reports whether pressing Escape or clicking outside closed the
+// dialog or popover (Modal, DialogBase, Popover, PopoverBase) returning the
+// element, in the frame it did, setting its *open to false: one that must
+// stay open sets it back to true.
+//
+//	if ui.Modal(c, &app.editing, edit).Dismissed() && app.unsaved {
+//		app.editing = true
+//	}
+func (e *node) Dismissed() bool { return e.dismissed }
 
 // scrollbarPress starts dragging the thumb of the scroll container under
 // the pointer when the press is on its scroll bar, or pages toward the

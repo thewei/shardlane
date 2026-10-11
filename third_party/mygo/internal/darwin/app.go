@@ -332,8 +332,6 @@ func registerAppDelegate() {
 		method("applicationShouldTerminateAfterLastWindowClosed:", func(self id, _ objc.SEL, app id) bool { return false }),
 		method("observeValueForKeyPath:ofObject:change:context:", func(self id, _ objc.SEL, keyPath, object, change id, ctx uintptr) {
 			if goString(keyPath) == "effectiveAppearance" {
-				// AppKit lays the title bars out again after telling us.
-				theBackend.post(theBackend.layoutTrafficLights)
 				theBackend.h.ThemeChanged()
 			}
 		}),

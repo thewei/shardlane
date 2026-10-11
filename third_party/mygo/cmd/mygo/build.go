@@ -26,8 +26,9 @@ func runBuild(args []string) error {
 	flags := newFlags("build", "[flags] [dir]", `Builds a production app for each platform. It runs buildCommand from
 mygo.json, then compiles the app with the frontendDist files embedded, served
 at mygo://localhost/. macOS gets a signed .app bundle and a
-"<name> <version>.dmg" disk image whose window invites dragging the app to
-Applications; other platforms get an executable. Linux also gets a Debian
+"<name> <version> <arch>.dmg" disk image, without the arch for
+darwin/universal, whose window invites dragging the app to Applications;
+other platforms get an executable. Linux also gets a Debian
 package, and the app as <name>-<version>-linux-<arch>.tar.gz with
 install.sh, which installs it for the user in ~/.local, where it can update
 itself. The contents of the
@@ -38,8 +39,8 @@ platform, such as resources/darwin or resources/linux-amd64, only ship with
 that platform's apps; darwin/universal combines darwin-arm64 and
 darwin-amd64. MyGo needs no cgo, so any platform can be compiled from any
 machine; signing and disk images need macOS. Windows also gets
-"<name> Setup <version>.exe", made with NSIS, which mygo build downloads
-on Windows when it is not installed.
+"<name> Setup <version> <arch>.exe", made with NSIS, which mygo build
+downloads on Windows when it is not installed.
 
 Set macos.signingIdentity in mygo.json (or -sign) to a Developer ID to ship
 outside the Mac App Store, and macos.notarize to notarize the disk image.
@@ -83,7 +84,7 @@ update-<platform>.json: publish them where updates point to.`)
 	started := time.Now()
 	// The TypeScript client comes first: the frontend build type-checks and
 	// bundles it.
-	if err := writeClient(context.Background(), c); err != nil {
+	if err := writeClient(context.Background(), c, false); err != nil {
 		return err
 	}
 	if c.BuildCommand != "" && !*skipBuildCommand {
@@ -259,7 +260,7 @@ func buildPlatform(c *Config, goos, goarch string, opts buildOptions) ([]string,
 		case runtime.GOOS != "darwin":
 			warnf("Skipping the disk image: it needs macOS")
 		default:
-			dmg, err := buildDMG(c, app, stage, opts)
+			dmg, err := buildDMG(c, app, stage, goarch, opts)
 			if err != nil {
 				return nil, err
 			}
@@ -312,7 +313,7 @@ func buildPlatform(c *Config, goos, goarch string, opts buildOptions) ([]string,
 		}
 	}
 	if goos == "windows" {
-		setup, err := writeInstaller(c, stage, opts.work, name+".exe", installed)
+		setup, err := writeInstaller(c, stage, opts.work, name+".exe", goarch, installed)
 		if err != nil {
 			return nil, err
 		}

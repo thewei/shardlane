@@ -391,8 +391,11 @@ const (
 
 	idcArrow = 32512
 
-	dwmwaUseImmersiveDarkMode = 20
-	dwmwaSystemBackdropType   = 38
+	dwmwaUseImmersiveDarkMode   = 20
+	dwmwaWindowCornerPreference = 33
+	dwmwaSystemBackdropType     = 38
+
+	dwmwcpRound = 2 // DWM_WINDOW_CORNER_PREFERENCE
 
 	lwaAlpha = 0x2
 	ulwAlpha = 0x2

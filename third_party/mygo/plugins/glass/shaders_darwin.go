@@ -6,7 +6,7 @@ package glass
 
 // metalSum is the SHA-256 of what metalLibrary was compiled from: glass.metal
 // within the renderer's head and tail.
-const metalSum = "0ffcf0f494c8b21f98ebc71f69b79060c0a563280e1485bb9f3fdc1d84fdbd70"
+const metalSum = "c6bdf17ac0cd05d21207ca3cea2e4682e3063041f980509643abef1a0cd0be10"
 
 var metalLibrary = []byte{
 	0x4d, 0x54, 0x4c, 0x42, 0x01, 0x80, 0x02, 0x00, 0x06, 0x00, 0x00, 0x81, 0x0c, 0x00, 0x00, 0x00,
@@ -1148,7 +1148,7 @@ var metalLibrary = []byte{
 
 // blurMetalSum is the SHA-256 of what blurMetalLibrary was compiled from: blur.metal
 // within the renderer's head and tail.
-const blurMetalSum = "6435b6d936ba24c723238f3f252f1a85366ab9dafd6acaf6c416bd684166c585"
+const blurMetalSum = "527b51913cdc86665d8835190d5eb3c9d78899e6bf3a4467493554eef37916d5"
 
 var blurMetalLibrary = []byte{
 	0x4d, 0x54, 0x4c, 0x42, 0x01, 0x80, 0x02, 0x00, 0x06, 0x00, 0x00, 0x81, 0x0c, 0x00, 0x00, 0x00,

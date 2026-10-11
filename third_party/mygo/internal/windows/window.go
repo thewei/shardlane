@@ -17,6 +17,10 @@ type window struct {
 	opts   *platform.WindowOptions
 	hwnd   uintptr
 	parent *window
+	// flyout is how a flyout (WindowOptions.Flyout) was placed last, at
+	// flyoutSize.
+	flyout     platform.Flyout
+	flyoutSize platform.Size
 
 	// The WebView2 controller is created asynchronously; calls that need
 	// it wait in pending until it exists, or fail with webViewErr, why it
@@ -49,7 +53,21 @@ type window struct {
 	icons [2]uintptr // small and big, from SetIcon
 	// surface shows the content MyGo draws, in place of the webview.
 	surface *surface
-	saved   struct {
+	// webViews are the web views under the surface (webview_embed.go), and
+	// host the window whose surface a web view is under, which shows it
+	// through its composition controller comp (comp3 its drag and drop,
+	// on runtimes having it; uia the provider of its page for UI
+	// Automation), in the visual webVis inside clipVis, at frame clipped
+	// to clip while shown. focused tells that it has the keyboard, and
+	// cursor is the cursor its page wants.
+	webViews         []*window
+	host             *window
+	comp, comp3, uia uintptr
+	clipVis, webVis  uintptr
+	frame, clip      platform.RectF
+	shown, focused   bool
+	cursor           uintptr
+	saved            struct {
 		style, exStyle uintptr
 		placement      windowPlacement
 	}
@@ -77,6 +95,7 @@ type window struct {
 	zoom         float64
 	devTools     bool
 	htmlFor      map[string]string // LoadHTML documents by the URL they load at
+	htmlNext     bool              // LoadHTML started the next navigation
 	calls        map[int]func(string, error)
 	nextCall     int
 }
@@ -105,17 +124,35 @@ func (b *Backend) NewWindow(o *platform.WindowOptions, h platform.WindowHandler)
 	// style is the window's for life: Windows neither adds it nor removes it
 	// later.
 	w.noRedirect = o.Vibrancy != "" && systemBackdrops() && (!w.hiddenTitleBar && !o.Surface || b.composition() != nil)
+	if o.Flyout != nil {
+		// What the content leaves transparent shows what is behind.
+		w.noRedirect = b.composition() != nil
+	}
 	var owner uintptr
 	if p, ok := o.Parent.(*window); ok && p != nil && !p.closed {
 		w.parent, owner = p, p.hwnd
 	}
 	style, ex := w.styles()
-	w.hwnd = createWindow(ex, windowClass, o.Title, style, 0, 0, 0, 0, owner)
+	class := windowClass
+	if o.Flyout != nil {
+		style, ex = w.flyoutStyles()
+		if o.HasShadow {
+			class = flyoutShadowClass
+		}
+	}
+	w.hwnd = createWindow(ex, class, o.Title, style, 0, 0, 0, 0, owner)
 	if w.hwnd == 0 {
 		return nil, errors.New("mygo: cannot create a window")
 	}
 	b.windows[w.hwnd] = w
-	w.placeInitially()
+	if o.Flyout != nil {
+		if o.HasShadow {
+			w.roundFlyout()
+		}
+		w.PlaceFlyout(*o.Flyout, platform.Size{Width: o.Width, Height: o.Height})
+	} else {
+		w.placeInitially()
+	}
 
 	if !o.Closable {
 		w.SetClosable(false)
@@ -129,7 +166,7 @@ func (b *Backend) NewWindow(o *platform.WindowOptions, h platform.WindowHandler)
 	if o.BackgroundColor != nil {
 		w.SetBackgroundColor(*o.BackgroundColor)
 	}
-	if w.captionless() && w.shadow {
+	if w.captionless() && w.shadow && o.Flyout == nil {
 		w.SetHasShadow(true)
 	}
 	if w.hiddenTitleBar {
@@ -148,7 +185,7 @@ func (b *Backend) NewWindow(o *platform.WindowOptions, h platform.WindowHandler)
 	if b.icon != 0 {
 		w.setIcon(b.icon)
 	}
-	if b.appMenu != nil {
+	if b.appMenu != nil && o.Flyout == nil {
 		w.installMenu(b.appMenu)
 	}
 	if o.Modal && w.parent != nil {
@@ -264,6 +301,14 @@ func (w *window) message(m uint32, wp, lp uintptr) (uintptr, bool) {
 		w.applyTaskbar()
 		return 0, true
 	}
+	if w.opts.Flyout != nil {
+		if r, ok := w.flyoutMessage(m, wp, lp); ok {
+			return r, true
+		}
+	}
+	if m == wmMouseActivate && w.ownsFocusableFlyout() {
+		return maActivateAndEat, true
+	}
 	switch m {
 	case wmClose:
 		if w.h.ShouldClose() {
@@ -289,6 +334,11 @@ func (w *window) message(m uint32, wp, lp uintptr) (uintptr, bool) {
 	case wmMove:
 		if w.controller != 0 {
 			comCall(w.controller, ctlNotifyParentWindowPositionChanged)
+		}
+		for _, v := range w.webViews {
+			if v.controller != 0 {
+				comCall(v.controller, ctlNotifyParentWindowPositionChanged)
+			}
 		}
 		w.h.Moved()
 		return 0, true
@@ -458,6 +508,7 @@ func (w *window) cleanup() {
 	if w.closed {
 		return
 	}
+	w.closeWebViews()
 	w.closed = true
 	if w.opts.Modal && w.parent != nil && !w.parent.closed {
 		procEnableWindow.Call(w.parent.hwnd, 1)
@@ -639,6 +690,10 @@ func (w *window) SetAlwaysOnTop(v bool) {
 func (w *window) IsAlwaysOnTop() bool { return windowLong(w.hwnd, gwlExStyle)&wsExTopmost != 0 }
 
 func (w *window) Show() {
+	if f := w.opts.Flyout; f != nil && !f.Focusable {
+		procShowWindow.Call(w.hwnd, swShowNoActivate)
+		return
+	}
 	if w.showMaximized {
 		w.showMaximized = false
 		procShowWindow.Call(w.hwnd, swShowMaximized)
@@ -665,6 +720,14 @@ func (w *window) IsVisible() bool {
 }
 
 func (w *window) Focus() {
+	if w.host != nil {
+		w.focusWebView()
+		return
+	}
+	if f := w.opts.Flyout; f != nil && !f.Focusable {
+		w.Show() // never activated
+		return
+	}
 	if w.IsMinimized() {
 		procShowWindow.Call(w.hwnd, swRestore)
 	}
@@ -681,6 +744,9 @@ func (w *window) Blur() {
 }
 
 func (w *window) IsFocused() bool {
+	if w.host != nil {
+		return w.focused
+	}
 	fg, _, _ := procGetForegroundWindow.Call()
 	return fg == w.hwnd
 }
@@ -784,7 +850,9 @@ func (w *window) SetBackgroundColor(c platform.Color) {
 	}
 	w.bgBrush, _, _ = procCreateSolidBrush.Call(uintptr(c.R) | uintptr(c.G)<<8 | uintptr(c.B)<<16)
 	w.withWebView(w.applyWebViewBackground)
-	procInvalidateRect(w.hwnd)
+	if w.hwnd != 0 {
+		procInvalidateRect(w.hwnd)
+	}
 }
 
 // applyWebViewBackground paints the webview before its page does:
@@ -930,6 +998,10 @@ func (w *window) TitleBarDoubleClicked() {
 }
 
 func (w *window) Close() {
+	if w.host != nil {
+		w.closeWebView()
+		return
+	}
 	if !w.closed {
 		w.destroy()
 	}

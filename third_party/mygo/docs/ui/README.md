@@ -174,6 +174,8 @@ UI as they read other apps (see [Accessibility](accessibility.md)).
 - [Accordion](accordion.md): sections that open and close, one above the
   other.
 - [Form](form.md): labeled controls with descriptions and errors.
+- [Web view](web-view.md): a web page in the window, under the native UI
+  painted after it, as menus and dialogs.
 
 ## Navigation
 

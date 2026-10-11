@@ -242,7 +242,11 @@ func ownStyles(rt *engine, e *node) []inspDecl {
 		}
 	}
 	for _, sh := range e.shadows {
-		add("box-shadow", fmt.Sprintf("%s %s %s %s %s", pxText(sh.x), pxText(sh.y), pxText(sh.blur), pxText(sh.spread), colorText(sh.color)))
+		inset := ""
+		if sh.inset {
+			inset = "inset "
+		}
+		add("box-shadow", fmt.Sprintf("%s%s %s %s %s %s", inset, pxText(sh.x), pxText(sh.y), pxText(sh.blur), pxText(sh.spread), colorText(sh.color)))
 	}
 	if e.opacitySet && e.opacity < 1 {
 		add("opacity", num(e.opacity))

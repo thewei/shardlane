@@ -48,6 +48,7 @@ const (
 	glTriangleStrip      = 0x0005
 	glBlend              = 0x0BE2
 	glScissorTest        = 0x0C11
+	glZero               = 0
 	glOne                = 1
 	glOneMinusSrcAlpha   = 0x0303
 	glOneMinusSrc1Color  = 0x88FA
@@ -671,7 +672,7 @@ func (r *Renderer) draw(s *scene.Scene) error {
 	glBindBuffer(glArrayBuffer, r.buf)
 	glBufferData(glArrayBuffer, len(r.b.Instances)*gpu.InstanceSize, unsafe.Pointer(&r.b.Instances[0]), glStreamDraw)
 	r.bindState(s)
-	bound, program := uintptr(r.empty), r.program
+	bound, program, hole := uintptr(r.empty), r.program, false
 	for _, b := range r.b.Batches {
 		sc := b.Scissor
 		sc.Left, sc.Top = max(sc.Left, 0), max(sc.Top, 0)
@@ -696,7 +697,11 @@ func (r *Renderer) draw(s *scene.Scene) error {
 			glActiveTexture(glTexture0 + 3)
 			glBindTexture(glTexture2D, r.backdrop[0].tex)
 			glActiveTexture(glTexture0 + 2)
-			bound, program = uintptr(r.empty), r.program
+			bound, program, hole = uintptr(r.empty), r.program, false
+		}
+		if b.Hole != hole {
+			hole = b.Hole
+			r.blendFunc(hole)
 		}
 		if want != program {
 			program = want
@@ -755,12 +760,22 @@ func (r *Renderer) bindState(s *scene.Scene) {
 	}
 	glActiveTexture(glTexture0 + 2)
 	glEnable(glBlend)
-	if r.dual {
-		glBlendFuncSeparate(glOne, glOneMinusSrc1Color, glOne, glOneMinusSrc1Alpha)
-	} else {
-		glBlendFunc(glOne, glOneMinusSrcAlpha)
-	}
+	r.blendFunc(false)
 	glEnable(glScissorTest)
+}
+
+// blendFunc blends premultiplied colors over what is drawn, or for hole,
+// takes their coverage away (scene.OpHole).
+func (r *Renderer) blendFunc(hole bool) {
+	src := uint32(glOne)
+	if hole {
+		src = glZero
+	}
+	if r.dual {
+		glBlendFuncSeparate(src, glOneMinusSrc1Color, src, glOneMinusSrc1Alpha)
+	} else {
+		glBlendFunc(src, glOneMinusSrcAlpha)
+	}
 }
 
 // readBackdrop computes the backdrop bk of what the framebuffer fb holds,

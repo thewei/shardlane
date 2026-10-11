@@ -27,6 +27,10 @@ func (s *testSurface) StartDataDrag(r platform.DragRequest) {
 }
 func (s *testSurface) CancelDataDrag()                  {}
 func (s *testSurface) SetDropFormats([]transfer.Format) {}
+func (s *testSurface) NewWebView(*platform.WindowOptions, platform.WindowHandler) (platform.WebView, error) {
+	return nil, platform.ErrUnsupported
+}
+func (s *testSurface) PlaceWebViews([]platform.WebViewPlacement) {}
 
 // testGPU is a GPU renderer whose device goes away when fail is set.
 type testGPU struct {

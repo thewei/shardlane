@@ -22,3 +22,29 @@ func TestURLAt(t *testing.T) {
 		}
 	}
 }
+
+func TestPathAt(t *testing.T) {
+	for _, c := range []struct {
+		row  string
+		col  int
+		want string
+	}{
+		{"Updated internal/app/embed.go:51 and more", 10, "internal/app/embed.go:51"},
+		{"  ⎿  Read /Users/me/repo/main.go (12 lines)", 12, "/Users/me/repo/main.go"},
+		{"see ./notes/todo.txt.", 8, "./notes/todo.txt"},
+		{"open ~/Downloads/clip.mp4", 10, "~/Downloads/clip.mp4"},
+		{"main.go:250:3: undefined: x", 2, "main.go:250:3"},
+		{"(src/a.go)", 3, "src/a.go"},
+		{"just words here", 5, ""},
+		{"version 1.2.3 ok", 9, ""},
+	} {
+		text := []rune(c.row)
+		cols := make([]int, len(text))
+		for i := range cols {
+			cols[i] = i
+		}
+		if got := pathAt(text, cols, c.col); got != c.want {
+			t.Errorf("pathAt(%q, %d) = %q, want %q", c.row, c.col, got, c.want)
+		}
+	}
+}

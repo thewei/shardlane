@@ -31,6 +31,10 @@ with `Selection` several, and `Submitted` reports a double click or Enter;
 names spans every column, which `cell` builds as column 0, and stays at the
 top while its section's rows scroll under it.
 
+Chosen and hovered rows are square from edge to edge, as in Finder's list
+view; `RoundRows` rounds their corners at the theme's `Radius`, as a list's
+rows are, for an app whose other lists are rounded.
+
 ## Arranging columns
 
 The user arranges the columns, as in Finder:

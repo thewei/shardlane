@@ -93,6 +93,23 @@ func TestEscapeClosesTheOverlayOnTop(t *testing.T) {
 	}
 }
 
+// TestUnhandledEscape tells the window of the Escapes nothing handled,
+// which close a flyout, and of no other.
+func TestUnhandledEscape(t *testing.T) {
+	d := &dialogView{size: "Small"}
+	tt := coreNewTester(d.view, 500, 400)
+	tt.Key(0, KeyEscape)
+	if tt.h.escapes != 1 {
+		t.Fatalf("an Escape nothing handled reached the window %d times", tt.h.escapes)
+	}
+	tt.Click("Open")
+	tt.Key(0, KeyEscape) // closes the dialog
+	tt.Key(Shift, KeyEscape)
+	if d.open || tt.h.escapes != 1 {
+		t.Errorf("the dialog open %v, Escapes for the window %d", d.open, tt.h.escapes)
+	}
+}
+
 func TestOverlayGivesTheFocusBack(t *testing.T) {
 	d := &dialogView{size: "Small"}
 	tt := coreNewTester(d.view, 500, 400)

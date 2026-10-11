@@ -596,7 +596,8 @@ func coreOverlay(c *context, fn func()) {
 }
 
 // Modal shows a dialog built by fn over a dimmed window while *open is
-// true; clicking outside it or pressing Escape sets *open to false.
+// true; clicking outside it or pressing Escape sets *open to false, which
+// Dismissed reports.
 func coreModal(c *context, open *bool, fn func()) *node {
 	if !*open {
 		return nil
@@ -611,7 +612,8 @@ func coreModal(c *context, open *bool, fn func()) *node {
 }
 
 // Popover shows fn's elements in a panel below anchor while *open is
-// true; clicking outside it or pressing Escape sets *open to false.
+// true; clicking outside it or pressing Escape sets *open to false, which
+// Dismissed reports.
 func corePopover(c *context, anchor *node, open *bool, fn func()) *node {
 	if !*open {
 		return nil

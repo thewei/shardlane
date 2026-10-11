@@ -204,19 +204,19 @@ func (e *node) OverlayShortcut(mods Modifiers, key Key) bool {
 // element it is attached to (AttachTo), nor the overlays attached to
 // elements inside it, as the popover of one of its buttons. A popover
 // closes then, the press going on to what is under the pointer, as
-// PopoverBase does.
+// PopoverBase does. The last press decides: one on the button opening a
+// popover after a press elsewhere, as on a web view's page, in the same
+// frame, keeps it open.
 func (e *node) PressedOutside() bool {
-	if !e.hasState() {
+	if !e.hasState() || len(e.c.rt.downs) == 0 {
 		return false
 	}
 	rt := e.c.rt
-	for _, id := range rt.downs {
-		if !rt.pressedWithin(id, e) {
-			rt.consumed = true
-			return true
-		}
+	if rt.pressedWithin(rt.downs[len(rt.downs)-1], e) {
+		return false
 	}
-	return false
+	rt.consumed = true
+	return true
 }
 
 // pressedWithin reports whether element id of the last frame is e, inside it,

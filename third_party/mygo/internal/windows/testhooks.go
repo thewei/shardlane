@@ -275,6 +275,25 @@ func TestClickSurface(hwnd uintptr, x, y float64) bool {
 	return true
 }
 
+// TestInputClick clicks a point of a window showing native UI with the
+// system's input, as a mouse does: the window it lands on activates as
+// for the user.
+func TestInputClick(hwnd uintptr, x, y float64) bool {
+	w := theBackend.windows[hwnd]
+	if w == nil || w.surface == nil {
+		return false
+	}
+	scale := float64(w.surface.dpi()) / 96
+	pt := point{int32(x * scale), int32(y * scale)}
+	procClientToScreen.Call(w.surface.hwnd, uintptr(unsafe.Pointer(&pt)))
+	user32.NewProc("SetCursorPos").Call(uintptr(pt.X), uintptr(pt.Y))
+	mouse := user32.NewProc("mouse_event")
+	const leftDown, leftUp = 0x0002, 0x0004
+	mouse.Call(leftDown, 0, 0, 0, 0)
+	mouse.Call(leftUp, 0, 0, 0, 0)
+	return true
+}
+
 // TestSideButton clicks a mouse's back or forward button (XBUTTON1 and
 // XBUTTON2) in a window showing native UI, with the messages a mouse
 // sends.

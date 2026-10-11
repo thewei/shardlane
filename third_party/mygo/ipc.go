@@ -391,11 +391,23 @@ func encodeReply(id int64, token string, result any, err error) message {
 type callerKey struct{}
 
 // CallerWindow returns the window whose page called a bound method, given
-// the context.Context passed to that method. It returns nil for other
-// contexts.
+// the context.Context passed to that method: for the page of a web view
+// (WebView), the window it is in. It returns nil for other contexts.
 func CallerWindow(ctx context.Context) *Window {
 	w, _ := ctx.Value(callerKey{}).(*Window)
 	return w
+}
+
+// pageKey holds the calling page in the context of a call.
+type pageKey struct{}
+
+// CallerPage returns the page that called a bound method, given the
+// context.Context passed to that method: the page of the calling window,
+// or of a web view in it (WebView), whose window CallerWindow returns. It
+// returns nil for other contexts.
+func CallerPage(ctx context.Context) *Page {
+	p, _ := ctx.Value(pageKey{}).(*Page)
+	return p
 }
 
 // Event is a typed event the Go side sends to pages. Declare events at
@@ -435,7 +447,8 @@ func NewEvent[T any](name string) *Event[T] {
 // Name returns the event name.
 func (e *Event[T]) Name() string { return e.name }
 
-// Emit sends the event to the page shown in w. Events sent before the
+// Emit sends the event to the page shown in w, or to the pages of the web
+// views of a window showing native UI (WebView). Events sent before the
 // page's DOM is ready are delivered once it is.
 func (e *Event[T]) Emit(w *Window, payload T) error {
 	msg, err := encodeEvent(e.name, payload)
@@ -445,17 +458,40 @@ func (e *Event[T]) Emit(w *Window, payload T) error {
 	if w.IsDestroyed() {
 		return errDestroyed
 	}
+	if w.content != nil {
+		windows.Lock()
+		views := append([]*Window(nil), w.webViews...)
+		windows.Unlock()
+		for _, v := range views {
+			v.enqueue(msg, true)
+		}
+		return nil
+	}
 	w.enqueue(msg, true)
 	return nil
 }
 
-// Broadcast sends the event to every window.
+// EmitPage sends the event to a page: of a window, or of a web view
+// (WebView.Page).
+func (e *Event[T]) EmitPage(p *Page, payload T) error {
+	msg, err := encodeEvent(e.name, payload)
+	if err != nil {
+		return err
+	}
+	if p == nil || p.w.IsDestroyed() {
+		return errDestroyed
+	}
+	p.w.enqueue(msg, true)
+	return nil
+}
+
+// Broadcast sends the event to every window, and the web views in them.
 func (e *Event[T]) Broadcast(payload T) error {
 	msg, err := encodeEvent(e.name, payload)
 	if err != nil {
 		return err
 	}
-	for _, w := range Windows() {
+	for _, w := range pageWindows() {
 		w.enqueue(msg, true)
 	}
 	return nil

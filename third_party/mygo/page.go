@@ -19,8 +19,13 @@ func (w *Window) Page() *Page {
 	return w.pg
 }
 
-// Window returns the window that shows the page.
-func (p *Page) Window() *Window { return p.w }
+// Window returns the window that shows the page: for the page of a web
+// view, the window the web view is in.
+func (p *Page) Window() *Window { return p.w.top() }
+
+// WebView returns the web view whose page this is, nil for the page of a
+// window.
+func (p *Page) WebView() *WebView { return p.w.webView }
 
 // PageOptions configure the web page of a window.
 type PageOptions struct {

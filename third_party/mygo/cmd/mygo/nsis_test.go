@@ -53,7 +53,7 @@ func TestWindowsInstaller(t *testing.T) {
 		t.Fatal(err)
 	}
 	setup := artifacts[len(artifacts)-1]
-	if filepath.Base(setup) != "Setup Test Setup 2.0.0.exe" {
+	if filepath.Base(setup) != "Setup Test Setup 2.0.0 amd64.exe" {
 		t.Fatalf("artifacts = %q", artifacts)
 	}
 	// The executable, the uninstaller that makensis made, then the
@@ -63,7 +63,7 @@ func TestWindowsInstaller(t *testing.T) {
 	for _, line := range strings.Split(strings.TrimSpace(string(listed)), "\n") {
 		signed = append(signed, filepath.Base(strings.Trim(line, "\r \"")))
 	}
-	if len(signed) != 3 || signed[0] != "Setup Test.exe" || signed[1] == signed[0] || signed[1] == signed[2] || signed[2] != "Setup Test Setup 2.0.0.exe" {
+	if len(signed) != 3 || signed[0] != "Setup Test.exe" || signed[1] == signed[0] || signed[1] == signed[2] || signed[2] != "Setup Test Setup 2.0.0 amd64.exe" {
 		t.Errorf("signed %q", signed)
 	}
 	if runtime.GOOS != "windows" || runtime.GOARCH != "amd64" {

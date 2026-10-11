@@ -66,7 +66,7 @@ the console, q to quit, h for help.`)
 
 	con.startBanner("dev")
 	// The TypeScript client comes first: the frontend imports it.
-	if err := writeClient(ctx, c); err != nil {
+	if err := writeClient(ctx, c, false); err != nil {
 		if ctx.Err() != nil {
 			return nil
 		}

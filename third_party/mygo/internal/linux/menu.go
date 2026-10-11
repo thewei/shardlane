@@ -74,7 +74,14 @@ func initMenuCallbacks() {
 					}
 				}
 			}
+			var v *window
 			if w != nil {
+				v = w.focusedWebView()
+			}
+			if v != nil {
+				// The page of a web view in the content has the keyboard.
+				webkitWebViewExecuteEditingCommand(v.web, cs(cmd))
+			} else if w != nil {
 				if w.surface != nil {
 					role := itemRoles[id]
 					if role == "pasteAndMatchStyle" {

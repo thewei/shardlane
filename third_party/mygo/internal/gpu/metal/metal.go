@@ -75,6 +75,7 @@ const (
 	loadActionClear        = 2
 	storeActionStore       = 1
 	primitiveTriStrip      = 4
+	blendZero              = 0
 	blendOne               = 1
 	blendOneMinusSrc1Color = 16
 	blendOneMinusSrc1A     = 18
@@ -305,6 +306,8 @@ type texture struct {
 type formatState struct {
 	format   uint
 	pipeline id
+	// holePipe draws holes (scene.OpHole), taking their coverage away.
+	holePipe id
 	// downPipe and blurPipe draw the passes computing the backdrops of
 	// effects, into the textures of backdrop, the second only along rows.
 	downPipe, blurPipe id
@@ -472,11 +475,15 @@ func (r *Renderer) makePipelines(f *formatState) (err error) {
 	defer func() {
 		if err != nil {
 			release(&f.pipeline)
+			release(&f.holePipe)
 			release(&f.downPipe)
 			release(&f.blurPipe)
 		}
 	}()
-	if f.pipeline, err = r.newPipeline(lib, "ps", f.format); err != nil {
+	if f.pipeline, err = r.newPipeline(lib, "ps", f.format, false); err != nil {
+		return err
+	}
+	if f.holePipe, err = r.newPipeline(lib, "ps", f.format, true); err != nil {
 		return err
 	}
 	if f.downPipe, err = r.passPipeline(lib, "down", f.format); err != nil {
@@ -529,8 +536,8 @@ func (r *Renderer) setLayerWide(on bool) {
 
 // newPipeline returns a pipeline drawing instances with the vertex
 // function vs and the fragment function fs of lib, blending premultiplied
-// colors over what is drawn.
-func (r *Renderer) newPipeline(lib id, fs string, format uint) (id, error) {
+// colors over what is drawn, or for hole, taking their coverage away.
+func (r *Renderer) newPipeline(lib id, fs string, format uint, hole bool) (id, error) {
 	vsFn := send(lib, "newFunctionWithName:", nsString("vs"))
 	defer release(&vsFn)
 	fsFn := send(lib, "newFunctionWithName:", nsString(fs))
@@ -545,12 +552,16 @@ func (r *Renderer) newPipeline(lib id, fs string, format uint) (id, error) {
 	ca := send(send(desc, "colorAttachments"), "objectAtIndexedSubscript:", 0)
 	send(ca, "setPixelFormat:", uintptr(format))
 	// Premultiplied colors over what is drawn.
+	src := uintptr(blendOne)
+	if hole {
+		src = blendZero
+	}
 	send(ca, "setBlendingEnabled:", 1)
-	send(ca, "setSourceRGBBlendFactor:", blendOne)
+	send(ca, "setSourceRGBBlendFactor:", src)
 	// Dual-source blending: the shader's second color is the source's
 	// alpha of each channel.
 	send(ca, "setDestinationRGBBlendFactor:", blendOneMinusSrc1Color)
-	send(ca, "setSourceAlphaBlendFactor:", blendOne)
+	send(ca, "setSourceAlphaBlendFactor:", src)
 	send(ca, "setDestinationAlphaBlendFactor:", blendOneMinusSrc1A)
 	var errObj id
 	pipe := send(r.device, "newRenderPipelineStateWithDescriptor:error:", desc, uintptr(unsafe.Pointer(&errObj)))
@@ -592,7 +603,7 @@ func (r *Renderer) effectPipeline(e *scene.Effect) id {
 		}
 	}
 	if lib != 0 {
-		p.pipe, p.err = r.newPipeline(lib, "effect_ps", f.format)
+		p.pipe, p.err = r.newPipeline(lib, "effect_ps", f.format, false)
 		release(&lib)
 	}
 	if p.err != nil && r.err == nil {
@@ -790,10 +801,13 @@ func (r *Renderer) encode(s *scene.Scene, target id) (id, error) {
 			continue
 		}
 		want := r.cur.pipeline
-		if b.Effect != nil {
+		switch {
+		case b.Effect != nil:
 			if want = r.effectPipeline(b.Effect); want == 0 {
 				continue
 			}
+		case b.Hole:
+			want = r.cur.holePipe
 		}
 		if b.Backdrop != 0 {
 			// The effect shows what is drawn so far.
@@ -1128,6 +1142,7 @@ func (r *Renderer) Release() {
 		for i := range r.formats {
 			f := &r.formats[i]
 			release(&f.pipeline)
+			release(&f.holePipe)
 			release(&f.downPipe)
 			release(&f.blurPipe)
 			for _, p := range f.effects {

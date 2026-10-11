@@ -50,7 +50,8 @@ Keep data you care about in Go, for example in a file in
 Windows can also load other content into their page:
 
 - `win.Page().LoadURL("https://example.com")`, a web page;
-- `win.Page().LoadHTML(html, baseURL)`, an HTML string;
+- `win.Page().LoadHTML(html, baseURL)`, an HTML string, which reloads load
+  again;
 - `win.Page().LoadFile("docs/index.html")`, a local file, resolved against the
   working directory, then the executable's directory (and the Resources
   directory of a macOS app).

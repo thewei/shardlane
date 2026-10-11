@@ -29,6 +29,12 @@ func click(w *mygo.Window, x, y float64) bool {
 	return true
 }
 
+// appClick clicks through the application, whose event monitors see it.
+func appClick(w *mygo.Window, x, y float64) bool {
+	mygo.RunOnMain(func() { darwin.TestAppClick(w.NativeHandle(), x, y) })
+	return true
+}
+
 func sideButton(w *mygo.Window, back bool) (ok bool) {
 	mygo.RunOnMain(func() { ok = darwin.TestSideButton(w.NativeHandle(), back) })
 	return ok
@@ -92,6 +98,10 @@ func trafficLights(w *mygo.Window) (x, y float64, supported bool) {
 	return x, y, true
 }
 
+func setWindowAppearance(w *mygo.Window, dark bool) {
+	mygo.RunOnMain(func() { darwin.TestSetWindowAppearance(w.NativeHandle(), dark) })
+}
+
 // Frameless windows keep native resize borders here.
 func movePointer(int, int) bool                { return false }
 func pressButton(bool) bool                    { return false }
@@ -128,6 +138,17 @@ func clickAndType(w *mygo.Window, x, y float64, text string) (ok bool) {
 // through the input method.
 func pressKey(w *mygo.Window, code uint16, chars string) (ok bool) {
 	mygo.RunOnMain(func() { ok = darwin.TestKey(w.NativeHandle(), code, chars) })
+	return ok
+}
+
+// AppKit routes a drag to the view under the pointer, which
+// dropFiles, dropping on the content's, skips.
+func dragFiles(*mygo.Window, float64, float64, []string) (bool, bool) { return false, false }
+
+// pressTab presses Tab in a window of native UI, with Shift when back, as
+// the keyboard does: in the content or in the page of a web view.
+func pressTab(w *mygo.Window, back bool) (ok bool) {
+	mygo.RunOnMain(func() { ok = darwin.TestKeyShift(w.NativeHandle(), 48, "\t", back) })
 	return ok
 }
 
@@ -208,3 +229,9 @@ func screenColor(*mygo.Window, float64, float64) (uint8, uint8, uint8, bool) { r
 func rightClick(*mygo.Window, float64, float64) bool { return false }
 func popupMenus() ([][]string, bool)                 { return nil, false }
 func choosePopupItem(string) bool                    { return false }
+
+// pressEscape presses Escape in the key window, as the keyboard does.
+func pressEscape(*mygo.Window) bool {
+	mygo.RunOnMain(func() { darwin.TestAppKey(53, "\x1b") })
+	return true
+}

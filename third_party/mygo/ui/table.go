@@ -236,6 +236,9 @@ func table(c *context, s *ListState, columns []TableColumn, n int, cell func(row
 			if s.cursor() == nil {
 				// Chosen rows show the pointer over them already.
 				row.flags |= flagHover
+				if s.RoundRows {
+					row.Radius(t.Radius)
+				}
 				row.styleFn = func(row *node) {
 					if row.Hovered() {
 						row.bg = t.SurfaceHover

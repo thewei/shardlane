@@ -323,11 +323,16 @@ func (s *surface) nativeDataEvent(info id, kind platform.SurfaceEventKind) bool 
 			if available == 0 && f == transfer.URIList {
 				available = send(item, "dataForType:", uintptr(nsString("public.url")))
 				if available == 0 {
-					available = send(item, "dataForType:", uintptr(nsString("public.file-url")))
+					t = "public.file-url"
+					available = send(item, "dataForType:", uintptr(nsString(t)))
 				}
 			}
 			if available != 0 {
-				reps = append(reps, transfer.Bytes(f, goBytes(available)))
+				b := goBytes(available)
+				if t == "public.file-url" {
+					b = filePathURLBytes(b)
+				}
+				reps = append(reps, transfer.Bytes(f, b))
 			}
 		}
 		if len(reps) > 0 {

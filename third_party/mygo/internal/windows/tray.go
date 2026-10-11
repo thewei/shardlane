@@ -143,6 +143,16 @@ func (t *tray) PopUpMenu(m *platform.Menu) {
 }
 
 func (t *tray) Bounds() platform.Rect {
+	r, ok := t.rect()
+	if !ok {
+		return platform.Rect{}
+	}
+	dpi := monitorDPI(monitorAt(int(r.Left), int(r.Top)))
+	return platform.Rect{X: toDIP(r.Left, dpi), Y: toDIP(r.Top, dpi), Width: toDIP(r.Right-r.Left, dpi), Height: toDIP(r.Bottom-r.Top, dpi)}
+}
+
+// rect returns where the icon is on the screen, in physical pixels.
+func (t *tray) rect() (rect, bool) {
 	type identifier struct {
 		Size uint32
 		Wnd  uintptr
@@ -153,13 +163,12 @@ func (t *tray) Bounds() platform.Rect {
 	ident.Size = uint32(unsafe.Sizeof(ident))
 	var r rect
 	if !has(procShellNotifyIconGetRect) {
-		return platform.Rect{}
+		return r, false
 	}
 	if hr, _, _ := procShellNotifyIconGetRect.Call(uintptr(unsafe.Pointer(&ident)), uintptr(unsafe.Pointer(&r))); failed(hr) {
-		return platform.Rect{}
+		return r, false
 	}
-	dpi := monitorDPI(monitorAt(int(r.Left), int(r.Top)))
-	return platform.Rect{X: toDIP(r.Left, dpi), Y: toDIP(r.Top, dpi), Width: toDIP(r.Right-r.Left, dpi), Height: toDIP(r.Bottom-r.Top, dpi)}
+	return r, r.Right > r.Left && r.Bottom > r.Top
 }
 
 func (t *tray) Destroy() {

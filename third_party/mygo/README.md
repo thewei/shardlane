@@ -4,8 +4,8 @@
 
 **Desktop apps in Go, with a web frontend or a native UI.**
 
-Each MyGo window shows one of two kinds of interface, and one app can mix
-them:
+Each MyGo window shows one of two kinds of interface, and one app, or one
+window, can mix them:
 
 - **A web page**, in the webview the OS already has: WKWebView on macOS,
   WebKitGTK on Linux, WebView2 on Windows. Build the frontend with any web
@@ -24,7 +24,8 @@ memory and CPU use.
 - **A Go UI toolkit** for native UI: flexbox and grid layout, widgets, text
   editing with input methods, virtualized lists, SVG icons, animations,
   screen reader support, and views you test without a window; Liquid Glass
-  on every platform with the glass plugin.
+  on every platform with the glass plugin; web pages inside native UI, under
+  the menus and dialogs it shows over them.
 - **Desktop APIs** for both: windows, menus, tray, dialogs, notifications,
   global shortcuts, deep links, file associations and more.
 - **Ready to ship**: app bundles and disk images, Windows installers, Debian

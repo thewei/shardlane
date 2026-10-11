@@ -293,10 +293,14 @@ func (r *Renderer) opBounds(s *scene.Scene, out []image.Rectangle) []image.Recta
 		op := &s.Ops[i]
 		var b image.Rectangle
 		switch op.Kind {
-		case scene.OpFill, scene.OpImage, scene.OpEffect:
+		case scene.OpFill, scene.OpImage, scene.OpEffect, scene.OpHole:
 			b = outset(op.Rect, 1)
 		case scene.OpShadow:
-			b = outset(op.Rect, 1.5*op.Blur+1)
+			if op.Inset {
+				b = outset(op.Cast, 1)
+			} else {
+				b = outset(op.Rect, 1.5*op.Blur+1)
+			}
 		case scene.OpGlyphs:
 			for _, g := range s.Glyphs[op.Start:op.End] {
 				b = b.Union(outset(scene.Rect{X: g.X, Y: g.Y, W: g.W, H: g.H}, 1))

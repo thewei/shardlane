@@ -64,9 +64,8 @@ func (a *area) wrappedHeight(e *node, ed *editor, cw float32) float32 {
 				if ed.compose != "" && p == ed.buf.para(ed.caret) {
 					at := runeOffset(part.Text, ed.caret-ed.buf.start(p))
 					part.Text = part.Text[:at] + ed.compose + part.Text[at:]
-				} else {
-					part.Spans, _ = ed.rangeSpans(ed.buf.start(p), ed.buf.end(p))
 				}
+				part.Spans, _ = ed.rangeSpans(ed.buf.start(p), ed.buf.end(p))
 				height += textSystem().Shape(part).Height
 			}
 			a.wrapped, a.wrappedParams, a.wrappedVersion = height, params, ed.buf.version
@@ -76,10 +75,8 @@ func (a *area) wrappedHeight(e *node, ed *editor, cw float32) float32 {
 	}
 	params.Text = ed.displayText()
 	params.KeepSpaces, params.MaxLines = true, 0
-	if ed.compose == "" {
-		// Bold runs take more room, so the text may wrap sooner.
-		params.Spans, _ = ed.rangeSpans(0, ed.buf.n)
-	}
+	// Bold runs take more room, so the text may wrap sooner.
+	params.Spans, _ = ed.rangeSpans(0, ed.buf.n)
 	if params != a.wrappedParams {
 		a.wrappedParams = params
 		a.wrapped = textSystem().Layout(params).Height
@@ -160,10 +157,7 @@ func (a *area) paraLayout(ed *editor, p int) *text.Layout {
 	if ed.compose != "" && p == b.para(ed.caret) {
 		compose = ed.compose
 	}
-	spans := ""
-	if compose == "" {
-		spans, _ = ed.rangeSpans(b.start(p), b.end(p))
-	}
+	spans, _ := ed.rangeSpans(b.start(p), b.end(p))
 	if pr.layout != nil && pr.compose == compose && pr.spans == spans {
 		return pr.layout
 	}
@@ -412,10 +406,7 @@ func (a *area) paint(e *node, p *Painter, ox, oy float32) {
 				}
 			}
 		}
-		var sp *spanPaint
-		if pr := &b.paras[i]; pr.compose == "" {
-			_, sp = ed.rangeSpans(start, end)
-		}
+		_, sp := ed.rangeSpans(start, end)
 		p.textLayout(l, ox, y, ts.color, ts, sp)
 		if ed.compose != "" && b.para(ed.caret) == i {
 			c := ed.caret - start

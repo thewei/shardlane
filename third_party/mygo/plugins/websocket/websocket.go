@@ -70,10 +70,11 @@ type service struct {
 	conns map[key]*conn
 }
 
-// key identifies a connection: the page chooses ids for its window.
+// key identifies a connection: the page (a *mygo.Page) chooses ids for
+// itself. A window may show several pages: those of its web views.
 type key struct {
-	window int
-	id     string
+	page any
+	id   string
 }
 
 type connectOptions struct {
@@ -108,17 +109,17 @@ type message struct {
 // Connect opens the connection and streams its events to the page until
 // it closes.
 func (s *service) Connect(ctx context.Context, opts connectOptions, events *mygo.Channel[event]) {
-	s.connect(ctx, mygo.CallerWindow(ctx).ID(), opts, events.Send)
+	s.connect(ctx, mygo.CallerPage(ctx), opts, events.Send)
 }
 
 // Send sends the seq-th message of the page on the connection id, after
 // those before it.
 func (s *service) Send(ctx context.Context, id string, seq int64, m message) error {
-	return s.send(mygo.CallerWindow(ctx).ID(), id, seq, m)
+	return s.send(mygo.CallerPage(ctx), id, seq, m)
 }
 
-func (s *service) connect(ctx context.Context, window int, opts connectOptions, send func(event) error) {
-	k := key{window, opts.ID}
+func (s *service) connect(ctx context.Context, page any, opts connectOptions, send func(event) error) {
+	k := key{page, opts.ID}
 	c, protocol, err := dial(ctx, s.opts.Client, opts.URL, opts.Protocols, opts.Headers, s.opts.Allow, s.opts.MaxMessageSize)
 	if err == nil {
 		s.mu.Lock()
@@ -189,9 +190,9 @@ func (s *service) connect(ctx context.Context, window int, opts connectOptions, 
 	}
 }
 
-func (s *service) send(window int, id string, seq int64, m message) error {
+func (s *service) send(page any, id string, seq int64, m message) error {
 	s.mu.Lock()
-	c := s.conns[key{window, id}]
+	c := s.conns[key{page, id}]
 	s.mu.Unlock()
 	if c == nil {
 		return errClosed

@@ -58,7 +58,7 @@ on the screen. Sizes and positions are in device-independent pixels.
 | `AlwaysOnTop` | keeps the window above others |
 | `SkipTaskbar` | leaves the window out of the taskbar (Linux, Windows) |
 | `AutoHideMenuBar` | shows the menu bar only while the keyboard is in it, from Alt or F10 (Linux, Windows), see [the menu bar](menus.md#the-menu-bar) |
-| `Parent`, `Modal` | a child window, modal to its parent |
+| `Parent`, `Modal` | a child window, modal to its parent; for one placed next to a part of it, see [flyouts](#flyouts) |
 | `Page` | the options of the window's [page](#pages): its preload script, trusted origins, web inspector, zoom and user agent |
 
 ## Show windows without flashing
@@ -106,8 +106,11 @@ win.Focus()             // Blur, IsFocused
 
 `Bounds`, `ContentBounds`, `Size`, `ContentSize` and `Position` read them
 back; [`mygo.Screen`](native.md#displays) tells where the displays are.
-On Linux under Wayland the compositor decides where windows go and
-ignores the positions apps set.
+`Bounds` are the whole window's, title bar and borders included (on Linux
+X11, the window manager's frame), and `ContentBounds` those of the area the
+page or native UI shows in, below a menu bar. On Linux under Wayland the
+compositor decides where windows go and ignores the positions apps set,
+and its decorations are not part of `Bounds`.
 
 Other properties:
 
@@ -155,6 +158,133 @@ prefs := mygo.NewWindow(mygo.WindowOptions{
 	Height: 400,
 })
 ```
+
+## Flyouts
+
+A flyout is a window without a frame, a background or a taskbar button,
+owned by its parent and placed next to a rectangle of it, its anchor: the
+list of a combo box, a hover card, a popover with a form. Unlike an
+[overlay](ui/overlays.md) of native UI or a popover of the page, it may
+extend beyond the parent's edges, and the work area of the display decides
+where it goes, not the parent's content. Its page or [native UI](ui/README.md)
+draws all of it, its background included:
+
+```go
+fl := mygo.NewFlyout(mygo.FlyoutOptions{
+	Parent:    win,
+	Anchor:    mygo.Rectangle{X: 20, Y: 40, Width: 120, Height: 28}, // in win's content area
+	Placement: mygo.PlacementBottomStart,
+	Gap:       4,
+	Width:     240,
+	Height:    300,
+	Content:   ui.View(app.suggestions),
+})
+```
+
+The anchor is in DIPs relative to the parent's content area, which is
+what `ui.Element.Bounds` gives for the element that opens the flyout; a
+rectangle of zero size anchors it to a point. `Placement` names the side
+of the anchor the flyout goes to and how it lines up with it along that
+side, as `"bottom-start"`, `"right"` or `"top-end"`. Where the work area
+has no room for it there, the flyout flips to the other side, or the other
+end, if that has room, then slides back into the work area, then shrinks
+to fit it, as GTK places menus and Wayland compositors place popups. It
+stays above its parent, follows it as it moves and closes with it.
+`SetAnchor` places it against another rectangle, and `SetSize` resizes it
+where it goes; `IsFlyout` tells a flyout from other windows.
+
+With `Focusable`, a flyout takes the keyboard as it shows and closes as a
+menu does when the user presses outside it, another window takes the
+keyboard or the app is deactivated. `OnClose` listeners hear it and may
+keep it open, except on Wayland, whose compositor dismisses it. On Linux
+and Windows the press only closes the flyout, as it closes their menus,
+so a click on the button that opened it does not open it again; on macOS
+it goes on to what is under the pointer. Menus, lists to choose from and
+popovers are focusable, and handle their own keys: the arrows, Enter.
+
+Without it, a flyout never takes the keyboard, which stays in the parent,
+and it stays until it is closed: a tooltip, a hover card, or the
+suggestions of a text field in the parent, whose view drives them and
+closes them as it sees fit, as when the field loses the keyboard. (On
+Wayland, only a popup that takes the keyboard hears of presses outside
+it.)
+
+Either closes, as the user closing it, on an Escape its content leaves:
+one no element or shortcut of native UI takes, or no handler of the page
+cancels with `preventDefault()`, as the web's popovers.
+
+`Shadow` gives it the system's window shadow on macOS, where it follows
+the shape of what the flyout draws and outlines it with a hairline (so
+draw no border of your own there), and on Windows, where Windows 11 rounds
+the flyout's corners as it rounds its menus and outlines it (so draw
+neither a border nor rounded corners there).
+
+On macOS, `Popover` gives it the look of the system's popovers instead: it
+shows in an `NSPopover`, which draws its material, rounded corners and an
+arrow pointing at the middle of the anchor, and animates. AppKit places it
+on the side `Placement` names, or the opposite one; the rest of the
+placement, and `Gap`, do not apply. As AppKit's popovers do, it has the
+keyboard while it shows, and with `Focusable` it closes as the user clicks
+elsewhere. Its content draws no background over the material: in native
+UI, `c.Vibrancy()` reports it, so a view draws its own panel elsewhere:
+
+```go
+func (app *App) about(c *ui.Context) {
+	c.Root().Background(ui.Transparent)
+	box := ui.Column(c).Fill() // over the popover's material
+	if !c.Vibrancy() {
+		box = ui.Column(c).Fill().Background(c.Theme().Surface).Radius(10)
+	}
+	box.Padding(12).Children(func() { ui.Text(c, "MyGo") })
+}
+```
+
+A flyout can hang from a tray icon instead of a window, as the panel of
+a menu bar app: give it the `Tray` in place of a `Parent`. It goes next to
+the icon, on the side `Placement` names, and floats over the windows of
+other apps. Below the macOS menu bar, `PlacementBottom` centers it under
+the icon (with `Popover`, the arrow of the system's popover points at
+it); on Windows, the same placement flips above an icon of a taskbar at
+the bottom of the screen. A press on the icon does not dismiss a
+focusable flyout, so the icon's click can toggle it. Keep the app running
+as the flyout, its only window, closes:
+
+```go
+mygo.App.OnWindowAllClosed(func() {})
+tray.OnClick(func() {
+	if panel != nil {
+		panel.Close()
+		return
+	}
+	panel = mygo.NewFlyout(mygo.FlyoutOptions{
+		Tray:      tray,
+		Placement: mygo.PlacementBottom,
+		Width:     280,
+		Height:    230,
+		Focusable: true,
+		Popover:   true,
+		Content:   ui.View(app.panel),
+	})
+	panel.OnClosed(func() { panel = nil })
+})
+```
+
+Linux's tray icons tell neither clicks nor where they are: open the flyout
+from a menu item of the icon there, and it shows in the middle of the
+primary display's work area. `examples/menubar-flyout` is such an app.
+
+How each platform shows them:
+
+| | macOS | Linux | Windows |
+|---|---|---|---|
+| window | a borderless, nonactivating `NSPanel`, a child window of its parent while it shows, or at the level of menus for a tray | a `GTK_WINDOW_POPUP`: override-redirect on X11, an `xdg_popup` of its parent on Wayland; for a tray, an undecorated utility window kept above | an owned `WS_POPUP`, `WS_EX_TOOLWINDOW`, without a redirection bitmap; topmost and unowned for a tray |
+| placement | in the screen's visible frame | in the monitor's work area on X11; the compositor's positioner (`gdk_window_move_to_rect`) on Wayland | in the monitor's work area (`MonitorFromRect`) |
+| keyboard | the key window when focusable; the parent stays the main window | a grab of the seat and the app's input when focusable, as GTK's menus | activated when focusable, else `WS_EX_NOACTIVATE` |
+
+On Wayland, a popup shows only over the topmost one: showing a flyout
+closes the others that show, but its own ancestors, as the user would.
+`examples/flyout` opens a list of colors, a note editor and an About box,
+a popover on macOS.
 
 ## Events
 
@@ -359,7 +489,8 @@ of a page control its inspector, when it has one, see
   the focused one and `mygo.WindowByID(id)` the one with an `ID()`, which
   pages know as `runtime().windowId`.
 - `mygo.CallerWindow(ctx)` returns the window whose page called a bound
-  method.
+  method, and `mygo.CallerPage(ctx)` the page: the window's, or that of a
+  web view in a window of native UI ([Web view](ui/web-view.md)).
 - `mygo.App.OnWindowCreated` is called for every new window.
 
 ## Native access

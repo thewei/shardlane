@@ -24,6 +24,9 @@ type Bitmap struct {
 	// smaller, for drawing it smoothly: levels[k] is 2^(k+1) times
 	// smaller.
 	levels []*scene.Image
+	// fresh counts the levels made from the current picture; Update
+	// keeps the others to redo in place, so their textures stay too.
+	fresh int
 }
 
 // NewBitmap converts img.
@@ -50,6 +53,27 @@ func DecodeBitmap(data []byte) (*Bitmap, error) {
 	return b, nil
 }
 
+// Update shows img in place of the bitmap's picture, for one that changes
+// as video does: the GPU keeps the bitmap's texture and uploads the new
+// pixels, where a new Bitmap a frame would make a texture each, and keep
+// each for a while. An *image.RGBA of rows 4×width bytes long from the
+// origin, as image.NewRGBA makes, is taken as it is, without a copy:
+// don't change its pixels until the next Update. Call it on the main
+// thread, in the view or through Window.Update, which redraws the window
+// to show it.
+func (b *Bitmap) Update(img image.Image) {
+	s := scene.NewImage(img)
+	if s.W == b.img.W && s.H == b.img.H {
+		b.img.Pix = s.Pix
+		b.img.Changed()
+	} else {
+		b.img = s
+		b.w, b.h = s.W, s.H
+		b.levels = nil
+	}
+	b.fresh = 0
+}
+
 // Size returns the bitmap's size in pixels, which Image shows as DIPs.
 func (b *Bitmap) Size() (w, h int) { return b.w, b.h }
 
@@ -71,12 +95,17 @@ func (b *Bitmap) smaller(shrink float32) *scene.Image {
 	k := int(math.Log2(float64(shrink))) // halvings that stay as large
 	img := b.img
 	for i := 0; i < k; i++ {
-		if i == len(b.levels) {
+		switch {
+		case i == len(b.levels):
 			if img.W < 2 && img.H < 2 {
-				break
+				return img
 			}
 			b.levels = append(b.levels, halve(img))
+		case i >= b.fresh: // made from an earlier picture
+			halveInto(b.levels[i], img)
+			b.levels[i].Changed()
 		}
+		b.fresh = max(b.fresh, i+1)
 		img = b.levels[i]
 	}
 	return img
@@ -86,7 +115,15 @@ func (b *Bitmap) smaller(shrink float32) *scene.Image {
 // covers, of premultiplied colors; an odd last row or column counts twice.
 func halve(img *scene.Image) *scene.Image {
 	w, h := max(1, (img.W+1)/2), max(1, (img.H+1)/2)
-	out := make([]byte, 4*w*h)
+	out := scene.NewImageRGBA(w, h, make([]byte, 4*w*h))
+	halveInto(out, img)
+	return out
+}
+
+// halveInto is halve into dst, an image of halve's size.
+func halveInto(dst, img *scene.Image) {
+	w, h := dst.W, dst.H
+	out := dst.Pix
 	src, stride := img.Pix, 4*img.W
 	for y := range h {
 		y0, y1 := 2*y, min(2*y+1, img.H-1)
@@ -99,7 +136,6 @@ func halve(img *scene.Image) *scene.Image {
 			}
 		}
 	}
-	return scene.NewImageRGBA(w, h, out)
 }
 
 // exifOrientation returns the orientation of a JPEG's EXIF data, 1 to 8,

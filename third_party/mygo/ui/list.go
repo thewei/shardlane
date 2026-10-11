@@ -89,6 +89,10 @@ type ListState struct {
 	// columns, by ID: restore it from saved settings, and save it as it
 	// changes.
 	Columns TableLayout
+	// RoundRows rounds the corners of a Table's chosen and hovered rows at
+	// the theme's Radius, as a List's are, rather than leaving them square
+	// from edge to edge.
+	RoundRows bool
 
 	// The place: the first row in view, and how far the list is scrolled
 	// past its top: the row's top is that far above where the content
@@ -251,8 +255,9 @@ type listFrame struct {
 	row   func(i int)
 	frame uint64
 	pass  int
-	// flat leaves the corners of chosen rows square, as a Table's; tree
-	// makes the rows items of a tree, as an Outline's.
+	// flat leaves the corners of chosen rows square, as a Table's unless
+	// ListState.RoundRows; tree makes the rows items of a tree, as an
+	// Outline's.
 	flat, tree bool
 	// grid makes the rows those of a GridView, which holds its items.
 	grid bool
@@ -532,7 +537,7 @@ func (f *listFrame) build(i int) *node {
 		on := f.chosen(i, key)
 		w.Selected(on)
 		switch r := t.Radius; {
-		case f.flat:
+		case f.flat && !s.RoundRows:
 		case s.Selection != nil && s.gap == 0 && on:
 			// Rows chosen together make one block, as in Finder.
 			above := i > 0 && !f.isHeader(i-1) && f.chosen(i-1, f.key(i-1))

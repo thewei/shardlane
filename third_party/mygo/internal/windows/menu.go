@@ -304,6 +304,10 @@ func editRole(w *window, role string) bool {
 		"undo": "undo", "redo": "redo", "cut": "cut", "copy": "copy",
 		"delete": "delete", "selectAll": "selectAll",
 	}
+	if v := w.focusedWebView(); v != nil {
+		// The page of a web view in the content has the keyboard.
+		return editRole(v, role)
+	}
 	if w.surface != nil {
 		if role == "pasteAndMatchStyle" {
 			role = "paste"

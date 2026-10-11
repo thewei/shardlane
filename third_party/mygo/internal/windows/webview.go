@@ -146,14 +146,22 @@ func (w *window) createWebView() {
 		testFailWebViews--
 	}
 	hr := withHandler(func(hr, controller uintptr) {
+		// A web view in a window of native UI gets a composition
+		// controller, whose controller closes it.
+		closeController := func() {
+			if c := queryInterface(controller, &iidICoreWebView2Controller); c != 0 {
+				comCall(c, ctlClose)
+				release(c)
+			}
+		}
 		if fail && controller != 0 { // TestFailWebViews
-			comCall(controller, ctlClose)
+			closeController()
 			hr, controller = eFail, 0
 		}
 		// Closing the window aborts the creation (E_ABORT).
-		if w.closed || w.destroying {
+		if w.closed || w.destroying || w.host != nil && w.host.closed {
 			if controller != 0 {
-				comCall(controller, ctlClose)
+				closeController()
 			}
 			return
 		}
@@ -162,8 +170,16 @@ func (w *window) createWebView() {
 			return
 		}
 		addRef(controller)
+		if w.host != nil {
+			controller = w.setUpEmbedded(controller)
+		}
 		w.setUp(controller)
-	}, func(h uintptr) uintptr { return comCall(w.b.env, envCreateController, w.hwnd, h) })
+	}, func(h uintptr) uintptr {
+		if w.host != nil {
+			return w.createEmbedded(h)
+		}
+		return comCall(w.b.env, envCreateController, w.hwnd, h)
+	})
 	if failed(hr) {
 		w.creationFailed(hr)
 	}
@@ -179,7 +195,11 @@ func (w *window) creationFailed(hr uintptr) {
 		return
 	}
 	log.Printf("%v; trying again", err)
-	procSetTimer.Call(w.hwnd, timerWebView, uintptr(backoff(w.webViewFails-1)/time.Millisecond), 0)
+	hwnd := w.hwnd
+	if w.host != nil && w.host.surface != nil {
+		hwnd = w.host.surface.hwnd // which asks again for its web views
+	}
+	procSetTimer.Call(hwnd, timerWebView, uintptr(backoff(w.webViewFails-1)/time.Millisecond), 0)
 }
 
 func (w *window) setUp(controller uintptr) {
@@ -269,8 +289,15 @@ func (w *window) setUp(controller uintptr) {
 		return comCall(controller, ctlAddAcceleratorKeyPressed, h, tok)
 	})
 
-	comCall(controller, ctlPutIsVisible, 1)
-	w.resizeWebView()
+	if w.host != nil {
+		w.placeEmbedded()
+		if l := w.host.surface.layer; l != nil {
+			l.commit()
+		}
+	} else {
+		comCall(controller, ctlPutIsVisible, 1)
+		w.resizeWebView()
+	}
 	if w.caption != nil {
 		w.caption.layout() // above the webview's window
 	}
@@ -321,17 +348,45 @@ func (w *window) navigationStarting(_, args uintptr) {
 	uri := w.appURL(takeWstr(p))
 	var user int32
 	comCall(args, navStartingGetIsUserInitiated, uintptr(unsafe.Pointer(&user)))
-	nav := platform.Navigation{URL: uri, IsMainFrame: true, UserInitiated: user != 0}
+	kind := navigationKind(args)
+	nav := platform.Navigation{URL: uri, IsMainFrame: true, UserInitiated: user != 0, Unasked: kind == navReload || kind == navBackOrForward, Reload: kind == navReload}
 	if w.programmatic {
 		w.programmatic = false
-		nav.IsReload = true
+		nav.Unasked = true
 	}
 	if !w.h.WillNavigate(nav) {
 		comCall(args, navStartingPutCancel, 1)
 		return
 	}
+	// LoadHTML serves its document to its navigation, which may request
+	// it more than once, and not to later ones.
+	if w.htmlNext {
+		w.htmlNext = false
+	} else {
+		clear(w.htmlFor)
+	}
 	w.loading = true
 	w.h.NavigationStarted(uri)
+}
+
+// COREWEBVIEW2_NAVIGATION_KIND
+const (
+	navReload = iota
+	navBackOrForward
+	navNewDocument
+)
+
+// navigationKind returns the COREWEBVIEW2_NAVIGATION_KIND of a navigation,
+// or -1 on runtimes older than it.
+func navigationKind(args uintptr) int32 {
+	args3 := queryInterface(args, &iidICoreWebView2NavigationStartingEventArgs3)
+	if args3 == 0 {
+		return -1
+	}
+	defer release(args3)
+	kind := int32(-1)
+	comCall(args3, navStarting3GetNavigationKind, uintptr(unsafe.Pointer(&kind)))
+	return kind
 }
 
 func (w *window) navigationCompleted(_, args uintptr) {
@@ -494,6 +549,7 @@ func (w *window) newWindowRequested(_, args uintptr) {
 // Accelerator keys reach the webview, not the window: run the menu items
 // they belong to from here.
 func (w *window) acceleratorKeyPressed(_, args uintptr) {
+	w = w.top() // a web view's keys are its window's
 	var kind int32
 	comCall(args, accelGetKeyEventKind, uintptr(unsafe.Pointer(&kind)))
 	if kind != 0 && kind != 2 { // KEY_DOWN, SYSTEM_KEY_DOWN
@@ -527,6 +583,7 @@ func (w *window) LoadHTML(html, baseURL string) {
 		// and custom schemes work as in the other backends.
 		target := w.webURL(baseURL)
 		w.htmlFor[target] = html
+		w.htmlNext = true
 		if w.appURL(target) == target { // not covered by the filters of the schemes
 			w.addFilter(target)
 		}
@@ -797,9 +854,11 @@ func (w *window) resourceRequested(_, args uintptr) {
 	var p uintptr
 	comCall(req, reqGetURI, uintptr(unsafe.Pointer(&p)))
 	uri := takeWstr(p)
+	var resource int32
+	comCall(args, resReqGetResourceContext, uintptr(unsafe.Pointer(&resource)))
+	const document = 1 // COREWEBVIEW2_WEB_RESOURCE_CONTEXT_DOCUMENT
 
-	if html, ok := w.htmlFor[uri]; ok {
-		delete(w.htmlFor, uri)
+	if html, ok := w.htmlFor[uri]; ok && resource == document {
 		w.respond(args, 0, http.StatusOK, http.Header{"Content-Type": {"text/html; charset=utf-8"}}, []byte(html))
 		return
 	}
@@ -821,9 +880,6 @@ func (w *window) resourceRequested(_, args uintptr) {
 	addRef(args)
 	ctx, cancel := context.WithCancel(context.Background())
 	sreq.Context = ctx
-	var resource int32
-	comCall(args, resReqGetResourceContext, uintptr(unsafe.Pointer(&resource)))
-	const document = 1 // COREWEBVIEW2_WEB_RESOURCE_CONTEXT_DOCUMENT
 	sreq.Responder = &schemeResponse{w: w, args: args, deferral: deferral, cancel: cancel, url: target, document: resource == document}
 	w.h.SchemeRequest(sreq)
 }

@@ -79,6 +79,7 @@ const (
 	navStartingGetURI             = 3
 	navStartingGetIsUserInitiated = 4
 	navStartingPutCancel          = 8
+	navStarting3GetNavigationKind = 12
 	navCompletedGetIsSuccess      = 3
 	navCompletedGetWebErrorStatus = 4
 	msgTryGetWebMessageAsString   = 5
@@ -133,6 +134,7 @@ var (
 	iidICoreWebView2Controller2                  = guid("c979903e-d4ca-4228-92eb-47ee3fa96eab")
 	iidICoreWebView2Settings2                    = guid("ee9a0f68-f46c-4e32-ac23-ef8cac224d2a")
 	iidICoreWebView2WebMessageReceivedEventArgs2 = guid("06fc7ab7-c90c-4297-9389-33ca01cf6d5e")
+	iidICoreWebView2NavigationStartingEventArgs3 = guid("ddffe494-4942-4bd2-ab73-35b8ff40e19f")
 	iidICoreWebView2File                         = guid("f2c19559-6bc1-4583-a757-90021be9afec")
 	iidICoreWebView2_4                           = guid("20d02d59-6df2-42dc-bd06-f98a694b1302")
 	iidICoreWebView2_13                          = guid("f75f09a8-667e-4983-88d6-c8773f315e84")

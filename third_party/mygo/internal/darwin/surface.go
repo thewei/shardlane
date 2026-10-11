@@ -131,6 +131,9 @@ type surface struct {
 	updating      bool
 	dataDrag      *macDataSource
 	dragOperation transfer.Operation
+	// placed are where the content shows the window's web views, under
+	// it (webview.go).
+	placed []platform.WebViewPlacement
 }
 
 func (w *window) createSurface(content NSRect) {
@@ -186,7 +189,7 @@ func (s *surface) Native() platform.SurfaceNative {
 
 // ShowsMaterial reports whether the window has a material, whose effect
 // view, behind the surface, shows where its frames are transparent.
-func (s *surface) ShowsMaterial() bool { return s.w.effect != 0 }
+func (s *surface) ShowsMaterial() bool { return s.w.effect != 0 || s.w.popover != 0 }
 
 func (s *surface) scale() float64 {
 	if f := msgFloat(s.w.win, sel("backingScaleFactor")); f > 0 {
@@ -323,7 +326,17 @@ var cursorFallbacks = map[platform.Cursor]string{
 	platform.CursorResizeRow:    "resizeUpDownCursor",
 }
 
+// applyCursor sets the content's cursor, unless the pointer is over a
+// web view, whose page sets its own.
 func (s *surface) applyCursor() {
+	if len(s.placed) > 0 {
+		p := msgPoint(class("NSEvent"), sel("mouseLocation"))
+		inWindow := msgRectToRect(s.w.win, sel("convertRectFromScreen:"), NSRect{Origin: p})
+		local := msgPointFromView(s.view, sel("convertPoint:fromView:"), inWindow.Origin, 0)
+		if s.webViewAt(local.X, local.Y) != nil {
+			return
+		}
+	}
 	send(nsCursor(s.cursor), "set")
 }
 
@@ -602,6 +615,17 @@ func registerSurfaceClass() {
 	}
 	classDef("MyGoSurfaceView", "NSView", []string{"NSTextInputClient"}, append(append(methods, accessViewMethods()...), []objc.MethodDef{
 		method("isFlipped", func(self id, _ objc.SEL) bool { return true }),
+		// The pointer goes through to the web views under the surface
+		// where the content shows them (webview.go).
+		method("hitTest:", func(self id, cmd objc.SEL, p NSPoint) id {
+			if s := b().surfaceOf(self); s != nil && len(s.placed) > 0 {
+				local := msgPointFromView(self, sel("convertPoint:fromView:"), p, send(self, "superview"))
+				if s.webViewAt(local.X, local.Y) != nil {
+					return 0
+				}
+			}
+			return sendSuperPoint(self, "MyGoSurfaceView", cmd, p)
+		}),
 		method("acceptsFirstResponder", func(self id, _ objc.SEL) bool { return true }),
 		method("acceptsFirstMouse:", func(self id, _ objc.SEL, ev id) bool { return true }),
 		method("mouseDownCanMoveWindow", func(self id, _ objc.SEL) bool { return false }),

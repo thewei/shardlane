@@ -259,10 +259,17 @@ func unzipFile(f *zip.File, target string) error {
 	return err
 }
 
-// writeInstaller builds "<Name> Setup <version>.exe" in stage from the app
-// files installed, the executable exe among them, and returns its path, or
-// "" without NSIS.
-func writeInstaller(c *Config, stage, work, exe string, installed []string) (string, error) {
+// installerFileName is "<Name> Setup <version> <arch>.exe", as "My App
+// Setup 1.2.0 amd64.exe": each architecture's installer is named apart, so
+// that the builds of two, uploaded to one release or bucket, keep both.
+func installerFileName(c *Config, goarch string) string {
+	return fsName(c.Name) + " Setup " + fsName(c.Version) + " " + goarch + ".exe"
+}
+
+// writeInstaller builds installerFileName in stage from the app files
+// installed, built for goarch, the executable exe among them, and returns
+// its path, or "" without NSIS.
+func writeInstaller(c *Config, stage, work, exe, goarch string, installed []string) (string, error) {
 	tool, err := nsisCompiler()
 	if err != nil {
 		return "", err
@@ -271,7 +278,7 @@ func writeInstaller(c *Config, stage, work, exe string, installed []string) (str
 		warnf("Skipping the Windows installer: install NSIS (makensis)")
 		return "", nil
 	}
-	out := filepath.Join(stage, fsName(c.Name)+" Setup "+fsName(c.Version)+".exe")
+	out := filepath.Join(stage, installerFileName(c, goarch))
 	var files strings.Builder
 	for _, name := range installed {
 		p := filepath.Join(stage, name)

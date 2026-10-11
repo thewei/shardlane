@@ -268,9 +268,11 @@ type Renderer struct {
 
 	vs, ps, layout      uintptr
 	blend, raster, samp uintptr
-	cbuf                uintptr
-	instBuf             uintptr
-	instCap             int
+	// holeBlend takes the coverage of holes (scene.OpHole) away.
+	holeBlend uintptr
+	cbuf      uintptr
+	instBuf   uintptr
+	instCap   int
 
 	mask, color texture
 	images      map[uint64]*texture
@@ -377,6 +379,11 @@ func (r *Renderer) init() error {
 	bd.RenderTarget[0] = rtBlend{BlendEnable: 1, SrcBlend: 2, DestBlend: 17, BlendOp: 1, SrcBlendAlpha: 2, DestBlendAlpha: 19, BlendOpAlpha: 1, WriteMask: 0xf}
 	if failed(call(r.device, devCreateBlendState, uintptr(unsafe.Pointer(&bd)), uintptr(unsafe.Pointer(&r.blend)))) {
 		return errors.New("d3d11: cannot create the blend state")
+	}
+	// Holes take none of the source (D3D11_BLEND_ZERO).
+	bd.RenderTarget[0].SrcBlend, bd.RenderTarget[0].SrcBlendAlpha = 1, 1
+	if failed(call(r.device, devCreateBlendState, uintptr(unsafe.Pointer(&bd)), uintptr(unsafe.Pointer(&r.holeBlend)))) {
+		return errors.New("d3d11: cannot create the blend state of holes")
 	}
 	rd := rasterizerDesc{FillMode: 3, CullMode: 1, DepthClip: 1, Scissor: 1}
 	if failed(call(r.device, devCreateRasterizerState, uintptr(unsafe.Pointer(&rd)), uintptr(unsafe.Pointer(&r.raster)))) {
@@ -593,7 +600,7 @@ func (r *Renderer) Release() {
 	}
 	// The target goes first: a window has one at most, which another
 	// renderer of it then makes.
-	for _, p := range []*uintptr{&r.visual, &r.target, &r.dcomp, &r.rtv, &r.swapChain2, &r.swapChain, &r.instBuf, &r.cbuf, &r.passCB, &r.samp, &r.raster, &r.blend, &r.layout,
+	for _, p := range []*uintptr{&r.visual, &r.target, &r.dcomp, &r.rtv, &r.swapChain2, &r.swapChain, &r.instBuf, &r.cbuf, &r.passCB, &r.samp, &r.raster, &r.holeBlend, &r.blend, &r.layout,
 		&r.blurPS, &r.downPS, &r.passVS, &r.ps, &r.vs, &r.factory, &r.ctx, &r.device} {
 		free(p)
 	}
@@ -736,7 +743,7 @@ func (r *Renderer) draw(s *scene.Scene) error {
 	call(ctx, ctxRSSetState, r.raster)
 	call(ctx, ctxIASetPrimitiveTopology, topologyTriangleStrip)
 	r.bindState(s, 0)
-	bound, ps := uintptr(0), r.ps
+	bound, ps, blend := uintptr(0), r.ps, r.blend
 	for _, b := range r.b.Batches {
 		if b.Count == 0 {
 			continue
@@ -751,11 +758,19 @@ func (r *Renderer) draw(s *scene.Scene) error {
 			// The effect shows what is drawn so far.
 			r.readBackdrop(r.b.Backdrops[b.Backdrop-1])
 			r.bindState(s, r.backdrop[0].srv)
-			bound, ps = 0, r.ps
+			bound, ps, blend = 0, r.ps, r.blend
 		}
 		if want != ps {
 			ps = want
 			call(ctx, ctxPSSetShader, ps, 0, 0)
+		}
+		wantBlend := r.blend
+		if b.Hole {
+			wantBlend = r.holeBlend
+		}
+		if wantBlend != blend {
+			blend = wantBlend
+			call(ctx, ctxOMSetBlendState, blend, 0, 0xffffffff)
 		}
 		if b.Image != 0 && b.Image != bound {
 			bound = b.Image

@@ -55,8 +55,13 @@ func GenerateTypeScript() ([]byte, error) {
 
 // WriteTypeScript writes the TypeScript client to path, creating parent
 // directories. The file is left untouched when its content did not change,
-// so frontend dev servers do not reload needlessly.
+// so frontend dev servers do not reload needlessly. An app that binds no
+// services and declares no events, as one of native UI, has nothing for a
+// frontend to call: it gets no client, and path is not written.
 func WriteTypeScript(path string) error {
+	if !bindsAnything() {
+		return nil
+	}
 	src, err := GenerateTypeScript()
 	if err != nil {
 		return err
@@ -69,4 +74,20 @@ func WriteTypeScript(path string) error {
 		return err
 	}
 	return os.WriteFile(path, src, 0o644)
+}
+
+// bindsAnything reports whether the app bound a service of its own with
+// Bind or declared an event with NewEvent, for a client to call or hear.
+func bindsAnything() bool {
+	ipc.RLock()
+	defer ipc.RUnlock()
+	if len(ipc.events) > 0 {
+		return true
+	}
+	for _, s := range ipc.services {
+		if !s.internal {
+			return true
+		}
+	}
+	return false
 }

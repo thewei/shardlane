@@ -311,6 +311,17 @@ func (rt *engine) accessElement(t *platform.AccessTree, e *node, parent int, scr
 			return
 		}
 	}
+	if e.webView != nil {
+		// Its page first, as it paints, in a node of its own that the
+		// platform's elements of the page are inside.
+		if v := rt.host.platformWebView(e.webView); v != nil {
+			b := e.contentBox()
+			t.Nodes = append(t.Nodes, platform.AccessNode{
+				ID: e.id ^ pageNodeID, Parent: parent, Role: platform.RoleGroup, WebView: v,
+				Bounds: platform.RectF{X: float64(b.X), Y: float64(b.Y), W: float64(b.W), H: float64(b.H)},
+			})
+		}
+	}
 	// Children in flow first, absolute ones above them, as they paint.
 	scrolled = scrolled || e.scrolls()
 	for ch := e.first; ch != nil; ch = ch.next {
@@ -324,6 +335,9 @@ func (rt *engine) accessElement(t *platform.AccessTree, e *node, parent int, scr
 		}
 	}
 }
+
+// pageNodeID tells the node of a web view's page from its element's.
+const pageNodeID = 0x9e3779b97f4a7c15
 
 // accessDetails fills in the name, value, states and actions of a node.
 func (rt *engine) accessDetails(e *node, n *platform.AccessNode) {

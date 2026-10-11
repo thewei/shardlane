@@ -166,3 +166,44 @@ func BenchmarkHalvePhoto(b *testing.B) {
 		halve(img)
 	}
 }
+
+func TestBitmapUpdate(t *testing.T) {
+	solid := func(w, h int, c color.RGBA) *image.RGBA {
+		img := image.NewRGBA(image.Rect(0, 0, w, h))
+		for i := 0; i < len(img.Pix); i += 4 {
+			img.Pix[i], img.Pix[i+1], img.Pix[i+2], img.Pix[i+3] = c.R, c.G, c.B, c.A
+		}
+		return img
+	}
+	red, blue := color.RGBA{255, 0, 0, 255}, color.RGBA{0, 0, 255, 255}
+	bm := NewBitmap(solid(64, 64, red))
+	tt := coreNewTester(func(c *context) {
+		coreImage(c, bm).Size(16, 16).Fit(FillBox)
+	}, 40, 40)
+	if got := tt.Image().RGBAAt(8, 8); got != red {
+		t.Fatalf("before: %v", got)
+	}
+	level := bm.smaller(4) // a level, which the new picture redoes
+	img, ver, levelVer := bm.img, bm.img.Version(), level.Version()
+	next := solid(64, 64, blue)
+	bm.Update(next)
+	// The same size keeps the image, so the GPU keeps its texture.
+	if bm.img != img || bm.img.Version() == ver || &bm.img.Pix[0] != &next.Pix[0] {
+		t.Error("an update of the same size made another image, or copied")
+	}
+	// Its levels too, made again from the new picture as they show.
+	if got := bm.smaller(4); got != level || got.Version() == levelVer || got.Pix[2] != 255 || got.Pix[0] != 0 {
+		t.Errorf("level after the update: same %v, version %d → %d, pixel %v", got == level, levelVer, got.Version(), got.Pix[:4])
+	}
+	if v := level.Version(); bm.smaller(4) != level || level.Version() != v {
+		t.Error("an unchanged picture's level was made again")
+	}
+	tt.Frame()
+	if got := tt.Image().RGBAAt(8, 8); got != blue {
+		t.Errorf("after: %v", got)
+	}
+	bm.Update(solid(32, 48, red))
+	if w, h := bm.Size(); w != 32 || h != 48 || bm.img == img {
+		t.Errorf("resized to %dx%d", w, h)
+	}
+}

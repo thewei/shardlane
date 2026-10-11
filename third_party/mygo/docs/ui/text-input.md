@@ -29,6 +29,26 @@ ui.TextArea(c, &app.notes).Height(160)
   still takes the focus, without a caret, and its text can be selected and
   copied.
 - `Disabled(true)` grays it out.
+- `OnPaste(fn)` sees a paste (Cmd+V or Ctrl+V, the Edit menu's or the
+  context menu's Paste) before it is inserted, with the clipboard's text,
+  empty when it holds none, as with an image. Returning true takes the
+  paste, which then changes nothing, as `preventDefault` does on the web:
+
+  ```go
+  ui.TextArea(c, &app.draft).Lines(1, 8).OnPaste(func(text string) bool {
+  	if len(text) > 10_000 {
+  		app.attach(text) // a large block becomes an attachment
+  		return true
+  	}
+  	if text == "" {
+  		if png := mygo.Clipboard.ReadImage(); png != nil {
+  			app.attachImage(png)
+  			return true
+  		}
+  	}
+  	return false
+  })
+  ```
 
 A `TextInput` too narrow for its text keeps the caret in view while it has
 the focus, and shows the start of its text without it.
@@ -44,7 +64,8 @@ for _, m := range mentions(app.draft) {
 ```
 
 The ranges are runes of the text, found in it each frame, and do not
-overlap; a password shows none.
+overlap; a password shows none. While an input method composes, its text
+sits unstyled at the caret and the ranges keep their style around it.
 
 A text area is at least a few lines high and grows with its text; given a
 height, it scrolls within it, with the wheel and a scroll bar, and keeps

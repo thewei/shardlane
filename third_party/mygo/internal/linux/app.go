@@ -22,9 +22,19 @@ type Backend struct {
 	name    string
 	running bool
 
-	windows   map[int]*window
+	windows map[int]*window
+	// flyouts are the flyouts that show on Wayland, in the order they
+	// showed: each popup's parent is the one before or a toplevel.
+	flyouts   []*window
 	byWebView map[ptr]*window
-	nextID    int
+	// webViews are the web views under surfaces (webview.go), by id.
+	webViews map[int]*window
+	nextID   int
+	// frames are the window manager's frames seen last around a decorated
+	// window in its normal state that the user cannot resize and one they
+	// can, which windows that have not shown yet expect (see
+	// window.frameExtents).
+	frames [2]extents
 
 	appMenu    *platform.Menu
 	schemes    map[string]bool
@@ -64,6 +74,7 @@ func New() *Backend {
 	return &Backend{
 		windows:   map[int]*window{},
 		byWebView: map[ptr]*window{},
+		webViews:  map[int]*window{},
 		schemes:   map[string]bool{},
 		trays:     map[int]*tray{},
 	}
@@ -204,6 +215,7 @@ func initCallbacks() {
 			return 0
 		})
 		initWindowCallbacks()
+		initFlyoutCallbacks()
 		initSurfaceCallbacks()
 		initDownloadCallbacks()
 		initMenuCallbacks()

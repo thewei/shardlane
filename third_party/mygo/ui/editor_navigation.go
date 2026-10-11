@@ -340,7 +340,18 @@ func (ed *editor) command(c *context, name string) {
 			ed.insert("")
 		}
 	case "paste":
-		if s := h.readClipboard(); s != "" {
+		s := h.readClipboard()
+		if ed.onPaste != nil {
+			// The frame builds again, showing what fn changed in the
+			// elements built before the input, as an attachment.
+			c.rt.consumed = true
+			if ed.onPaste(s) {
+				// Taken: the text and its selection stay, as when a web
+				// page prevents a paste's default.
+				break
+			}
+		}
+		if s != "" {
 			ed.insert(s)
 		}
 	case "selectAll":

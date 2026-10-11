@@ -51,9 +51,11 @@ func New(opts Options) mygo.Plugin {
 	}}
 }
 
+// key identifies a connection: by its page (a *mygo.Page), as a window
+// may show several, those of its web views.
 type key struct {
-	window int
-	id     string
+	page any
+	id   string
 }
 type connection struct {
 	db   *DB
@@ -72,11 +74,11 @@ type openOptions struct {
 }
 
 func (s *service) Open(ctx context.Context, name string, opts openOptions) (string, error) {
-	return s.open(ctx, mygo.CallerWindow(ctx).ID(), name, opts)
+	return s.open(ctx, mygo.CallerPage(ctx), name, opts)
 }
 
 func (s *service) Execute(ctx context.Context, id, sql string, args []wireValue) (wireResult, error) {
-	db, err := s.database(mygo.CallerWindow(ctx).ID(), id)
+	db, err := s.database(mygo.CallerPage(ctx), id)
 	if err != nil {
 		return wireResult{}, err
 	}
@@ -89,7 +91,7 @@ func (s *service) Execute(ctx context.Context, id, sql string, args []wireValue)
 }
 
 func (s *service) Query(ctx context.Context, id, sql string, args []wireValue) (wireRows, error) {
-	db, err := s.database(mygo.CallerWindow(ctx).ID(), id)
+	db, err := s.database(mygo.CallerPage(ctx), id)
 	if err != nil {
 		return wireRows{}, err
 	}
@@ -105,7 +107,7 @@ func (s *service) Query(ctx context.Context, id, sql string, args []wireValue) (
 }
 
 func (s *service) Transaction(ctx context.Context, id string, statements []wireStatement) ([]wireResult, error) {
-	db, err := s.database(mygo.CallerWindow(ctx).ID(), id)
+	db, err := s.database(mygo.CallerPage(ctx), id)
 	if err != nil {
 		return nil, err
 	}
@@ -129,10 +131,10 @@ func (s *service) Transaction(ctx context.Context, id string, statements []wireS
 }
 
 func (s *service) Close(ctx context.Context, id string) error {
-	return s.close(key{mygo.CallerWindow(ctx).ID(), id})
+	return s.close(key{mygo.CallerPage(ctx), id})
 }
 
-func (s *service) open(ctx context.Context, window int, name string, opts openOptions) (string, error) {
+func (s *service) open(ctx context.Context, page any, name string, opts openOptions) (string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
@@ -164,7 +166,7 @@ func (s *service) open(ctx context.Context, window int, name string, opts openOp
 		return "", err
 	}
 	id := rand.Text()
-	k := key{window, id}
+	k := key{page, id}
 	s.mu.Lock()
 	if s.closed || ctx.Err() != nil {
 		s.mu.Unlock()
@@ -195,12 +197,12 @@ func databaseName(name string) error {
 	return nil
 }
 
-func (s *service) database(window int, id string) (*DB, error) {
+func (s *service) database(page any, id string) (*DB, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	c := s.dbs[key{window, id}]
+	c := s.dbs[key{page, id}]
 	if c == nil || c.page.Err() != nil {
-		return nil, fmt.Errorf("sqlite: database is closed or belongs to another window")
+		return nil, fmt.Errorf("sqlite: database is closed or belongs to another page")
 	}
 	return c.db, nil
 }

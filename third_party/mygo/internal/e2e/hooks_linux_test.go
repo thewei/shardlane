@@ -26,6 +26,9 @@ func click(w *mygo.Window, x, y float64) (ok bool) {
 	return ok
 }
 
+// appClick is click, already through XTEST.
+func appClick(w *mygo.Window, x, y float64) bool { return click(w, x, y) }
+
 func sideButton(w *mygo.Window, back bool) (ok bool) {
 	mygo.RunOnMain(func() { ok = linux.TestSideButton(w.NativeHandle(), back) })
 	return ok
@@ -87,6 +90,7 @@ func fullScreenHidesToolbar(*mygo.Window) (bool, bool) { return false, false }
 
 // Only macOS windows have traffic lights.
 func trafficLights(*mygo.Window) (float64, float64, bool) { return 0, 0, false }
+func setWindowAppearance(*mygo.Window, bool)              {}
 
 // movePointer moves the pointer to a point of the screen, and pressButton
 // presses or releases the first mouse button, like a mouse.
@@ -272,7 +276,22 @@ func observe(*mygo.Window) (func(), bool) { return nil, false }
 // composition the test makes up does not show.
 func pressKey(*mygo.Window, uint16, string) bool { return false }
 
+// X routes a drag to the window under the pointer, which
+// dropFiles, dropping on the content's, skips.
+func dragFiles(*mygo.Window, float64, float64, []string) (bool, bool) { return false, false }
+
+// pressTab presses Tab, with Shift when back, as the keyboard does.
+func pressTab(_ *mygo.Window, back bool) bool {
+	if back {
+		return pressKeys("Shift_L", "Tab")
+	}
+	return pressKeys("Tab")
+}
+
 // AppKit's older accessibility API is macOS's.
 func axAttribute(*mygo.Window, string, string) (string, bool, bool, bool) {
 	return "", false, false, false
 }
+
+// pressEscape presses Escape, as the keyboard does.
+func pressEscape(*mygo.Window) bool { return pressKeys("Escape") }

@@ -19,12 +19,12 @@ cbuffer Globals : register(b0) {
 struct Inst {
 	float4 rect : RECT;         // x, y, width, height in pixels
 	float4 radii : RADII;       // top-left, top-right, bottom-right, bottom-left
-	float4 inner : INNER;       // radii of the border's inner edge, or of the box casting a shadow
+	float4 inner : INNER;       // radii of the border's inner edge, of the box casting a shadow, or of an inner shadow's hole
 	float4 color : COLOR0;
 	float4 color2 : COLOR1;     // gradient end
 	float4 border : COLOR2;     // border color
 	float4 grad : GRAD;         // gradient start and end points, or stripes
-	float4 uv : UV;             // texture rectangle, normalized, border widths, or the box casting a shadow
+	float4 uv : UV;             // texture rectangle, normalized, border widths, the box casting a shadow, or an inner shadow's hole
 	float4 clip : CLIP;         // the innermost clip rectangle
 	float4 clipRadii : CLIPR;
 	float4 params : PARAMS;     // kind, dashed or grayscale, sigma or paint, opacity
@@ -280,6 +280,15 @@ PSOut ps(VSOut i) {
 			float4 b = premul(i.border) * bc;
 			res = b + res * (1 - b.a);
 		}
+	} else if (kind < 1.5 && i.params.y > 0.5) {
+		// An inner shadow: inside the box, what the hole, blurred, leaves.
+		float sigma = i.params.z;
+		float hole = 0;
+		if (i.widths.z > 0 && i.widths.w > 0) {
+			float corner = max(max(i.inner.x, i.inner.y), max(i.inner.z, i.inner.w));
+			hole = sigma > 0 ? boxShadow(i.p, i.widths, sigma, corner) : rectCoverage(i.p, i.widths, i.inner);
+		}
+		res = premul(i.color) * (rectCoverage(i.p, i.rect, i.radii) * (1 - hole));
 	} else if (kind < 1.5) {
 		float sigma = i.params.z;
 		float corner = max(max(i.radii.x, i.radii.y), max(i.radii.z, i.radii.w));

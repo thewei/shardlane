@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"image"
+	"slices"
 	"strings"
 	"sync/atomic"
 
@@ -25,6 +26,8 @@ type headless struct {
 	cursor    Cursor
 	ime       platform.TextInputState
 	opened    []string
+	// escapes counts the Escapes nothing handled.
+	escapes int
 	openErr   error
 	// later are what the view asked to run after the frame, as a window
 	// posts them to the main thread.
@@ -53,6 +56,12 @@ type headless struct {
 	dragData    transfer.Data
 	dragLocal   any
 	dragOptions transfer.DragOptions
+	// webViews are where the last frame showing web views showed them;
+	// tabbedInto the web view Tab gave the keyboard last, from its end
+	// when tabbedBack.
+	webViews   []placedWebView
+	tabbedInto NativeWebView
+	tabbedBack bool
 }
 
 func (h *headless) size() (float32, float32, float32) { return h.w, h.h, h.scale }
@@ -91,6 +100,7 @@ func (h *headless) finishDataDrag(r transfer.Result) {
 	}
 }
 func (h *headless) titleBarDoubleClicked()            {}
+func (h *headless) escape()                           { h.escapes++ }
 func (h *headless) isDark() bool                      { return h.dark }
 func (h *headless) preferences() platform.Preferences { return h.prefs }
 func (h *headless) titleBar() TitleBar                { return h.bar }
@@ -120,6 +130,11 @@ func (h *headless) keepAccess(t *platform.AccessTree) {
 func (h *headless) popupMenu(m *platform.Menu, x, y float32, chosen func(int)) {
 	h.menu, h.menuAt, h.chosen = m, [2]float32{x, y}, chosen
 }
+func (h *headless) placeWebViews(views []placedWebView) {
+	h.webViews = append(h.webViews[:0], views...)
+}
+func (h *headless) tabIntoWebView(v NativeWebView, back bool)      { h.tabbedInto, h.tabbedBack = v, back }
+func (h *headless) platformWebView(NativeWebView) platform.WebView { return nil }
 func (h *headless) image() *image.RGBA {
 	m := &h.img.Image
 	return &image.RGBA{Pix: m.RGBA(), Stride: 4 * m.W, Rect: image.Rect(0, 0, m.W, m.H)}
@@ -277,9 +292,13 @@ func (t *Tester) ClickWith(mods Modifiers, s string) error {
 	return nil
 }
 
-// ClickAtWith clicks at (x, y), in DIPs, holding the modifier keys mods.
+// ClickAtWith clicks at (x, y), in DIPs, holding the modifier keys mods:
+// a web view that takes the pointer there (WebViewAt) takes the click.
 func (t *Tester) ClickAtWith(mods Modifiers, x, y float32) {
 	m := platform.Modifiers(mods)
+	if t.webViewPress(x, y, 0, m) {
+		return
+	}
 	t.send(platform.SurfaceEvent{Kind: platform.PointerDown, X: float64(x), Y: float64(y), Mods: m})
 	t.send(platform.SurfaceEvent{Kind: platform.PointerUp, X: float64(x), Y: float64(y), Mods: m})
 }
@@ -297,6 +316,9 @@ func (t *Tester) RightClick(s string) error {
 
 // RightClickAt clicks at (x, y), in DIPs, with the secondary button.
 func (t *Tester) RightClickAt(x, y float32) {
+	if t.webViewPress(x, y, 1, 0) {
+		return
+	}
 	t.send(platform.SurfaceEvent{Kind: platform.PointerDown, X: float64(x), Y: float64(y), Button: 1})
 	t.send(platform.SurfaceEvent{Kind: platform.PointerUp, X: float64(x), Y: float64(y), Button: 1})
 }
@@ -364,12 +386,39 @@ func (t *Tester) CloseMenu() { t.h.menu, t.h.chosen = nil, nil }
 
 // Press presses (x, y) without releasing; Release releases it.
 func (t *Tester) Press(x, y float32) {
+	if t.webViewPress(x, y, 0, 0) {
+		return
+	}
 	t.send(platform.SurfaceEvent{Kind: platform.PointerDown, X: float64(x), Y: float64(y)})
 }
 
 // Release releases the pointer at (x, y).
 func (t *Tester) Release(x, y float32) {
 	t.send(platform.SurfaceEvent{Kind: platform.PointerUp, X: float64(x), Y: float64(y)})
+}
+
+// WebViewAt returns the web view (WebView) that takes the pointer at
+// (x, y), as the window shows it: where the last frame showed it and
+// painted nothing over it that takes the pointer; nil for none.
+func (t *Tester) WebViewAt(x, y float32) NativeWebView {
+	for _, v := range slices.Backward(t.h.webViews) {
+		p := platform.WebViewPlacement{Clip: v.clip, Covers: v.covers}
+		if p.At(float64(x), float64(y)) {
+			return v.v
+		}
+	}
+	return nil
+}
+
+// webViewPress presses button at (x, y) on the web view taking the
+// pointer there, as the platform would, which the content only hears of,
+// and reports whether one took it.
+func (t *Tester) webViewPress(x, y float32, button int, mods platform.Modifiers) bool {
+	if t.WebViewAt(x, y) == nil {
+		return false
+	}
+	t.send(platform.SurfaceEvent{Kind: platform.WebViewPress, X: float64(x), Y: float64(y), Button: button, Mods: mods})
+	return true
 }
 
 // Move moves the pointer to (x, y).

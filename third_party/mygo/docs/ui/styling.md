@@ -18,6 +18,18 @@ ui.Column(c).Padding(18).Gap(12).Radius(10).
 - **Shadows.** `Shadow(x, y, blur, spread, c)` casts a box shadow, as CSS's
   `box-shadow` does: several stack, and each shows only outside the box,
   so a translucent background never shows its own shadow through.
+  `InsetShadow(x, y, blur, spread, c)` draws an inner one, as
+  `box-shadow: inset`: inside the box's padding edge, within its border
+  and rounded corners, above the background and below the children; the
+  offset moves it, and a positive spread grows it inward. Inner shadows
+  stack too, and go with outer ones, as a hairline that edges a field in
+  the dark:
+
+  ```go
+  field.Radius(12).Background(t.Surface).
+  	Shadow(0, 8, 24, 0, ui.RGBA(0, 0, 0, 0.3)).
+  	InsetShadow(0, 0, 1, 0, ui.RGBA(255, 255, 255, 0.2))
+  ```
 - **Gradients and stripes.** `Gradient(from, to, angle)` fills the box with
   a linear gradient; `LinearGradient` also places its colors along the line
   (`Start`, `End`) and mixes them in Oklab, which keeps their lightness,

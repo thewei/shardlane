@@ -1,4 +1,4 @@
-# Local patch over mygo v0.3.7
+# Local patch over mygo v0.4.1
 
 ## Delta 1: terminal `Options.LocalDragSelect`
 
@@ -35,15 +35,16 @@ branch in `node.Focus` after its nil/invalid-state guard in `ui/input.go`, one l
 
 ## Upgrade path
 
-Rebased onto v0.3.7 on 2026-10-10 (both deltas remain absent upstream;
-the v0.2.15-era diff is the reference). When an
-upstream mygo release ships both (a terminal option of the same
+Rebased onto v0.4.1 on 2026-10-11 (both deltas remain absent upstream;
+the v0.3.7-era diff is the reference; v0.4.1 additionally ships the
+Flyout API the quick panel builds on, so no flyout delta is carried).
+When an upstream mygo release ships both (a terminal option of the same
 name/semantics and field-focus delegation), delete the
 `replace github.com/egoist/mygo => ./third_party/mygo` directive in
 `go.mod`, bump the pin, and delete this checkout. Shardlane code already
 uses only the public option and needs no changes.
 
-Delta vs v0.3.7: an `Options` field + a 4-line guard in `view.pointerEvent`;
+Delta vs v0.4.1: an `Options` field + a 4-line guard in `view.pointerEvent`;
 an unexported `node.focusTo` field, a delegation branch after the nil-safe
 `hasState` guard in `node.Focus`, and one line in `field`. Preserve the upstream
 `TestOptionalElementInput/nil` behavior when rebasing this patch.

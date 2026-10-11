@@ -46,6 +46,7 @@ func (w *Window) attachContent() {
 				w.native.TitleBarDoubleClicked()
 			}
 		},
+		Escape: w.escape,
 		IsDark:        func() bool { return backend().Theme().IsDark() },
 		Preferences:   func() platform.Preferences { return backend().Theme().Preferences() },
 		UIFont:        func() string { return backend().Theme().UIFont() },
@@ -80,6 +81,7 @@ func (w *Window) attachContent() {
 				}
 			})
 		},
+		PlaceWebViews: w.placeWebViews,
 		PopupMenu: func(m *platform.Menu, x, y float64, chosen func(int)) {
 			pos := &platform.Point{X: int(math.Round(x)), Y: int(math.Round(y))}
 			menu := NewMenu(contentMenu(m, chosen))

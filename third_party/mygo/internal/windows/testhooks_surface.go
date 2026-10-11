@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"strconv"
 	"syscall"
+	"time"
 	"unicode/utf16"
 	"unsafe"
 
@@ -195,6 +196,41 @@ func TestDropData(hwnd uintptr, x, y float64, d transfer.Data, ops transfer.Oper
 	comCall(s.dropTarget, 6, data, 0, pl, uintptr(unsafe.Pointer(&effect)))
 	dropped = effect != 0
 	return
+}
+
+// TestDragFiles drags files from another application to (x, y), in DIPs,
+// of a window showing native UI and drops them there, as OLE does: through
+// the window's drop target, with the production IDataObject, asking the
+// target again while the window runs until it takes them, as the page of
+// a web view answers later, for a few seconds. It reports whether the
+// drop took them.
+func TestDragFiles(hwnd uintptr, x, y float64, paths []string) (dropped bool) {
+	s := surfaceByHandle(hwnd)
+	files, err := transfer.FileData(paths...)
+	if s == nil || err != nil {
+		return false
+	}
+	data := newDragData(platform.DragRequest{Data: files.Snapshot()})
+	defer release(data)
+	scale := float64(s.dpi()) / 96
+	pt := point{int32(x * scale), int32(y * scale)}
+	procClientToScreen.Call(s.hwnd, uintptr(unsafe.Pointer(&pt)))
+	pl := uintptr(uint32(pt.X)) | uintptr(uint32(pt.Y))<<32
+	const all = dropEffectCopy | dropEffectMove | dropEffectLink
+	effect := uint32(all)
+	comCall(s.dropTarget, 3, data, 0, pl, uintptr(unsafe.Pointer(&effect))) // DragEnter
+	for end := time.Now().Add(5 * time.Second); effect == 0 && time.Now().Before(end); {
+		theBackend.Step()
+		effect = all
+		comCall(s.dropTarget, 4, 0, pl, uintptr(unsafe.Pointer(&effect))) // DragOver
+	}
+	if effect == 0 {
+		comCall(s.dropTarget, 5) // DragLeave
+		return false
+	}
+	effect = all
+	comCall(s.dropTarget, 6, data, 0, pl, uintptr(unsafe.Pointer(&effect))) // Drop
+	return effect != 0
 }
 
 // TestAccessNode is an element of native UI as UI Automation reads it: the

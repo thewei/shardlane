@@ -22,13 +22,15 @@ type comboboxParts struct {
 	// showed them, next those of this frame, and items their elements.
 	// pointer is where the pointer was when it last highlighted an option.
 	// typed is set while the text is what the user typed since the popup
-	// opened, which Filtering reports.
+	// opened, which Filtering reports. shown is the option last scrolled
+	// into view as the highlight moved to it.
 	highlight *int
 	values    *[]string
 	next      []string
 	items     []*node
 	pointer   *[2]float32
 	typed     *bool
+	shown     *string
 	chosen    string
 	isChosen  bool
 }
@@ -74,6 +76,7 @@ func comboboxBase(c *context, text *string, first bool) *comboboxParts {
 		values:    coreLocal(in, "values", func() []string { return nil }),
 		pointer:   coreLocal(in, "pointer", func() [2]float32 { return [2]float32{} }),
 		typed:     coreLocal(in, "typed", func() bool { return false }),
+		shown:     coreLocal(in, "shown", func() string { return "" }),
 	}
 	in.afterInput(func() {
 		p.chosen, p.isChosen = "", false
@@ -169,7 +172,7 @@ func (p *comboboxParts) Popup(fn func(panel *node)) *node {
 	c := p.c
 	p.next, p.items = p.next[:0], p.items[:0]
 	if !*p.open {
-		*p.values = (*p.values)[:0]
+		*p.values, *p.shown = (*p.values)[:0], ""
 		return nil
 	}
 	b := p.anchor.Bounds()
@@ -201,7 +204,9 @@ func (p *comboboxParts) Popup(fn func(panel *node)) *node {
 }
 
 // Item creates an option: a row that is Highlighted when the pointer or
-// the arrows are on it, and that chooses value when clicked.
+// the arrows are on it, and that chooses value when clicked. The option
+// the highlight moves to scrolls into view, once, so that the wheel
+// scrolls on past it.
 func (p *comboboxParts) Item(value string) *node {
 	c := p.c
 	i := len(p.next)
@@ -217,6 +222,13 @@ func (p *comboboxParts) Item(value string) *node {
 		}
 	}
 	item.highlighted = *p.highlight == i
+	// Into view as the highlight moves to it, and not again: in every
+	// frame, it would pull the popup back as the wheel scrolls away from
+	// it, the pointer, which highlights, staying still.
+	if item.highlighted && *p.shown != value {
+		*p.shown = value
+		item.ScrollIntoView()
+	}
 	// The option the arrows are on is the one assistive technology reads
 	// as chosen, as in a list box.
 	item.checked = 1 + int8(b2f(item.highlighted))
@@ -259,7 +271,6 @@ func styleOptions(c *context, p *comboboxParts, options []string) *node {
 			item := p.Item(opt).Padding(t.Space(1.5), t.Space(2.5)).Radius(t.Radius)
 			if item.Highlighted() {
 				item.Background(t.Accent).TextColor(t.AccentText)
-				item.ScrollIntoView()
 			}
 			item.Children(func() { coreText(c, opt).SingleLine() })
 		}

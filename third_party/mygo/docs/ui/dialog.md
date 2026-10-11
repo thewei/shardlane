@@ -33,6 +33,18 @@ what is behind it is inert. As it closes, it gives the focus back to the
 element that had it, the button that opened it say. See
 [overlays](overlays.md).
 
+## Keeping it open
+
+`Dismissed` reports the frame Escape or a click outside closed the dialog;
+one that must stay open, with changes to save say, sets the `*bool` back to
+true then:
+
+```go
+if ui.Modal(c, &app.editing, app.editor).Dismissed() && app.unsaved {
+	app.editing = true
+}
+```
+
 To ask about something important, with buttons and no closing by a click
 outside, use an [alert dialog](alert-dialog.md).
 

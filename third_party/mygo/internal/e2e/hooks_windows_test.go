@@ -27,6 +27,12 @@ func click(w *mygo.Window, x, y float64) (ok bool) {
 	return ok
 }
 
+// appClick clicks with the system's input, which activates windows.
+func appClick(w *mygo.Window, x, y float64) (ok bool) {
+	mygo.RunOnMain(func() { ok = win.TestInputClick(w.NativeHandle(), x, y) })
+	return ok
+}
+
 func sideButton(w *mygo.Window, back bool) (ok bool) {
 	mygo.RunOnMain(func() { ok = win.TestSideButton(w.NativeHandle(), back) })
 	return ok
@@ -73,6 +79,7 @@ func fullScreenHidesToolbar(*mygo.Window) (bool, bool) { return false, false }
 
 // Only macOS windows have traffic lights.
 func trafficLights(*mygo.Window) (float64, float64, bool) { return 0, 0, false }
+func setWindowAppearance(*mygo.Window, bool)              {}
 
 // Frameless windows keep native resize borders here.
 func movePointer(int, int) bool                { return false }
@@ -270,7 +277,36 @@ func choosePopupItem(label string) (ok bool) {
 // composition the test makes up does not show.
 func pressKey(*mygo.Window, uint16, string) bool { return false }
 
+// dragFiles drags files from another application to (x, y) of a window of
+// native UI and drops them, as OLE does, waiting for the target to answer.
+func dragFiles(w *mygo.Window, x, y float64, paths []string) (dropped, ok bool) {
+	mygo.RunOnMain(func() { dropped = win.TestDragFiles(w.NativeHandle(), x, y, paths) })
+	return dropped, true
+}
+
+// pressTab presses Tab, with Shift when back, on the keyboard, in the
+// window brought to the front.
+func pressTab(w *mygo.Window, back bool) (ok bool) {
+	mygo.RunOnMain(func() {
+		if ok = win.TestForeground(w.NativeHandle()); !ok {
+			return
+		}
+		if back {
+			win.TestPressKeys(0x10, 0x09) // VK_SHIFT, VK_TAB
+		} else {
+			win.TestPressKeys(0x09)
+		}
+	})
+	return ok
+}
+
 // AppKit's older accessibility API is macOS's.
 func axAttribute(*mygo.Window, string, string) (string, bool, bool, bool) {
 	return "", false, false, false
+}
+
+// pressEscape presses Escape, as the keyboard does.
+func pressEscape(*mygo.Window) bool {
+	mygo.RunOnMain(func() { win.TestPressKeys(0x1B) }) // VK_ESCAPE
+	return true
 }

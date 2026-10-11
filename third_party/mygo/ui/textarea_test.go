@@ -3,11 +3,13 @@ package ui
 import (
 	"math"
 	"math/rand/v2"
+	"slices"
 	"strings"
 	"testing"
 	"unicode/utf8"
 	"unsafe"
 
+	"github.com/egoist/mygo/internal/platform"
 	"github.com/egoist/mygo/internal/text"
 )
 
@@ -789,5 +791,60 @@ func TestTextRanges(t *testing.T) {
 	}
 	if plain := ed.area.paraLayout(ed, 0).Lines[0].Width; plain >= bold {
 		t.Errorf("the bold mention is %v wide, plain %v", bold, plain)
+	}
+}
+
+// TextRanges keep their style while an input method composes in their paragraph: the
+// composition sits unstyled at the caret, and the runs after it move past it.
+func TestTextRangesWhileComposing(t *testing.T) {
+	red := RGB(220, 0, 0)
+	for _, tc := range []struct {
+		caret int
+		ends  []int // the layout's span ends, plain and red by turns from plain
+	}{
+		{1, []int{5, 11}},       // hss|i @Scout
+		{3, []int{5, 11}},       // hi ss|@Scout
+		{6, []int{3, 6, 8, 11}}, // hi @Scss|out
+		{9, []int{3, 9}},        // hi @Scoutss|
+		{15, []int{3, 9}},       // hi @Scout theress|
+	} {
+		for _, multiline := range []bool{true, false} {
+			s := "hi @Scout there"
+			var el *node
+			tt := coreNewTester(func(c *context) {
+				el = textInput(c, &s, multiline).Fill().AutoFocus().
+					TextRanges(TextRange{Start: 3, End: 9, Color: red, Weight: 700})
+			}, 300, 120)
+			tt.Key(0, KeyHome)
+			for range tc.caret {
+				tt.Key(0, KeyRight)
+			}
+			tt.send(platform.SurfaceEvent{Kind: platform.TextComposition, Text: "ss", Caret: 2})
+			ed := el.st.editor
+			if ed == nil || ed.compose != "ss" || ed.caret != tc.caret {
+				t.Fatalf("caret %d: not composing at it", tc.caret)
+			}
+			key, sp := ed.rangeSpans(0, ed.buf.n)
+			var ends []int
+			for i, st := range sp.styles {
+				ends = append(ends, st.End)
+				if red := sp.spans[i].Color == red; red != (i%2 == 1) {
+					t.Errorf("caret %d: span %d red %v", tc.caret, i, red)
+				}
+			}
+			if !slices.Equal(ends, tc.ends) || key == "" {
+				t.Errorf("caret %d, multiline %v: spans end at %v, want %v", tc.caret, multiline, ends, tc.ends)
+			}
+			n := 0
+			for _, g := range tt.h.last.Glyphs {
+				if g.Color == red.scene() {
+					n++
+				}
+			}
+			if n != len("@Scout") {
+				t.Errorf("caret %d, multiline %v: %d glyphs red while composing", tc.caret, multiline, n)
+			}
+			tt.rt.close()
+		}
 	}
 }

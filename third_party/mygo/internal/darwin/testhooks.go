@@ -73,7 +73,14 @@ func TestEndSheet(handle uintptr) bool {
 
 // TestClick sends a left mouse down and up at a point of a window's content
 // (top-left origin, in points), like a user click.
-func TestClick(handle uintptr, x, y float64) {
+func TestClick(handle uintptr, x, y float64) { testClick(handle, x, y, false) }
+
+// TestAppClick is TestClick through the application's event queue, where
+// event monitors see the click as they see the user's, as those of
+// transient popovers that close on clicks elsewhere.
+func TestAppClick(handle uintptr, x, y float64) { testClick(handle, x, y, true) }
+
+func testClick(handle uintptr, x, y float64, viaApp bool) {
 	withPool(func() {
 		win := id(handle)
 		content := msgRect(send(win, "contentView"), sel("frame"))
@@ -82,7 +89,11 @@ func TestClick(handle uintptr, x, y float64) {
 		for _, typ := range []uint{1, 2} { // NSEventTypeLeftMouseDown, LeftMouseUp
 			ev := msgMouseEvent(class("NSEvent"), sel("mouseEventWithType:location:modifierFlags:timestamp:windowNumber:context:eventNumber:clickCount:pressure:"),
 				typ, loc, 0, 0, number, 0, 0, 1, 1)
-			send(win, "sendEvent:", uintptr(ev))
+			if viaApp {
+				send(theBackend.app, "postEvent:atStart:", uintptr(ev), 0)
+			} else {
+				send(win, "sendEvent:", uintptr(ev))
+			}
 		}
 	})
 }
@@ -175,6 +186,18 @@ func TestTrafficLights(handle uintptr) (x, y float64) {
 	a := msgPointFromView(parent, sel("convertPoint:toView:"), f.Origin, 0)
 	b := msgPointFromView(parent, sel("convertPoint:toView:"), NSPoint{f.Origin.X + f.Size.Width, f.Origin.Y + f.Size.Height}, 0)
 	return math.Min(a.X, b.X), msgRect(win, sel("frame")).Size.Height - math.Max(a.Y, b.Y)
+}
+
+// TestSetWindowAppearance gives a window its own dark or light appearance,
+// apart from the application's.
+func TestSetWindowAppearance(handle uintptr, dark bool) {
+	name := "NSAppearanceNameAqua"
+	if dark {
+		name = "NSAppearanceNameDarkAqua"
+	}
+	withPool(func() {
+		send(id(handle), "setAppearance:", uintptr(send(class("NSAppearance"), "appearanceNamed:", uintptr(nsString(name)))))
+	})
 }
 
 // TestWebViewAttached reports whether a window's web view is in its view
@@ -361,18 +384,43 @@ func TestClickAndType(handle uintptr, x, y float64, text string) bool {
 
 // TestKey presses and releases the key of virtual key code code, typing
 // chars, in a window showing native UI, as the keyboard does: the events
-// go through the window to its surface, and the input method.
+// go through the window to its first responder, the surface and its input
+// method or a web view.
 func TestKey(handle uintptr, code uint16, chars string) bool {
+	return TestKeyShift(handle, code, chars, false)
+}
+
+// TestAppKey posts a key down and up to the application's event queue,
+// which sends it to the key window as it does the user's keys, to a page
+// or native UI.
+func TestAppKey(code uint16, chars string) {
+	withPool(func() {
+		number := sendInt(send(theBackend.app, "keyWindow"), "windowNumber")
+		s := nsString(chars)
+		for _, typ := range []uint{10, 11} { // NSEventTypeKeyDown, KeyUp
+			ev := msgKeyEvent(class("NSEvent"), sel("keyEventWithType:location:modifierFlags:timestamp:windowNumber:context:characters:charactersIgnoringModifiers:isARepeat:keyCode:"),
+				typ, NSPoint{}, 0, 0, number, 0, s, s, false, code)
+			send(theBackend.app, "postEvent:atStart:", uintptr(ev), 0)
+		}
+	})
+}
+
+// TestKeyShift is TestKey with Shift held when shift is set.
+func TestKeyShift(handle uintptr, code uint16, chars string, shift bool) bool {
 	w := theBackend.byNSWindow[id(handle)]
 	if w == nil || w.surface == nil {
 		return false
+	}
+	var flags uint
+	if shift {
+		flags = 1 << 17 // NSEventModifierFlagShift
 	}
 	withPool(func() {
 		number := sendInt(w.win, "windowNumber")
 		s := nsString(chars)
 		for _, typ := range []uint{10, 11} { // NSEventTypeKeyDown, KeyUp
 			ev := msgKeyEvent(class("NSEvent"), sel("keyEventWithType:location:modifierFlags:timestamp:windowNumber:context:characters:charactersIgnoringModifiers:isARepeat:keyCode:"),
-				typ, NSPoint{}, 0, 0, number, 0, s, s, false, code)
+				typ, NSPoint{}, flags, 0, number, 0, s, s, false, code)
 			send(w.win, "sendEvent:", uintptr(ev))
 		}
 	})
@@ -441,8 +489,10 @@ var (
 // TestDropFiles drags files over (x, y), in points from the top-left
 // corner of a window's content, and drops them there, as Finder would:
 // it calls the surface's dragging methods with an NSDraggingInfo of its
-// own. It reports whether the surface took the files over that point and
-// whether it took the drop.
+// own, and puts on the pasteboard the file reference URLs of the files
+// that exist at those paths, with no symbolic links. It reports whether
+// the surface took the files over that point and whether it took the
+// drop.
 func TestDropFiles(handle uintptr, x, y float64, paths []string) (over, dropped bool) {
 	w := theBackend.byNSWindow[id(handle)]
 	if w == nil || w.surface == nil {
@@ -464,7 +514,11 @@ func TestDropFiles(handle uintptr, x, y float64, paths []string) (over, dropped 
 		send(testDragPB, "clearContents")
 		var urls []id
 		for _, p := range paths {
-			urls = append(urls, send(class("NSURL"), "fileURLWithPath:", uintptr(nsString(p))))
+			u := fileURL(p)
+			if ref := send(u, "fileReferenceURL"); ref != 0 && goString(send(send(ref, "filePathURL"), "path")) == p {
+				u = ref
+			}
+			urls = append(urls, u)
 		}
 		send(testDragPB, "writeObjects:", uintptr(nsArray(urls...)))
 		v := w.surface.view

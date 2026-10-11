@@ -164,10 +164,38 @@ func (b *Backend) NewWindow(o *platform.WindowOptions, h platform.WindowHandler)
 		// Three buttons 46 wide at the top right, as on Windows.
 		w.TitleBarRoom = platform.TitleBar{Height: cmp.Or(o.TitleBarHeight, 32), Right: 138}
 	}
+	if o.Flyout != nil {
+		w.place(*o.Flyout, platform.Size{Width: o.Width, Height: o.Height})
+	}
 	b.mu.Lock()
 	b.windows = append(b.windows, w)
 	b.mu.Unlock()
 	return w, nil
+}
+
+// PlaceFlyout places a flyout as the real backends do, against the
+// parent's content area and the fake display's work area.
+func (w *Window) PlaceFlyout(f platform.Flyout, size platform.Size) {
+	if w.Opts.Flyout == nil {
+		return
+	}
+	w.place(f, size)
+	w.H.Moved()
+}
+
+func (w *Window) place(f platform.Flyout, size platform.Size) {
+	anchor := f.Anchor
+	if f.Tray != nil {
+		anchor = f.Tray.Bounds()
+	} else if p, ok := w.Opts.Parent.(*Window); ok {
+		c := p.ContentBounds()
+		anchor.X += c.X
+		anchor.Y += c.Y
+	}
+	r, _, _ := f.Place(anchor, size, platform.WorkAreaFor(anchor, screen{}.Displays()))
+	w.mu.Lock()
+	w.Flyout, w.bounds = f, r
+	w.mu.Unlock()
 }
 
 // AppMenu returns the last application menu.
@@ -310,6 +338,8 @@ type Window struct {
 	b    *Backend
 	H    platform.WindowHandler
 	Opts *platform.WindowOptions
+	// Flyout is how a flyout was placed last.
+	Flyout platform.Flyout
 
 	mu        sync.Mutex
 	scripts   []string
@@ -328,6 +358,8 @@ type Window struct {
 	Dropped []string
 	// PDF holds the options of the last PrintToPDF.
 	PDF platform.PDFOptions
+	// HTML holds the documents LoadHTML loaded, in order.
+	HTML []string
 	// What the window extras were last set to.
 	Background      platform.Color
 	Progress        string
@@ -434,24 +466,29 @@ func (w *Window) SetBounds(r platform.Rect) {
 	w.mu.Unlock()
 	w.H.Resized()
 }
-func (w *Window) Bounds() platform.Rect              { w.mu.Lock(); defer w.mu.Unlock(); return w.bounds }
-func (w *Window) SetContentBounds(r platform.Rect)   { w.SetBounds(r) }
-func (w *Window) ContentBounds() platform.Rect       { return w.Bounds() }
-func (w *Window) SetMinimumSize(platform.Size)       {}
-func (w *Window) SetMaximumSize(platform.Size)       {}
-func (w *Window) SetResizable(bool)                  {}
-func (w *Window) IsResizable() bool                  { return w.Opts.Resizable }
-func (w *Window) SetMovable(bool)                    {}
-func (w *Window) IsMovable() bool                    { return w.Opts.Movable }
-func (w *Window) SetMinimizable(bool)                {}
-func (w *Window) IsMinimizable() bool                { return w.Opts.Minimizable }
-func (w *Window) SetMaximizable(bool)                {}
-func (w *Window) IsMaximizable() bool                { return w.Opts.Maximizable }
-func (w *Window) SetClosable(bool)                   {}
-func (w *Window) IsClosable() bool                   { return w.Opts.Closable }
-func (w *Window) SetAlwaysOnTop(bool)                {}
-func (w *Window) IsAlwaysOnTop() bool                { return w.Opts.AlwaysOnTop }
-func (w *Window) Show()                              { w.mu.Lock(); w.visible, w.focused = true, true; w.mu.Unlock() }
+func (w *Window) Bounds() platform.Rect            { w.mu.Lock(); defer w.mu.Unlock(); return w.bounds }
+func (w *Window) SetContentBounds(r platform.Rect) { w.SetBounds(r) }
+func (w *Window) ContentBounds() platform.Rect     { return w.Bounds() }
+func (w *Window) SetMinimumSize(platform.Size)     {}
+func (w *Window) SetMaximumSize(platform.Size)     {}
+func (w *Window) SetResizable(bool)                {}
+func (w *Window) IsResizable() bool                { return w.Opts.Resizable }
+func (w *Window) SetMovable(bool)                  {}
+func (w *Window) IsMovable() bool                  { return w.Opts.Movable }
+func (w *Window) SetMinimizable(bool)              {}
+func (w *Window) IsMinimizable() bool              { return w.Opts.Minimizable }
+func (w *Window) SetMaximizable(bool)              {}
+func (w *Window) IsMaximizable() bool              { return w.Opts.Maximizable }
+func (w *Window) SetClosable(bool)                 {}
+func (w *Window) IsClosable() bool                 { return w.Opts.Closable }
+func (w *Window) SetAlwaysOnTop(bool)              {}
+func (w *Window) IsAlwaysOnTop() bool              { return w.Opts.AlwaysOnTop }
+func (w *Window) Show() {
+	w.mu.Lock()
+	w.visible = true
+	w.focused = w.focused || w.Opts.Flyout == nil || w.Opts.Flyout.Focusable
+	w.mu.Unlock()
+}
 func (w *Window) ShowInactive()                      { w.mu.Lock(); w.visible = true; w.mu.Unlock() }
 func (w *Window) Hide()                              { w.mu.Lock(); w.visible = false; w.mu.Unlock() }
 func (w *Window) IsVisible() bool                    { w.mu.Lock(); defer w.mu.Unlock(); return w.visible }
@@ -478,7 +515,7 @@ func (w *Window) SetMenu(*platform.Menu)             {}
 func (w *Window) StartDrag()                         {}
 func (w *Window) TitleBarDoubleClicked()             {}
 func (w *Window) LoadURL(url string)                 { w.mu.Lock(); w.url = url; w.mu.Unlock() }
-func (w *Window) LoadHTML(string, string)            { w.mu.Lock(); w.url = "about:blank"; w.mu.Unlock() }
+func (w *Window) LoadHTML(html, _ string)            { w.addHTML(html) }
 func (w *Window) LoadFile(path, _ string)            { w.mu.Lock(); w.url = "file://" + path; w.mu.Unlock() }
 func (w *Window) Reload(bool)                        {}
 func (w *Window) StopLoading()                       {}
@@ -497,6 +534,14 @@ func (w *Window) CloseDevTools()                     { w.mu.Lock(); w.devtools =
 func (w *Window) IsDevToolsOpened() bool             { w.mu.Lock(); defer w.mu.Unlock(); return w.devtools }
 func (w *Window) CapturePage(cb func([]byte, error)) { cb([]byte("png"), nil) }
 func (w *Window) Print()                             {}
+
+// addHTML records a document LoadHTML loads.
+func (w *Window) addHTML(html string) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.HTML = append(w.HTML, html)
+	w.url = "about:blank"
+}
 
 func (w *Window) Eval(js string) {
 	if w.OnEval != nil {
@@ -532,6 +577,7 @@ func (w *Window) Close() {
 	}
 	w.closed = true
 	w.mu.Unlock()
+	w.closeWebViews()
 	w.H.Closed()
 }
 
@@ -768,8 +814,10 @@ func (*tray) SetTitle(string)             {}
 func (*tray) SetToolTip(string)           {}
 func (*tray) SetMenu(*platform.Menu)      {}
 func (*tray) PopUpMenu(*platform.Menu)    {}
-func (*tray) Bounds() platform.Rect       { return platform.Rect{} }
-func (*tray) Destroy()                    {}
+
+// Bounds puts the icon in the menu bar above the fake display's work area.
+func (*tray) Bounds() platform.Rect { return platform.Rect{X: 1300, Width: 30, Height: 25} }
+func (*tray) Destroy()              {}
 
 // Surface is a fake window surface: it records what the content asks of
 // it, and tests deliver events through Send.
@@ -791,6 +839,12 @@ type Surface struct {
 	rate        float64
 	dataDrag    *platform.DragRequest
 	dropFormats []transfer.Format
+	// webViews are those made (webview.go), order those shown in the
+	// order the content painted them, and placements counts
+	// PlaceWebViews.
+	webViews   []*WebView
+	order      []*WebView
+	placements int
 }
 
 func (s *Surface) StartDataDrag(r platform.DragRequest) { s.dataDrag = &r }

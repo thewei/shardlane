@@ -32,7 +32,7 @@ const INTERACTIVE =
     ),
   );
 
-  const notify = (t: "dom-ready" | "drag" | "dblclick") => {
+  const notify = (t: "dom-ready" | "drag" | "dblclick" | "escape") => {
     try {
       post(JSON.stringify({ t }));
     } catch {
@@ -93,6 +93,15 @@ const INTERACTIVE =
   };
   w.addEventListener("dragover", accept);
   w.addEventListener("drop", accept);
+
+  // An Escape the page does not handle (preventDefault) closes a flyout,
+  // as a menu or popover. Handlers run in any order: look once all did.
+  w.addEventListener("keydown", (e: KeyboardEvent) => {
+    if (e.key !== "Escape" || e.isComposing) return;
+    setTimeout(() => {
+      if (!e.defaultPrevented) notify("escape");
+    });
+  });
 
   // Frameless windows: `--app-region: drag` (or `-webkit-app-region: drag`
   // where the engine supports it) turns an element into a window handle.

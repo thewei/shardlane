@@ -7,6 +7,7 @@ package darwin
 import (
 	"fmt"
 	"runtime"
+	"strings"
 	"sync"
 	"unsafe"
 
@@ -39,10 +40,12 @@ var (
 	msgSize          func(obj id, sel objc.SEL) NSSize
 	msgSetSize       func(obj id, sel objc.SEL, s NSSize)
 	msgSuperSetSize  func(sup uintptr, sel objc.SEL, s NSSize)
+	msgSuperPoint    func(sup uintptr, sel objc.SEL, p NSPoint) id
 	msgPoint         func(obj id, sel objc.SEL) NSPoint
 	msgSetPoint      func(obj id, sel objc.SEL, p NSPoint)
 	msgInitRect      func(obj id, sel objc.SEL, r NSRect) id
 	msgInitRectID    func(obj id, sel objc.SEL, r NSRect, a id) id
+	msgRectIDUint    func(obj id, sel objc.SEL, r NSRect, a id, n uint)
 	msgInitIDPoint   func(obj id, sel objc.SEL, a id, p NSPoint) id
 	msgInitWindow    func(obj id, sel objc.SEL, r NSRect, style uint, backing uint, deferFlag bool) id
 	msgColor         func(cls id, sel objc.SEL, r, g, b, a float64) id
@@ -129,10 +132,12 @@ func load() {
 		purego.RegisterFunc(&msgSize, msgSendAddr)
 		purego.RegisterFunc(&msgSetSize, msgSendAddr)
 		purego.RegisterFunc(&msgSuperSetSize, msgSendSuperAddr)
+		purego.RegisterFunc(&msgSuperPoint, msgSendSuperAddr)
 		purego.RegisterFunc(&msgPoint, msgSendAddr)
 		purego.RegisterFunc(&msgSetPoint, msgSendAddr)
 		purego.RegisterFunc(&msgInitRect, msgSendAddr)
 		purego.RegisterFunc(&msgInitRectID, msgSendAddr)
+		purego.RegisterFunc(&msgRectIDUint, msgSendAddr)
 		purego.RegisterFunc(&msgInitIDPoint, msgSendAddr)
 		purego.RegisterFunc(&msgInitWindow, msgSendAddr)
 		purego.RegisterFunc(&msgColor, msgSendAddr)
@@ -287,6 +292,14 @@ func sendSuperSize(self id, className string, s objc.SEL, size NSSize) {
 	msgSuperSetSize(superOf(self, className, &pin), s, size)
 }
 
+// sendSuperPoint is sendSuper for a method taking an NSPoint and
+// returning an object, as hitTest:.
+func sendSuperPoint(self id, className string, s objc.SEL, p NSPoint) id {
+	var pin runtime.Pinner
+	defer pin.Unpin()
+	return msgSuperPoint(superOf(self, className, &pin), s, p)
+}
+
 func respondsTo(obj id, selector string) bool {
 	return obj != 0 && sendBool(obj, "respondsToSelector:", uintptr(sel(selector)))
 }
@@ -394,6 +407,26 @@ func goBytes(data id) []byte {
 }
 
 func nsURL(s string) id { return send(class("NSURL"), "URLWithString:", uintptr(nsString(s))) }
+
+// filePathURLBytes resolves a file reference URL (file:///.file/id=…,
+// which Finder puts on the pasteboard when it drags or copies files) to a
+// file URL of its path. Other URLs come back unchanged.
+func filePathURLBytes(b []byte) []byte {
+	s := strings.TrimRight(string(b), "\x00")
+	if !strings.HasPrefix(s, "file:///.file/") {
+		return b
+	}
+	u := nsURL(s)
+	if u == 0 {
+		return b
+	}
+	if p := send(u, "filePathURL"); p != 0 {
+		if r := goString(send(p, "absoluteString")); r != "" {
+			return []byte(r)
+		}
+	}
+	return b
+}
 
 func fileURL(path string) id {
 	return send(class("NSURL"), "fileURLWithPath:", uintptr(nsString(path)))

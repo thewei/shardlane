@@ -6,6 +6,9 @@ import (
 	"bytes"
 	"image"
 	"image/png"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/egoist/mygo/transfer"
@@ -42,6 +45,36 @@ func TestClipboardNativeAliasesAndFileList(t *testing.T) {
 		img, err := png.Decode(bytes.NewReader(b))
 		if err != nil || img.Bounds() != image.Rect(0, 0, 2, 3) {
 			t.Fatalf("TIFF conversion: %v", err)
+		}
+	})
+}
+
+// Finder copies file reference URLs (file:///.file/id=…), which must be
+// read as paths.
+func TestClipboardFileReferenceURL(t *testing.T) {
+	load()
+	path := filepath.Join(t.TempDir(), "a b.txt")
+	if err := os.WriteFile(path, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	want, _ := filepath.EvalSymlinks(path)
+	withPool(func() {
+		ref := goString(send(send(fileURL(path), "fileReferenceURL"), "absoluteString"))
+		if !strings.HasPrefix(ref, "file:///.file/id=") {
+			t.Fatalf("reference URL %q", ref)
+		}
+		item := autorelease(send(send(class("NSPasteboardItem"), "alloc"), "init"))
+		send(item, "setData:forType:", uintptr(nsData([]byte(ref))), uintptr(nsString("public.file-url")))
+		for _, f := range []transfer.Format{transfer.FileList, transfer.URIList} {
+			reps, err := macClipboardReadItem(item, []transfer.Format{f})
+			if err != nil {
+				t.Fatal(err)
+			}
+			b, _ := transfer.New(transfer.NewItem(reps...)).Read(f)
+			files, err := transfer.New(transfer.NewItem(transfer.Bytes(transfer.FileList, b))).Files()
+			if err != nil || len(files) != 1 || files[0] != want {
+				t.Fatalf("%s: files %q, %v; want %q", f, files, err, want)
+			}
 		}
 	})
 }

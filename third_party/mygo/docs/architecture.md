@@ -44,8 +44,10 @@ framework safely. Read it before changing anything under `internal/`.
 .                       package mygo: the public API
 ├── app.go              lifecycle, quit sequence, Dock, paths (paths.go)
 ├── window.go           Window: the native window, its options, state and events
+├── flyout.go           NewFlyout: windows owned by a parent, placed next to an anchor
 ├── page.go             Page: the web page a window shows, its loading, Eval and events
 ├── content.go          Content: windows showing native UI instead of a page
+├── webview.go          WebView: web pages in windows of native UI, under it
 ├── ipc.go              Bind/BindAs, method calls, Event[T], CallerWindow
 ├── plugin.go           Plugin and Use: services bound as "plugin:<name>"
 ├── channel.go          Channel[T]: values streamed to a call's page
@@ -97,7 +99,8 @@ framework safely. Read it before changing anything under `internal/`.
 ├── transfer/           immutable data items, representations, lazy providers and drag effects
 ├── cmd/mygo/           the CLI: init, generate, dev, build, doctor
 ├── examples/           hello, todo, frameless, native; counter-native, vibrancy,
-│                       effort-slider and gallery (native UI)
+│                       effort-slider, flyout, menubar-flyout and gallery
+│                       (native UI); webview (web views in native UI)
 ├── docs/               the user guides, the official plugins' pages
 │                       (plugins/), and this architecture guide
 └── website/            the website, with these docs: TanStack Start, prerendered
@@ -262,18 +265,32 @@ purego gives three primitives, used everywhere:
 - The main thread is the one that called `gtk_init_check`; `IsMainThread`
   compares `gettid`. `Step` is `g_main_context_iteration(NULL, TRUE)` and
   `Wake` is `g_main_context_wakeup`.
+- `Bounds` are those of the frame a reparenting X11 window manager puts
+  around the window (`gdk_window_get_frame_extents`): GTK positions the
+  frame (NORTH_WEST gravity) and sizes the window inside it, without the
+  frame. `ContentBounds` are where the content widget is
+  (`gdk_window_get_origin` plus its offset below the menu bar). The
+  frame's extents are known once the window manager framed the window
+  that shows, which its first synthetic configure report tells; until
+  then a window expects the frame it had, or the one seen last around a
+  decorated window that is resizable or not as it is (openbox: 1, 20, 1
+  and 5 px at the bottom, or 1). Wayland has no frame in `Bounds`.
 - GTK geometry changes are asynchronous: `SetBounds` remembers the requested
-  rectangle, within the sizes GTK gives the window (`constrain`), as does a
-  window about to show, which X has where GTK created it, or where it was,
-  until the window manager places it; `Center` moves that rectangle along.
-  `Bounds` reports that rectangle until a configure event reports its size
-  and, on X11, its position, or the window manager's own (synthetic)
-  report of the size comes, or another size, which the window manager or
-  the user chose. A window being placed waits for the window manager's
-  report: a reparenting one first puts its frame where it created it. A
-  report of the previous size was sent before the window manager took the
-  request (openbox sends one when the size hints change); GTK would ask
-  for that size again from it, so the backend asks for the new one again.
+  rectangle, within the sizes GTK gives the window (`constrain`), with the
+  frame it expects, as does a window about to show, which X has where GTK
+  created it, or where it was, until the window manager places it;
+  `Center` moves that rectangle along. `Bounds` reports that rectangle
+  until a configure event reports its size and, on X11, its position, or
+  the window manager's own (synthetic) report of the size comes, or
+  another size, which the window manager or the user chose. A window being
+  placed waits for the window manager's report: a reparenting one first
+  puts its frame where it created it. If the frame is not the one
+  expected, the rectangle grows with it around the size asked for inside
+  it (`SetContentBounds`, `UseContentSize`, a window that showed before),
+  or GTK is asked for the size inside the new frame. A report of the
+  previous size was sent before the window manager took the request
+  (openbox sends one when the size hints change); GTK would ask for that
+  size again from it, so the backend asks for the new one again.
 - On Wayland, the configure event that activates a window can carry the
   size of the last buffer it drew, from before a resize GTK already took
   (Mutter sends one when native UI drawing with GL resizes from its first
@@ -1055,6 +1072,42 @@ as in Tauri:
   pages are secure contexts with a real origin on every platform, which
   these APIs need. `macos.infoPlist` adds keys such as the camera and
   microphone usage descriptions macOS requires.
+- Flyouts (`flyout.go`, `internal/platform/flyout.go`): `NewFlyout`
+  creates a window with `platform.WindowOptions.Flyout`, which backends
+  make a borderless, transparent popup owned by its parent, and place
+  with `Window.PlaceFlyout` against an anchor in the parent's content
+  area. `Flyout.Place` resolves the placement in the work area of a
+  display as GDK does for `gdk_window_move_to_rect` (`maybe_flip_position`,
+  then slide, then resize, per axis), and `WorkAreaFor` picks the display
+  as GDK's `get_monitor_for_rect`; macOS, X11 and Windows (in physical
+  pixels) use it, Wayland hands the anchor to the compositor's
+  positioner. The core places a window's flyouts again as it moves or
+  resizes (owned windows on Windows and X11 popups do not follow), and
+  as `SetAnchor` and `SetSize` change them. A focusable flyout closes
+  through `WindowHandler.ShouldClose` when it loses the keyboard: as its
+  panel resigns key (macOS), on a press outside it or a broken grab, or
+  as the compositor dismisses the popup (GTK, as `GtkMenu`), and as
+  another window is activated (Windows), whose activating click its
+  owner eats (`MA_ACTIVATEANDEAT`), as menus' and WinUI's flyouts'. An
+  Escape the content leaves closes a flyout too: native UI reports one
+  no shortcut took (`routeKeys`, `surface.Conn.Escape`), and the bridge
+  one no handler of the page cancelled (an `escape` message). `Flyout.Popover` shows one in an
+  `NSPopover` (`internal/darwin/popover.go`), whose window AppKit makes
+  as it shows, and whose transient behavior asks `popoverShouldClose:`.
+  `Flyout.Tray` anchors one to a tray icon's `Bounds` instead, without a
+  parent: the panel at `NSPopUpMenuWindowLevel` or an `NSPopover` shown
+  from the status item's button (macOS), a topmost unowned popup
+  (Windows), and on Linux, whose AppIndicator tells no bounds, an
+  undecorated utility toplevel in the middle of the work area, which a
+  focusable one closes as it loses the keyboard. A press on the icon
+  does not dismiss its flyout (`tray.pressed` in `popoverShouldClose:`
+  and on resigning key, the cursor over `Shell_NotifyIconGetRect` on
+  Windows), so its click toggles it. A global monitor of mouse downs
+  closes macOS's focusable panels on clicks outside the app, which a
+  panel taking the keyboard of an app that was not activated never
+  hears as the key window changing. The design follows GPUI's
+  `WindowKind::AnchoredPopup` and winit's `WindowType::Popup`, which
+  model xdg_positioner too.
 - `window.open()` and `target=_blank` go through `SetWindowOpenHandler`. By
   default http(s) URLs open in the default browser. Allowing one creates a
   window around the configuration or related view WebKit provides, with its
@@ -1739,11 +1792,108 @@ either.
   the other way along the target, where that leaves the window less, and
   moves along the target into the window (`alongTarget`). Popovers have no
   backdrop: the engine notes what each press went down on (`downs`, for a
-  pass), and `PressedOutside` walks from there through parents, and from a
-  popover to its anchor, which keeps presses in popovers of elements inside
-  the panel, and on its anchor, inside it, as the press goes on to what is
-  under it. A select's popup keeps a backdrop taking the presses outside,
+  pass), and `PressedOutside` walks from the last through parents, and from
+  a popover to its anchor, which keeps presses in popovers of elements
+  inside the panel, and on its anchor, inside it, as the press goes on to
+  what is under it; a press on the anchor after one elsewhere in the same
+  pass, as on a web view's page, leaves open the popover it opens. A select's popup keeps a backdrop taking the presses outside,
   as the system's pop-up menus do.
+- **Web views** (`webview.go`, `ui/webview.go`, `webview.go` of each
+  backend). `Window.NewWebView` makes a web view of a window showing
+  `Content`, whose page lives in a `Window` of its own that no list holds,
+  with `host` set: calls, channels, events, `Eval`, custom schemes,
+  downloads and permissions go through the code of windows' pages
+  unchanged, `CallerWindow` returns the host, `CallerPage` the page, and
+  the bridge has the host's id, so the window controls of the page act on
+  it. Its native side (`webViewNative`) takes page methods from the
+  backend's `platform.WebView` and window methods from the host's, which
+  drag regions use. `ui.WebView` places it: committing a frame notes where
+  each web view's element shows (`noteWebView`: its content box on whole
+  pixels, clipped as its hits are), and painting it makes a hole
+  (`OpHole`) through what the window painted, rounded as the border's
+  inner edge and cut by the clips around it, so that what paints after
+  the element paints over the page. The native web view is under the
+  surface, which shows it through its transparent frames; what shows over
+  it blends with it as over any pixels. After presenting a frame, the
+  engine gives the surface each web view's frame and clip and the boxes
+  of the hits after its own within its clip (`Covers`): the pointer is the
+  page's where it shows and nothing painted over it takes the pointer
+  (`WebViewPlacement.At`), as a dialog's backdrop does over all of it. A
+  press there goes to the page and comes to the content as `WebViewPress`,
+  which notes it for `PressedOutside` and takes the focus from the
+  content; the engine sets no cursor while the pointer is over a web view
+  (`cursorUnknown`), whose page sets it. Web views the frame does not build
+  hide and keep their pages. Glyphs over a hole are not on an opaque
+  background (`Painter.holes`), so that subpixel ones do not color the
+  page. Below full opacity a hole takes only that much of what is under
+  it away (`OpHole`'s `Opacity`), so the page blends over it. The element
+  is a Tab stop: focusing it gives the page the keyboard
+  (`WebView.TabInto`, from its end going back), and Tab past the page's
+  ends comes back as `WebViewTabOut`, from which the focus moves on. The
+  access tree has a node for each page, inside its element
+  (`AccessNode.WebView`), which the backends fill with the page's own
+  accessibility, as SwiftUI's `WebView` is in place. Backends:
+  - macOS: the WKWebView is in a flipped clip view (`MyGoClipView`, its
+    layer masking to its bounds) placed at the clip, under the surface in
+    the content view, in paint order; the Metal layer is not opaque, and
+    frames drawn in memory have their alpha. The surface's `hitTest:`
+    returns nil where a web view takes the pointer, so AppKit finds the
+    page under it. A web view's tracking areas get the mouse's moves
+    wherever its frame is: `MyGoWebView` drops `mouseMoved:`,
+    `mouseEntered:` and `cursorUpdate:` where the content painted over it,
+    and as the pointer goes there from the page sends WebKit an exit
+    outside the view, which WebKit takes as a move there, unhovering the
+    page; WebKit sets its cursor only where `hitTest:` finds the web view,
+    and the surface sets none over a page. `TabInto` puts the web view
+    after (before) the surface in the window's key view loop and selects
+    it, so WebKit focuses the page's first (last) element; as Tab leaves
+    the page WebKit selects the next key view, which `MyGoWindow` turns
+    into `WebViewTabOut`. The page's node lists the WKWebView, whose
+    `accessibilityParent` is that node; the clip view lists none.
+  - Linux: the first web view puts the surface's area in a `GtkOverlay`,
+    over a `GtkLayout` holding the WebKitWebViews (which, unlike a
+    `GtkFixed`, asks for no size), as an overlay, which GTK realizes again
+    with a new GL context (the GL renderer makes its objects again). The
+    GtkGLArea has an alpha channel from then on, and frames drawn in
+    memory paint over the web views (`CAIRO_OPERATOR_OVER`). An input
+    shape on the overlay's window of the area
+    (`gdk_window_input_shape_combine_region`) lets the pointer through to
+    the pages, whose windows then set the cursor; a web view's own
+    `button-press-event` tells the content. WebKitGTK focuses no element
+    as a view takes the focus, so `TabInto` blurs the page's and passes the
+    Tab being handled on to the view (`gtk_widget_event`); WebKit moves the
+    focus out as Tab leaves the page through GTK's `focus` signal, which
+    the view's handler turns into `WebViewTabOut`. The page's node lists
+    the view's accessible, an `AtkSocket` the web process's tree is
+    embedded in; the overlay is a subclass whose accessible lists the
+    surface's alone.
+  - Windows: WebView2 in visual hosting, a composition controller
+    (`ICoreWebView2Environment3`) whose visual is in a DirectComposition
+    target of the surface's window that is not topmost (a window has one
+    of each), on a device of its own without a rendering device
+    (`DCompositionCreateDevice2`): the surface's frames, in the topmost
+    target, are over it. The surface composes its frames from its first
+    web view on, as in a window without a redirection bitmap: it sends
+    `SurfaceRenew`, and the content makes its renderer again for a swap
+    chain for composition, or shows frames drawn in memory through the
+    compositor; GDI would draw under the web views. Each web view's
+    visual is in one clipped to its clip, the page at its bounds in the
+    surface's pixels. The surface gets the mouse everywhere and sends it on
+    (`SendMouseInput`) where a web view takes the pointer, or to the one a
+    press went to until the buttons are let go (with the capture), with a
+    leave as the pointer goes; it sets the cursor the page asks for
+    (`CursorChanged`), and a press moves the focus into the page.
+    `TabInto` is `MoveFocus` (next or previous), and `MoveFocusRequested`
+    becomes `WebViewTabOut`. The surface's drop target sends drags over a
+    page to its composition controller (`ICoreWebView2CompositionController3`'s
+    `DragEnter` and the others). For UI Automation the root also answers
+    `IRawElementProviderHwndOverride`: for the window WebView2 shows a page
+    with, it returns the page's node, which answers with WebView2's
+    provider of the page (`get_AutomationProvider`), as WinUI 3 does. That
+    provider has no children: the page's elements are under a top-level
+    window of WebView2's (`Chrome_WidgetWin_1`), which
+    `GetAutomationProviderForWindow` does not map to it, so UI Automation
+    finds them there (seen with a runtime of October 2026).
 - **Context menus** (`ui/menu.go`) open in two frames. A right-click or the
   menu key marks the element, from the states of the last frame, and the
   next frame runs its `ContextMenu` function to collect a `platform.Menu`;
@@ -1756,11 +1906,14 @@ either.
   rectangles with borders of a width per side, solid or dashed, filled
   with a color, a linear gradient mixed in sRGB or Oklab, or stripes;
   shadows (blurred rounded rectangles, cut by the box casting them, as
-  CSS's box-shadow is); runs of glyphs, whose masks may take a gradient
-  (paths drawn with one); images, in color or gray; effects
-  (`OpEffect`); and pushed and popped clips. Renderers draw the whole
-  scene each frame and retain only textures. Wavy underlines are stroked
-  paths.
+  CSS's box-shadow is, or inner ones, inside the box where the hole they
+  leave, blurred, does not cover it, as box-shadow: inset is); runs of
+  glyphs, whose masks may take a gradient (paths drawn with one); images,
+  in color or gray; effects (`OpEffect`); holes (`OpHole`), rounded
+  rectangles made transparent, what was painted there gone, for web
+  views; and pushed and popped clips.
+  Renderers draw the whole scene each frame and retain only textures.
+  Wavy underlines are stroked paths.
 - **Effects** (`scene.Effect`) are drawings that packages outside the
   renderers define, as the official plugins do (the glass plugin's Liquid
   Glass): a fragment shader for each GPU renderer, in Metal Shading
@@ -1965,7 +2118,9 @@ either.
   renderers blend with it (dual-source blending): it is the color's alpha
   but for subpixel glyphs, whose subpixels cover each channel by its own.
   OpenGL ES without `EXT_blend_func_extended` blends the mean of their
-  subpixels instead. Every GPU renderer draws these instances:
+  subpixels instead. A hole is an opaque fill in a batch of its own
+  (`Batch.Hole`), blended with a source factor of zero: the destination
+  keeps one minus its coverage, as the CPU renderer's `erase` does. Every GPU renderer draws these instances:
   - `internal/gpu/d3d11` with a shader compiled to DXBC ahead of time
     (on Windows, with the system's `d3dcompiler_47.dll`), so apps carry no shader compiler. The
     generated file records the SHA-256 of the source it came from, line
@@ -2357,7 +2512,8 @@ renderer's (`gputest.Compare`).
   manifest, read with sed from the indented JSON `mygo build` writes.
   `--uninstall` removes only what points into its install, including the
   URL handler entry the app registers.
-- On a macOS host, macOS targets also get "<name> <version>.dmg"
+- On a macOS host, macOS targets also get "<name> <version> <arch>.dmg",
+  or "<name> <version>.dmg" for darwin/universal
   (`dmg.go`): the CLI puts a copy of the app (`ditto --noclone`, since a
   clone of a sparse file takes fewer blocks than its copy on HFS+ will),
   the `/Applications` link, the volume icon and a `.DS_Store` written in
@@ -2604,9 +2760,12 @@ which npm allows only for packages that exist: the first release uses an
 | window position | honored | ignored by Wayland compositors | honored |
 | resize borders without a title bar | the window's own | the outer 5 px of the page | invisible, outside the window; along the top of a hidden title bar, a child window |
 | content protection, click-through | yes | ignored | yes |
+| flyouts | borderless nonactivating `NSPanel` child window, or an `NSPopover`; placed in the visible frame | `GTK_WINDOW_POPUP` (override-redirect, placed in the work area, on X11; `xdg_popup` with `gdk_window_move_to_rect` on Wayland); focusable ones grab the seat | owned `WS_POPUP` + `WS_EX_TOOLWINDOW`, `WS_EX_NOACTIVATE` unless focusable, `CS_DROPSHADOW` for a shadow, with corners rounded by DWM on Windows 11 |
 | custom scheme origin | `<scheme>://localhost` | `<scheme>://localhost` | `http://<scheme>.localhost` (the page's `location`) |
+| `LoadHTML` documents | a reload loads the base URL (`about:blank` without one), so the core cancels it (`Navigation.Reload`) and loads the HTML again; not in the history | as macOS | as macOS, but in the history: going back to one with a base URL loads that URL |
 | window.open | keeps the opener | independent window | independent window |
 | native UI surface | layer-backed NSView, frames from `CADisplayLink` (a timer at the display's rate before macOS 14), input methods through NSTextInputClient | GtkGLArea (GtkDrawingArea without a GPU), GtkIMMulticontext | `MyGoSurface` child window, IMM32 |
 | native UI data drags | NSDraggingSession, NSPasteboardItemDataProvider, NSDraggingDestination | GTK drag contexts, MIME selections, text/uri-list | OLE IDataObject, IDropSource, IDropTarget, Shell drag images |
 | native UI accessibility | `NSAccessibilityElement` subclasses | ATK objects (GObject types registered through purego), bridged to AT-SPI by GTK | UI Automation fragments (COM objects; assembly thunks for the methods taking doubles) |
 | native UI rendering | Metal, into a CAMetalLayer presenting with the Core Animation transaction | OpenGL 3.3 or ES 3.0 in the GtkGLArea's render signal; on the CPU, painted with cairo, where OpenGL runs on the CPU | Direct3D 11 (WARP without a GPU), flip-model swap chain |
+| web views in native UI | WKWebView in a clip view under the surface; `hitTest:` lets the pointer through | WebKitWebView in a `GtkLayout` under the area in a `GtkOverlay`; an input shape lets the pointer through | WebView2 composition controller in a DirectComposition target under the frames'; the surface sends it the mouse |

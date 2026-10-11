@@ -53,7 +53,7 @@ func textInputBase(c *context, value *string, multiline bool) *node {
 		ed.setText(*value)
 		ed.compose = ""
 	}
-	ed.readOnly, ed.password, ed.lines = false, false, [2]int{}
+	ed.readOnly, ed.password, ed.lines, ed.onPaste = false, false, [2]int{}, nil
 	ed.ranges = ed.ranges[:0]
 	e.onValueInput(stringInput)
 
@@ -78,6 +78,21 @@ func (e *node) ReadOnly(on bool) *node {
 		if on {
 			ed.compose = ""
 		}
+	}
+	return e
+}
+
+// OnPaste has fn see a paste into a text input, by Cmd+V, Ctrl+V or a
+// Paste menu item, before it is inserted, on the main thread as the paste
+// comes: text is the clipboard's text, empty when it holds none, as with
+// an image, which the app reads from the clipboard itself. fn reports
+// whether it took the paste; a paste taken changes nothing, its selection
+// and undo history included, as when a web page prevents a paste's
+// default and attaches a large block instead of inserting it. Like
+// ReadOnly, it holds for the input that comes until the next frame.
+func (e *node) OnPaste(fn func(text string) bool) *node {
+	if ed := e.st.editor; ed != nil && e.flags&flagEditable != 0 {
+		ed.onPaste = fn
 	}
 	return e
 }
@@ -189,8 +204,8 @@ type TextRange struct {
 // TextRanges styles runs of a text input's text, in the frames that call
 // it, with ranges that do not overlap. They follow the text as it is: an
 // app that finds them in the text finds them again as it changes. A
-// password shows none, nor a paragraph while an input method composes in
-// it.
+// password shows none; an input method's composition shows unstyled
+// between them.
 func (e *node) TextRanges(ranges ...TextRange) *node {
 	ed := e.st.editor
 	if ed == nil || e.flags&flagEditable == 0 {

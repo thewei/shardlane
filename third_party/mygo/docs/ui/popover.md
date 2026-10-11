@@ -24,12 +24,17 @@ ui.Popover(c, more, &app.menu, func() {
 })
 ```
 
+`Dismissed` reports the frame a press outside or Escape closed the popover;
+one that must stay open sets the `*bool` back to true then.
+
 A popover's elements follow its anchor as Tab moves, and as it closes with
 the focus in it, it gives the focus back to the element that had it. See
 [overlays](overlays.md).
 
 For a menu of the system's, use a [menu button](menu-button.md); for a tip,
-a [tooltip](tooltip.md).
+a [tooltip](tooltip.md). A popover shows in its window: one that must
+extend beyond the window's edges shows in a [flyout](../windows.md#flyouts),
+a window of its own placed next to the anchor.
 
 ## Without a look
 

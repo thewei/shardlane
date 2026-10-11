@@ -34,6 +34,8 @@ type host interface {
 	cancelDataDrag()
 	setDropFormats([]transfer.Format)
 	titleBarDoubleClicked()
+	// escape tells the window an Escape nothing handled.
+	escape()
 	isDark() bool
 	preferences() platform.Preferences
 	titleBar() TitleBar
@@ -48,6 +50,14 @@ type host interface {
 	// popupMenu shows a context menu at (x, y) after the event being
 	// handled; chosen receives the ID of the item chosen.
 	popupMenu(m *platform.Menu, x, y float32, chosen func(id int))
+	// placeWebViews shows the web views where the frame shows them, and
+	// hides the others.
+	placeWebViews(views []placedWebView)
+	// tabIntoWebView gives the page of v the keyboard as Tab does, from
+	// its end when back (platform.WebView.TabInto).
+	tabIntoWebView(v NativeWebView, back bool)
+	// platformWebView returns the web view of the platform v is, if any.
+	platformWebView(v NativeWebView) platform.WebView
 }
 
 // engine runs the user interface of one window: it builds frames with
@@ -85,9 +95,10 @@ type engine struct {
 	svgs         svgs
 	flex         flexScratch
 	grid         gridScratch
-	// under is the painter's stack of opaque backgrounds, kept from one
-	// frame to the next.
-	under []Rect
+	// under is the painter's stack of opaque backgrounds, and holes the
+	// holes it painted, kept from one frame to the next.
+	under []opaqueBox
+	holes []Rect
 
 	states map[uint64]*state
 	// free are states pruned, which new elements take: rows coming into
@@ -108,6 +119,12 @@ type engine struct {
 	// dialog on top, which assistive technology sees with what is above.
 	modalLayer  uint64
 	commitScope focusScope
+	// webPlaces are where the frame shows web views (WebView), and webOut
+	// what the host got of them; webShown tells that the last frame
+	// showed some.
+	webPlaces []webPlace
+	webOut    []placedWebView
+	webShown  bool
 	// The focus groups of the frame, the group of each element of the
 	// focus order in one, and the element of each that had the focus
 	// last.
@@ -441,6 +458,7 @@ func (rt *engine) runFrame() {
 	rt.stats.lap(phasePaint)
 	rt.insp.lap(2)
 	rt.host.present(&rt.scene)
+	rt.placeWebViews()
 	rt.stats.lap(phasePresent)
 	rt.prune()
 	rt.syncDropFormats()
@@ -771,6 +789,8 @@ func (rt *engine) endFrame() {
 // boxes, the hit list in paint order, the focus order.
 func (rt *engine) commit(root *node, w, h float32) {
 	rt.hits = rt.hits[:0]
+	clear(rt.webPlaces)
+	rt.webPlaces = rt.webPlaces[:0]
 	rt.focusOrder, rt.focusScopes = rt.focusOrder[:0], rt.focusScopes[:0]
 	rt.modal, rt.modalLayer, rt.commitScope, rt.commitPage = 0, 0, focusScope{}, 0
 	if rt.groups == nil {
@@ -814,6 +834,7 @@ func (rt *engine) commitElement(e *node, clip Rect, hidden bool) {
 		s.flags |= flagDisabled
 	}
 	s.cursor, s.tip = e.cursor, e.tip
+	s.webView = e.webView
 	s.role = e.role
 	s.input, s.caret, s.takesText = e.inputFn, e.caret, e.takesText
 	if s.textClient != e.textClient {
@@ -845,6 +866,9 @@ func (rt *engine) commitElement(e *node, clip Rect, hidden bool) {
 		if rt.focused == e.id {
 			rt.focused = 0
 		}
+	}
+	if e.webView != nil {
+		rt.noteWebView(e, clip, invisible)
 	}
 	switch {
 	case e.flags&flagPassThrough != 0 || invisible:
@@ -915,6 +939,12 @@ func intersect(a, b Rect) Rect {
 // takes clicks, whose own cursor is the default unless it sets one, so a
 // button in a text field shows no I-beam.
 func (rt *engine) updateCursor() {
+	if rt.pressed == nil && rt.overWebView() {
+		// The page sets the cursor over it: it is set again as the
+		// pointer comes back.
+		rt.cursor = cursorUnknown
+		return
+	}
 	c := CursorDefault
 	if rt.pressed != nil && rt.pressed.cursor != 0 {
 		c = rt.pressed.cursor - 1
@@ -938,3 +968,7 @@ func (rt *engine) updateCursor() {
 		rt.host.setCursor(c)
 	}
 }
+
+// cursorUnknown is the cursor the engine last set while the pointer is
+// over a web view, whose page set another.
+const cursorUnknown Cursor = 255

@@ -338,7 +338,65 @@ func TestWillNavigate(t *testing.T) {
 	check(platform.Navigation{URL: "https://ok.example", IsMainFrame: true}, true)
 	check(platform.Navigation{URL: "https://blocked.example", IsMainFrame: true}, false)
 	check(platform.Navigation{URL: "https://blocked.example", IsMainFrame: false}, true)
-	check(platform.Navigation{URL: "https://blocked.example", IsMainFrame: true, IsReload: true}, true)
+	check(platform.Navigation{URL: "https://blocked.example", IsMainFrame: true, Unasked: true}, true)
+}
+
+// TestReloadLoadsHTMLAgain checks that a reload of a document LoadHTML
+// loaded loads it again, where web views would reload its URL.
+func TestReloadLoadsHTMLAgain(t *testing.T) {
+	w, fw := testWindow(t, WindowOptions{})
+	commit := func(url string) { onMain(func() { fw.H.NavigationCommitted(url) }) }
+	reloads := func(url string) bool {
+		t.Helper()
+		nav := platform.Navigation{URL: url, IsMainFrame: true, Unasked: true, Reload: true}
+		went := onMainValue(func() bool { return fw.H.WillNavigate(nav) })
+		onMain(func() {}) // what the reload posted
+		return went
+	}
+	loaded := func(want ...string) {
+		t.Helper()
+		if got := onMainValue(func() []string { return slices.Clone(fw.HTML) }); !slices.Equal(got, want) {
+			t.Errorf("LoadHTML loaded %q, want %q", got, want)
+		}
+	}
+
+	w.Page().LoadHTML("one", "")
+	if !reloads("https://previous.example/") {
+		t.Error("the reload of the previous page was canceled")
+	}
+	commit("about:blank")
+	if reloads("about:blank") {
+		t.Error("the reload of the HTML went ahead")
+	}
+	commit("about:blank")
+	if reloads("about:blank#x") {
+		t.Error("the reload of the HTML after a fragment navigation went ahead")
+	}
+	loaded("one", "one", "one")
+	// Until it commits, a reload is the previous document's.
+	if !reloads("about:blank") {
+		t.Error("a reload before the HTML committed was canceled")
+	}
+	commit("about:blank")
+	commit("https://next.example/")
+	if !reloads("https://next.example/") {
+		t.Error("the reload of the next page was canceled")
+	}
+	loaded("one", "one", "one")
+
+	w.Page().LoadHTML("two", "mygo://localhost")
+	commit("mygo://localhost/")
+	if reloads("mygo://localhost/") {
+		t.Error("the reload of the HTML at its base URL went ahead")
+	}
+	loaded("one", "one", "one", "two", "two")
+	commit("mygo://localhost/")
+	if err := w.Page().LoadURL("https://next.example/"); err != nil {
+		t.Fatal(err)
+	}
+	if !reloads("mygo://localhost/") {
+		t.Error("a reload after LoadURL was canceled")
+	}
 }
 
 func TestReadyToShowFiresOnce(t *testing.T) {
@@ -1534,6 +1592,9 @@ var needsAppCalls = []struct {
 // do before Run, when the backend is not initialized, and what it may
 // not, then exits.
 func beforeRun() {
+	// An event for a frontend, as an app of one declares, so that generate
+	// mode has a client to write.
+	NewEvent[int]("test:before-run")
 	// Settings, which Run applies.
 	Theme.SetSource(ThemeDark)
 	App.Dock.SetMenu(NewMenu([]*MenuItem{{Label: "New Window"}}))

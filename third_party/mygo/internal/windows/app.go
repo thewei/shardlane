@@ -244,10 +244,13 @@ func registerClasses() error {
 	wndProcCallback = syscall.NewCallback(wndProc)
 	cursor, _, _ := procLoadCursorW.Call(0, idcArrow)
 	icon, _, _ := procLoadIconW.Call(instance(), 1) // the icon resource `mygo build` embeds
-	for _, name := range []string{appClass, windowClass, captionClass} {
+	for _, name := range []string{appClass, windowClass, captionClass, flyoutShadowClass} {
 		style := uint32(0x0003) // CS_HREDRAW | CS_VREDRAW
-		if name == captionClass {
+		switch name {
+		case captionClass:
 			style = 0x0008 // CS_DBLCLKS: a double click on the top edge
+		case flyoutShadowClass:
+			style |= 0x00020000 // CS_DROPSHADOW
 		}
 		wc := wndClassEx{
 			Style:     style,

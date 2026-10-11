@@ -9,12 +9,29 @@ import (
 // opens as it does hyperlinks.
 var urlPattern = regexp.MustCompile(`(?:https?|ftp|file)://[^\s"'<>` + "`" + `\x00-\x1f]+|mailto:[^\s"'<>` + "`" + `]+`)
 
+// pathPattern finds the file paths programs print as text: absolute, from
+// ~, ./ or ../, with a slash, or a file name with a :line; each may end in
+// :line or :line:col.
+var pathPattern = regexp.MustCompile(`(?:(?:~|\.{1,2})?/[^\s"'<>` + "`" + `\x00-\x1f:]+|[\w.@+-]+(?:/[\w.@+-]+)+/?)(?::\d+(?::\d+)?)?|[\w@+-][\w.@+-]*\.\w+:\d+(?::\d+)?`)
+
 // urlAt returns the URL of text, a row whose runes are in columns cols, at
 // column col, or "".
 func urlAt(text []rune, cols []int, col int) string {
+	return matchAt(urlPattern, text, cols, col)
+}
+
+// pathAt returns the file path of text at column col, as urlAt, or "".
+func pathAt(text []rune, cols []int, col int) string {
+	return matchAt(pathPattern, text, cols, col)
+}
+
+func matchAt(re *regexp.Regexp, text []rune, cols []int, col int) string {
 	s := string(text)
-	for _, m := range urlPattern.FindAllStringIndex(s, -1) {
+	for _, m := range re.FindAllStringIndex(s, -1) {
 		u := trimURL(s[m[0]:m[1]])
+		if u == "" {
+			continue
+		}
 		start := len([]rune(s[:m[0]]))
 		end := start + len([]rune(u))
 		if start < len(cols) && cols[start] <= col && col <= cols[end-1] {

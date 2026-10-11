@@ -171,6 +171,16 @@ type WindowOptions struct {
 type Window struct {
 	id     int
 	parent *Window
+	// flyout places a window NewFlyout created, at flyoutSize, the size
+	// it asked for. Main thread only.
+	flyout     *platform.Flyout
+	flyoutSize platform.Size
+	// host is the window a web view is in, for the page of a web view
+	// (webView); webViews are the pages of a window's web views, guarded
+	// by the lock of windows.
+	host     *Window
+	webView  *WebView
+	webViews []*Window
 	// pg is the window's page, which Page returns unless the window shows
 	// native UI.
 	pg *Page
@@ -207,6 +217,9 @@ type Window struct {
 	// Main thread only.
 	trusted        bool
 	trustedOrigins []string
+	// html is the document LoadHTML loaded, while it is the page's or
+	// about to be. Main thread only.
+	html *htmlDocument
 
 	mu                sync.Mutex
 	openHandler       func(WindowOpenRequest) *WindowOptions
@@ -291,13 +304,19 @@ func NewWindow(opts WindowOptions) *Window {
 	if err != nil {
 		panic(err)
 	}
+	return createWindow("NewWindow", opts, bg, nil)
+}
+
+// createWindow creates a window, or a flyout, once the application is
+// ready.
+func createWindow(caller string, opts WindowOptions, bg *background, flyout *flyoutOptions) *Window {
 	if !isMainThread() {
 		App.waitReady()
 	} else if !App.IsReady() {
-		panic("mygo: NewWindow called before the application is ready; create windows in App.WhenReady")
+		panic("mygo: " + caller + " called before the application is ready; create windows in App.WhenReady")
 	}
 	var w *Window
-	onMain(func() { w = newWindow(opts, bg, 0) })
+	onMain(func() { w = newWindow(opts, bg, 0, flyout) })
 	if w == nil {
 		// The event loop has already stopped.
 		w = &Window{}
@@ -333,14 +352,14 @@ func (w *Window) backgroundColor() *platform.Color {
 // updateBackgrounds gives windows with a light and a dark background the
 // one of the current appearance. Main thread only.
 func updateBackgrounds() {
-	for _, w := range Windows() {
+	for _, w := range pageWindows() {
 		if bg := w.background; w.native != nil && bg != nil && bg.light != bg.dark {
 			w.native.SetBackgroundColor(*w.backgroundColor())
 		}
 	}
 }
 
-func newWindow(opts WindowOptions, bg *background, native uintptr) *Window {
+func newWindow(opts WindowOptions, bg *background, native uintptr, flyout *flyoutOptions) *Window {
 	windows.Lock()
 	windows.nextID++
 	id := windows.nextID
@@ -358,6 +377,19 @@ func newWindow(opts WindowOptions, bg *background, native uintptr) *Window {
 		w.background = nil
 	}
 	popts.Native = native
+	if flyout != nil {
+		w.flyout = flyout.flyout
+		if t := flyout.tray; t != nil {
+			if t.native == nil {
+				panic("mygo: NewFlyout: the tray was destroyed")
+			}
+			w.flyout.Tray = t.native
+		}
+		w.flyoutSize = platform.Size{Width: popts.Width, Height: popts.Height}
+		popts.Flyout = w.flyout
+		popts.Focusable = w.flyout.Focusable
+		popts.Center = false
+	}
 	w.devTools = popts.DevTools
 	if w.stateKey != "" {
 		restoreWindowState(w.stateKey, popts)
@@ -447,7 +479,7 @@ func (w *Window) platformOptions(o *WindowOptions) *platform.WindowOptions {
 	}
 	p.UserScripts = []platform.UserScript{{Source: bridge.Script(bridge.Config{
 		Platform: jsPlatform(),
-		WindowID: w.id,
+		WindowID: w.top().id, // the window a web view is in
 		Version:  Version,
 		Secret:   w.secret,
 	})}}
@@ -689,6 +721,9 @@ func (w *Window) ContentBounds() Rectangle {
 // SetSize resizes the window.
 func (w *Window) SetSize(width, height int) {
 	w.do(func(n platform.Window) {
+		if w.setFlyoutSize(width, height) {
+			return
+		}
 		b := n.Bounds()
 		b.Width, b.Height = width, height
 		n.SetBounds(b)
@@ -704,6 +739,9 @@ func (w *Window) Size() (width, height int) {
 // SetContentSize resizes the window so the page area has the given size.
 func (w *Window) SetContentSize(width, height int) {
 	w.do(func(n platform.Window) {
+		if w.setFlyoutSize(width, height) {
+			return
+		}
 		b := n.ContentBounds()
 		b.Width, b.Height = width, height
 		n.SetContentBounds(b)
@@ -932,7 +970,10 @@ func (p *Page) LoadURL(rawURL string) error {
 	if err != nil {
 		return err
 	}
-	p.w.page(func(n platform.Window) { n.LoadURL(resolved) })
+	p.w.page(func(n platform.Window) {
+		p.w.html = nil
+		n.LoadURL(resolved)
+	})
 	return nil
 }
 
@@ -947,7 +988,10 @@ func (p *Page) LoadFile(path string) error {
 	if err != nil {
 		return err
 	}
-	p.w.page(func(n platform.Window) { n.LoadFile(abs, filepath.Dir(abs)) })
+	p.w.page(func(n platform.Window) {
+		p.w.html = nil
+		n.LoadFile(abs, filepath.Dir(abs))
+	})
 	return nil
 }
 
@@ -1006,9 +1050,39 @@ func (w *Window) isTrusted(rawURL string) bool {
 }
 
 // LoadHTML loads an HTML string. Relative URLs in it resolve against
-// baseURL, which may be empty.
+// baseURL, which may be empty, and the page is at baseURL, or about:blank.
+// Reloading the page, with Reload or from the page, loads html again.
 func (p *Page) LoadHTML(html, baseURL string) {
-	p.w.page(func(n platform.Window) { n.LoadHTML(html, baseURL) })
+	p.w.page(func(n platform.Window) { p.w.loadHTML(n, html, baseURL) })
+}
+
+// htmlDocument is a document LoadHTML loaded.
+type htmlDocument struct {
+	html, baseURL string
+	// shown is set once the page committed it.
+	shown bool
+}
+
+// loadHTML loads html into the page and remembers it for its reloads: web
+// views reload the page's URL instead, the base URL or a blank page. Main
+// thread only.
+func (w *Window) loadHTML(n platform.Window, html, baseURL string) {
+	w.html = &htmlDocument{html: html, baseURL: baseURL}
+	n.LoadHTML(html, baseURL)
+}
+
+// isAt reports whether url, which the page committed, is the document's,
+// fragments aside.
+func (d *htmlDocument) isAt(url string) bool {
+	base := d.baseURL
+	if base == "" {
+		base = "about:blank"
+	}
+	trim := func(u string) string {
+		u, _, _ = strings.Cut(u, "#")
+		return strings.TrimSuffix(u, "/")
+	}
+	return trim(url) == trim(base)
 }
 
 // Reload reloads the page.
@@ -1251,7 +1325,8 @@ func (p *Page) SetWindowOpenHandler(fn func(req WindowOpenRequest) *WindowOption
 
 // resetPage starts a new page context; the previous one is canceled.
 func (w *Window) resetPage() {
-	ctx, cancel := context.WithCancel(context.WithValue(context.Background(), callerKey{}, w))
+	ctx := context.WithValue(context.WithValue(context.Background(), callerKey{}, w.top()), pageKey{}, w.pg)
+	ctx, cancel := context.WithCancel(ctx)
 	w.mu.Lock()
 	prev := w.pageCancel
 	w.pageCtx, w.pageCancel = ctx, cancel
@@ -1460,6 +1535,7 @@ func (h *windowHandler) Closed() {
 		return
 	}
 	w.cancelDataDrag()
+	w.destroyWebViews()
 	w.detachContent()
 	w.native = nil
 	w.destroyed.Store(true)
@@ -1526,8 +1602,8 @@ func (h *windowHandler) MenuItemClicked(id int) {
 	}
 }
 
-func (h *windowHandler) Resized()           { h.w.stateChanged(); fire(&h.w.onResize) }
-func (h *windowHandler) Moved()             { h.w.stateChanged(); fire(&h.w.onMove) }
+func (h *windowHandler) Resized()           { h.w.stateChanged(); h.w.placeFlyouts(); fire(&h.w.onResize) }
+func (h *windowHandler) Moved()             { h.w.stateChanged(); h.w.placeFlyouts(); fire(&h.w.onMove) }
 func (h *windowHandler) Minimized()         { h.w.stateChanged(); fire(&h.w.onMinimize) }
 func (h *windowHandler) Restored()          { h.w.stateChanged(); fire(&h.w.onRestore) }
 func (h *windowHandler) Maximized()         { h.w.stateChanged(); fire(&h.w.onMaximize) }
@@ -1557,7 +1633,16 @@ func (w *Window) sendTitleBar() {
 func (h *windowHandler) Message(msg string) { h.w.handleMessage(msg) }
 
 func (h *windowHandler) WillNavigate(nav platform.Navigation) bool {
-	if !nav.IsMainFrame || nav.IsReload {
+	if doc := h.w.html; nav.IsMainFrame && nav.Reload && doc != nil && doc.shown {
+		// The reload of a document LoadHTML loaded loads it again.
+		postMain(func() {
+			if w := h.w; w.html == doc && w.native != nil {
+				w.loadHTML(w.native, doc.html, doc.baseURL)
+			}
+		})
+		return false
+	}
+	if !nav.IsMainFrame || nav.Unasked {
 		return true
 	}
 	e := &NavigateEvent{URL: nav.URL, UserInitiated: nav.UserInitiated}
@@ -1568,6 +1653,14 @@ func (h *windowHandler) WillNavigate(nav platform.Navigation) bool {
 func (h *windowHandler) NavigationStarted(string) {}
 
 func (h *windowHandler) NavigationCommitted(url string) {
+	if doc := h.w.html; doc != nil {
+		switch {
+		case doc.shown:
+			h.w.html = nil // another document replaced it
+		case doc.isAt(url):
+			doc.shown = true
+		}
+	}
 	h.w.trusted = h.w.isTrusted(url)
 	h.w.outMu.Lock()
 	h.w.domReady = false
@@ -1622,11 +1715,15 @@ func (h *windowHandler) NewWindow(req platform.NewWindowRequest) platform.Window
 	if err != nil {
 		log.Printf("mygo: window open handler: %v", err)
 	}
-	child := newWindow(o, bg, req.Native)
+	child := newWindow(o, bg, req.Native, nil)
 	return child.native
 }
 
-func (h *windowHandler) ClosedByPage() { h.w.close() }
+func (h *windowHandler) ClosedByPage() {
+	if h.w.host == nil { // a web view's page does not close its window
+		h.w.close()
+	}
+}
 
 func (h *windowHandler) RenderProcessGone(reason string) { fire1(&h.w.onRenderGone, reason) }
 
@@ -1679,6 +1776,8 @@ func (w *Window) handleMessage(msg string) {
 		if w.native != nil {
 			w.native.TitleBarDoubleClicked()
 		}
+	case "escape":
+		w.escape()
 	case "drop":
 		if w.native != nil {
 			w.filesDropped(w.native.DroppedFiles(), int(m.X), int(m.Y))
@@ -1698,7 +1797,11 @@ func (w *Window) filesDropped(paths []string, x, y int) {
 	if len(paths) == 0 {
 		return
 	}
-	fire1(&w.onFileDrop, &FileDropEvent{Paths: paths, X: x, Y: y})
+	if n, ok := w.native.(*webViewNative); ok {
+		// Where the web view shows in its window.
+		x, y = x+int(n.frame.X), y+int(n.frame.Y)
+	}
+	fire1(&w.top().onFileDrop, &FileDropEvent{Paths: paths, X: x, Y: y})
 	// Local paths are none of other pages' business.
 	if w.trusted {
 		if msg, err := encodeEvent(fileDropEvent, FileDropEvent{Paths: paths, X: x, Y: y}); err == nil {

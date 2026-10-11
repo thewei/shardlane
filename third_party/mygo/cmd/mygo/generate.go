@@ -21,7 +21,7 @@ func runGenerate(args []string) error {
 	if c.Bindings == "" {
 		return fmt.Errorf("the project has no frontend to write a client for: set bindings in %s, or pass -o", c.configName())
 	}
-	return writeClient(context.Background(), c)
+	return writeClient(context.Background(), c, true)
 }
 
 func dirArg(args []string) string {

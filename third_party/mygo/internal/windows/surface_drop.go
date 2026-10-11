@@ -13,7 +13,9 @@ import (
 
 // Files dragged over native UI come through OLE drag and drop: the
 // surface's window is a drop target, which tells the source whether the
-// content takes the files where they are.
+// content takes the files where they are. Over the page of a web view
+// that nothing the content painted covers, the page takes the drag
+// instead, through its composition controller, as it would its own.
 
 var (
 	procOleInitialize    = ole32.NewProc("OleInitialize")
@@ -51,6 +53,8 @@ type dropTarget struct {
 	drag       *platform.DataDragEvent
 	formats    map[transfer.Format]uint16
 	legacyLink bool
+	// page is the web view whose page has the drag.
+	page *window
 }
 
 // formatEtc is FORMATETC.
@@ -102,15 +106,20 @@ func initDropTarget() {
 		// DragEnter(data, keys, point, effect)
 		syscall.NewCallback(func(this, data, keys, pt, effect uintptr) uintptr {
 			t := target(this)
-			t.enter(data, *(*uint32)(native(effect)), keys)
-			t.over(keys, pt, effect)
+			allowed := *(*uint32)(native(effect))
+			t.enter(data, allowed, keys)
+			if !t.overPage(keys, pt, effect) {
+				t.over(keys, pt, effect)
+			}
 			t.helperEnter(data, pt, effect)
 			return sOK
 		}),
 		// DragOver(keys, point, effect)
 		syscall.NewCallback(func(this, keys, pt, effect uintptr) uintptr {
 			t := target(this)
-			t.over(keys, pt, effect)
+			if !t.overPage(keys, pt, effect) {
+				t.over(keys, pt, effect)
+			}
 			if t.helper != 0 {
 				p := point{int32(uint32(pt)), int32(uint32(pt >> 32))}
 				comCall(t.helper, 5, uintptr(unsafe.Pointer(&p)), uintptr(*(*uint32)(native(effect))))
@@ -123,7 +132,9 @@ func initDropTarget() {
 			if t.helper != 0 {
 				comCall(t.helper, 4)
 			}
-			t.s.send(platform.SurfaceEvent{Kind: platform.DataDragLeave, Drag: &platform.DataDragEvent{}})
+			if !t.leavePage() {
+				t.s.send(platform.SurfaceEvent{Kind: platform.DataDragLeave, Drag: &platform.DataDragEvent{}})
+			}
 			t.leave()
 			return sOK
 		}),
@@ -133,8 +144,17 @@ func initDropTarget() {
 			if t.data != data {
 				t.enter(data, *(*uint32)(native(effect)), keys)
 			}
-			t.over(keys, pt, effect)
-			t.drop(data, pt, effect)
+			if v := t.pageAt(pt); v != nil {
+				if v != t.page {
+					t.overPage(keys, pt, effect) // enters it
+				}
+				comCall(v.comp3, comp3Drop, data, keys, v.pagePoint(pt), effect)
+				t.page = nil
+			} else {
+				t.leavePage()
+				t.over(keys, pt, effect)
+				t.drop(data, pt, effect)
+			}
 			if t.helper != 0 {
 				p := point{int32(uint32(pt)), int32(uint32(pt >> 32))}
 				comCall(t.helper, 6, data, uintptr(unsafe.Pointer(&p)), uintptr(*(*uint32)(native(effect))))
@@ -161,6 +181,56 @@ func (s *surface) revokeFileDrops() {
 		release(s.dropTarget)
 		s.dropTarget = 0
 	}
+}
+
+// overPage passes the drag at a point of the screen on to the page of the
+// web view there, if one takes it, and reports whether one does: entering
+// it, the content hears that the drag left, and leaving it, the page.
+func (t *dropTarget) overPage(keys, pt, effect uintptr) bool {
+	v := t.pageAt(pt)
+	if v == t.page {
+		if v == nil {
+			return false
+		}
+		comCall(v.comp3, comp3DragOver, keys, v.pagePoint(pt), effect)
+		return true
+	}
+	if !t.leavePage() {
+		t.s.send(platform.SurfaceEvent{Kind: platform.DataDragLeave, Drag: &platform.DataDragEvent{}})
+	}
+	if v == nil {
+		return false
+	}
+	t.page = v
+	comCall(v.comp3, comp3DragEnter, t.data, keys, v.pagePoint(pt), effect)
+	return true
+}
+
+// pageAt returns the web view whose page takes a drag at a point of the
+// screen, if one does.
+func (t *dropTarget) pageAt(pt uintptr) *window {
+	if t.data == 0 {
+		return nil
+	}
+	v := t.s.webViewAt(t.s.screenDIP(pt))
+	if v == nil || v.comp3 == 0 { // a runtime older than drags into pages
+		return nil
+	}
+	return v
+}
+
+// leavePage tells the page that had the drag that it left, and reports
+// whether one had it.
+func (t *dropTarget) leavePage() bool {
+	v := t.page
+	t.page = nil
+	if v == nil {
+		return false
+	}
+	if !v.closed && v.comp3 != 0 {
+		comCall(v.comp3, comp3DragLeave)
+	}
+	return true
 }
 
 // over answers whether the content takes the files dragged to a point of

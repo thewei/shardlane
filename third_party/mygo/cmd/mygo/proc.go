@@ -211,8 +211,10 @@ func generateBindings(c *Config, binary string) (bool, error) {
 }
 
 // writeClient builds the app for this computer and writes its TypeScript
-// client, when it has a frontend.
-func writeClient(ctx context.Context, c *Config) error {
+// client, when it has a frontend and binds anything for it to call. asked
+// is set where the user asked for the client, as mygo generate does, which
+// then tells when there is none; mygo dev and mygo build pass over it.
+func writeClient(ctx context.Context, c *Config, asked bool) error {
 	if c.Bindings == "" {
 		return nil
 	}
@@ -233,9 +235,17 @@ func writeClient(ctx context.Context, c *Config) error {
 		}
 		return err
 	}
-	if changed {
+	switch {
+	case !fileExists(c.path(c.Bindings)):
+		// The app binds nothing: there is no client.
+		if asked {
+			t.done("No TypeScript client to write: the app binds no services or events")
+		} else {
+			t.stop()
+		}
+	case changed:
 		t.done("Wrote " + cyan(relPathTo(c.root, c.path(c.Bindings))))
-	} else {
+	default:
 		t.done(relPathTo(c.root, c.path(c.Bindings)) + " is up to date")
 	}
 	return nil

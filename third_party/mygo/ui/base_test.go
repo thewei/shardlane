@@ -255,6 +255,57 @@ func TestDialogAndPopoverBases(t *testing.T) {
 	}
 }
 
+// Dismissed reports Escape or a click outside closing a dialog or a
+// popover, which setting *open back keeps open, and not the dialog's own
+// buttons closing it.
+func TestDismissed(t *testing.T) {
+	dialog, popover, dismissed := true, false, 0
+	popoverDismissed := false
+	// Elements stand for nil while closed.
+	dismissedNow := func(n *node) bool { return n != nil && n.Dismissed() }
+	tt := coreNewTester(func(c *context) {
+		b := coreButton(c, "anchor")
+		if b.Clicked() {
+			popover = true
+		}
+		if dismissedNow(corePopover(c, b, &popover, func() { coreText(c, "popover") })) {
+			popoverDismissed = true
+		}
+		if dismissedNow(coreModal(c, &dialog, func() {
+			if coreButton(c, "Close").Clicked() {
+				dialog = false
+			}
+		})) {
+			dismissed++
+			dialog = true
+		}
+	}, 400, 300)
+	tt.Key(0, KeyEscape)
+	tt.Frame()
+	if !dialog || dismissed != 1 {
+		t.Fatalf("Escape: open %v, dismissed %d times", dialog, dismissed)
+	}
+	tt.ClickAt(5, 295)
+	tt.Frame()
+	if !dialog || dismissed != 2 {
+		t.Fatalf("a click outside: open %v, dismissed %d times", dialog, dismissed)
+	}
+	tt.Click("Close")
+	tt.Frame()
+	if dialog || dismissed != 2 {
+		t.Fatalf("Close: open %v, dismissed %d times", dialog, dismissed)
+	}
+	tt.Click("anchor")
+	tt.Frame()
+	if !popover {
+		t.Fatal("the popover does not open")
+	}
+	tt.Key(0, KeyEscape)
+	if popover || !popoverDismissed {
+		t.Errorf("Escape: the popover open %v, dismissed %v", popover, popoverDismissed)
+	}
+}
+
 func TestTextInputBase(t *testing.T) {
 	text := ""
 	var in *node

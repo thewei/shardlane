@@ -280,6 +280,9 @@ func macClipboardReadItem(item id, formats []transfer.Format) ([]transfer.Repres
 				return nil, errors.New("mygo: clipboard representation exceeds 64 MiB")
 			}
 			b = goBytes(value)
+			if name == "public.file-url" {
+				b = filePathURLBytes(b)
+			}
 			if f == transfer.Text && name != utString {
 				// AppKit decodes legacy/UTF-16 text into an NSString.
 				b = []byte(goString(send(item, "stringForType:", uintptr(typ))))

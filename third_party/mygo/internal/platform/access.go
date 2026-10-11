@@ -50,6 +50,10 @@ type AccessNode struct {
 	PosInSet, SetSize int
 	// Actions are the actions the element takes in AccessAction events.
 	Actions AccessActions
+	// WebView is the web view whose page the node stands for, if any
+	// (Surface.NewWebView): assistive technology finds the page's elements
+	// inside it, and it has no children of its own.
+	WebView WebView
 }
 
 // AccessRole is the kind of an element of an AccessTree.

@@ -435,6 +435,8 @@ type state struct {
 	cursor         Cursor
 	// tip marks an element with a tooltip (TooltipBase).
 	tip bool
+	// webView is the web view the element shows (WebView).
+	webView NativeWebView
 
 	clicks, rightClicks, doubleClicks int
 	// pressMods are the modifiers held as the pointer went down on the

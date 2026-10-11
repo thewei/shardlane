@@ -51,7 +51,7 @@ func (e *node) inputParams(width float32) text.Params {
 	p := e.textParams(width)
 	ed := e.st.editor
 	p.Text = ed.displayText()
-	if !ed.password && ed.compose == "" {
+	if !ed.password {
 		p.Spans, _ = ed.rangeSpans(0, ed.buf.n)
 	}
 	p.KeepSpaces = true
@@ -176,7 +176,7 @@ func (e *node) paintInput(p *Painter) {
 		}
 	}
 	var sp *spanPaint
-	if !ed.password && ed.compose == "" {
+	if !ed.password {
 		_, sp = ed.rangeSpans(0, ed.buf.n)
 	}
 	p.textLayout(l, ox, oy, ts.color, ts, sp)
@@ -207,29 +207,53 @@ func (e *node) paintInput(p *Painter) {
 
 // rangeSpans returns the TextRanges in runes start up to end of the text,
 // from start: the spans of their weights for the layout ("" when none
-// sets one), and how to paint their colors (nil when none sets one).
+// sets one), and how to paint their colors (nil when none sets one). An
+// input method's composition at the caret, between start and end, sits
+// unstyled between the runs, and those after it move past it.
 func (ed *editor) rangeSpans(start, end int) (string, *spanPaint) {
 	if len(ed.ranges) == 0 {
 		return "", nil
 	}
+	caret, n := -1, 0
+	if ed.compose != "" && start <= ed.caret && ed.caret <= end {
+		caret, n = ed.caret, utf8.RuneCountInString(ed.compose)
+	}
+	// local is where rune i is in the layout: a run that starts at the
+	// caret starts after the composition, one that ends there ends before it.
+	local := func(i int, starts bool) int {
+		if caret >= 0 && (i > caret || i == caret && starts) {
+			i += n
+		}
+		return i - start
+	}
 	var styles []text.Span
 	var spans []Span
 	weighted, colored := false, false
-	at := start
-	for _, r := range ed.ranges {
-		from, to := max(r.Start, start), min(r.End, end)
-		if from >= to || from < at {
-			continue
-		}
+	at := 0
+	add := func(from, to int, r TextRange) {
 		if from > at {
-			styles = append(styles, text.Span{End: from - start})
+			styles = append(styles, text.Span{End: from})
 			spans = append(spans, Span{})
 		}
-		styles = append(styles, text.Span{End: to - start, Weight: r.Weight})
+		styles = append(styles, text.Span{End: to, Weight: r.Weight})
 		spans = append(spans, Span{Color: r.Color, Weight: r.Weight})
+		at = to
+	}
+	last := start
+	for _, r := range ed.ranges {
+		from, to := max(r.Start, start), min(r.End, end)
+		if from >= to || from < last {
+			continue
+		}
+		if from < caret && caret < to {
+			add(local(from, true), local(caret, false), r)
+			add(local(caret, true), local(to, false), r)
+		} else {
+			add(local(from, true), local(to, false), r)
+		}
 		weighted = weighted || r.Weight > 0
 		colored = colored || r.Color.A > 0
-		at = to
+		last = to
 	}
 	key := ""
 	if weighted {
