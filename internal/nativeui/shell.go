@@ -320,8 +320,12 @@ type Shell struct {
 	chatLivePump        *history.LivePump
 	chatLiveFingerprint string
 	chatLivePath        string
-	// chatLiveCommitted is the committed live projection length at the last
-	// applied sync — the pending-echo baseline coordinate (0.6 §12).
+	// chatWebview is the chat page's embedded WebView (N19 Phase 2); nil
+	// until the first chat build with General.WebViewChat on, and
+	// chatWebviewBroken latches a failed creation so the native chat stays.
+	chatWebview       *mygo.WebView
+	chatWebviewBroken bool
+	// chatLiveCommitted is the committed live projection length at the last	// applied sync — the pending-echo baseline coordinate (0.6 §12).
 	chatLiveCommitted int
 	// chatPendingEcho is the unconsumed pending submission echo; nil once
 	// the provider source confirmed it.

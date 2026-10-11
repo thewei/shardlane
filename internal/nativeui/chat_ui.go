@@ -175,6 +175,12 @@ func (s *Shell) workspaceChatSurface(c *ui.Context) {
 			return
 		}
 
+		// N19 Phase 2: with the WebView chat enabled the body is the
+		// embedded page over the presentation-only bridge; the header band,
+		// rebind logic and empty/loading states above stay native.
+		if s.chatWebviewBody(c) {
+			return
+		}
 		ui.Scroll(c).Grow(1).Children(func() {
 			ui.Column(c).FillWidth().Padding(sp.M, sp.XL).Gap(sp.S).Children(func() {
 				for i, turn := range s.chatTurns {
@@ -206,6 +212,12 @@ func (s *Shell) chatPage(c *ui.Context) {
 			statusPill(c, summary, dispositionTone(s.chatDisposition))
 			ui.Text(c, s.chatConversationID).FontSize(Typography().Caption).TextColor(c.Theme().TextMuted).SingleLine()
 		})
+		// N19 Phase 2: with the WebView chat enabled the body is the
+		// embedded page over the presentation-only bridge; the header band,
+		// rebind logic and empty/loading states above stay native.
+		if s.chatWebviewBody(c) {
+			return
+		}
 		ui.Scroll(c).Grow(1).Children(func() {
 			ui.Column(c).FillWidth().Padding(sp.M, sp.XL).Gap(sp.S).Children(func() {
 				for i, turn := range s.chatTurns {
@@ -217,14 +229,20 @@ func (s *Shell) chatPage(c *ui.Context) {
 	})
 }
 
-// sendChatPrompt routes through the disposition decided from live
+// sendChatPrompt is the native composer's send action over its bound draft.
+func (s *Shell) sendChatPrompt() {
+	s.sendChatText(s.chatDraft)
+}
+
+// sendChatText routes one prompt through the disposition decided from live
 // sendability at commit time: SentNow delivers via the canonical
 // agent.prompt transaction; MidTurn queues; NeedsTerminal/unknown are
-// refused.
-func (s *Shell) sendChatPrompt() {
-	text := strings.TrimSpace(s.chatDraft)
+// refused. Shared by the native composer and the WebView chat bridge; it
+// returns the projection after the attempt.
+func (s *Shell) sendChatText(text string) ChatBridgeState {
+	text = strings.TrimSpace(text)
 	if text == "" || s.launch == nil || s.activeInstance == "" || s.chatPaneID == "" {
-		return
+		return s.chatBridgeState()
 	}
 	disposition := conversation.DispositionFor(agent.ClassifySendability(
 		agent.ParseRuntimePhase(string(s.chatPhase), s.chatLaunchPending)))
@@ -238,6 +256,8 @@ func (s *Shell) sendChatPrompt() {
 	default:
 		s.chatOutcome = "This agent needs the terminal; prompts stay disabled."
 	}
+	s.publishChatBridge()
+	return s.chatBridgeState()
 }
 
 // enqueueChatFollowUp queues the follow-up in the real delivery ledger
@@ -260,10 +280,12 @@ func (s *Shell) enqueueChatFollowUp(text string) {
 	}
 	if err := s.launch.EnqueueFollowUp(item); err != nil {
 		s.chatOutcome = "Queue full: " + err.Error()
+		s.publishChatBridge()
 		return
 	}
 	s.chatQueuedText = text
 	s.chatDraft = ""
+	s.publishChatBridge()
 }
 
 // cancelChatFollowUp cancels the queued follow-up in the ledger (available
@@ -274,10 +296,12 @@ func (s *Shell) cancelChatFollowUp() {
 			// The delivery already committed; the chip must not pretend
 			// otherwise.
 			s.chatOutcome = "The follow-up already delivered."
+			s.publishChatBridge()
 			return
 		}
 	}
 	s.chatQueuedText = ""
+	s.publishChatBridge()
 }
 
 func (s *Shell) chatAfterPrompt(requestID, text string, disposition conversation.PromptDisposition, err error) {
@@ -306,6 +330,7 @@ func (s *Shell) chatAfterPrompt(requestID, text string, disposition conversation
 		}
 		s.appendPendingEchoTurn()
 	}
+	s.publishChatBridge()
 }
 
 // bindChatConversation binds one conversation and fills the timeline from
@@ -342,9 +367,10 @@ func (s *Shell) bindChatConversation(conversationID string) {
 			s.chatLoading = false
 			if err != nil {
 				s.chatOutcome = "Load failed: " + err.Error()
-				return
+			} else {
+				s.chatTurns = conversation.DeriveTimeline(conversation.ItemsFromTranscript(window.Messages))
 			}
-			s.chatTurns = conversation.DeriveTimeline(conversation.ItemsFromTranscript(window.Messages))
+			s.publishChatBridge()
 		})
 	})
 }

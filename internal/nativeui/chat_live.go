@@ -142,6 +142,7 @@ func (s *Shell) bindLiveAgent(key agent.AgentKey) bool {
 	// other pane's rebind dropped it at openChat's pane assignment.
 	s.retainPendingEchoForPane(s.chatPaneID)
 	s.appendPendingEchoTurn()
+	s.publishChatBridge()
 	// The first hydration runs on the bind lane (synchronous in headless
 	// tests, window-marshalled in the app); the pump goroutine only reacts
 	// to later wakes and the backstop.
@@ -229,6 +230,7 @@ func (s *Shell) applyLiveSync(decoder *history.LiveDecoder) {
 	}
 	s.chatTurns = conversation.DeriveTimeline(items)
 	s.appendPendingEchoTurn()
+	s.publishChatBridge()
 }
 
 // appendPendingEchoTurn renders the unconsumed pending submission as the

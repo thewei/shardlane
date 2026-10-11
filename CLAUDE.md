@@ -13,7 +13,7 @@ docs/ - architecture source of truth, MyGo migration contract/roadmap, interacti
 </directory>
 
 <config>
-go.mod + go.sum + mygo.json - Go toolchain (1.27.1), MyGo pin (v0.4.1 + replace ./third_party/mygo), and packaging policy
+go.mod + go.sum + mygo.config.ts - Go toolchain (1.27.1), MyGo pin (v0.4.1 + replace ./third_party/mygo), packaging policy, and the chat WebView frontend (N19)
 AGENTS.md - repository engineering rules and required reading
 README.md - developer setup, run, checks, packaging, and product scope
 docs/client-product-architecture.md - unique architecture source of truth

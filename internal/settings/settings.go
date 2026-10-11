@@ -25,6 +25,11 @@ type GeneralSettings struct {
 	Density string `json:"density,omitempty"`
 	// HighContrast enables accessible higher-contrast borders and text tones (0.9 P19).
 	HighContrast bool `json:"high_contrast,omitempty"`
+	// WebViewChat renders the /workspace Chat surface in the official MyGo
+	// ui.WebView over the presentation-only chat bridge (N19, product
+	// decision 2026-10-11). Off keeps the Native chat surface; the native
+	// implementation retires only at WebView acceptance parity.
+	WebViewChat bool `json:"webview_chat,omitempty"`
 }
 
 type TerminalSettings struct {

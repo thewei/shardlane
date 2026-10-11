@@ -34,7 +34,7 @@ build/darwin-arm64/Shardlane.app
 build/darwin-arm64/Shardlane <version>.dmg
 ```
 
-Packaging identity is configured once in `mygo.json` (app name, bundle identifier, icon, minimum macOS version).
+Packaging identity and the chat WebView frontend are configured once in `mygo.config.ts` (app name, bundle identifier, icon, minimum macOS version, and the N19 `frontend/` keys). `go tool mygo build` installs frontend dependencies with Bun and embeds `frontend/dist` behind `mygo://localhost`; `go tool mygo dev` serves the page from the Vite dev server, and `go tool mygo generate` writes the typed bridge client.
 
 ## Native design system
 

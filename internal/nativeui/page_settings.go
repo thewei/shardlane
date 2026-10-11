@@ -171,6 +171,19 @@ func (s *Shell) settingsGeneral(c *ui.Context) {
 				}).Description("Reopen the window where it was last placed, when that still intersects a display.")
 			})
 		})
+		settingsCard(c, "Chat surface", func() {
+			ui.Form(c, func() {
+				ui.Field(c, "WebView chat", func() {
+					useWeb := s.settings.General.WebViewChat
+					if ui.Checkbox(c, &useWeb, "Render Chat in the embedded WebView").Changed() {
+						s.applySettings(func(v *settings.Settings) error {
+							v.General.WebViewChat = useWeb
+							return nil
+						})
+					}
+				}).Description("Experimental: the conversation body renders in the official MyGo WebView over the presentation-only chat bridge; the runtime, send path and follow-up queue are unchanged. Uncheck to return to the Native chat.")
+			})
+		})
 	})
 }
 

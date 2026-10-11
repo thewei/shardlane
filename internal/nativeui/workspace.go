@@ -142,6 +142,7 @@ func (s *Shell) rebindWorkspaceChat() {
 		s.stopLiveTail()
 		s.chatConversationID = ""
 		s.chatTurns = nil
+		s.publishChatBridge()
 	}
 }
 

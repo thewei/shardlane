@@ -34,7 +34,11 @@ const historyCatalogFileName = "history.sqlite3"
 const followUpLedgerFileName = "follow-up-ledger.json"
 
 func main() {
-	if !mygo.App.RequestSingleInstanceLock() {
+	// `mygo generate` runs the app just far enough to write the TypeScript
+	// client and returns from App.Run without opening windows; it must
+	// reach App.Run even while the real app holds the single-instance lock.
+	generating := os.Getenv("MYGO_GENERATE") != ""
+	if !generating && !mygo.App.RequestSingleInstanceLock() {
 		return
 	}
 
@@ -78,6 +82,11 @@ func main() {
 		nativeui.WithUserDataDir(userDataDir),
 	}, historyOpts...)...)
 	shell.Launch().AttachLedgerPath(filepath.Join(userDataDir, followUpLedgerFileName))
+
+	// The WebView chat page (N19) talks to the conversation runtime only
+	// through this presentation-only bridge; binding must happen before
+	// App.Run so `mygo generate` sees the service and writes the client.
+	mygo.BindAs("chat", nativeui.NewChatBridge(shell))
 
 	// Notification clicks route back to the Agent's owning pane, including
 	// clicks on notifications left over from a previous run (MyGo hands
