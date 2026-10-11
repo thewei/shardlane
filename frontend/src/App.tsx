@@ -167,6 +167,14 @@ export function App() {
     }
   };
 
+  const answerInteraction = async (id: string, option: string) => {
+    try {
+      setState(await chat.answerInteraction(id, option));
+    } catch {
+      refresh(); // lost a CAS race or the prompt moved on: re-read
+    }
+  };
+
   const stop = async () => {
     setSending(true);
     try {
@@ -296,6 +304,32 @@ export function App() {
         <button type="button" className="jump" onClick={jumpToLatest}>
           New messages ↓
         </button>
+      ) : null}
+      {state?.interactions?.length ? (
+        <div className="dock" role="alert">
+          {state.interactions.map((interaction) => (
+            <div className="interaction" key={interaction.id}>
+              <div className="interaction-head">
+                <span className="pill">
+                  {interaction.kind === "permission" ? "Approval" : "Question"}
+                </span>
+                <span className="interaction-prompt">{interaction.prompt}</span>
+              </div>
+              <div className="interaction-options">
+                {interaction.options.map((option, index) => (
+                  <button
+                    key={option}
+                    type="button"
+                    onClick={() => void answerInteraction(interaction.id, option)}
+                  >
+                    <span className="keycap">{index + 1}</span>
+                    {option}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
       ) : null}
       <div className="composer">
         {state?.outcome ? <div className="outcome">{state.outcome}</div> : null}

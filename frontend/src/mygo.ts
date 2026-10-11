@@ -4,6 +4,14 @@ import { call, event } from "mygo-runtime";
 
 // ---- Types ----
 
+/** ChatBridgeInteraction is one pending interaction card. */
+export interface ChatBridgeInteraction {
+  id: string;
+  kind: string;
+  prompt: string;
+  options: string[];
+}
+
 /**
  * ChatBridgeState is the full chat projection the page renders. It is
  * presentation state only: the conversation runtime, the send path and the
@@ -38,6 +46,11 @@ export interface ChatBridgeState {
    * context, when the transcript states one (context ring only).
    */
   contextTokens?: number;
+  /**
+   * Interactions are the bound pane's pending structured interactions
+   * (our hook layer's feed): approval/question cards above the composer.
+   */
+  interactions?: ChatBridgeInteraction[];
   turns: ChatBridgeTurn[];
 }
 
@@ -74,6 +87,16 @@ export interface ChatBridgeTurn {
  * lane before touching Shell state.
  */
 export const chat = {
+  /**
+   * AnswerInteraction claims the interaction (CAS, first answer wins) and
+   * delivers the choice as the option's arrow-navigation key sequence —
+   * arrows, never digits, which would type into the TUI (the reference
+   * transport's rule). The interaction is consumed even if the delivery
+   * fails: the agent stays blocked and may re-ask.
+   */
+  answerInteraction(interactionID: string, option: string): Promise<ChatBridgeState> {
+    return call("chat.AnswerInteraction", interactionID, option);
+  },
   /**
    * CancelQueued cancels the queued follow-up (only possible before its
    * delivery commit) and returns the projection.

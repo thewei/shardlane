@@ -328,6 +328,9 @@ type Shell struct {
 	chatPublishMu      sync.Mutex
 	chatPublishAt      time.Time
 	chatPublishTrailer *time.Timer
+	// hooksStop releases the hook spool tailer (our herdr plugin's event
+	// forwarder); nil when not started (headless sessions).
+	hooksStop func()
 	chatDraft          string
 	chatQueuedText     string
 	chatOutcome        string
@@ -516,6 +519,10 @@ func (s *Shell) AttachWindow(win *mygo.Window) {
 	s.bootstrapPending = true
 	s.bootstrapFailed = false
 	slog.Debug("native shell attached", "window_id", win.ID())
+	// Our hook layer (N19): tail the Shardlane herdr plugin's event spool —
+	// the source of the structured interaction model and pane lifecycle
+	// reconciliation.
+	s.AttachHookSpool()
 	// Appearance changes (system or Settings) re-publish the chat
 	// projection, whose theme field carries the resolved appearance to the
 	// WebView chat page.
@@ -579,6 +586,10 @@ func (s *Shell) Close() {
 	s.SaveSession()
 	s.cancelQuickAICommit()
 	s.cancelPiCommitSuggestion()
+	if s.hooksStop != nil {
+		s.hooksStop()
+		s.hooksStop = nil
+	}
 	if s.watchCancel != nil {
 		s.watchCancel()
 		s.watchCancel = nil

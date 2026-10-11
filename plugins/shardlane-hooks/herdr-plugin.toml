@@ -1,0 +1,16 @@
+# Shardlane's own hook layer, on top of Herdr's plugin event hooks (N19
+# interaction dock, real-time agent state). Herdr runs the forwarder for
+# each declared event with HERDR_PLUGIN_EVENT_JSON carrying the payload;
+# the forwarder appends it to the spool file the Shardlane app tails.
+# Link it once: herdr plugin link --path plugins/shardlane-hooks
+id = "com.whstudio.shardlane.hooks"
+name = "Shardlane hooks"
+version = "0.1.0"
+min_herdr_version = "0.9.3"
+description = "Forwards agent lifecycle events to the Shardlane app (interaction dock, live state)"
+platforms = ["macos"]
+
+[[events]]
+on = "pane.agent_status_changed"
+command = ["sh", "forward.sh"]
+platforms = ["macos"]

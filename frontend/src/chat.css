@@ -589,3 +589,78 @@ details.tool.error > summary {
 .ring-wrap {
   display: inline-flex;
 }
+
+/* Interaction dock (structured prompts from the hook layer) */
+
+.dock {
+  border-top: 1px solid var(--border-subtle);
+  padding: 8px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--panel);
+}
+
+.interaction {
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.interaction-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.interaction .pill {
+  background: var(--code-bg);
+  color: var(--text-muted);
+  border-radius: 999px;
+  padding: 1px 8px;
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+.interaction-prompt {
+  font-weight: 600;
+  font-size: 12.5px;
+  min-width: 0;
+}
+
+.interaction-options {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.interaction-options button {
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  background: var(--code-bg);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  padding: 6px 10px;
+  cursor: pointer;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.interaction-options button:hover {
+  border-color: var(--accent);
+}
+
+.keycap {
+  font-size: 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  padding: 0 5px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}

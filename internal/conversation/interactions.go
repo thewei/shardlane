@@ -129,6 +129,32 @@ func (b *InteractionBroker) ResolveCAS(interactionID, option string) (Interactio
 	return resolution, nil
 }
 
+// CancelForPane drops every pending interaction of one agent pane: the
+// pane's lifecycle moved on (the agent is no longer blocked), so its
+// questions are gone regardless of which conversation id they carried.
+func (b *InteractionBroker) CancelForPane(paneID string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for interactionID, interaction := range b.pending {
+		if interaction.AgentPaneID == paneID {
+			delete(b.pending, interactionID)
+		}
+	}
+}
+
+// PendingForPane lists one pane's unresolved interactions.
+func (b *InteractionBroker) PendingForPane(paneID string) []PendingInteraction {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	pending := make([]PendingInteraction, 0, 2)
+	for _, interaction := range b.pending {
+		if interaction.AgentPaneID == paneID {
+			pending = append(pending, interaction)
+		}
+	}
+	return pending
+}
+
 // CancelForConversation drops a pending interaction when the occupant
 // changed or the lifecycle moved on.
 func (b *InteractionBroker) CancelForConversation(id ConversationID) {

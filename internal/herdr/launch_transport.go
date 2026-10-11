@@ -281,6 +281,32 @@ func (m *Manager) SendAgentKeys(ctx context.Context, session, target string, key
 	return decodeTypedResult(raw, "ok", nil)
 }
 
+// ReadPane reads a pane's visible text (pane.read {pane_id, source}) — the
+// hook layer's screen input for interaction detection. The success payload
+// carries the window under the "read" key.
+func (m *Manager) ReadPane(ctx context.Context, session, paneID, source string) (string, error) {
+	socket, err := m.reachableSocket(session)
+	if err != nil {
+		return "", err
+	}
+	var raw json.RawMessage
+	if err := callRPCWithContext(ctx, socket, "pane.read", map[string]any{
+		"pane_id":    paneID,
+		"source":     source,
+		"format":     "text",
+		"strip_ansi": true,
+	}, true, &raw); err != nil {
+		return "", err
+	}
+	var read struct {
+		Text string `json:"text"`
+	}
+	if err := decodeTypedResult(raw, "read", &read); err != nil {
+		return "", err
+	}
+	return read.Text, nil
+}
+
 // AgentInfo is the exported verified subset for consumers above the adapter.
 type AgentInfo struct {
 	PaneID           string

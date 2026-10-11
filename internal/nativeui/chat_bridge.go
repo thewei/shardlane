@@ -78,8 +78,19 @@ type ChatBridgeState struct {
 	HasOlder bool `json:"hasOlder,omitempty"`
 	// ContextTokens is the provider-recorded size of the current request
 	// context, when the transcript states one (context ring only).
-	ContextTokens *int64           `json:"contextTokens,omitempty"`
-	Turns         []ChatBridgeTurn `json:"turns"`
+	ContextTokens *int64 `json:"contextTokens,omitempty"`
+	// Interactions are the bound pane's pending structured interactions
+	// (our hook layer's feed): approval/question cards above the composer.
+	Interactions []ChatBridgeInteraction `json:"interactions,omitempty"`
+	Turns        []ChatBridgeTurn        `json:"turns"`
+}
+
+// ChatBridgeInteraction is one pending interaction card.
+type ChatBridgeInteraction struct {
+	ID      string   `json:"id"`
+	Kind    string   `json:"kind"`
+	Prompt  string   `json:"prompt"`
+	Options []string `json:"options"`
 }
 
 // chatUpdated pushes the projection after every chat state mutation. Events
@@ -260,6 +271,62 @@ func (b *ChatBridge) Transcribe(ctx context.Context, audioBase64 string, mime st
 	return strings.TrimSpace(payload.Text), nil
 }
 
+// AnswerInteraction claims the interaction (CAS, first answer wins) and
+// delivers the choice as the option's arrow-navigation key sequence —
+// arrows, never digits, which would type into the TUI (the reference
+// transport's rule). The interaction is consumed even if the delivery
+// fails: the agent stays blocked and may re-ask.
+func (b *ChatBridge) AnswerInteraction(ctx context.Context, interactionID, option string) (ChatBridgeState, error) {
+	var paneID string
+	var keys []string
+	var prepareErr error
+	b.shell.callOnWindow(func() {
+		var chosen *conversation.PendingInteraction
+		for _, interaction := range b.shell.interactionBroker.PendingForPane(b.shell.chatPaneID) {
+			if interaction.ID == interactionID {
+				value := interaction
+				chosen = &value
+				break
+			}
+		}
+		if chosen == nil {
+			prepareErr = errors.New("the interaction is no longer pending")
+			return
+		}
+		index := -1
+		for i, candidate := range chosen.Options {
+			if candidate == option {
+				index = i
+				break
+			}
+		}
+		if index < 0 {
+			prepareErr = conversation.ErrUnknownOption
+			return
+		}
+		if _, err := b.shell.interactionBroker.ResolveCAS(interactionID, option); err != nil {
+			prepareErr = err
+			return
+		}
+		paneID = chosen.AgentPaneID
+		keys = make([]string, 0, index+1)
+		for i := 0; i < index; i++ {
+			keys = append(keys, "down")
+		}
+		keys = append(keys, "enter")
+	})
+	if prepareErr != nil {
+		return b.shell.chatBridgeStateOnWindow(), prepareErr
+	}
+	err := b.shell.runtime.SendAgentKeys(ctx, b.shell.activeInstance, paneID, keys)
+	var state ChatBridgeState
+	b.shell.callOnWindow(func() {
+		b.shell.publishChatBridge()
+		state = b.shell.chatBridgeState()
+	})
+	return state, err
+}
+
 // callOnWindow runs fn on the window UI lane and waits for it; inline when
 // no window exists (headless tests). Shell-bound methods run on their own
 // goroutines, so this is the only path back to Shell state.
@@ -294,6 +361,16 @@ func (s *Shell) chatBridgeState() ChatBridgeState {
 	state.Model = s.chatModel
 	state.HasOlder = s.chatHasOlder
 	state.ContextTokens = s.chatContextTokens
+	if s.chatPaneID != "" {
+		for _, interaction := range s.interactionBroker.PendingForPane(s.chatPaneID) {
+			state.Interactions = append(state.Interactions, ChatBridgeInteraction{
+				ID:      interaction.ID,
+				Kind:    string(interaction.Kind),
+				Prompt:  interaction.Prompt,
+				Options: interaction.Options,
+			})
+		}
+	}
 	for _, turn := range s.chatTurns {
 		bridgeTurn := ChatBridgeTurn{
 			User:      turn.UserRow,
