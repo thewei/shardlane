@@ -249,9 +249,12 @@ func quickAnchorRect(b ui.Rect) mygo.Rectangle {
 // first; its OnClosed is identity-guarded so a replacement created here
 // survives the stale callback.
 func (s *Shell) openQuickPanelFlyout(base mygo.FlyoutOptions) {
+	// Detach before closing: a programmatic Close fires OnClosed inline, and
+	// the stale listener must not reset the selection the caller just set
+	// (the agent-card switch path opens the replacement right here).
 	if prev := s.quickPanel; prev != nil {
-		prev.Close()
 		s.quickPanel = nil
+		prev.Close()
 	}
 	// The actionable rows' usage captions refresh right before showing,
 	// forced past the throttle.
