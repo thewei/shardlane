@@ -28,6 +28,11 @@ export interface ChatBridgeState {
    * (presentation pill only; never a runtime fact source).
    */
   model?: string;
+  /**
+   * HasOlder reports an earlier history page exists (history-bound chats
+   * only; the live tail is bounded by design).
+   */
+  hasOlder?: boolean;
   turns: ChatBridgeTurn[];
 }
 
@@ -70,6 +75,22 @@ export const chat = {
    */
   cancelQueued(): Promise<ChatBridgeState> {
     return call("chat.CancelQueued");
+  },
+  /**
+   * Older pages the history-bound transcript one window up: the load runs on
+   * the background lane and the refreshed projection arrives through the
+   * chat:updated event; the returned state is the pre-load snapshot.
+   */
+  older(): Promise<ChatBridgeState> {
+    return call("chat.Older");
+  },
+  /**
+   * PickAttachment opens the native file picker and returns the chosen path,
+   * empty when the user canceled. The path goes into the draft as an @mention
+   * the agent's own CLI understands — files are local, nothing is uploaded.
+   */
+  pickAttachment(): Promise<string> {
+    return call("chat.PickAttachment");
   },
   /**
    * Send routes the prompt through the same disposition decision as the

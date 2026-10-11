@@ -307,6 +307,14 @@ type Shell struct {
 	// chatModel is the last model the transcript window recorded
 	// (presentation pill only).
 	chatModel string
+	// chatWindowMessages accumulates the history pages the chat window has
+	// materialized (bounded by chatMaxAccumulatedMessages); chatWindowStart
+	// is the accumulated window's first index in the full transcript and
+	// chatHasOlder reports whether more exist above it. Live-bound chats
+	// keep no accumulation (the live tail is bounded by design).
+	chatWindowMessages []history.TranscriptMessage
+	chatWindowStart    int
+	chatHasOlder       bool
 	chatDraft          string
 	chatQueuedText     string
 	chatOutcome        string

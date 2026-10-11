@@ -355,6 +355,9 @@ func (s *Shell) bindChatConversation(conversationID string) {
 	s.chatConversationID = conversationID
 	s.chatLoading = true
 	s.chatTurns = nil
+	s.chatWindowMessages = nil
+	s.chatWindowStart = 0
+	s.chatHasOlder = false
 	service := s.hist.service
 
 	s.dispatch(func() {
@@ -367,6 +370,9 @@ func (s *Shell) bindChatConversation(conversationID string) {
 			if err != nil {
 				s.chatOutcome = "Load failed: " + err.Error()
 			} else {
+				s.chatWindowMessages = window.Messages
+				s.chatWindowStart = window.Start
+				s.chatHasOlder = window.Start > 0
 				items := conversation.ItemsFromTranscript(window.Messages)
 				s.chatTurns = conversation.DeriveTimeline(items)
 				s.chatModel = lastModelFromItems(items)
@@ -390,6 +396,70 @@ func (s *Shell) chatDispositionNow() conversation.PromptDisposition {
 		return conversation.DispositionFor(agent.ClassifySendability(card.RuntimePhase))
 	}
 	return conversation.DispositionUnknown
+}
+
+// chatOlderPage is one "Earlier messages" page (the service's own window
+// cap); chatMaxAccumulatedMessages bounds how many pages the client window
+// may accumulate before the Earlier control stops offering more (0.6 §6:
+// UI state never holds an unbounded transcript).
+const (
+	chatOlderPage             = history.WindowLimit
+	chatMaxAccumulatedMessages = 4 * history.WindowLimit
+)
+
+// chatLoadOlder fetches the previous history page and prepends it to the
+// accumulated window, then re-derives the timeline. Live-bound chats have
+// no earlier page (their tail is bounded by design).
+func (s *Shell) chatLoadOlder() {
+	if s.hist.service == nil || !s.chatHasOlder || s.chatConversationID == "" ||
+		strings.HasPrefix(s.chatConversationID, "live:") {
+		return
+	}
+	service := s.hist.service
+	conversationID := s.chatConversationID
+	start := s.chatWindowStart
+	generation := s.chatGen.Load()
+	s.dispatch(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		prevStart := max(0, start-chatOlderPage)
+		window, err := service.Open(ctx, history.ConversationWindowRequest{
+			ConversationID: conversationID,
+			StartIndex:     &prevStart,
+			Limit:          chatOlderPage,
+		})
+		s.applyOnWindow(func() {
+			if generation != s.chatGen.Load() || conversationID != s.chatConversationID {
+				return
+			}
+			if err != nil {
+				s.chatOutcome = "Load failed: " + err.Error()
+				s.publishChatBridge()
+				return
+			}
+			// Prepend only messages the accumulated window does not hold
+			// yet: adjacent pages can overlap around the anchor.
+			headSeq := int64(1)<<62
+			for _, msg := range s.chatWindowMessages {
+				if msg.Seq < headSeq {
+					headSeq = msg.Seq
+				}
+			}
+			older := make([]history.TranscriptMessage, 0, len(window.Messages))
+			for _, msg := range window.Messages {
+				if msg.Seq < headSeq {
+					older = append(older, msg)
+				}
+			}
+			s.chatWindowMessages = append(older, s.chatWindowMessages...)
+			s.chatWindowStart = window.Start
+			s.chatHasOlder = window.Start > 0 && len(s.chatWindowMessages) < chatMaxAccumulatedMessages
+			items := conversation.ItemsFromTranscript(s.chatWindowMessages)
+			s.chatTurns = conversation.DeriveTimeline(items)
+			s.chatModel = lastModelFromItems(items)
+			s.publishChatBridge()
+		})
+	})
 }
 
 // chatDispositionSummary summarizes the current composer disposition.

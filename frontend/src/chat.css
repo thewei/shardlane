@@ -22,6 +22,41 @@
   color: var(--text-muted);
 }
 
+.older {
+  align-self: center;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text-muted);
+  background: var(--panel);
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  padding: 3px 14px;
+  cursor: pointer;
+  margin-bottom: 4px;
+}
+
+.older:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.composer-row .attach {
+  font-size: 16px;
+  line-height: 1;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  border: 1px solid var(--border-subtle);
+  background: var(--panel);
+  color: var(--text-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.composer-row .attach:hover {
+  color: var(--text);
+}
+
 .turn {
   max-width: 100%;
 }

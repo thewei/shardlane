@@ -2,6 +2,7 @@ import React, {
   memo,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
 } from "react";
@@ -25,6 +26,7 @@ export function App() {
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [showJump, setShowJump] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
   const composingRef = useRef(false);
   const logRef = useRef<HTMLDivElement>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
@@ -77,6 +79,22 @@ export function App() {
       setShowJump(true);
     }
     turnsRef.current = count;
+  }, [state]);
+
+  // Prepend anchoring: when a history page lands above, keep the viewport
+  // pinned to the messages the user was reading.
+  const headRef = useRef("");
+  const heightRef = useRef(0);
+  useLayoutEffect(() => {
+    const log = logRef.current;
+    if (!log) return;
+    const first = state?.turns[0];
+    const head = first ? `${first.user ? "u" : "a"}:${first.tsMs ?? ""}:${(first.text ?? first.narration ?? "").slice(0, 32)}` : "";
+    if (headRef.current && head !== headRef.current && log.scrollHeight > heightRef.current) {
+      log.scrollTop += log.scrollHeight - heightRef.current;
+    }
+    headRef.current = head;
+    heightRef.current = log.scrollHeight;
   }, [state]);
 
   const onLogScroll = () => {
@@ -169,9 +187,46 @@ export function App() {
     setState(await chat.cancelQueued().catch(() => state));
   };
 
+  const loadOlder = async () => {
+    if (loadingOlder) return;
+    setLoadingOlder(true);
+    try {
+      await chat.older();
+      // The refreshed projection (and the anchoring effect) arrive through
+      // the chat:updated event.
+    } finally {
+      setLoadingOlder(false);
+    }
+  };
+
+  const attach = async () => {
+    const path = await chat.pickAttachment().catch(() => "");
+    if (!path) return;
+    const mention = `@${path} `;
+    const el = composerRef.current;
+    if (!el) {
+      setDraft((current) => current + mention);
+      return;
+    }
+    const start = el.selectionStart ?? draft.length;
+    const end = el.selectionEnd ?? draft.length;
+    const next = draft.slice(0, start) + mention + draft.slice(end);
+    setDraft(next);
+    requestAnimationFrame(() => {
+      el.focus();
+      const caret = start + mention.length;
+      el.setSelectionRange(caret, caret);
+    });
+  };
+
   return (
     <div className="chat">
       <div className="chat-log" ref={logRef} onScroll={onLogScroll}>
+        {state?.hasOlder ? (
+          <button type="button" className="older" onClick={() => void loadOlder()} disabled={loadingOlder}>
+            {loadingOlder ? "Loading…" : "Earlier messages"}
+          </button>
+        ) : null}
         {state?.loading ? (
           <div className="chat-note">Loading conversation…</div>
         ) : !state || state.turns.length === 0 ? (
@@ -200,6 +255,14 @@ export function App() {
           </div>
         ) : null}
         <div className="composer-row">
+          <button
+            type="button"
+            className="attach"
+            title="Attach a file (inserts an @path mention)"
+            onClick={() => void attach()}
+          >
+            +
+          </button>
           <textarea
             ref={composerRef}
             value={draft}

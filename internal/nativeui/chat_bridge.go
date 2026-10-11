@@ -55,8 +55,11 @@ type ChatBridgeState struct {
 	Theme string `json:"theme"`
 	// Model is the provider model the transcript last recorded, when known
 	// (presentation pill only; never a runtime fact source).
-	Model string           `json:"model,omitempty"`
-	Turns []ChatBridgeTurn `json:"turns"`
+	Model string `json:"model,omitempty"`
+	// HasOlder reports an earlier history page exists (history-bound chats
+	// only; the live tail is bounded by design).
+	HasOlder bool             `json:"hasOlder,omitempty"`
+	Turns    []ChatBridgeTurn `json:"turns"`
 }
 
 // chatUpdated pushes the projection after every chat state mutation. Events
@@ -134,6 +137,32 @@ func (b *ChatBridge) Stop(ctx context.Context) (ChatBridgeState, error) {
 	return state, err
 }
 
+// Older pages the history-bound transcript one window up: the load runs on
+// the background lane and the refreshed projection arrives through the
+// chat:updated event; the returned state is the pre-load snapshot.
+func (b *ChatBridge) Older(ctx context.Context) (ChatBridgeState, error) {
+	b.shell.callOnWindow(func() { b.shell.chatLoadOlder() })
+	return b.shell.chatBridgeStateOnWindow(), nil
+}
+
+// PickAttachment opens the native file picker and returns the chosen path,
+// empty when the user canceled. The path goes into the draft as an @mention
+// the agent's own CLI understands — files are local, nothing is uploaded.
+func (b *ChatBridge) PickAttachment(ctx context.Context) (string, error) {
+	paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{
+		Parent:  mygo.CallerWindow(ctx),
+		Title:   "Attach a file",
+		Message: "The file path is inserted into the draft as an @mention.",
+	})
+	if err != nil {
+		return "", err
+	}
+	if len(paths) == 0 {
+		return "", nil
+	}
+	return paths[0], nil
+}
+
 // callOnWindow runs fn on the window UI lane and waits for it; inline when
 // no window exists (headless tests). Shell-bound methods run on their own
 // goroutines, so this is the only path back to Shell state.
@@ -166,6 +195,7 @@ func (s *Shell) chatBridgeState() ChatBridgeState {
 		state.Provider = card.ProviderLabel
 	}
 	state.Model = s.chatModel
+	state.HasOlder = s.chatHasOlder
 	for _, turn := range s.chatTurns {
 		bridgeTurn := ChatBridgeTurn{
 			User:      turn.UserRow,

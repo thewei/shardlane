@@ -138,6 +138,9 @@ func (s *Shell) bindLiveAgent(key agent.AgentKey) bool {
 	s.chatConversationID = "live:" + string(provider) + ":" + key.TerminalID
 	s.chatLoading = true
 	s.chatTurns = nil
+	s.chatWindowMessages = nil
+	s.chatWindowStart = 0
+	s.chatHasOlder = false
 	// A same-pane rebind preserves the pending submission (0.6 §12); any
 	// other pane's rebind dropped it at openChat's pane assignment.
 	s.retainPendingEchoForPane(s.chatPaneID)

@@ -181,6 +181,10 @@ func (s *Shell) applyProjection(projection herdr.Projection, restartWatcher bool
 	s.projection = projection
 	s.reconcileWorkbench()
 	s.wakeLiveTail()
+	// Status edges (working→idle, blocked, …) must reach the WebView chat
+	// even when this reconcile carries no transcript change: the composer
+	// disposition derives from this projection.
+	s.publishChatBridge()
 	s.updateTray()
 	s.updateDockBadge()
 	s.refreshUsageProjection(false)
