@@ -29,11 +29,9 @@ type DeliveryTransport interface {
 	IsUncertain(err error) bool
 }
 
-// Reservations is the per-Conversation reservation coordinator (0.6
-// §9.2/§19): one lock per conversation shared by the delivery worker, the
-// semantic prompt path, and the live handoff, so a handoff holding the
-// conversation defers the worker and two workers cannot deliver the same
-// conversation concurrently.
+// Reservations is the per-Conversation reservation coordinator (0.6 §9.2):
+// one lock per conversation, so a holder defers the delivery worker and two
+// workers cannot deliver the same conversation concurrently.
 type Reservations struct {
 	locks sync.Map
 }

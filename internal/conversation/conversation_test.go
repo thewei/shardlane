@@ -235,37 +235,6 @@ func TestQueueSendabilityGate(t *testing.T) {
 	_ = strings.TrimSpace
 }
 
-// TestFollowUpQueueHasUnresolvedForConversation pins the HANDOFF-06 ledger
-// predicate: every state except Delivered and Cancelled still owns user
-// intent, so a live handoff snapshotting now would omit it.
-func TestFollowUpQueueHasUnresolvedForConversation(t *testing.T) {
-	states := map[QueueState]bool{
-		Queued:                 true,
-		WaitingForTurnBoundary: true,
-		Delivering:             true,
-		FailedRecoverable:      true,
-		DeliveryUncertain:      true,
-		Delivered:              false,
-		Cancelled:              false,
-	}
-	for state, want := range states {
-		queue := NewFollowUpQueue()
-		id := ConversationID("history:claude-code:sess-handoff")
-		if err := queue.Enqueue(QueueItem{RequestID: "req-1", ConversationID: id, Text: "continue", State: state}); err != nil {
-			t.Fatalf("enqueue %s: %v", state, err)
-		}
-		if got := queue.HasUnresolvedForConversation(string(id)); got != want {
-			t.Fatalf("state %s: unresolved = %v, want %v", state, got, want)
-		}
-	}
-
-	// An absent conversation is never unresolved.
-	queue := NewFollowUpQueue()
-	if queue.HasUnresolvedForConversation("history:claude-code:missing") {
-		t.Fatal("missing conversation reported unresolved")
-	}
-}
-
 // TestDeriveTimelineStepOrder pins the turn's time chain: narration,
 // thinking and tool segments keep their original interleaving in Steps;
 // consecutive same-kind text merges, tools never do.

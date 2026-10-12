@@ -11,20 +11,12 @@ import (
 )
 
 // TestLaunchServiceFollowUpLedger pins the production queue ownership: the
-// service owns the ledger, exposes it as the handoff pending-operation
-// seam, and the worker lifecycle is idempotent.
+// service owns the ledger and the worker lifecycle is idempotent.
 func TestLaunchServiceFollowUpLedger(t *testing.T) {
 	service := NewLaunchService(nil)
 
 	if service.Queue() == nil {
 		t.Fatal("the service must own the follow-up queue")
-	}
-	pending := service.PendingOperations()
-	if pending == nil {
-		t.Fatal("the handoff pending-operation seam must be the owned ledger")
-	}
-	if pending.HasUnresolvedForConversation("live:claude-code:missing") {
-		t.Fatal("unknown conversation reported unresolved")
 	}
 
 	// Enqueue + wake: the item lands in the ledger.
@@ -50,8 +42,7 @@ func TestLaunchServiceFollowUpLedger(t *testing.T) {
 	service.StopFollowUpWorker()
 	service.StopFollowUpWorker()
 
-	// The reservations coordinator is shared per conversation (worker +
-	// handoff serialize on the same lock).
+	// The reservations coordinator hands out one stable lock per conversation.
 	first := service.reservations.For(string(id))
 	if first == nil || service.reservations.For(string(id)) != first {
 		t.Fatal("reservation coordinator must be stable per conversation")
@@ -129,11 +120,6 @@ func TestLaunchServiceLedgerPersistence(t *testing.T) {
 	if item.Detail == "" {
 		t.Fatal("the uncertainty tombstone must carry inspect guidance")
 	}
-	// The tombstone never auto-retries: the worker skips it.
-	if pending := restarted.PendingOperations().HasUnresolvedForConversation("live:claude-code:pane-7"); !pending {
-		t.Fatal("the restored tombstone must fence handoffs until acknowledged")
-	}
-
 	// Later mutations persist too: a new follow-up on the restarted service
 	// lands in the file, and the next restore sees it.
 	if err := restarted.EnqueueFollowUp(conversation.QueueItem{

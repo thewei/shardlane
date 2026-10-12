@@ -276,8 +276,8 @@ func (g *gateReservation) Lock()   { close(g.acquired); <-g.release }
 func (g *gateReservation) Unlock() {}
 
 // TestDeliveryWorkerReservationHeld pins the per-conversation coordination:
-// a handoff (or prompt) holding the conversation reservation defers the
-// worker's delivery.
+// another holder of the conversation reservation defers the worker's
+// delivery.
 func TestDeliveryWorkerReservationHeld(t *testing.T) {
 	id := ConversationID("live:claude-code:pane-7")
 	queue := NewFollowUpQueue()

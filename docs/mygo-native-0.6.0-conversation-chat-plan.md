@@ -668,6 +668,8 @@ While resolving:
 
 ## 19. Live Handoff
 
+> Status 2026-10-12: removed. The engine never reached a surface (recoverable from git history, introduced in `f53ddf8`); cross-Agent transfer ships as History Continue / Continue in another Agent. The text below is the original plan.
+
 0.6 closes the handoff deferred by 0.5.
 
 ### 19.1 Meaning

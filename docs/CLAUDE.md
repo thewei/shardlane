@@ -15,7 +15,7 @@ Members:
 - `mygo-native-0.3.0-closure-audit.md` — post-0.3 closure audit covering framework currency, UI system drift, History request concurrency, Agent idempotency, operational status and Hook/Integration health.
 - `mygo-native-0.4.0-closure-plan.md` — next closure release: MyGo 0.2.7, Design System v2, shared operational state, Provider Integration/Hook Health, and safe Agent launch.
 - `mygo-native-0.5.0-agent-workbench-plan.md` — post-0.4 Agent lifecycle/workbench: one card model, unread/review semantics, Agent directory/overview/switcher, notifications, and History Continue before full Chat.
-- `mygo-native-0.6.0-conversation-chat-plan.md` — Native Conversation/Chat: session-exact identity, incremental live semantics, safe prompt/queue transactions, interactions, timeline, and Live Handoff.
+- `mygo-native-0.6.0-conversation-chat-plan.md` — Native Conversation/Chat: session-exact identity, incremental live semantics, safe prompt/queue transactions, interactions, and timeline (its §19 Live Handoff was removed 2026-10-12).
 - `mygo-native-0.7.0-status-center-plan.md` — right-side Status Center + MyGo Tray: shared Agent status snapshot, attention/review/working grouping, and exact quick navigation.
 - `reference-magpie-agent-history-usage-audit.md` — external reference audit: menu-bar floating panel, Project-grouped Sessions, safe Trash, Usage/Quota attribution, Gateway concepts to adopt/adapt/reject.
 - `mygo-native-0.8.0-history-usage-agent-inspector-plan.md` — grouped History management, capability-gated Trash/Restore/Purge, UsageService, quota and Agent Inspector before the larger workspace-intelligence release.

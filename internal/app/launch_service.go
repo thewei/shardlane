@@ -19,13 +19,12 @@ import (
 // transport adapter. Herdr stays the sole runtime authority; the service
 // only drives the schema-verified protocol methods. The New Task launch
 // path was removed on 2026-10-07 (the page is gone); what remains serves
-// chat follow-ups, live handoff and history continuation.
+// chat follow-ups and history continuation.
 type LaunchService struct {
 	manager  *herdr.Manager
 	registry *agent.LaunchRegistry
-	// reservations is the per-Conversation reservation coordinator shared
-	// by the follow-up delivery worker, semantic prompts, and the live
-	// handoff (0.6 §11/§19).
+	// reservations is the per-Conversation reservation coordinator the
+	// follow-up delivery worker takes (0.6 §11).
 	reservations *conversation.Reservations
 	// queue is the one-follow-up-per-conversation queue; the worker owns
 	// its Delivering→Delivered/DeliveryUncertain state machine.
@@ -119,10 +118,6 @@ func (s *LaunchService) persistLedger() {
 	_ = os.Rename(tmp, path)
 }
 
-// PendingOperations is the handoff's pending-operation seam (HANDOFF-06):
-// the same ledger the delivery worker owns.
-func (s *LaunchService) PendingOperations() agent.PendingOperations { return s.queue }
-
 // EnqueueFollowUp accepts one queued follow-up and wakes the worker.
 func (s *LaunchService) EnqueueFollowUp(item conversation.QueueItem) error {
 	if err := s.queue.Enqueue(item); err != nil {
@@ -210,20 +205,6 @@ func (t *herdrDeliveryTransport) Deliver(ctx context.Context, item conversation.
 func (t *herdrDeliveryTransport) IsUncertain(err error) bool {
 	var uncertain *herdr.DeliveryUncertainError
 	return errors.As(err, &uncertain)
-}
-
-// handoffReservation was replaced by the shared conversation.Reservations
-// coordinator (s.reservations).
-
-// HandoffLiveAgent executes one live handoff (0.6 §19/HANDOFF-01..09) from
-// the bound session: exact-identity fences, pending-operation fence,
-// bounded settle, freshness fence, live-source briefing, canonical target
-// launch. The source Agent is never stopped, closed, or mutated. pending is
-// the caller-owned follow-up queue seam (nil skips the fence); blocking, so
-// callers run it on a background lane.
-func (s *LaunchService) HandoffLiveAgent(ctx context.Context, session string, request agent.LiveHandoffRequest, pending agent.PendingOperations, timing agent.HandoffTiming) (agent.LiveHandoffOutcome, *agent.LiveHandoffFailure) {
-	runtime := &herdrLaunchRuntime{manager: s.manager, session: session}
-	return agent.RunLiveHandoff(ctx, runtime, runtime, Preparer{}, request, pending, s.reservations.For(request.SourceConversation), timing)
 }
 
 // PromptLiveAgent submits one semantic prompt to a live agent pane through
@@ -332,56 +313,6 @@ func (r *herdrLaunchRuntime) WaitAgentIdle(ctx context.Context, paneID string, t
 	return r.manager.WaitAgentState(ctx, r.session, paneID, []string{"idle"}, timeoutMS)
 }
 
-// SourceAgent is the handoff fence's authoritative occupant read (0.6
-// §19.2): status, launch-pending and the typed session identity come from
-// the same Herdr projection the prompt transaction trusts.
-func (r *herdrLaunchRuntime) SourceAgent(ctx context.Context, paneID string) (*agent.HandoffSource, error) {
-	info, err := r.manager.AgentByPane(ctx, r.session, paneID)
-	if err != nil {
-		return nil, err
-	}
-	if info == nil {
-		return nil, nil
-	}
-	source := &agent.HandoffSource{
-		PaneID:        info.PaneID,
-		AgentStatus:   info.AgentStatus,
-		LaunchPending: info.LaunchPending,
-		Revision:      info.Revision,
-	}
-	if info.AgentSession != nil {
-		value := info.AgentSession.Value
-		switch info.AgentSession.Kind {
-		case "id":
-			value = "id:" + info.AgentSession.Value
-		case "path":
-			value = "path:" + info.AgentSession.Value
-		}
-		source.Session = &agent.LiveAgentIdentity{
-			Kind:  info.AgentSession.Agent,
-			Value: value,
-		}
-	}
-	return source, nil
-}
-
-// WaitAgentSettled waits for the working turn to reach idle or blocked and
-// reports which: blocked is a typed outcome of the settle wait, never a
-// generic timeout (0.6 §19.3).
-func (r *herdrLaunchRuntime) WaitAgentSettled(ctx context.Context, paneID string, timeoutMS int64) (agent.SettledState, error) {
-	if err := r.manager.WaitAgentState(ctx, r.session, paneID, []string{"idle", "blocked"}, timeoutMS); err != nil {
-		return "", err
-	}
-	info, err := r.manager.AgentByPane(ctx, r.session, paneID)
-	if err != nil {
-		return "", err
-	}
-	if info != nil && info.AgentStatus == "blocked" {
-		return agent.SettledBlocked, nil
-	}
-	return agent.SettledIdle, nil
-}
-
 func (r *herdrLaunchRuntime) AgentByPane(ctx context.Context, paneID string) (*agent.StartedAgent, error) {
 	info, err := r.manager.AgentByPane(ctx, r.session, paneID)
 	if err != nil {
@@ -449,18 +380,19 @@ func sleepContext(ctx context.Context, d time.Duration) {
 
 // HistoryContinuationDeps carry the read-only history access the
 // continuation executor needs to build a ContextTransfer briefing from the
-// page cache. The opener closure is the HistoryService bounded window read.
+// original session. The opener closure is the HistoryService bounded window
+// read.
 type HistoryContinuationDeps struct {
-	// OpenWindow reads a bounded transcript window from the history page
-	// cache (page-cache hit or adapter parse fallback).
+	// OpenWindow reads a bounded transcript window of the source session
+	// from its original file.
 	OpenWindow func(ctx context.Context, source history.SessionFileRef) (history.TranscriptWindow, error)
 	// Limits bound the briefing; zero selects defaults.
 	Limits *agent.TransferBriefingLimits
 }
 
 // ExecuteHistoryContinuation executes one planned continuation. For
-// ContextTransfer it reads the source window from the history page cache,
-// builds the bounded briefing, and launches through the canonical
+// ContextTransfer it reads the source window from the original session
+// file, builds the bounded briefing, and launches through the canonical
 // transaction with exactly one initial prompt.
 func (s *LaunchService) ExecuteHistoryContinuation(ctx context.Context, session string, plan agent.ContinuationPlan, instruction string, deps HistoryContinuationDeps) (agent.ContinuationOutcome, error) {
 	instructionField := agent.ContinuationInstruction{Instruction: instruction}

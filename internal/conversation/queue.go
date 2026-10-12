@@ -124,27 +124,6 @@ func (q *FollowUpQueue) Get(id ConversationID) (QueueItem, bool) {
 	return *item, true
 }
 
-// HasUnresolvedForConversation reports whether an older accepted operation
-// still exists for the conversation (0.6 §19.2, the HANDOFF-06 fence):
-// every state except Delivered and Cancelled still owns user intent — a
-// recoverable failure or an uncertain tombstone included — so a live
-// handoff snapshotting now would silently omit it. Mirrors the audited
-// Host queue predicate.
-func (q *FollowUpQueue) HasUnresolvedForConversation(id string) bool {
-	q.mu.Lock()
-	defer q.mu.Unlock()
-	item, ok := q.items[ConversationID(id)]
-	if !ok {
-		return false
-	}
-	switch item.State {
-	case Delivered, Cancelled:
-		return false
-	default:
-		return true
-	}
-}
-
 // Transition moves the item through a legal state and reports it.
 func (q *FollowUpQueue) Transition(id ConversationID, to QueueState, detail string) (QueueItem, error) {
 	q.mu.Lock()
