@@ -3,6 +3,7 @@ package nativeui
 import (
 	"fmt"
 	"log/slog"
+	"math"
 	"time"
 
 	"github.com/egoist/mygo/plugins/terminal"
@@ -13,8 +14,8 @@ import (
 
 /**
  * [INPUT]: 依赖 mygo/plugins/terminal, mygo/ui, herdr, settings, gorex_style, brands 的 agentProvider/agentMark
- * [OUTPUT]: 对外提供 terminalCanvas, paneCard, paneCardHeader, paneStackInfo, paneLogoView, syncTerminals, closeAllTerminals, paneHeaderVisuals
- * [POS]: nativeui 的终端画布与 Gorex 窗格卡片主渲染器，管理活动的终端连接、堆叠多窗格状态与卡片拖拽放置（移动/拆分/交换）
+ * [OUTPUT]: 对外提供 terminalCanvas, paneCard, paneCardHeader, paneStackInfo, paneLogoView, syncTerminals, closeAllTerminals, paneHeaderVisuals；画布内另渲染可拖拽的 split 分隔条（renderSplitDividers → splitGrowTarget/splitResizeAmount → resizePane），把拖拽解析成 Herdr pane.resize
+ * [POS]: nativeui 的终端画布与 Gorex 窗格卡片主渲染器，管理活动的终端连接、堆叠多窗格状态、卡片拖拽放置（移动/拆分/交换）与窗格分栏拖拽调宽高（布局权威始终在 Herdr）
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 
@@ -136,12 +137,315 @@ func (s *Shell) terminalCanvas(c *ui.Context) {
 				s.paneCard(c, k, surface)
 			})
 		}
+		if layout, ok := layoutForTab(s.projection, s.selectedTabID); ok && !layout.Zoomed && len(surfaces) > 1 && len(layout.Splits) > 0 {
+			s.renderSplitDividers(c, inner, layout)
+		}
 	})
 }
 
 // gorexInsetRect shrinks r by d on every side (DIPs).
 func gorexInsetRect(r ui.Rect, d float32) ui.Rect {
 	return ui.Rect{X: r.X + d, Y: r.Y + d, W: r.W - 2*d, H: r.H - 2*d}
+}
+
+// renderSplitDividers draws the draggable handles between split panes.
+// Herdr stays the layout authority: a drag never moves anything locally.
+// Each gesture resolves into pane.resize RPCs that move exactly the grabbed
+// divider, and the returned projection repaints the cards. The daemon
+// semantics were probed against the live session (2026-10-12): pane.resize
+// moves the target pane's nearest boundary in `direction` by `amount`, a
+// ratio delta of the boundary's controlling split, clamped to [0.1, 0.9].
+func (s *Shell) renderSplitDividers(c *ui.Context, inner ui.Rect, layout herdr.Layout) {
+	area := layout.Area
+	if area.Width == 0 || area.Height == 0 || len(layout.Splits) == 0 {
+		return
+	}
+	const grip = float32(10)
+	type splitDivider struct {
+		split         herdr.LayoutSplit
+		x, y, w, h    float32
+		vertical      bool
+		dx, dy        float32
+		held, clicked bool
+	}
+	dividers := make([]splitDivider, 0, len(layout.Splits))
+	for _, split := range layout.Splits {
+		if split.Rect.Width == 0 || split.Rect.Height == 0 {
+			continue
+		}
+		var d splitDivider
+		switch split.Direction {
+		case "right":
+			ratioX := (float32(split.Rect.X) + float32(split.Rect.Width)*float32(split.Ratio) - float32(area.X)) / float32(area.Width)
+			topPct := float32(split.Rect.Y-area.Y) / float32(area.Height)
+			hPct := float32(split.Rect.Height) / float32(area.Height)
+			d = splitDivider{split: split, vertical: true,
+				x: inner.X + inner.W*ratioX - grip/2,
+				y: inner.Y + inner.H*topPct + gorexFrameInset,
+				w: grip,
+				h: inner.H*hPct - 2*gorexFrameInset,
+			}
+		case "down":
+			ratioY := (float32(split.Rect.Y) + float32(split.Rect.Height)*float32(split.Ratio) - float32(area.Y)) / float32(area.Height)
+			leftPct := float32(split.Rect.X-area.X) / float32(area.Width)
+			wPct := float32(split.Rect.Width) / float32(area.Width)
+			d = splitDivider{split: split,
+				x: inner.X + inner.W*leftPct + gorexFrameInset,
+				y: inner.Y + inner.H*ratioY - grip/2,
+				w: inner.W*wPct - 2*gorexFrameInset,
+				h: grip,
+			}
+		default:
+			continue
+		}
+		if d.w <= 0 || d.h <= 0 {
+			continue
+		}
+		dividers = append(dividers, d)
+	}
+	if len(dividers) == 0 {
+		return
+	}
+
+	// Build every handle and read its gesture state in one pass, then
+	// process the drags afterwards: a sibling handle that is not under the
+	// pointer must not zero an active drag's accumulator (two vertical
+	// splits are enough to break per-divider resets).
+	anyVerticalHeld, anyHorizontalHeld := false, false
+	for i := range dividers {
+		d := &dividers[i]
+		handle := ui.Box(c.Key("split-div-" + d.split.ID)).
+			Absolute().
+			Left(d.x).
+			Top(d.y).
+			Width(d.w).
+			Height(d.h).
+			Label("Resize pane split")
+		if d.vertical {
+			handle = handle.Cursor(ui.CursorResizeEW)
+		} else {
+			handle = handle.Cursor(ui.CursorResizeNS)
+		}
+		d.dx, d.dy, d.held = handle.Dragged()
+		d.clicked = handle.DoubleClicked()
+		if d.held {
+			if d.vertical {
+				anyVerticalHeld = true
+			} else {
+				anyHorizontalHeld = true
+			}
+		}
+		hovered := handle.Hovered()
+		handle.Children(func() {
+			line := ui.Box(c).Absolute()
+			if d.vertical {
+				line = line.Left((grip - 2) / 2).Width(2).
+					Top(0).Bottom(0)
+			} else {
+				line = line.Top((grip - 2) / 2).Height(2).
+					Left(0).Right(0)
+			}
+			line.Radius(1).PassThrough()
+			if hovered || d.held {
+				line.Background(c.Theme().Accent).Shadow(0, 0, 6, 0, c.Theme().Accent.Alpha(0.6))
+			}
+		})
+	}
+
+	// Double click brings the grabbed split back to an even 50/50.
+	for i := range dividers {
+		if dividers[i].clicked {
+			s.resetSplitRatio(layout, dividers[i].split)
+		}
+	}
+
+	// Fold this frame's drag deltas into the per-axis ratio accumulators.
+	// Deltas keep accumulating while a previous pane.resize round trip is
+	// still in flight (mutate drops concurrent mutations), so a fast drag
+	// coalesces and catches up instead of losing the gesture.
+	var dragged []*splitDivider
+	for i := range dividers {
+		d := &dividers[i]
+		if !d.held {
+			continue
+		}
+		amount := splitResizeAmount(d.split, area, inner.W, inner.H, d.dx, d.dy)
+		if d.vertical {
+			s.accumulatedResizeX = clampAbs(s.accumulatedResizeX+float32(amount), resizeDispatchCap)
+		} else {
+			s.accumulatedResizeY = clampAbs(s.accumulatedResizeY+float32(amount), resizeDispatchCap)
+		}
+		dragged = append(dragged, d)
+	}
+	if !anyVerticalHeld {
+		s.accumulatedResizeX = 0
+	}
+	if !anyHorizontalHeld {
+		s.accumulatedResizeY = 0
+	}
+	for _, d := range dragged {
+		accumulated := s.accumulatedResizeY
+		if d.vertical {
+			accumulated = s.accumulatedResizeX
+		}
+		if math.Abs(float64(accumulated)) < float64(resizeGestureFloor) {
+			continue
+		}
+		paneID, direction := splitGrowTarget(layout.Panes, d.split, accumulated)
+		if paneID == "" {
+			continue
+		}
+		if s.resizePane(paneID, direction, math.Abs(float64(accumulated))) {
+			if d.vertical {
+				s.accumulatedResizeX = 0
+			} else {
+				s.accumulatedResizeY = 0
+			}
+		}
+	}
+}
+
+// splitResizeAmount converts one frame of canvas-pixel drag deltas into the
+// pane.resize ratio delta for the grabbed split. Herdr's amount is a ratio
+// of the split's own extent, so nested splits scale by their own rect, not
+// the whole canvas: dragging the divider of a half-width sub-split moves
+// twice as many ratio points per pixel as the root split's divider.
+func splitResizeAmount(split herdr.LayoutSplit, area herdr.LayoutRect, innerW, innerH, dx, dy float32) float64 {
+	switch split.Direction {
+	case "right":
+		if innerW <= 0 || split.Rect.Width == 0 {
+			return 0
+		}
+		return float64(dx) * float64(area.Width) / (float64(innerW) * float64(split.Rect.Width))
+	case "down":
+		if innerH <= 0 || split.Rect.Height == 0 {
+			return 0
+		}
+		return float64(dy) * float64(area.Height) / (float64(innerH) * float64(split.Rect.Height))
+	}
+	return 0
+}
+
+// splitGrowTarget resolves which pane and direction a divider gesture must
+// target so Herdr moves exactly this divider. polarity > 0 means the
+// divider moved right/down (the earlier side grows); < 0 means left/up.
+// Growing the earlier side targets the pane whose far edge is the divider
+// (resize right/down); growing the later side targets the pane whose near
+// edge is the divider (resize left/up). Targeting the wrong side would
+// move an outer boundary instead (probed 2026-10-12).
+func splitGrowTarget(panes []herdr.LayoutPane, split herdr.LayoutSplit, polarity float32) (string, string) {
+	horizontal := split.Direction == "right"
+	switch split.Direction {
+	case "right":
+		cell := int(math.Round(float64(split.Rect.X) + float64(split.Rect.Width)*split.Ratio))
+		if polarity >= 0 {
+			return paneEndingAt(panes, split.Rect, cell, horizontal), "right"
+		}
+		return paneStartingAt(panes, split.Rect, cell, horizontal), "left"
+	case "down":
+		cell := int(math.Round(float64(split.Rect.Y) + float64(split.Rect.Height)*split.Ratio))
+		if polarity >= 0 {
+			return paneEndingAt(panes, split.Rect, cell, horizontal), "down"
+		}
+		return paneStartingAt(panes, split.Rect, cell, horizontal), "up"
+	}
+	return "", ""
+}
+
+// paneEndingAt returns the pane whose right (horizontal) or bottom edge
+// sits at cell inside span, with a 1-cell tolerance for integer rounding;
+// this is the pane whose boundary Herdr moves when a divider's earlier
+// side grows. Prefer the widest match when rounding produces ties.
+func paneEndingAt(panes []herdr.LayoutPane, span herdr.LayoutRect, cell int, horizontal bool) string {
+	return paneAtEdge(panes, span, cell, horizontal, true)
+}
+
+// paneStartingAt returns the pane whose left (horizontal) or top edge sits
+// at cell inside span: the pane Herdr moves when a divider's later side
+// grows.
+func paneStartingAt(panes []herdr.LayoutPane, span herdr.LayoutRect, cell int, horizontal bool) string {
+	return paneAtEdge(panes, span, cell, horizontal, false)
+}
+
+func paneAtEdge(panes []herdr.LayoutPane, span herdr.LayoutRect, cell int, horizontal, ending bool) string {
+	const cellSlack = 1
+	bestID := ""
+	bestExtent := -1
+	for _, p := range panes {
+		r := p.Rect
+		if horizontal {
+			if r.Y+r.Height <= span.Y || r.Y >= span.Y+span.Height {
+				continue
+			}
+		} else if r.X+r.Width <= span.X || r.X >= span.X+span.Width {
+			continue
+		}
+		var edge, extent int
+		if horizontal {
+			edge, extent = int(r.X), int(r.Width)
+		} else {
+			edge, extent = int(r.Y), int(r.Height)
+		}
+		if ending {
+			edge += extent
+		}
+		if absInt(edge-cell) > cellSlack {
+			continue
+		}
+		if extent > bestExtent {
+			bestID, bestExtent = p.PaneID, extent
+		}
+	}
+	return bestID
+}
+
+func absInt(v int) int {
+	if v < 0 {
+		return -v
+	}
+	return v
+}
+
+func clampAbs(v, limit float32) float32 {
+	if v > limit {
+		return limit
+	}
+	if v < -limit {
+		return -limit
+	}
+	return v
+}
+
+// resetSplitRatio brings the grabbed split back to an even 50/50 with one
+// pane.resize: grow whichever side is smaller by the exact missing ratio.
+func (s *Shell) resetSplitRatio(layout herdr.Layout, split herdr.LayoutSplit) {
+	delta := 0.5 - split.Ratio
+	if math.Abs(delta) < 0.001 {
+		return
+	}
+	polarity := float32(1)
+	if delta < 0 {
+		polarity = -1
+	}
+	paneID, direction := splitGrowTarget(layout.Panes, split, polarity)
+	if paneID == "" {
+		return
+	}
+	s.resizePane(paneID, direction, math.Abs(delta))
+}
+
+// resizePane submits one pane.resize against Herdr's authoritative layout.
+// It reports whether the mutation was dispatched: while another mutation is
+// in flight the drag keeps accumulating and retries on a later frame.
+func (s *Shell) resizePane(paneID, direction string, amount float64) bool {
+	if s.loading || s.activeInstance == "" || paneID == "" {
+		return false
+	}
+	instance := s.activeInstance
+	s.mutate(func() (herdr.Projection, error) {
+		return s.runtime.ResizePane(instance, paneID, direction, amount)
+	})
+	return true
 }
 
 // paneCard draws one attached Herdr Pane as a gorex card: a rounded,

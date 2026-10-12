@@ -124,6 +124,13 @@ const (
 	// completing the edge gutter (edges land on exactly gorexGap too).
 	gorexFrameInset = gorexGap / 2
 	gorexCardsPad   = gorexGap / 2
+
+	// Split-divider drag gestures dispatch pane.resize in ratio points.
+	// Gestures below the floor keep accumulating instead of spamming the
+	// daemon with invisible nudges; a single dispatch never exceeds the
+	// cap (the daemon itself clamps ratios to [0.1, 0.9]).
+	resizeGestureFloor = float32(0.005)
+	resizeDispatchCap  = float32(0.8)
 )
 
 // paintGorexBackground paints the window's background gradient.

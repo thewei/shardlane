@@ -1,6 +1,7 @@
 package nativeui
 
 import (
+	"math"
 	"slices"
 	"testing"
 
@@ -110,6 +111,85 @@ func TestResolvePaneCardDropAction(t *testing.T) {
 	act, label = resolvePaneCardDropAction(diffTab, "p1", "t1", 50, 180, 300, 200)
 	if act != paneCardDropSplitDown || label != "Split down" {
 		t.Fatalf("diff tab bottom action = %v, %q; want split down", act, label)
+	}
+}
+
+// TestSplitGrowTargetLiveLayout exercises the divider targeting against the
+// pane.resize semantics probed on the live daemon (2026-10-12): the RPC
+// moves a pane's nearest boundary in `direction`, so a divider drag must
+// target the pane whose edge is that divider — the earlier side's pane when
+// growing left/top, the later side's pane when growing right/bottom.
+func TestSplitGrowTargetLiveLayout(t *testing.T) {
+	// The live probed tab: area 120x40, five panes, four splits.
+	panes := []herdr.LayoutPane{
+		{PaneID: "p5", Rect: herdr.LayoutRect{X: 0, Y: 0, Width: 60, Height: 20}},
+		{PaneID: "pK", Rect: herdr.LayoutRect{X: 60, Y: 0, Width: 30, Height: 20}},
+		{PaneID: "pN", Rect: herdr.LayoutRect{X: 90, Y: 0, Width: 30, Height: 20}},
+		{PaneID: "pJ", Rect: herdr.LayoutRect{X: 0, Y: 20, Width: 60, Height: 20}},
+		{PaneID: "pM", Rect: herdr.LayoutRect{X: 60, Y: 20, Width: 60, Height: 20}},
+	}
+	rootDown := herdr.LayoutSplit{ID: "split_0_root", Direction: "down", Ratio: 0.5,
+		Rect: herdr.LayoutRect{X: 0, Y: 0, Width: 120, Height: 40}}
+	topRow := herdr.LayoutSplit{ID: "split_1_0", Direction: "right", Ratio: 0.5,
+		Rect: herdr.LayoutRect{X: 0, Y: 0, Width: 120, Height: 20}}
+	nested := herdr.LayoutSplit{ID: "split_2_01", Direction: "right", Ratio: 0.5,
+		Rect: herdr.LayoutRect{X: 60, Y: 0, Width: 60, Height: 20}}
+	bottomRow := herdr.LayoutSplit{ID: "split_3_1", Direction: "right", Ratio: 0.5,
+		Rect: herdr.LayoutRect{X: 0, Y: 20, Width: 120, Height: 20}}
+
+	for _, tc := range []struct {
+		name                    string
+		split                   herdr.LayoutSplit
+		polarity                float32
+		wantPane, wantDirection string
+	}{
+		// Dragging the top row's divider right grows p5; dragging it left
+		// must target pK (right side), NOT p5: resizing p5 left would move
+		// an outer boundary instead of this divider.
+		{"top row drag right", topRow, 1, "p5", "right"},
+		{"top row drag left", topRow, -1, "pK", "left"},
+		{"nested drag right", nested, 1, "pK", "right"},
+		{"nested drag left", nested, -1, "pN", "left"},
+		{"bottom row drag right", bottomRow, 1, "pJ", "right"},
+		{"bottom row drag left", bottomRow, -1, "pM", "left"},
+		// The root down-split divider at y=20: several panes end/start
+		// there; the widest match wins (first among equals: p5 above, pJ
+		// below) and the daemon moves the shared boundary either way.
+		{"root drag down", rootDown, 1, "p5", "down"},
+		{"root drag up", rootDown, -1, "pJ", "up"},
+	} {
+		paneID, direction := splitGrowTarget(panes, tc.split, tc.polarity)
+		if paneID != tc.wantPane || direction != tc.wantDirection {
+			t.Errorf("%s: splitGrowTarget = (%q, %q), want (%q, %q)",
+				tc.name, paneID, direction, tc.wantPane, tc.wantDirection)
+		}
+	}
+
+	// Unknown split directions have no divider to move.
+	if paneID, dir := splitGrowTarget(panes, herdr.LayoutSplit{Direction: "sideways"}, 1); paneID != "" || dir != "" {
+		t.Errorf("unknown direction = (%q, %q), want empty", paneID, dir)
+	}
+}
+
+func TestSplitResizeAmount(t *testing.T) {
+	// Live probed area (120x40 cells) mapped onto a 1200x400 canvas:
+	// 10 canvas pixels are 1 Herdr cell on each axis.
+	area := herdr.LayoutRect{X: 0, Y: 0, Width: 120, Height: 40}
+	nested := herdr.LayoutSplit{ID: "s", Direction: "right", Ratio: 0.5,
+		Rect: herdr.LayoutRect{X: 60, Y: 0, Width: 60, Height: 20}}
+	rootDown := herdr.LayoutSplit{ID: "r", Direction: "down", Ratio: 0.5,
+		Rect: herdr.LayoutRect{X: 0, Y: 0, Width: 120, Height: 40}}
+
+	// A nested half-width split needs twice the ratio delta per pixel of
+	// the full-area split: amount is a ratio of the split's own extent.
+	if got := splitResizeAmount(nested, area, 1200, 400, 10, 0); math.Abs(got-1.0/60) > 1e-9 {
+		t.Errorf("nested split amount = %v, want %v", got, 1.0/60)
+	}
+	if got := splitResizeAmount(rootDown, area, 1200, 400, 0, 10); math.Abs(got-0.025) > 1e-9 {
+		t.Errorf("root split amount = %v, want 0.025", got)
+	}
+	if got := splitResizeAmount(herdr.LayoutSplit{Direction: "sideways"}, area, 1200, 400, 10, 10); got != 0 {
+		t.Errorf("unknown direction amount = %v, want 0", got)
 	}
 }
 
