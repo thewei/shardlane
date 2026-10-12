@@ -203,6 +203,11 @@ type Shell struct {
 	// rightPanel owns the Native Right Panel (Changes/Files/Services).
 	rightPanel rightPanelState
 
+	// hosts owns the SSH Hosts page (2026-10-13): a local ~/.ssh/config
+	// index plus raw-editor state. Local client capability — connections
+	// and machine profiles stay on the Herdr-owned paths.
+	hosts hostsPageState
+
 	// sidebarCollapsed hides the sidebar (2026-10-06 A6): session-only
 	// presentation state, toggled from the header's leading cluster.
 	sidebarCollapsed bool

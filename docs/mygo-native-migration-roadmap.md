@@ -726,6 +726,40 @@ InteractionBroker.
 
 Keep current wire compatibility; reuse Go app services.
 
+## HOSTS-01 — SSH Hosts page (2026-10-13)
+
+```text
+Task: HOSTS-01
+Objective: one `/hosts` Header destination over the user's own OpenSSH
+  configuration — a bounded line-level index of ~/.ssh/config and its
+  Include closure (Host/Match blocks), lossless raw editing, and one-click
+  `ssh <alias>` connect into a Herdr-owned Pane; saved Herdr machines render
+  read-only beside the config entries.
+Inputs/owners: internal/sshconfig (new domain package: index, atomic
+  symlink-safe SaveFile with one-generation .bak, `ssh -G` evaluation);
+  the script-launch transaction primitives (CreateTab + ShellReady +
+  SendAgentKeys); internal/herdr machine CLI projections.
+Output: internal/sshconfig (+tests), nativeui page_hosts/hosts_editor/
+  hosts_nav/hosts_actions, routeHosts in router.go, titlebar tool button,
+  persistableRoute, sidebar inner nav.
+Non-goals: no Shardlane-side host/machine registry or connection history;
+  no semantic ssh_config resolution (connection and effective config stay
+  with the system ssh client); no form-based structured editing (deferred);
+  no credential or private-key access.
+Dependencies: none (Phase 2 structured editing needs a separate decision —
+  the leading Go ssh_config library does not support Match blocks).
+Fast verification: go test ./internal/sshconfig/... ; go test ./internal/
+  nativeui ; go tool mygo vet . ; go test ./...
+Completion evidence: sshconfig table tests (syntax variants, include
+  glob/cycle/order, symlink+mode+backup write-back, ssh -G parse and argv
+  guard) all pass; nativeui package tests pass; full go test ./... green;
+  mygo build green.
+Status: DONE (2026-10-13)
+Notes: connecting requires an active workspace and selected Project (same
+  constraint as script launches); wildcard/pattern/Match rows are
+  display-only by design.
+```
+
 ## API-01 DTO package
 ## API-02 `/hello`
 ## API-03 `/bootstrap`

@@ -101,12 +101,13 @@ func (s *Shell) sidebarInDiffMode() bool {
 }
 
 // sidebarInnerPage reports whether the current route is an inner page:
-// Settings, History (list, detail, by-project) or Files. Inner pages swap
-// the sidebar body for their own navigation and pin the back control to the
-// sidebar foot.
+// Settings, History (list, detail, by-project), Files or Hosts. Inner pages
+// swap the sidebar body for their own navigation and pin the back control
+// to the sidebar foot.
 func (s *Shell) sidebarInnerPage() bool {
 	path := s.router.Path()
-	return isHistoryRoute(path) || path == routeFiles || strings.HasPrefix(path, "/settings/")
+	return isHistoryRoute(path) || path == routeFiles || path == routeHosts ||
+		strings.HasPrefix(path, "/settings/")
 }
 
 // sidebarBackRow names the destination precisely. A session detail returns
@@ -132,6 +133,8 @@ func (s *Shell) sidebarInnerNav(c *ui.Context) {
 		switch path := s.router.Path(); {
 		case strings.HasPrefix(path, "/settings/"):
 			s.settingsNav(c)
+		case path == routeHosts:
+			s.hostsNav(c)
 		default:
 			s.historyNav(c)
 		}

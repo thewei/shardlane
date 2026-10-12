@@ -115,6 +115,11 @@ func (s *Shell) titlebarTools(c *ui.Context, k *gorexColors) {
 	if gorexIconButton(c, k, iconFolder, "Files view", "Browse project files", s.router.Path() == routeFiles, gorexIconBtn, gorexIconGlyph).Clicked() {
 		s.showViewFiles()
 	}
+	// Hosts is the local SSH launchpad: ~/.ssh/config entries and the
+	// saved Herdr machines, one click from every route.
+	if gorexIconButton(c, k, iconGlobe, "Hosts view", "SSH hosts and machines", s.router.Path() == routeHosts, gorexIconBtn, gorexIconGlyph).Clicked() {
+		s.showViewHosts()
+	}
 	s.titlebarActivity(c, k)
 	if gorexIconButton(c, k, iconPin, windowPinLabel, windowPinLabel, s.windowPinned, gorexIconBtn, gorexIconGlyph).Clicked() {
 		s.toggleWindowPinned()

@@ -346,6 +346,25 @@ right-panel session settings are decode-compatible but have no visible UI
 effect. Interaction details and real-app acceptance gates live in
 `mygo-native-unified-ui-ux-plan-2026-10-09.md`.
 
+**Approved Next (2026-10-13) — SSH Hosts page.** The `/hosts` Header
+destination is a local client capability over the user's own OpenSSH
+configuration, in the same class as the local Git facts: a bounded
+line-level index of `~/.ssh/config` and its `Include` closure lists
+Host/Match blocks (literal aliases, wildcard patterns, Match conditions),
+and semantics are never re-implemented — connection delegates to the
+system `ssh` client by typing the alias into a new Herdr-owned Pane
+through the existing script-launch transaction, and the optional
+effective-config view renders `ssh -G` output. Editing is lossless raw
+text: one-generation `.bak` backup, mode preservation, and
+symlink-following atomic writes; the page never parses, stores or logs
+config contents or private keys. Saved Herdr machines stay Herdr-owned
+profiles (internal/herdr machine CLI state) rendered read-only with
+registration going through the existing interactive `herdr machine add`
+flow; they are never mirrored into a Shardlane-side registry. Structured
+form editing is deliberately deferred: the leading Go ssh_config library
+does not support Match blocks, so any serialized write-back would risk
+the user file the raw editor protects.
+
 Detailed execution/audit documents:
 
 - `docs/reference-godiff-shardlane-0.10-audit.md`

@@ -19,6 +19,7 @@ const (
 	routeHistory   = "/history"
 	routeSettings  = "/settings/general"
 	routeFiles     = "/files"
+	routeHosts     = "/hosts"
 )
 
 // isHistoryRoute is the one exact boundary for the History top-level view.
@@ -44,6 +45,9 @@ func (s *Shell) routeView(c *ui.Context) {
 		case r.Match(routeFiles):
 			r.Title("Files")
 			gorexContentCard(c, gorexColorsOf(c.Theme().Dark), func() { s.filesPage(c) })
+		case r.Match(routeHosts):
+			r.Title("Hosts")
+			gorexContentCard(c, gorexColorsOf(c.Theme().Dark), func() { s.hostsPage(c) })
 		case r.Match(routeHistory):
 			r.Title("Sessions")
 			gorexContentCard(c, gorexColorsOf(c.Theme().Dark), func() { s.historyPage(c) })
@@ -83,6 +87,8 @@ func (s *Shell) currentRouteTitle() string {
 		return "Sessions"
 	case path == routeFiles:
 		return "Files"
+	case path == routeHosts:
+		return "Hosts"
 	case strings.HasPrefix(path, "/history/"):
 		return "History Detail"
 	case path == "/history-projects":
