@@ -2,6 +2,7 @@ package nativeui
 
 import (
 	"log/slog"
+	"sync"
 	"testing"
 	"time"
 )
@@ -19,8 +20,27 @@ type timingLogEvent struct {
 	args  map[string]any
 }
 
-func newCapturingTiming(started time.Time) (*attachFrameTiming, *[]timingLogEvent) {
-	events := &[]timingLogEvent{}
+// timingEvents collects emitted lines. The settle line comes from a timer
+// goroutine while the test reads, so access goes through the mutex.
+type timingEvents struct {
+	mu   sync.Mutex
+	list []timingLogEvent
+}
+
+func (e *timingEvents) add(event timingLogEvent) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.list = append(e.list, event)
+}
+
+func (e *timingEvents) all() []timingLogEvent {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return append([]timingLogEvent(nil), e.list...)
+}
+
+func newCapturingTiming(started time.Time) (*attachFrameTiming, *timingEvents) {
+	events := &timingEvents{}
 	t := newAttachFrameTiming("inst", "pane-1", "term-1", 12, started)
 	t.quiet = 10 * time.Millisecond
 	t.emit = func(level slog.Level, msg string, args ...any) {
@@ -30,7 +50,7 @@ func newCapturingTiming(started time.Time) (*attachFrameTiming, *[]timingLogEven
 				m[key] = args[i+1]
 			}
 		}
-		*events = append(*events, timingLogEvent{level: level, msg: msg, args: m})
+		events.add(timingLogEvent{level: level, msg: msg, args: m})
 	}
 	return t, events
 }
@@ -64,10 +84,10 @@ func TestAttachFrameTimingFirstFrameLoggedOnce(t *testing.T) {
 	timing.onRead(512, started.Add(55*time.Millisecond))
 	timing.onRead(0, started.Add(56*time.Millisecond)) // ignored
 
-	if got := countEvents(*events, "native attach first frame"); got != 1 {
+	if got := countEvents(events.all(), "native attach first frame"); got != 1 {
 		t.Fatalf("first frame logged %d times, want 1", got)
 	}
-	e := (*events)[0]
+	e := events.all()[0]
 	if e.args["first_byte_ms"] != int64(50) {
 		t.Fatalf("first_byte_ms = %v, want 50", e.args["first_byte_ms"])
 	}
@@ -89,12 +109,13 @@ func TestAttachFrameTimingSettledAfterQuiet(t *testing.T) {
 	timing.onRead(2048, started.Add(35*time.Millisecond))
 
 	waitFor(t, 2*time.Second, func() bool {
-		return countEvents(*events, "native attach settled") > 0
+		return countEvents(events.all(), "native attach settled") > 0
 	})
-	if got := countEvents(*events, "native attach settled"); got != 1 {
+	if got := countEvents(events.all(), "native attach settled"); got != 1 {
 		t.Fatalf("settled logged %d times, want 1", got)
 	}
-	e := (*events)[len(*events)-1]
+	logged := events.all()
+	e := logged[len(logged)-1]
 	if e.args["bytes"] != 3072 {
 		t.Fatalf("settled bytes = %v, want 3072 (cumulative)", e.args["bytes"])
 	}
@@ -105,10 +126,11 @@ func TestAttachFrameTimingClosedBeforeFirstFrame(t *testing.T) {
 	timing, events := newCapturingTiming(started)
 	timing.noteClosed(started.Add(80 * time.Millisecond))
 
-	if got := countEvents(*events, "native attach closed before first frame"); got != 1 {
+	if got := countEvents(events.all(), "native attach closed before first frame"); got != 1 {
 		t.Fatalf("closed-before-first-frame logged %d times, want 1", got)
 	}
-	e := (*events)[len(*events)-1]
+	logged := events.all()
+	e := logged[len(logged)-1]
 	if e.level != slog.LevelWarn {
 		t.Fatalf("level = %v, want Warn", e.level)
 	}
@@ -121,7 +143,7 @@ func TestAttachFrameTimingClosedBeforeFirstFrame(t *testing.T) {
 	timing2, events2 := newCapturingTiming(started2)
 	timing2.onRead(16, started2.Add(5*time.Millisecond))
 	timing2.noteClosed(started2.Add(10 * time.Millisecond))
-	if got := countEvents(*events2, "native attach closed before first frame"); got != 0 {
+	if got := countEvents(events2.all(), "native attach closed before first frame"); got != 0 {
 		t.Fatalf("closed-before-first-frame logged %d times after a frame, want 0", got)
 	}
 }

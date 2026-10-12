@@ -19,8 +19,16 @@ import (
 func piTestShell(t *testing.T) *Shell {
 	t.Helper()
 	s := gitSurfaceTestShell(t, t.TempDir())
+	// These tests seed the review and mark it Captured by hand, so the
+	// background Git snapshot and preflight loads are noise — and their
+	// goroutines end in applyGuarded, reading uiApplyOverride while the test
+	// installs its own. An empty root makes both loaders return before they
+	// start a goroutine.
+	root := s.git.root
+	s.git.root = ""
 	s.showSurface(WorkspaceSurfaceDiff)
 	s.openCommitSurface()
+	s.git.root = root
 	s.surface.commit.Captured = true
 	return s
 }
