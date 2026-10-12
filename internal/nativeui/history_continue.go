@@ -269,8 +269,10 @@ func continueFailureText(target history.AgentID, err error) string {
 		return "The project folder isn't available."
 	case "runtime-create":
 		return "Couldn't open a new tab."
+	case "shell-not-ready":
+		return "The new tab wasn't ready. Try again."
 	case "agent-start":
-		return name + " didn't start. Check that it's installed."
+		return name + " didn't start."
 	case "agent-start-uncertain":
 		return name + " may have started — check its tab."
 	case "agent-created":

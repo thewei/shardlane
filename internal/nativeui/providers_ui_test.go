@@ -2,6 +2,8 @@ package nativeui
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,6 +12,7 @@ import (
 	"github.com/egoist/mygo/ui"
 	"github.com/wh-studio/herdr-client/internal/agent"
 	"github.com/wh-studio/herdr-client/internal/agenthooks"
+	"github.com/wh-studio/herdr-client/internal/herdr"
 )
 
 // TestProvidersPageHookLeadsIntegrationFallsBack pins the single-mechanism
@@ -151,6 +154,55 @@ func TestProvidersPageHookOnlyAndDeferred(t *testing.T) {
 	// actions may legitimately appear for provisionable providers.
 	if tester.HasText("Install integration") {
 		t.Fatalf("integration action offered on a non-actionable audit; texts=%q", tester.Texts())
+	}
+}
+
+// TestProvidersAuditFailureStaysPlain pins the failed-audit surface: the
+// notice speaks plainly instead of printing the exec error, offers Retry,
+// and agents without a reading show no column of Unknown pills.
+func TestProvidersAuditFailureStaysPlain(t *testing.T) {
+	shell := NewShell()
+	shell.providers.integrations = agent.NewIntegrationHealthServiceWithRunner(func(ctx context.Context, args []string) (string, error) {
+		return "", fmt.Errorf("herdr integration status: %w", herdr.ErrCLINotFound)
+	})
+	shell.providers.hooks = agenthooks.NewManagerWithHome(t.TempDir())
+
+	shell.router.Replace("/settings/providers")
+	tester := ui.NewTester(shell.View, 1200, 800)
+
+	if !tester.HasText("Couldn't find Herdr. Install it, then try again.") {
+		t.Fatalf("plain failure notice missing; texts=%q", tester.Texts())
+	}
+	if !tester.HasText("Retry") {
+		t.Fatalf("failure notice has no Retry; texts=%q", tester.Texts())
+	}
+	for _, text := range tester.Texts() {
+		for _, leak := range []string{"exec:", "$PATH", "executable file", "integration status", "CLI not found"} {
+			if strings.Contains(text, leak) {
+				t.Fatalf("internal detail %q on screen: %q", leak, text)
+			}
+		}
+	}
+	if tester.HasText("Unknown") {
+		t.Fatalf("agents without a reading must not show Unknown pills; texts=%q", tester.Texts())
+	}
+	if !tester.HasText("Codex") {
+		t.Fatalf("agent rows must stay listed; texts=%q", tester.Texts())
+	}
+}
+
+func TestIntegrationErrorTextIsPlain(t *testing.T) {
+	for _, tc := range []struct {
+		err  error
+		want string
+	}{
+		{fmt.Errorf("herdr integration status: %w", herdr.ErrCLINotFound), "Couldn't find Herdr. Install it, then try again."},
+		{context.DeadlineExceeded, "Checking took too long. Try again."},
+		{errors.New(`exec: "herdr": executable file not found in $PATH`), "Couldn't read agent status. Try again."},
+	} {
+		if got := integrationErrorText(tc.err); got != tc.want {
+			t.Errorf("integrationErrorText(%v) = %q, want %q", tc.err, got, tc.want)
+		}
 	}
 }
 

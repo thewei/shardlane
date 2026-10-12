@@ -49,7 +49,8 @@ func TestPiCommitUsesSelectedSnapshotAndNeverCommits(t *testing.T) {
 	s.uiApplyOverride = func(f func()) { queue <- f }
 	s.piCommitExecutor = func(ctx context.Context, req agent.PiCommitRequest) (agent.PiCommitResponse, error) {
 		if req.Root != s.git.root || !strings.Contains(req.Prompt, "File: src/main.go") ||
-			!strings.Contains(req.Prompt, "Conventional Commits") || strings.Contains(req.Prompt, "fmt.Println") {
+			!strings.Contains(req.Prompt, "Conventional Commits") || !strings.Contains(req.Prompt, "Do NOT stage, commit, push") ||
+			strings.Contains(req.Prompt, "fmt.Println") {
 			return agent.PiCommitResponse{}, context.Canceled
 		}
 		return agent.PiCommitResponse{Message: "fix: update Git interface"}, nil

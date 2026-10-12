@@ -190,6 +190,69 @@ func TestTransactionAgentNameFitsHerdrRules(t *testing.T) {
 	}
 }
 
+// A shell that never settles in the new tab is not an agent that refused to
+// start: the two read differently to the person waiting, so they are told
+// apart, and the unused tab is still cleaned up.
+func TestTransactionShellNeverReadyIsItsOwnFailure(t *testing.T) {
+	runtime := &fakeLaunchRuntime{shellNotReady: 2}
+	timings := DefaultTimings()
+	timings.RetrySettleMS = 1
+	_, failure := RunLaunchTransaction(context.Background(), runtime, readyPreparer{}, launchTestIntent(), timings)
+	if failure == nil || failure.Kind != "shell-not-ready" {
+		t.Fatalf("failure = %+v, want kind shell-not-ready", failure)
+	}
+	if runtime.started != 0 {
+		t.Fatalf("agent.start ran %d times behind a shell that never settled", runtime.started)
+	}
+	if len(runtime.closedTabs) != 1 {
+		t.Fatalf("closed tabs = %v, want the unused tab closed once", runtime.closedTabs)
+	}
+}
+
+// Names Shardlane hands to Herdr show up in Herdr's own UI, so they stay
+// short and readable: the kind plus six hex digits of the operation id, the
+// same for the same operation and different across operations.
+func TestGeneratedAgentNamesAreShortAndStable(t *testing.T) {
+	shape := regexp.MustCompile(`^pi-[0-9a-f]{6}$`)
+	first := herdrAgentName("pi", "continue-019CD36B-8E1A-7B3A-9C2D-4F5A6B7C8D9E")
+	if !shape.MatchString(first) {
+		t.Fatalf("name %q, want pi-<6 hex>", first)
+	}
+	if again := herdrAgentName("pi", "continue-019CD36B-8E1A-7B3A-9C2D-4F5A6B7C8D9E"); again != first {
+		t.Fatalf("same operation, different names: %q vs %q", first, again)
+	}
+	// UUIDv7 session ids share their leading digits for hours; the name
+	// must still differ between sessions created close together.
+	if other := herdrAgentName("pi", "continue-019CD36B-8E1A-7B3A-9C2D-0000000000FF"); other == first {
+		t.Fatalf("different operations share the name %q", first)
+	}
+}
+
+// A name Shardlane generated carries no meaning for the person reading a pane
+// header; one they or Herdr chose does.
+func TestIsGeneratedAgentName(t *testing.T) {
+	for _, tc := range []struct {
+		name, kind string
+		want       bool
+	}{
+		{"pi-3fa91c", "pi", true},
+		{"claude-0b77de", "claude", true},
+		// Names minted before the short form existed.
+		{"pi-continue-01a12e5f-b856-71d7-8", "pi", true},
+		{"codex-transfer-019cd36b-8e1a-7b3a", "codex", true},
+		{"pi", "pi", false},
+		{"Refactor Task", "pi", false},
+		{"review-agent", "pi", false},
+		{"pi-continue", "pi", false},
+		{"codex-3fa91c", "pi", false},
+		{"", "pi", false},
+	} {
+		if got := IsGeneratedAgentName(tc.name, tc.kind); got != tc.want {
+			t.Errorf("IsGeneratedAgentName(%q, %q) = %v, want %v", tc.name, tc.kind, got, tc.want)
+		}
+	}
+}
+
 // Herdr names Claude Code "claude" — the agent.start kind and the
 // agent_session.agent a live session reports — not the History id
 // "claude-code".

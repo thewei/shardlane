@@ -92,6 +92,34 @@ func TestSettingsGeneralPageUpdatesService(t *testing.T) {
 	}
 }
 
+// The classic/rich chat switch is an escape hatch for an implementation
+// detail, so it lives under Diagnostics; General only holds preferences about
+// how Shardlane looks and behaves.
+func TestRichChatSwitchLivesInDiagnostics(t *testing.T) {
+	s := NewShell()
+	s.loading = false
+	s.router.Replace("/settings/general")
+	tester := ui.NewTester(s.View, 1200, 800)
+	tester.Frame()
+	if tester.HasText("Rich chat view") {
+		t.Fatalf("General still carries the chat implementation switch; texts=%q", tester.Texts())
+	}
+
+	s.router.Replace("/settings/diagnostics")
+	tester = ui.NewTester(s.View, 1200, 800)
+	tester.Frame()
+	if !tester.HasText("Rich chat view") {
+		t.Fatalf("Diagnostics is missing the chat switch; texts=%q", tester.Texts())
+	}
+	before := s.settingsService.Current().General.WebViewChat
+	if err := tester.Click("Rich chat view"); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.settingsService.Current().General.WebViewChat; got == before {
+		t.Fatalf("toggling Rich chat view kept WebViewChat = %v", got)
+	}
+}
+
 func TestSettingsTerminalPageUpdatesService(t *testing.T) {
 	s := NewShell()
 	s.loading = false

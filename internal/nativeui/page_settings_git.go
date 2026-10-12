@@ -2,7 +2,7 @@ package nativeui
 
 /**
  * [INPUT]: 依赖 persisted Workbench Settings 与用户配置的 Pi executable/commit rules
- * [OUTPUT]: 对外提供 Shell.settingsGit 渲染 Git 提交规范与 Pi 工具偏好
+ * [OUTPUT]: 对外提供 Shell.settingsGit 渲染 Git 提交风格规则（仅风格；安全约束固定在 agent.BuildPiCommitPrompt，不展示）与 Pi 工具偏好
  * [POS]: nativeui Settings 中的 Git 偏好配置子面板
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -24,7 +24,7 @@ func commitPromptPreference(value string) string {
 func (s *Shell) settingsGit(c *ui.Context) {
 	sp := Spacing()
 	settingsCard(c, "Commit message rules", func() {
-		ui.TextArea(c, &s.settingsGitPromptDraft).FillWidth().Height(220).Label("Git commit rules")
+		ui.TextArea(c, &s.settingsGitPromptDraft).FillWidth().Height(112).Label("Git commit rules")
 		ui.Row(c).Gap(sp.S).Children(func() {
 			if ui.PrimaryButton(c, "Save").Label("Save commit rules").Clicked() {
 				draft := strings.TrimSpace(s.settingsGitPromptDraft)

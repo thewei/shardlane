@@ -203,6 +203,7 @@ func TestContinueFailuresNameTheClassAndShowACreatedPane(t *testing.T) {
 		wantSelected string
 	}{
 		{"never started", &agent.LaunchFailure{Kind: "agent-start", Detail: "exec: not found"}, "Codex didn't start", "p1"},
+		{"shell never ready", &agent.LaunchFailure{Kind: "shell-not-ready", Detail: "shell not ready: pane p1 shell did not become interactive"}, "new tab wasn't ready", "p1"},
 		{"folder gone", &agent.LaunchFailure{Kind: "branch-preparation", Detail: "no such directory"}, "project folder isn't available", "p1"},
 		{"started, not ready", &agent.LaunchFailure{Kind: "agent-created", Phase: agent.PhaseNotReady, Committed: true, PaneID: "p2"}, "isn't ready yet", "p2"},
 		{"start uncertain", &agent.LaunchFailure{Kind: "agent-start-uncertain", Uncertain: true, PaneID: "p2"}, "may have started", "p2"},
@@ -222,7 +223,9 @@ func TestContinueFailuresNameTheClassAndShowACreatedPane(t *testing.T) {
 			if !strings.Contains(shell.pendingToast, tc.wantToast) {
 				t.Fatalf("toast = %q, want it to contain %q", shell.pendingToast, tc.wantToast)
 			}
-			if strings.Contains(shell.pendingToast, "exec:") || strings.Contains(shell.pendingToast, "no such directory") {
+			// The engine can't tell why a start was refused, so the toast
+			// doesn't guess (installed, PATH, ...).
+			if strings.Contains(shell.pendingToast, "installed") || strings.Contains(shell.pendingToast, "exec:") || strings.Contains(shell.pendingToast, "no such directory") || strings.Contains(shell.pendingToast, "interactive") {
 				t.Fatalf("toast leaks engine detail: %q", shell.pendingToast)
 			}
 			if shell.selectedPaneID != tc.wantSelected {

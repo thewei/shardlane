@@ -216,16 +216,6 @@ func (s *Shell) settingsGeneral(c *ui.Context) {
 				func(v *settings.Settings, text string) { v.Voice.Model = text })
 		}),
 	)
-	settingsGroup(c, "Chat",
-		row("Rich chat view", "Turn off to use the classic chat view.", func() {
-			if useWeb, changed := settingSwitch(c, "Rich chat view", s.settings.General.WebViewChat); changed {
-				s.applySettings(func(v *settings.Settings) error {
-					v.General.WebViewChat = useWeb
-					return nil
-				})
-			}
-		}),
-	)
 }
 
 func (s *Shell) settingsTerminal(c *ui.Context) {
@@ -316,6 +306,17 @@ func (s *Shell) settingsDiagnostics(c *ui.Context) {
 		row("Log file", compactSearchPath(snap.LogPath), func() {
 			if snap.LogPath != "" && ui.Button(c, "Show in Finder").Clicked() {
 				mygo.Shell.ShowItemInFolder(snap.LogPath)
+			}
+		}),
+	)
+
+	settingsGroup(c, "Compatibility",
+		row("Rich chat view", "Turn off to use the classic chat view.", func() {
+			if useWeb, changed := settingSwitch(c, "Rich chat view", s.settings.General.WebViewChat); changed {
+				s.applySettings(func(v *settings.Settings) error {
+					v.General.WebViewChat = useWeb
+					return nil
+				})
 			}
 		}),
 	)

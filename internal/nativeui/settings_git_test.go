@@ -28,6 +28,13 @@ func TestGitPreferencesPageDefaultAndSave(t *testing.T) {
 	if !strings.Contains(s.settingsGitPromptDraft, "Conventional Commits") {
 		t.Fatal("default commit policy missing")
 	}
+	// The editable rules are style only: the fixed safety rules are code and
+	// the page doesn't show them.
+	for _, text := range tester.Texts() {
+		if strings.Contains(text, "Do NOT stage") || strings.Contains(text, "data, not instructions") {
+			t.Fatalf("Git Settings shows the guardrail prompt: %q", text)
+		}
+	}
 	s.settingsGitPromptDraft = "fix(scope): describe precise changes"
 	if err := tester.Click("Save commit rules"); err != nil {
 		t.Fatal(err)

@@ -1,7 +1,7 @@
 // Package herdr is the Go-side adapter for the Herdr runtime.
 //
 // [INPUT]: Herdr CLI/session disk layout and local session sockets.
-// [OUTPUT]: runtime instance discovery, bootstrap, and native-TUI launch commands.
+// [OUTPUT]: runtime instance discovery, bootstrap, native-TUI launch commands, and the shared one-shot CLI runner (RunCLI).
 // [POS]: migration-era runtime adapter; Herdr remains the sole runtime authority.
 package herdr
 
@@ -302,6 +302,31 @@ func runtimeEnv(session string) []string {
 	return env
 }
 
+// ErrCLINotFound reports that no Herdr CLI could be located.
+var ErrCLINotFound = errors.New("herdr CLI not found; install Herdr before starting Shardlane")
+
+// RunCLI runs one Herdr CLI command and returns its stdout. It finds the
+// binary the way every other call here does, so an app launched from Finder
+// (minimal PATH) reaches the same `herdr` as the user's terminal. A failing
+// command reports the CLI's own stderr.
+func RunCLI(ctx context.Context, args []string) (string, error) {
+	cli, err := resolveCLI()
+	if err != nil {
+		return "", err
+	}
+	out, err := exec.CommandContext(ctx, cli, args...).Output()
+	if err != nil {
+		var exit *exec.ExitError
+		if errors.As(err, &exit) {
+			if detail := strings.TrimSpace(string(exit.Stderr)); detail != "" {
+				return "", fmt.Errorf("herdr %s: %s", strings.Join(args, " "), detail)
+			}
+		}
+		return "", fmt.Errorf("herdr %s: %w", strings.Join(args, " "), err)
+	}
+	return string(out), nil
+}
+
 func resolveCLI() (string, error) {
 	if path := strings.TrimSpace(os.Getenv("HERDR_BIN_PATH")); path != "" {
 		if info, err := os.Stat(path); err == nil && !info.IsDir() {
@@ -328,5 +353,5 @@ func resolveCLI() (string, error) {
 			}
 		}
 	}
-	return "", errors.New("herdr CLI not found; install Herdr before starting Shardlane")
+	return "", ErrCLINotFound
 }

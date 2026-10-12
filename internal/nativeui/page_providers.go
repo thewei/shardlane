@@ -101,11 +101,9 @@ func (s *Shell) providerRows(c *ui.Context, row providerRow) []settingsRow {
 		}}
 	}
 	// The integration audit failed or has not reconciled this agent; the
-	// inline notice above carries the reason.
-	return []settingsRow{{
-		lead: lead, label: row.name,
-		control: func() { s.facetControls(c, row, facetIntegration, "Unknown", ToneMuted) },
-	}}
+	// inline notice above carries the reason. A row with nothing to report
+	// stays a plain name rather than a column of Unknown pills.
+	return []settingsRow{{lead: lead, label: row.name}}
 }
 
 // facetControls renders one facet's state pill plus its single safe action

@@ -5,7 +5,7 @@
 actions.go: Herdr Workspace/Tab/Pane 的权威 mutation RPC 适配器；支持 workspace.move、tab.move、pane.swap、pane.move、pane.resize 以及 pane.zoom 显式 mode（toggle|on|off，live schema PaneZoomMode）
 actions_contract_test.go: SplitPane RPC 与 mutation → snapshot 时序契约；ZoomPane 显式 mode 线格式与非法 mode 本地拒绝契约
 reorder_contract_test.go: Workspace/Tab/Panes 排序、跨 Tab 移动与分栏调整 RPC 的 method、字段、回读与输入校验契约
-herdr.go: Herdr Manager、PATH/常见安装位置优先的 CLI 发现及受限时 session list（6 秒）
+herdr.go: Herdr Manager、PATH/常见安装位置优先的 CLI 发现（env → PATH → 安装位置 → 登录 shell）及受限时 session list（6 秒）；RunCLI 是应用侧唯一的 CLI 一次性调用入口（从 Finder 启动时 PATH 极简，裸 exec "herdr" 会失败），ErrCLINotFound 是“没装 Herdr”的哨兵
 instances.go: Session 列举与实例身份的解析、管理
 instances_test.go: Session 实例发现与边界回归
 rpc.go: socket RPC 请求/响应、超时与交付不确定性边界
@@ -25,6 +25,7 @@ search_gate.go: 搜索、复制等 Herdr 搜索协议适配
 search_gate_test.go: 搜索消息边界回归
 scroll_contract_test.go: Herdr scroll 消息与状态协定
 herdr_test.go: Manager/协议基础回归
+run_cli_test.go: RunCLI 经解析出的二进制执行、失败时带上 stderr 的回归
 actions_test.go: Herdr 操作基础测试
 
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

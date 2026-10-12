@@ -2,6 +2,9 @@ package agent
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -22,8 +25,8 @@ const (
 
 // LaunchFailure is the typed failure taxonomy of the transaction.
 type LaunchFailure struct {
-	Kind string // project-unavailable | branch-preparation | runtime-create | agent-start |
-	// agent-start-uncertain | not-ready | plan-setup | initial-prompt |
+	Kind string // project-unavailable | branch-preparation | runtime-create | shell-not-ready |
+	// agent-start | agent-start-uncertain | not-ready | plan-setup | initial-prompt |
 	// initial-prompt-uncertain | agent-created | operation-conflict
 	Detail string
 
@@ -211,6 +214,9 @@ func RunLaunchTransaction(ctx context.Context, runtime LaunchRuntime, preparer P
 		// Definitive failure: the Agent never started; the created tab is
 		// unused and is cleaned up exactly once.
 		_ = runtime.CloseTab(ctx, tabID)
+		if errors.Is(startErr, errShellNotReady) {
+			return LaunchOutcome{}, fail("shell-not-ready", "%s", startErr.Error())
+		}
 		return LaunchOutcome{}, fail("agent-start", "%s", startErr.Error())
 	}
 	if startUncertain {
@@ -297,6 +303,10 @@ func RunLaunchTransaction(ctx context.Context, runtime LaunchRuntime, preparer P
 	}, nil
 }
 
+// errShellNotReady marks the gate: the new tab's shell never settled, so
+// agent.start was never attempted.
+var errShellNotReady = errors.New("shell not ready")
+
 // shellGatedStart gates agent.start behind the interactive-shell readiness
 // check, retried once after re-settling (the gate is read-only; the start
 // mutation itself still executes at most once).
@@ -305,7 +315,7 @@ func shellGatedStart(ctx context.Context, runtime LaunchRuntime, paneID string, 
 	if gateErr != nil {
 		sleep(ctx, timings.RetrySettleMS)
 		if retryErr := runtime.WaitShellReady(ctx, paneID, timings.ShellReadyTimeoutMS); retryErr != nil {
-			return gateErr
+			return fmt.Errorf("%w: %v", errShellNotReady, gateErr)
 		}
 	}
 	return runtime.StartAgent(ctx, params)
@@ -314,33 +324,58 @@ func shellGatedStart(ctx context.Context, runtime LaunchRuntime, paneID string, 
 // herdrAgentMaxName is the longest agent name Herdr accepts.
 const herdrAgentMaxName = 32
 
+// generatedNameDigits is how many hex digits of the operation id follow the
+// kind in a name Shardlane hands to Herdr.
+const generatedNameDigits = 6
+
 // herdrAgentName builds the name handed to agent.start. Herdr accepts
 // lowercase letters, digits, '-' and '_', starting with a letter, in at most
-// 32 characters; an operation id (a session id on Continue) is mixed case and
-// longer, so it is lowercased and cut to fit.
+// 32 characters, unique among live agents. The name also shows in Herdr's own
+// UI, so it is the kind plus a short digest of the operation id: stable for
+// one operation, and spread evenly across operations (session ids lead with a
+// timestamp, so a prefix of the id itself would collide).
 func herdrAgentName(kind, operationID string) string {
-	name := strings.ToLower(kind + "-" + sanitizeOperationName(operationID))
+	sum := sha256.Sum256([]byte(operationID))
+	name := strings.ToLower(kind) + "-" + hex.EncodeToString(sum[:generatedNameDigits/2])
 	if len(name) > herdrAgentMaxName {
 		name = name[:herdrAgentMaxName]
 	}
 	return name
 }
 
-func sanitizeOperationName(operationID string) string {
-	var builder strings.Builder
-	for _, character := range operationID {
-		if character >= 'a' && character <= 'z' || character >= 'A' && character <= 'Z' ||
-			character >= '0' && character <= '9' || character == '-' {
-			builder.WriteRune(character)
-		}
-		if builder.Len() >= 32 {
-			break
+// IsGeneratedAgentName reports whether name is one Shardlane minted for an
+// agent of this Herdr kind: kind-<6 hex>, or the longer kind-continue-<id> /
+// kind-transfer-<id> older builds used. Such a name is plumbing, so the UI
+// shows the provider instead; a name a person or Herdr chose is left alone.
+func IsGeneratedAgentName(name, kind string) bool {
+	if kind == "" {
+		return false
+	}
+	rest, ok := strings.CutPrefix(name, strings.ToLower(kind)+"-")
+	if !ok {
+		return false
+	}
+	if len(rest) == generatedNameDigits && isLowerHex(rest, false) {
+		return true
+	}
+	for _, operation := range []string{"continue-", "transfer-"} {
+		if tail, ok := strings.CutPrefix(rest, operation); ok && tail != "" && isLowerHex(tail, true) {
+			return true
 		}
 	}
-	if builder.Len() == 0 {
-		return "operation"
+	return false
+}
+
+func isLowerHex(s string, allowDash bool) bool {
+	for _, character := range s {
+		switch {
+		case character >= '0' && character <= '9', character >= 'a' && character <= 'f':
+		case allowDash && character == '-':
+		default:
+			return false
+		}
 	}
-	return builder.String()
+	return true
 }
 
 func herdrKindOfSession(session string) string {

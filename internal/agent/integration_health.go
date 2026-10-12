@@ -2,8 +2,8 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"os/exec"
 	"strconv"
 	"strings"
 
@@ -67,31 +67,24 @@ func (h ProviderIntegrationHealth) ActionLabel() string {
 // the Herdr CLI (INT-02). It never polls; callers audit on route entry,
 // manual refresh and after actions.
 type IntegrationHealthService struct {
-	// runner stands in for the Herdr CLI in tests; nil uses the real CLI.
+	// runner is the Herdr CLI transport. The domain does not locate the
+	// binary: a bare "herdr" fails in an app launched from Finder, whose
+	// PATH is minimal, so the composition root injects the adapter that
+	// resolves the CLI.
 	runner func(ctx context.Context, args []string) (string, error)
 }
 
-func NewIntegrationHealthService() *IntegrationHealthService {
-	return &IntegrationHealthService{}
-}
-
-// NewIntegrationHealthServiceWithRunner injects the CLI transport. It is the
-// seam for deterministic tests and for environments where the Herdr CLI is
-// resolved elsewhere.
+// NewIntegrationHealthServiceWithRunner injects the CLI transport; tests
+// inject a fixture, the app injects herdr.RunCLI.
 func NewIntegrationHealthServiceWithRunner(runner func(ctx context.Context, args []string) (string, error)) *IntegrationHealthService {
 	return &IntegrationHealthService{runner: runner}
 }
 
 func (s *IntegrationHealthService) run(ctx context.Context, args []string) (string, error) {
-	if s.runner != nil {
-		return s.runner(ctx, args)
+	if s.runner == nil {
+		return "", errors.New("integration CLI transport is not configured")
 	}
-	command := exec.CommandContext(ctx, "herdr", args...)
-	output, err := command.Output()
-	if err != nil {
-		return "", fmt.Errorf("herdr %s: %w", strings.Join(args, " "), err)
-	}
-	return string(output), nil
+	return s.runner(ctx, args)
 }
 
 // Audit reconciles every registered provider against one `herdr integration

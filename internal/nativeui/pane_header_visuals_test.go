@@ -63,6 +63,25 @@ func TestPaneHeaderVisualsAgent(t *testing.T) {
 	}
 }
 
+// A name Shardlane generated for Herdr (pi-3fa91c, or the longer form older
+// builds minted) is plumbing: the header shows the provider, a name someone
+// chose stays.
+func TestPaneHeaderVisualsHidesGeneratedAgentNames(t *testing.T) {
+	s := NewShell()
+	s.projection = herdr.Projection{
+		Agents: []herdr.Agent{
+			{PaneID: "p-new", Kind: "pi", Name: "pi-3fa91c", Status: "idle"},
+			{PaneID: "p-old", Kind: "pi", Name: "pi-continue-01a12e5f-b856-71d7-8", Status: "idle"},
+			{PaneID: "p-chosen", Kind: "pi", Name: "Review pass", Status: "idle"},
+		},
+	}
+	for paneID, want := range map[string]string{"p-new": "Pi", "p-old": "Pi", "p-chosen": "Review pass"} {
+		if _, title, _ := s.paneHeaderVisuals(&terminalSurface{paneID: paneID, cwd: "/Users/test/project"}, false); title != want {
+			t.Errorf("%s title = %q, want %q", paneID, title, want)
+		}
+	}
+}
+
 func TestPaneHeaderVisualsProcess(t *testing.T) {
 	s := NewShell()
 	s.serviceIndex = sidebarServiceIndex{

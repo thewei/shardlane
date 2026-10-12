@@ -121,7 +121,8 @@ func TestGitQuickAICommitFillsSubjectButNeverCommits(t *testing.T) {
 	queue := make(chan func(), 2)
 	s.uiApplyOverride = func(fn func()) { queue <- fn }
 	s.piCommitExecutor = func(ctx context.Context, req agent.PiCommitRequest) (agent.PiCommitResponse, error) {
-		if req.Root != s.git.root || !strings.Contains(req.Prompt, "File: src/main.go") || strings.Contains(req.Prompt, "fmt.Println") {
+		if req.Root != s.git.root || !strings.Contains(req.Prompt, "File: src/main.go") || !strings.Contains(req.Prompt, "Do NOT stage, commit, push") ||
+			strings.Contains(req.Prompt, "fmt.Println") {
 			return agent.PiCommitResponse{}, context.Canceled
 		}
 		return agent.PiCommitResponse{Message: "feat: refine Git operations\n\nGenerated details"}, nil

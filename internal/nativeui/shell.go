@@ -460,7 +460,7 @@ func NewShell(opts ...ShellOption) *Shell {
 	s.settingsFontDraft = s.settings.Terminal.FontFamily
 	s.settingsGitPromptDraft = commitPromptPreference(s.settings.Workbench.CommitPrompt)
 	s.settingsPiBinaryDraft = s.settings.Workbench.PiExecutable
-	s.providers.integrations = agent.NewIntegrationHealthService()
+	s.providers.integrations = agent.NewIntegrationHealthServiceWithRunner(herdr.RunCLI)
 	s.providers.hooks = agenthooks.NewManager()
 	s.launch = app.NewLaunchService(s.runtime)
 	s.interactionBroker = conversation.NewInteractionBroker(nil)

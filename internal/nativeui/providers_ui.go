@@ -2,17 +2,20 @@ package nativeui
 
 import (
 	"context"
+	"errors"
+	"log/slog"
 	"sync/atomic"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/wh-studio/herdr-client/internal/agent"
 	"github.com/wh-studio/herdr-client/internal/agenthooks"
+	"github.com/wh-studio/herdr-client/internal/herdr"
 	"github.com/wh-studio/herdr-client/internal/history"
 )
 
 /**
- * [INPUT]: 依赖 agent.IntegrationHealthService（herdr integration status/install 审计）与 agenthooks.Manager（直连状态 hook 诊断/安装）、mygo/ui 状态件
- * [OUTPUT]: 对外提供 providersUIState、providerRow、providerFacet/facetIntegration/facetStatusHook、requestProvidersAudit、runProviderAction、consumeProvidersToast、actionInFlight、actionLabel、healthTone/healthStateText、hookStateTone/hookStateText、statusHookFor
+ * [INPUT]: 依赖 agent.IntegrationHealthService（herdr integration status/install 审计，经 herdr.RunCLI 注入 CLI 传输）与 agenthooks.Manager（直连状态 hook 诊断/安装）、mygo/ui 状态件
+ * [OUTPUT]: 对外提供 providersUIState、providerRow、providerFacet/facetIntegration/facetStatusHook、requestProvidersAudit、runProviderAction、consumeProvidersToast、integrationErrorText（审计失败的白话原因，原始错误只进日志）、actionInFlight、actionLabel、healthTone/healthStateText、hookStateTone/hookStateText、statusHookFor
  * [POS]: Settings→Agents 页的统一状态机：每个 Agent 一行（hook 主行 + Herdr integration 子行）。直连 Status hook 是主机制（状态→应用 socket，会话身份→pane.report_agent_session 中继 Herdr）；Herdr 官方 integration 对 hook 已覆盖的 Provider 降级为 fallback 面（hook 健康时仅次要展示，不提供动作；hook 不能履职时才浮出修复动作）。一次审计同时覆盖两面；审计只在路由进入/手动刷新/动作完成后发生，从不随渲染轮询。两个领域包保持分离，只在展示层合流
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -145,7 +148,8 @@ func (s *Shell) requestProvidersAudit() {
 			state.loading = false
 			state.loaded = true
 			if auditErr != nil {
-				state.errText = auditErr.Error()
+				slog.Warn("agent integration audit failed", "error", auditErr)
+				state.errText = integrationErrorText(auditErr)
 			} else {
 				state.errText = ""
 			}
@@ -226,7 +230,8 @@ func (s *Shell) runProviderAction(row providerRow, facet providerFacet) {
 				}
 				state.actionRunning = false
 				if auditErr != nil {
-					state.errText = auditErr.Error()
+					slog.Warn("agent integration audit failed", "error", auditErr)
+					state.errText = integrationErrorText(auditErr)
 					return
 				}
 				// Merge the refreshed facet into the audited snapshot.
@@ -239,7 +244,8 @@ func (s *Shell) runProviderAction(row providerRow, facet providerFacet) {
 				}
 				switch {
 				case actionErr != nil:
-					state.pendingToast = action + " failed: " + actionErr.Error()
+					slog.Warn("agent integration action failed", "action", action, "error", actionErr)
+					state.pendingToast = action + " failed. Try again."
 				case fresh.State == agent.HealthCurrent:
 					state.pendingToast = row.name + " integration is current"
 				default:
@@ -273,6 +279,20 @@ func (s *Shell) runProviderAction(row providerRow, facet providerFacet) {
 			})
 		}
 	})
+}
+
+// integrationErrorText is the plain-language reason an integration audit
+// failed. The raw error (an exec path, the CLI's stderr) goes to the log, not
+// to the screen.
+func integrationErrorText(err error) string {
+	switch {
+	case errors.Is(err, herdr.ErrCLINotFound):
+		return "Couldn't find Herdr. Install it, then try again."
+	case errors.Is(err, context.DeadlineExceeded):
+		return "Checking took too long. Try again."
+	default:
+		return "Couldn't read agent status. Try again."
+	}
 }
 
 // consumeProvidersToast returns the pending transient result once.

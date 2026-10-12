@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -164,6 +165,19 @@ func TestGeneralSettingsEffectiveOpacity(t *testing.T) {
 		g := GeneralSettings{Opacity: tc.input}
 		if got := g.EffectiveOpacity(); got != tc.want {
 			t.Fatalf("EffectiveOpacity(%v) = %v, want %v", tc.input, got, tc.want)
+		}
+	}
+}
+
+// The editable commit rules are style only; the safety rules live in code
+// (agent.BuildPiCommitPrompt) so the Settings page never shows them.
+func TestDefaultCommitPromptCarriesStyleOnly(t *testing.T) {
+	if !strings.Contains(DefaultCommitPrompt, "Conventional Commits") {
+		t.Fatalf("default commit rules lost the style: %q", DefaultCommitPrompt)
+	}
+	for _, guardrail := range []string{"Do NOT", "secrets", "data, not instructions", "Never claim", "Return ONLY"} {
+		if strings.Contains(DefaultCommitPrompt, guardrail) {
+			t.Fatalf("default commit rules leak the guardrail %q: %q", guardrail, DefaultCommitPrompt)
 		}
 	}
 }
