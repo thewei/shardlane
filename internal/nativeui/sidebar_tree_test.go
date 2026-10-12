@@ -548,3 +548,24 @@ func TestTitleBarActionsPulldownCarriesTheWorkspaceMenu(t *testing.T) {
 	}
 	tester.CloseMenu()
 }
+
+// The Actions menu's New Tab is the project row's New Tab (newProjectTab): it
+// needs a project the runtime still reports, and offers nothing otherwise.
+func TestTitleBarNewTabNeedsAProjectTheRuntimeStillHas(t *testing.T) {
+	s := workspaceTreeShell()
+	s.selectedProjectID = "gone"
+	tester := ui.NewTester(s.View, 1200, 800)
+	tester.Frame()
+	if err := tester.Click("Actions"); err != nil {
+		t.Fatalf("title bar has no Actions pull-down: %v; texts=%q", err, tester.Texts())
+	}
+	tester.Frame()
+	menu := tester.Menu()
+	if !containsText(menu, "Refresh Runtime") {
+		t.Fatalf("Actions menu did not open: %q", menu)
+	}
+	if containsText(menu, "New Tab") {
+		t.Fatalf("Actions menu offers New Tab for a project that is gone: %q", menu)
+	}
+	tester.CloseMenu()
+}

@@ -134,16 +134,8 @@ func (s *Shell) surfaceOverflowItems(m *ui.Menu) {
 		s.paneOverflowItems(m, s.selectedPaneID, label)
 		m.Separator()
 	}
-	if s.selectedProjectID != "" {
-		if m.Item("New Tab").Chosen() {
-			cwd := ""
-			if project := s.selectedProject(); project != nil {
-				cwd = project.CWD
-			}
-			s.mutateSelecting(func() (herdr.Projection, error) {
-				return s.runtime.CreateTab(s.activeInstance, s.selectedProjectID, cwd)
-			})
-		}
+	if project := s.selectedProject(); project != nil && m.Item("New Tab").Chosen() {
+		s.newProjectTab(*project)
 	}
 	if m.Item("Refresh Runtime").Chosen() {
 		s.reloadInstances(false)
