@@ -198,9 +198,8 @@ func RunLaunchTransaction(ctx context.Context, runtime LaunchRuntime, preparer P
 	// never repeated.
 	launchArgs := append([]string(nil), intent.ExtraArgs...)
 	launchArgs = append(launchArgs, AgentStartupArgs(intent.Agent, intent.Mode, intent.Permission)...)
-	operationName := sanitizeOperationName(intent.OperationID)
 	params := AgentStartParams{
-		Name:      HerdrAgentKind(intent.Agent) + "-" + operationName,
+		Name:      herdrAgentName(HerdrAgentKind(intent.Agent), intent.OperationID),
 		Kind:      HerdrAgentKind(intent.Agent),
 		PaneID:    paneID,
 		Args:      launchArgs,
@@ -310,6 +309,21 @@ func shellGatedStart(ctx context.Context, runtime LaunchRuntime, paneID string, 
 		}
 	}
 	return runtime.StartAgent(ctx, params)
+}
+
+// herdrAgentMaxName is the longest agent name Herdr accepts.
+const herdrAgentMaxName = 32
+
+// herdrAgentName builds the name handed to agent.start. Herdr accepts
+// lowercase letters, digits, '-' and '_', starting with a letter, in at most
+// 32 characters; an operation id (a session id on Continue) is mixed case and
+// longer, so it is lowercased and cut to fit.
+func herdrAgentName(kind, operationID string) string {
+	name := strings.ToLower(kind + "-" + sanitizeOperationName(operationID))
+	if len(name) > herdrAgentMaxName {
+		name = name[:herdrAgentMaxName]
+	}
+	return name
 }
 
 func sanitizeOperationName(operationID string) string {

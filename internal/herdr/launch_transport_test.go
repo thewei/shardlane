@@ -138,6 +138,29 @@ func TestLaunchTransportCreateTabWithoutFocus(t *testing.T) {
 
 func errorsUnexpected(method string) error { return errorsNew("unexpected method " + method) }
 
+// The schema types agent.start args as an array: a launch without extra
+// arguments must send [] rather than null.
+func TestLaunchTransportStartAgentSendsArgsArray(t *testing.T) {
+	server := startFakeHerdr(t, func(method string, params map[string]any) (json.RawMessage, error) {
+		return json.RawMessage(`{"type":"agent_started","agent":{"pane_id":"pane-9"},"argv":["pi"]}`), nil
+	})
+	if _, err := NewManager().StartAgent(context.Background(), "default", AgentStartParams{
+		Name: "pi-op1", Kind: "pi", PaneID: "pane-9",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for _, request := range server.recorded() {
+		if request.Method != "agent.start" {
+			continue
+		}
+		if args, ok := request.Params["args"].([]any); !ok || len(args) != 0 {
+			t.Fatalf("args = %#v, want an empty array", request.Params["args"])
+		}
+		return
+	}
+	t.Fatal("no agent.start request recorded")
+}
+
 func TestLaunchTransportStartPromptWaitGet(t *testing.T) {
 	server := startFakeHerdr(t, func(method string, params map[string]any) (json.RawMessage, error) {
 		switch method {
@@ -146,7 +169,8 @@ func TestLaunchTransportStartPromptWaitGet(t *testing.T) {
 		case "agent.prompt":
 			return json.RawMessage(`{"type":"agent_prompted","agent":{"pane_id":"pane-9","agent_status":"working","interactive_ready":true,"revision":4}}`), nil
 		case "agent.wait":
-			return json.RawMessage(`{"type":"wait_matched"}`), nil
+			// The shape a live Herdr 0.9.3 answers a matched agent.wait with.
+			return json.RawMessage(`{"type":"agent_info","agent":{"pane_id":"pane-9","agent_status":"idle","interactive_ready":true,"revision":5}}`), nil
 		case "agent.get":
 			return json.RawMessage(`{"type":"agent_info","agent":{"pane_id":"pane-9","agent_status":"idle","interactive_ready":true,"revision":5,"agent":"claude-code","agent_session":{"agent":"claude-code","kind":"native","source":"provider","value":"sess-1"}}}`), nil
 		default:
@@ -200,27 +224,32 @@ func TestLaunchTransportStartPromptWaitGet(t *testing.T) {
 }
 
 func TestLaunchTransportShellReady(t *testing.T) {
+	// Observations in order. The idle shell lists itself as its own
+	// foreground process — the live protocol-22 shape; a foreground process
+	// beyond the shell, or no shell at all, reads as not ready.
+	responses := []string{
+		`{"type":"pane_process_info","process_info":{"pane_id":"pane-9","shell_pid":401,"foreground_processes":[{"pid":512,"name":"claude"}]}}`,
+		`{"type":"pane_process_info","process_info":{"pane_id":"pane-9","shell_pid":401,"foreground_processes":[{"pid":401,"name":"zsh"},{"pid":512,"name":"claude"}]}}`,
+		`{"type":"pane_process_info","process_info":{"pane_id":"pane-9","shell_pid":null,"foreground_processes":[]}}`,
+		`{"type":"pane_process_info","process_info":{"pane_id":"pane-9","shell_pid":401,"foreground_processes":[{"pid":401,"name":"zsh"}]}}`,
+	}
+	wantReady := []bool{false, false, false, true}
 	observations := 0
 	startFakeHerdr(t, func(method string, params map[string]any) (json.RawMessage, error) {
 		if method != "pane.process_info" {
 			return nil, errorsUnexpected(method)
 		}
+		response := responses[observations]
 		observations++
-		if observations == 1 {
-			// A foreground process beyond the shell means the pane is busy.
-			return json.RawMessage(`{"type":"pane_process_info","process_info":{"pane_id":"pane-9","shell_pid":401,"foreground_processes":[{"pid":512,"name":"claude"}]}}`), nil
-		}
-		return json.RawMessage(`{"type":"pane_process_info","process_info":{"pane_id":"pane-9","shell_pid":401,"foreground_processes":[]}}`), nil
+		return json.RawMessage(response), nil
 	})
 	manager := NewManager()
 
-	busy, err := manager.ShellReady(context.Background(), "default", "pane-9")
-	if err != nil || busy {
-		t.Fatalf("foreground agent must read not-ready: (%v, %v)", busy, err)
-	}
-	ready, err := manager.ShellReady(context.Background(), "default", "pane-9")
-	if err != nil || !ready {
-		t.Fatalf("interactive shell with no extra foreground process must be ready: (%v, %v)", ready, err)
+	for i, want := range wantReady {
+		got, err := manager.ShellReady(context.Background(), "default", "pane-9")
+		if err != nil || got != want {
+			t.Fatalf("observation %d: ShellReady = (%v, %v), want %v", i, got, err, want)
+		}
 	}
 }
 

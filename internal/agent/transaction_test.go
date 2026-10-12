@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"errors"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -21,6 +22,7 @@ type fakeLaunchRuntime struct {
 	closedTabs    []string
 	renamed       []string
 	started       int
+	startNames    []string
 	prompts       []string
 	planKeys      [][]string
 	shellNotReady int
@@ -69,6 +71,7 @@ func (f *fakeLaunchRuntime) StartAgent(ctx context.Context, params AgentStartPar
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.started++
+	f.startNames = append(f.startNames, params.Name)
 	return f.startErr
 }
 
@@ -163,6 +166,42 @@ func TestTransactionHappyPath(t *testing.T) {
 	}
 	if len(runtime.closedTabs) != 0 {
 		t.Fatalf("happy path closed tabs: %v", runtime.closedTabs)
+	}
+}
+
+// Herdr 0.9 rejects agent names outside [a-z][a-z0-9_-]{0,31}. A history
+// continuation names the agent after the session id: long and mixed case.
+func TestTransactionAgentNameFitsHerdrRules(t *testing.T) {
+	valid := regexp.MustCompile(`^[a-z][a-z0-9_-]{0,31}$`)
+	for _, operationID := range []string{
+		"op-123",
+		"continue-019CD36B-8E1A-7B3A-9C2D-4F5A6B7C8D9E",
+		"transfer-" + strings.Repeat("Z", 80),
+	} {
+		runtime := &fakeLaunchRuntime{startAgentAppears: true, identityReady: true}
+		intent := launchTestIntent()
+		intent.OperationID = operationID
+		if _, failure := RunLaunchTransaction(context.Background(), runtime, readyPreparer{}, intent, DefaultTimings()); failure != nil {
+			t.Fatalf("%s: failure = %+v", operationID, failure)
+		}
+		if len(runtime.startNames) != 1 || !valid.MatchString(runtime.startNames[0]) {
+			t.Fatalf("%s: agent names %q are not valid for Herdr", operationID, runtime.startNames)
+		}
+	}
+}
+
+// Herdr names Claude Code "claude" — the agent.start kind and the
+// agent_session.agent a live session reports — not the History id
+// "claude-code".
+func TestHerdrAgentKindUsesHerdrIDs(t *testing.T) {
+	for provider, want := range map[history.AgentID]string{
+		history.AgentClaudeCode: "claude",
+		history.AgentCodex:      "codex",
+		history.AgentPi:         "pi",
+	} {
+		if got := HerdrAgentKind(provider); got != want {
+			t.Errorf("HerdrAgentKind(%s) = %q, want %q", provider, got, want)
+		}
 	}
 }
 

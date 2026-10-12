@@ -14,7 +14,9 @@ import (
 //	agent.start  params {name, kind, pane_id, args?, timeout_ms? (3000..300000)}
 //	             result  {type:"agent_started", agent: AgentInfo, argv}
 //	agent.prompt params {target, text, wait?} result {type:"agent_prompted", agent}
-//	agent.wait   params {target, until?: AgentStatus[], timeout_ms?} result {type:"wait_matched"}
+//	agent.wait   params {target, until?: AgentStatus[], timeout_ms?}
+//	             result  {type:"agent_info", agent: AgentInfo} (a miss is the
+//	             "timeout" error; the result shape is as a live Herdr 0.9.3 answers)
 //	agent.get    params {target} result {type:"agent_info", agent: AgentInfo}
 //	tab.create   params {workspace_id?, cwd?, label?, focus? (default false)}
 //	             result  {type:"tab_created", tab: TabInfo, root_pane: PaneInfo}
@@ -142,11 +144,15 @@ func (m *Manager) StartAgent(ctx context.Context, session string, params AgentSt
 	if err != nil {
 		return AgentStarted{}, err
 	}
+	args := params.Args
+	if args == nil {
+		args = []string{} // the schema types args as an array, never null
+	}
 	wire := map[string]any{
 		"name":    params.Name,
 		"kind":    params.Kind,
 		"pane_id": params.PaneID,
-		"args":    params.Args,
+		"args":    args,
 	}
 	if params.TimeoutMS > 0 {
 		wire["timeout_ms"] = params.TimeoutMS
@@ -197,7 +203,7 @@ func (m *Manager) WaitAgentState(ctx context.Context, session, target string, un
 	if err := callRPCWithContext(ctx, socket, "agent.wait", params, false, &raw); err != nil {
 		return err
 	}
-	return decodeTypedResult(raw, "wait_matched", nil)
+	return decodeTypedResult(raw, "agent_info", nil)
 }
 
 // AgentByPane reads one agent through its pane (agent.get {target: pane_id}).
@@ -263,7 +269,19 @@ func (m *Manager) ShellReady(ctx context.Context, session, paneID string) (bool,
 	if err := decodeTypedResult(raw, "pane_process_info", &result); err != nil {
 		return false, err
 	}
-	return result.ProcessInfo.ShellPID != nil && len(result.ProcessInfo.ForegroundProcesses) == 0, nil
+	info := result.ProcessInfo
+	if info.ShellPID == nil {
+		return false, nil
+	}
+	// An idle shell is its own foreground process (a zsh at the prompt lists
+	// itself, as captured from a live protocol-22 session); any other
+	// foreground process — an Agent, a build, a pager — means the pane is busy.
+	for _, process := range info.ForegroundProcesses {
+		if int(process.PID) != *info.ShellPID {
+			return false, nil
+		}
+	}
+	return true, nil
 }
 
 // SendAgentKeys sends verified named keys to an agent target

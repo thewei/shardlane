@@ -136,8 +136,12 @@ func LaunchFingerprint(intent LaunchIntent) string {
 		intent.Attachments, intent.ExtraArgs, intent.SkipInitialPrompt)
 }
 
-// HerdrAgentKind maps a provider onto the Herdr agent kind string.
+// HerdrAgentKind maps a provider onto the Herdr agent kind string: Herdr's own
+// id, which is the History id except for Claude Code ("claude").
 func HerdrAgentKind(agent history.AgentID) string {
+	if agent == history.AgentClaudeCode {
+		return "claude"
+	}
 	return string(agent)
 }
 
