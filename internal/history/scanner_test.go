@@ -264,6 +264,40 @@ func TestScannerParseFailureAbortsRoundWithoutCleanup(t *testing.T) {
 	}
 }
 
+// TestScannerSurfacesRowsInBatchesOfOneHundred pins the progressive-scan
+// contract: the observer fires after every 100 queryable sources plus the
+// tail, each time with its batch already committed, so a tree of thousands
+// of single-session files surfaces in ~100-row batches instead of landing
+// all at once when the round completes.
+func TestScannerSurfacesRowsInBatchesOfOneHundred(t *testing.T) {
+	sessions := filepath.Join(t.TempDir(), "sessions")
+	const total = 250
+	for i := 0; i < total; i++ {
+		name := fmt.Sprintf("rollout-2026-08-02T09-15-00-22222222-aaaa-bbbb-cccc-%012d.jsonl", i)
+		body := strings.Replace(codexFixtureRollout, "Build history", fmt.Sprintf("Build history %d", i), 1)
+		writeCodexSessionFile(t, sessions, name, body)
+	}
+	catalog := NewCatalog()
+	scanner := NewScanner(catalog, []SourceRoot{{Agent: AgentCodex, Directory: sessions, NativeID: rolloutNativeID}})
+	scanner.workers = 1
+	var batches []int
+	result, err := scanner.scan(context.Background(), func() {
+		batches = append(batches, len(catalog.ListSessions(total)))
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Changed != total {
+		t.Fatalf("changed = %+v", result)
+	}
+	if !reflect.DeepEqual(batches, []int{100, 200, total}) {
+		t.Fatalf("batch sizes = %v, want one queryable batch per 100 sources plus the tail", batches)
+	}
+	if rows := len(catalog.ListSessions(total)); rows != total {
+		t.Fatalf("catalog rows = %d, want %d", rows, total)
+	}
+}
+
 func fileMTime(t *testing.T, path string) int64 {
 	t.Helper()
 	info, err := os.Stat(path)

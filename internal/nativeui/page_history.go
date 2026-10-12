@@ -2,7 +2,7 @@ package nativeui
 
 /**
  * [INPUT]: 依赖只读 HistoryService 的列表状态、多选/行内预览状态和共享 MyGo Design Tokens
- * [OUTPUT]: 提供 Sessions 列表（Agent 标签/搜索/Select/Hidden 工具条、项目分组卡片与行、行菜单）、Provider 过滤、Markdown 导出与本地隐藏
+ * [OUTPUT]: 提供 Sessions 列表（Agent 标签/搜索/Select/Hidden 工具条、项目分组卡片与行、行菜单）、Provider 过滤、扫描中的 Updating 提示、Markdown 导出与本地隐藏
  * [POS]: History 的列表页；会话详情是 history_detail.go（共享 Chat 视图），本页不再渲染转录
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -262,7 +262,10 @@ func (s *Shell) historyListBody(c *ui.Context) {
 						// every project it matched in.
 						s.sessionGroup(c, group, i == 0 || searching)
 					}
-					if s.hist.loading {
+					if s.hist.loading || s.hist.scanning {
+						// Rows are already visible while the catalog is still
+						// being read (batched scan); say so instead of leaving
+						// a partial page looking complete.
 						ui.Text(c, "Updating…").FontSize(Typography().Caption).TextColor(t.TextMuted)
 					}
 				})

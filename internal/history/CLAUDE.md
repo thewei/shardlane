@@ -6,11 +6,11 @@ History 是 Shardlane 的只读 Provider 会话目录；扫描 Provider 原生�
 成员清单
 
 - `models.go`：Provider AgentID、会话元数据、消息及来源类型，统一跨解析器的数据语言。
-- `service.go`：HistoryService 查询/扫描/阅读入口；Project/Provider 范围在 LIMIT 前应用，暴露完整 Provider 列表及各 Provider 会话总数（Sessions 标签计数，元数据只读，不受列表上限影响）；`Open` 每次解析原始会话文件并切出一个有界窗口（无任何落盘缓存）。
+- `service.go`：HistoryService 查询/扫描/阅读入口；Project/Provider 范围在 LIMIT 前应用，暴露完整 Provider 列表及各 Provider 会话总数（Sessions 标签计数，元数据只读，不受列表上限影响）；`Open` 每次解析原始会话文件并切出一个有界窗口（无任何落盘缓存）；`ScanWithProgress` 在 `Scan` 之上提供分批进度（每 100 个可查询来源通知一次，供 UI 渐进刷新列表）。
 - `catalog.go`：纯内存 Catalog：Put/RemoveMissing/KnownFiles 写入面、列表行描述行提取；文件路径唯一，`(mtime,size)` 为扫描变更信号。
 - `catalog_read.go`：只读元数据查询、Provider 集合与各 Provider 非归档会话计数、Project/Provider 范围过滤与 metadata 搜索（标题/项目/路径/id/Provider，大小写不敏感）；同一遍历内完成排序与 LIMIT。
 - `legacy.go`：一次性删除旧版遗留的 `history.sqlite3`（含 WAL/SHM/journal）——旧版把会话正文复制进 FTS/页缓存，现已无读者。
-- `scanner.go`：多 Provider 来源目录协调与增量索引（变更文件解析一次、只保留列表行元数据）；解析走至多 4 个 worker 的小池，行按目录列举顺序提交，结果与顺序扫描一致；首个失败取消本轮且不做清理。
+- `scanner.go`：多 Provider 来源目录协调与增量索引（变更文件解析一次、只保留列表行元数据）；解析走至多 4 个 worker 的小池，行按目录列举顺序提交，结果与顺序扫描一致；首个失败取消本轮且不做清理；每提交 `scanBatchSize`（100）行在锁外通知一次进度观察者（含完成时的尾部一批）。
 - `scan_utils.go`：增量扫描的文件及目录遍历辅助。
 - `path_key.go`：Project 路径归一化，用于索引过滤。
 - `locator.go`：来源会话 identity / 定位契约。
@@ -28,7 +28,7 @@ History 是 Shardlane 的只读 Provider 会话目录；扫描 Provider 原生�
 - `history_test.go`：跨 Provider 解析与历史模型语义。
 - `live_test.go`：增量读取/解码的边界行为。
 - `pi_test.go`：Pi Provider 解析和 live 增量回归。
-- `scanner_test.go`：来源扫描、去重与索引协调；同 mtime 大小变化仍重读。
+- `scanner_test.go`：来源扫描、去重与索引协调；同 mtime 大小变化仍重读；每 100 个来源一批的上报契约。
 - `service_test.go`：HistoryService 列表/读取/扫描契约；Open 始终反映原始文件的当前内容（追加后无需重扫）。
 - `service_filter_test.go`：Provider/Project 提前过滤、完整 Provider 集合和各 Provider 计数（排除归档）的回归。
 

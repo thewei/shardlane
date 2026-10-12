@@ -2,7 +2,7 @@ package nativeui
 
 /**
  * [INPUT]: 依赖 HistoryService 的只读列表/详情查询与 MyGo 窗口调度
- * [OUTPUT]: 提供 History 查询代际隔离、筛选重置、列表/分组/多选/行内预览的瞬态状态及各 Provider 会话总数
+ * [OUTPUT]: 提供 History 查询代际隔离、筛选重置、列表/分组/多选/行内预览的瞬态状态、各 Provider 会话总数与扫描的分批上报（每批约 100 个来源刷新一次可见列表）
  * [POS]: History 页面状态编排层；查询/筛选不改变 Herdr Runtime 或来源历史文件
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -45,6 +45,14 @@ type HistoryProviderView interface {
 // reports each Provider's catalog-wide session total for the Sessions tabs.
 type HistoryProviderCountView interface {
 	ProviderCounts(ctx context.Context) ([]history.ProviderCount, error)
+}
+
+// HistoryScanProgressView is optional for test fakes; the production service
+// calls onBatch after every indexed batch, and the shell reloads the visible
+// list on each one so thousands of session sources surface batch by batch
+// instead of holding the page on the loading state until the round ends.
+type HistoryScanProgressView interface {
+	ScanWithProgress(ctx context.Context, onBatch func()) (history.ScanResult, error)
 }
 
 // historyState is the Shell's presentation state for the Native History
@@ -284,24 +292,48 @@ func (s *Shell) startHistoryScan() {
 	ctx, cancel := context.WithCancel(context.Background())
 	s.hist.cancel = cancel
 	s.hist.scanning = true
+	go s.runHistoryScan(ctx)
+}
+
+// runHistoryScan is the scan goroutine's body. A progressive service reports
+// every indexed batch, and each report reloads the visible list on the window
+// lane, so the page is usable after the first batch while the rest of a huge
+// catalog is still being read. The completion applies the usual
+// loaded=false re-request once the round ends.
+func (s *Shell) runHistoryScan(ctx context.Context) {
 	service := s.hist.service
-	go func() {
-		result, err := service.Scan(ctx)
-		if err != nil && ctx.Err() == nil {
-			slog.Warn("history scan failed", "error", err)
-			s.applyOnWindow(func() { s.hist.scanning = false })
-			return
-		}
-		if err == nil {
-			slog.Info("history scan finished", "scanned", result.Scanned, "changed", result.Changed, "removed", result.Removed)
-		}
-		s.applyOnWindow(func() {
-			if ctx.Err() == nil {
-				s.hist.scanning = false
-				s.hist.loaded = false
-			}
+	if service == nil {
+		return
+	}
+	var (
+		result history.ScanResult
+		err    error
+	)
+	if progressive, ok := service.(HistoryScanProgressView); ok {
+		result, err = progressive.ScanWithProgress(ctx, func() {
+			s.applyOnWindow(func() {
+				if ctx.Err() == nil {
+					s.requestHistoryList()
+				}
+			})
 		})
-	}()
+	} else {
+		result, err = service.Scan(ctx)
+	}
+	if err != nil && ctx.Err() == nil {
+		slog.Warn("history scan failed", "error", err)
+		s.applyOnWindow(func() { s.hist.scanning = false })
+		return
+	}
+	if err == nil {
+		slog.Info("history scan finished", "scanned", result.Scanned, "changed", result.Changed, "removed", result.Removed)
+	}
+	s.applyOnWindow(func() {
+		if ctx.Err() == nil {
+			s.hist.scanning = false
+			s.hist.loaded = false
+		}
+	})
 }
 
 // applyOnWindow marshals a state mutation onto the window update lane, or

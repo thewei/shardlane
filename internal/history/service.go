@@ -74,6 +74,15 @@ func (s *HistoryService) Scan(ctx context.Context) (ScanResult, error) {
 	return s.scanner.Scan(ctx)
 }
 
+// ScanWithProgress is Scan with batched progress: onBatch runs on the
+// scanning goroutine after every scanBatchSize indexed sources become
+// queryable (plus once for the remainder of a completed round), so a caller
+// can surface list rows while thousands of session sources are still being
+// read. A nil onBatch behaves exactly like Scan.
+func (s *HistoryService) ScanWithProgress(ctx context.Context, onBatch func()) (ScanResult, error) {
+	return s.scanner.scan(ctx, onBatch)
+}
+
 // AvailableProviders lists the catalog's actual Provider identities without
 // imposing the interactive list page limit; this is a metadata-only read.
 func (s *HistoryService) AvailableProviders(ctx context.Context) ([]AgentID, error) {

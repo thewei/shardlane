@@ -15,6 +15,11 @@ import (
 // UI that is already drawing.
 const maxScanWorkers = 4
 
+// scanBatchSize is one progress batch: a round with thousands of session
+// sources reports every scanBatchSize rows that became queryable, so the
+// visible list fills in batches instead of landing all at once at the end.
+const scanBatchSize = 100
+
 // SourceRoot is one provider-owned data root the scanner observes. Shardlane
 // never writes to it.
 type SourceRoot struct {
@@ -86,6 +91,15 @@ func parseByAgent(reference SessionFileRef) (ParsedTranscript, error) {
 // for their list-row metadata, then remove sessions whose files were not
 // observed. Cancelled rounds return ctx.Err() without cleanup.
 func (s *Scanner) Scan(ctx context.Context) (ScanResult, error) {
+	return s.scan(ctx, nil)
+}
+
+// scan is Scan with an optional progress observer: onBatch runs on the
+// scanning goroutine after every scanBatchSize indexed sources become
+// queryable in the catalog, plus once more for the remainder of a completed
+// round, so a caller can surface rows while the rest of the tree is still
+// being read. The observer fires outside every lock.
+func (s *Scanner) scan(ctx context.Context, onBatch func()) (ScanResult, error) {
 	result := ScanResult{}
 
 	known := s.catalog.KnownFiles()
@@ -108,7 +122,7 @@ func (s *Scanner) Scan(ctx context.Context) (ScanResult, error) {
 			changed = append(changed, reference)
 		}
 	}
-	indexed, err := s.indexChanged(ctx, changed)
+	indexed, err := s.indexChanged(ctx, changed, onBatch)
 	result.Changed = indexed
 	if err != nil {
 		return result, err
@@ -130,8 +144,10 @@ type indexedRow struct {
 // sequential round would leave it (of two files with the same session key the
 // later one wins, whichever parse finishes first). The first failure cancels
 // the rest of the round and is returned; the rows committed before it stay,
-// and the caller skips cleanup.
-func (s *Scanner) indexChanged(ctx context.Context, references []SessionFileRef) (int, error) {
+// and the caller skips cleanup. onBatch fires after every scanBatchSize
+// committed rows and once more for the tail, each time after the lock is
+// released and with the rows already queryable.
+func (s *Scanner) indexChanged(ctx context.Context, references []SessionFileRef, onBatch func()) (int, error) {
 	if len(references) == 0 {
 		return 0, nil
 	}
@@ -142,6 +158,7 @@ func (s *Scanner) indexChanged(ctx context.Context, references []SessionFileRef)
 		mu      sync.Mutex
 		rows    = make([]indexedRow, len(references))
 		next    int // first row not yet committed
+		unread  int // committed rows not yet announced to onBatch
 		failure error
 		wg      sync.WaitGroup
 	)
@@ -152,6 +169,7 @@ func (s *Scanner) indexChanged(ctx context.Context, references []SessionFileRef)
 			defer wg.Done()
 			for i := range jobs {
 				row, err := s.parseRow(round, references[i])
+				announce := false
 				mu.Lock()
 				switch {
 				case err != nil:
@@ -166,9 +184,19 @@ func (s *Scanner) indexChanged(ctx context.Context, references []SessionFileRef)
 					for next < len(rows) && rows[next].ready {
 						s.catalog.Put(rows[next].meta, rows[next].mtimeMS, rows[next].description)
 						next++
+						unread++
+					}
+					// Only one worker wins each boundary; the observer itself
+					// runs unlocked, so it may query the catalog freely.
+					if onBatch != nil && unread >= scanBatchSize {
+						unread = 0
+						announce = true
 					}
 				}
 				mu.Unlock()
+				if announce {
+					onBatch()
+				}
 			}
 		}()
 	}
@@ -185,6 +213,10 @@ dispatch:
 
 	if failure != nil {
 		return next, failure
+	}
+	if onBatch != nil && unread > 0 && ctx.Err() == nil {
+		unread = 0
+		onBatch()
 	}
 	return next, ctx.Err()
 }

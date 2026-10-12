@@ -28,8 +28,8 @@ reorder.go: 作用域隔离的拖放语义与目标插入索引、跨 Tab/Projec
 reorder_test.go: Drag/Drop 真正鼠标事件、插入索引、跨 Tab/Project 移动校验、窗格卡片放置动作推导和投影排序回归
 components.go: 共用导航树行与视觉组件（treeRow 悬停图标动作 Action）、sidebarRowHeight 密度令牌，拖动时提供原生浮动预览、同级插入占位条、容器高亮、动画及命中目标
 workbench.go: 桌面工作台状态中枢，Agent 目录与运行时事件分发
-page_history.go: Sessions 中心列表布局（参照 magpie 会话历史）：Agent 标签条（All + 各 Provider，带会话数）、搜索/Select/Hidden/Refresh 工具簇（窄窗口整体换行）、项目分组卡片（默认只展开最近一个项目，头部在卡内）与行（标题/事实行/Token 列/日期↔悬停菜单固定占位，点行内展开预览）、有界结果计数文案
-history_state.go: HistoryService 列表查询的生成代际隔离，筛选清空旧可选行/预览/多选；Provider 元数据选择与各 Provider 总数（可选 HistoryProviderCountView）；分组展开、多选、行内预览与详情页帧戳（只读 Chat 绑定的空闲释放）状态
+page_history.go: Sessions 中心列表布局（参照 magpie 会话历史）：Agent 标签条（All + 各 Provider，带会话数）、搜索/Select/Hidden/Refresh 工具簇（窄窗口整体换行）、项目分组卡片（默认只展开最近一个项目，头部在卡内）与行（标题/事实行/Token 列/日期↔悬停菜单固定占位，点行内展开预览）、有界结果计数文案、扫描未结束时的 Updating 提示（分批渐进加载）
+history_state.go: HistoryService 列表查询的生成代际隔离，筛选清空旧可选行/预览/多选；Provider 元数据选择与各 Provider 总数（可选 HistoryProviderCountView）、扫描分批上报（可选 HistoryScanProgressView：每批约 100 个来源在窗口线程刷新一次可见列表，数千个单会话文件夹不再把页面按在 Loading 态）；分组展开、多选、行内预览与详情页帧戳（只读 Chat 绑定的空闲释放）状态
 history_select.go: Sessions 多选：行/项目头勾选标记、底部批量 Hide/Restore 栏；只改本地隐藏列表，不碰 Provider 会话文件
 history_preview.go: 行内会话预览：点行懒读原始会话末尾若干条（Tail 窗口，代际防过期），只读展示，带 Open/Continue/Hide/Restore；不缓存任何会话内容
 history_detail.go: /history/{id} 详情页：头部（标题、Provider · 项目 · 模型、操作菜单）+ 与 Chat 共用的只读视图（WebView 页或原生时间线回退，最新消息优先、向上懒加载）；页面停止构建后释放只读绑定
