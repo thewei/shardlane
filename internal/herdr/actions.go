@@ -1,8 +1,8 @@
 package herdr
 
 /**
- * [INPUT]: 依赖 Herdr protocol 22 的 workspace.move/tab.move/pane.swap/pane.move 与既有 mutateAndProject RPC
- * [OUTPUT]: 提供结构排序、Pane 移动与交换以及已有 Workspace/Tab/Pane 操作
+ * [INPUT]: 依赖 Herdr protocol 22 的 workspace.move/tab.move/pane.swap/pane.move/pane.resize 与既有 mutateAndProject RPC
+ * [OUTPUT]: 提供结构排序、Pane 移动、交换、分栏尺寸调整以及已有 Workspace/Tab/Pane 操作
  * [POS]: Herdr 运行时 mutation 适配器；提交后只从 session.snapshot 获取权威布局
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -11,6 +11,27 @@ import (
 	"fmt"
 	"strings"
 )
+
+// ResizePane adjusts the split ratio for a pane in its Herdr layout.
+// Direction must be "left", "right", "up", or "down".
+// Amount is the ratio delta (e.g. 0.05).
+func (m *Manager) ResizePane(session, paneID, direction string, amount float64) (Projection, error) {
+	if strings.TrimSpace(paneID) == "" {
+		return Projection{}, fmt.Errorf("pane id is required")
+	}
+	direction = strings.TrimSpace(direction)
+	if direction != "left" && direction != "right" && direction != "up" && direction != "down" {
+		return Projection{}, fmt.Errorf("unsupported resize direction %q", direction)
+	}
+	params := map[string]any{
+		"pane_id":   strings.TrimSpace(paneID),
+		"direction": direction,
+	}
+	if amount > 0 {
+		params["amount"] = amount
+	}
+	return m.mutateAndProject(session, "pane.resize", params)
+}
 
 // PaneMoveDestination models the destination payload for the Protocol 22
 // pane.move wire method.

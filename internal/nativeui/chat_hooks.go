@@ -9,17 +9,42 @@ import (
 	"strings"
 	"time"
 
+	"github.com/wh-studio/herdr-client/internal/apphook"
 	"github.com/wh-studio/herdr-client/internal/conversation"
 	"github.com/wh-studio/herdr-client/internal/herdr"
 	"github.com/wh-studio/herdr-client/internal/herdrhooks"
 )
 
 /**
- * [INPUT]: 依赖 herdrhooks spool（我们的 herdr 插件转发的事件）、runtime.ReadPane（pane.read 可见文本）、InteractionBroker
- * [OUTPUT]: 提供 Shell hook 层：blocked 触发的最小 Claude 交互检测 → 结构化 PendingInteraction、非 blocked 的 pane 级取消、实时投影重推
- * [POS]: 我们自己的 hook 层（N19）：基于 herdr 插件事件钩子，app 内解析与裁决；完整解析表留在 web-ui 参照，最小实现先行
+ * [INPUT]: 依赖 apphook（进程内 IPC Hook Server）、herdrhooks spool（可选兼容向后尾部）、runtime.ReadPane（pane.read 可见文本）、InteractionBroker
+ * [OUTPUT]: 提供 Shell hook 层：直接 Hook 状态接收与会话更新、blocked 触发的交互检测 → 结构化 PendingInteraction、非 blocked 的 pane 级取消、实时投影重推
+ * [POS]: 我们自己的原生 hook 层：进程内 Unix Domain Socket 服务就地接收并更新 Agent 状态，消除对 Herdr 插件与外部进程的硬依赖
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
+
+// AttachHookServer starts our in-app Unix domain socket server for zero-overhead
+// direct hook state ingestion, and attaches the legacy spool tailer if present.
+func (s *Shell) AttachHookServer() {
+	if s.hookServer == nil {
+		server := apphook.NewServer(apphook.DefaultSocketPath(), apphook.Handler{
+			OnStatus: func(evt apphook.StatusEvent) {
+				s.applyOnWindow(func() { s.handleAppHookStatus(evt) })
+			},
+			OnSession: func(evt apphook.SessionEvent) {
+				s.applyOnWindow(func() { s.handleAppHookSession(evt) })
+			},
+		})
+		if runtimeSock := apphook.DefaultRuntimeSocketPath(); runtimeSock != "" {
+			server.SetSymlinkPath(runtimeSock)
+		}
+		if err := server.Start(); err != nil {
+			slog.Warn("apphook server start failed", "error", err)
+		} else {
+			s.hookServer = server
+		}
+	}
+	s.AttachHookSpool()
+}
 
 // AttachHookSpool starts the hook spool tailer (production only: the spool
 // exists when the Shardlane herdr plugin is linked). Hook events reconcile
@@ -58,7 +83,149 @@ func (s *Shell) reconcileBlockedInteractions() {
 	}
 }
 
-// handleHookEvent is the hook layer's dispatch (UI lane).
+// handleAppHookStatus applies a directly reported agent status event onto
+// the shell projection and interaction broker (UI lane).
+func (s *Shell) handleAppHookStatus(evt apphook.StatusEvent) {
+	if evt.PaneID == "" {
+		return
+	}
+	slog.Debug("hook status event", "pane", evt.PaneID, "status", evt.Status, "agent", evt.Agent)
+
+	// 1. Direct update to in-memory projection
+	found := false
+	for i := range s.projection.Agents {
+		agent := &s.projection.Agents[i]
+		if agent.PaneID == evt.PaneID {
+			agent.Status = evt.Status
+			if agent.Kind == "" && evt.Agent != "" {
+				agent.Kind = evt.Agent
+			}
+			if agent.AgentSession == nil && evt.SessionID != "" {
+				agent.AgentSession = &herdr.AgentSessionIdentity{
+					Agent:  evt.Agent,
+					Kind:   "id",
+					Source: "apphook",
+					Value:  evt.SessionID,
+				}
+			}
+			agent.Revision++
+			found = true
+			break
+		}
+	}
+	if !found {
+		var termID, projID, tabID string
+		for _, p := range s.projection.Panes {
+			if p.ID == evt.PaneID {
+				termID = p.TerminalID
+				projID = p.ProjectID
+				tabID = p.TabID
+				break
+			}
+		}
+		newAgent := herdr.Agent{
+			TerminalID: termID,
+			ProjectID:  projID,
+			TabID:      tabID,
+			PaneID:     evt.PaneID,
+			Kind:       evt.Agent,
+			Status:     evt.Status,
+			Revision:   1,
+		}
+		if evt.SessionID != "" {
+			newAgent.AgentSession = &herdr.AgentSessionIdentity{
+				Agent:  evt.Agent,
+				Kind:   "id",
+				Source: "apphook",
+				Value:  evt.SessionID,
+			}
+		}
+		s.projection.Agents = append(s.projection.Agents, newAgent)
+	}
+
+	for i := range s.projection.Panes {
+		if s.projection.Panes[i].ID == evt.PaneID {
+			s.projection.Panes[i].AgentStatus = evt.Status
+			break
+		}
+	}
+
+	// 2. Handle blocked interaction detection or cancellation
+	if evt.Status == "blocked" {
+		s.dispatch(func() { s.detectPaneInteraction(evt.PaneID) })
+		return
+	}
+
+	s.interactionBroker.CancelForPane(evt.PaneID)
+	s.scheduleProjectionRefresh()
+	s.publishChatBridge()
+}
+
+// handleAppHookSession updates the agent session identity directly in the
+// shell projection (UI lane).
+func (s *Shell) handleAppHookSession(evt apphook.SessionEvent) {
+	if evt.PaneID == "" {
+		return
+	}
+	slog.Info("hook session event", "pane", evt.PaneID, "agent", evt.Agent, "session_id", evt.AgentSessionID)
+
+	source := evt.Source
+	if source == "" {
+		source = "apphook"
+	}
+	val := evt.AgentSessionID
+	kind := "id"
+	if evt.AgentSessionPath != "" {
+		val = evt.AgentSessionPath
+		kind = "path"
+	}
+
+	sessionIdentity := &herdr.AgentSessionIdentity{
+		Agent:  evt.Agent,
+		Kind:   kind,
+		Source: source,
+		Value:  val,
+	}
+
+	found := false
+	for i := range s.projection.Agents {
+		agent := &s.projection.Agents[i]
+		if agent.PaneID == evt.PaneID {
+			agent.AgentSession = sessionIdentity
+			if agent.Kind == "" && evt.Agent != "" {
+				agent.Kind = evt.Agent
+			}
+			agent.Revision++
+			found = true
+			break
+		}
+	}
+	if !found {
+		var termID, projID, tabID string
+		for _, p := range s.projection.Panes {
+			if p.ID == evt.PaneID {
+				termID = p.TerminalID
+				projID = p.ProjectID
+				tabID = p.TabID
+				break
+			}
+		}
+		s.projection.Agents = append(s.projection.Agents, herdr.Agent{
+			TerminalID:   termID,
+			ProjectID:    projID,
+			TabID:        tabID,
+			PaneID:       evt.PaneID,
+			Kind:         evt.Agent,
+			Status:       "idle",
+			Revision:     1,
+			AgentSession: sessionIdentity,
+		})
+	}
+
+	s.publishChatBridge()
+}
+
+// handleHookEvent is the legacy spool tailer's dispatch (UI lane).
 func (s *Shell) handleHookEvent(event herdrhooks.Event) {
 	if event.Name != "pane.agent_status_changed" {
 		return
@@ -73,21 +240,10 @@ func (s *Shell) handleHookEvent(event herdrhooks.Event) {
 		slog.Warn("hook status payload undecodable", "event", event.Name)
 		return
 	}
-	slog.Debug("hook status event", "pane", payload.PaneID, "status", payload.AgentStatus)
-	if payload.AgentStatus == "blocked" {
-		// The agent is waiting on its TUI: read the visible screen and
-		// publish whatever structured prompt it holds. Off the UI lane —
-		// pane.read is a blocking RPC.
-		s.dispatch(func() { s.detectPaneInteraction(payload.PaneID) })
-		return
-	}
-	// Any other state ends the blocked window: its questions are gone.
-	s.interactionBroker.CancelForPane(payload.PaneID)
-	// Status edges must reach the shell projection too: the composer
-	// disposition, the cards and the tray all read it, and the socket event
-	// watcher is not guaranteed to have delivered this transition.
-	s.scheduleProjectionRefresh()
-	s.publishChatBridge()
+	s.handleAppHookStatus(apphook.StatusEvent{
+		PaneID: payload.PaneID,
+		Status: apphook.NormalizeStatus(payload.AgentStatus),
+	})
 }
 
 // chatRefreshDebounce coalesces hook-driven projection refetches; status

@@ -1,5 +1,12 @@
 package herdr
 
+/**
+ * [INPUT]: 依赖 Herdr protocol 22 session.snapshot 数据结构
+ * [OUTPUT]: 对外提供 Projection、Project、Tab、Pane、Layout、LayoutSplit、Agent 权威领域模型与快照投影解析
+ * [POS]: herdr 包核心数据模型与快照投影器，只读映射 Herdr 权威状态，不持有本地副状态机
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
+
 import (
 	"fmt"
 	"strings"
@@ -67,13 +74,21 @@ type LayoutPane struct {
 	Rect    LayoutRect `json:"rect"`
 }
 
+type LayoutSplit struct {
+	ID        string     `json:"id"`
+	Direction string     `json:"direction"` // "right" | "down"
+	Ratio     float64    `json:"ratio"`
+	Rect      LayoutRect `json:"rect"`
+}
+
 type Layout struct {
-	ProjectID     string       `json:"project_id"`
-	TabID         string       `json:"tab_id"`
-	Zoomed        bool         `json:"zoomed"`
-	Area          LayoutRect   `json:"area"`
-	FocusedPaneID string       `json:"focused_pane_id"`
-	Panes         []LayoutPane `json:"panes"`
+	ProjectID     string        `json:"project_id"`
+	TabID         string        `json:"tab_id"`
+	Zoomed        bool          `json:"zoomed"`
+	Area          LayoutRect    `json:"area"`
+	FocusedPaneID string        `json:"focused_pane_id"`
+	Panes         []LayoutPane  `json:"panes"`
+	Splits        []LayoutSplit `json:"splits"`
 }
 
 type Agent struct {
@@ -192,6 +207,7 @@ type layoutInfo struct {
 	Area          LayoutRect       `json:"area"`
 	FocusedPaneID string           `json:"focused_pane_id"`
 	Panes         []layoutPaneInfo `json:"panes"`
+	Splits        []LayoutSplit    `json:"splits"`
 }
 
 type layoutPaneInfo struct {
@@ -291,6 +307,7 @@ func projectSnapshot(snapshot sessionSnapshot) Projection {
 			Area:          layout.Area,
 			FocusedPaneID: layout.FocusedPaneID,
 			Panes:         make([]LayoutPane, 0, len(layout.Panes)),
+			Splits:        append([]LayoutSplit(nil), layout.Splits...),
 		}
 		for _, pane := range layout.Panes {
 			projected.Panes = append(projected.Panes, LayoutPane{

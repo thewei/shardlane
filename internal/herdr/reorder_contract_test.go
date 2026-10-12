@@ -101,6 +101,9 @@ func TestReorderActionsUseCanonicalHerdrMethods(t *testing.T) {
 	}, false); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := m.ResizePane("default", "p1", "right", 0.05); err != nil {
+		t.Fatal(err)
+	}
 	mu.Lock()
 	defer mu.Unlock()
 	var mutations []request
@@ -109,7 +112,7 @@ func TestReorderActionsUseCanonicalHerdrMethods(t *testing.T) {
 			mutations = append(mutations, req)
 		}
 	}
-	if len(mutations) != 5 {
+	if len(mutations) != 6 {
 		t.Fatalf("mutations = %#v", mutations)
 	}
 	for i, tc := range []struct {
@@ -137,6 +140,11 @@ func TestReorderActionsUseCanonicalHerdrMethods(t *testing.T) {
 				"workspace_id": "w2",
 				"label":        "new",
 			},
+		}},
+		{"pane.resize", map[string]any{
+			"pane_id":   "p1",
+			"direction": "right",
+			"amount":    float64(0.05),
 		}},
 	} {
 		got := mutations[i]
@@ -189,5 +197,11 @@ func TestReorderActionsRejectInvalidIDs(t *testing.T) {
 	}
 	if _, err := m.MovePane("default", "p1", PaneMoveDestination{Type: "tab", TabID: "t1", Split: "invalid"}, false); err == nil {
 		t.Error("invalid split direction on tab destination")
+	}
+	if _, err := m.ResizePane("default", "", "right", 0.05); err == nil {
+		t.Error("empty pane id on ResizePane")
+	}
+	if _, err := m.ResizePane("default", "p1", "invalid", 0.05); err == nil {
+		t.Error("invalid direction on ResizePane")
 	}
 }

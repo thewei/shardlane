@@ -185,6 +185,15 @@ func terminalAttachArgs(cli, socketPath, configPath, terminalID string) []string
 	for _, key := range nestedTUIEnvKeys {
 		args = append(args, "-u", key)
 	}
+	shardlaneSock := strings.TrimSpace(os.Getenv("SHARDLANE_SOCKET_PATH"))
+	if shardlaneSock == "" {
+		if home, err := os.UserHomeDir(); err == nil {
+			shardlaneSock = filepath.Join(home, ".shardlane", "run", "agent-status.sock")
+		}
+	}
+	if shardlaneSock != "" {
+		args = append(args, "SHARDLANE_SOCKET_PATH="+shardlaneSock)
+	}
 	return append(args,
 		"HERDR_SOCKET_PATH="+socketPath,
 		"HERDR_CONFIG_PATH="+configPath,

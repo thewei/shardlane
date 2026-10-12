@@ -19,6 +19,7 @@ import (
 	"github.com/egoist/mygo/ui"
 	"github.com/wh-studio/herdr-client/internal/agent"
 	"github.com/wh-studio/herdr-client/internal/app"
+	"github.com/wh-studio/herdr-client/internal/apphook"
 	"github.com/wh-studio/herdr-client/internal/commandcenter"
 	"github.com/wh-studio/herdr-client/internal/conversation"
 	"github.com/wh-studio/herdr-client/internal/gitworkbench"
@@ -79,6 +80,9 @@ type Shell struct {
 	// the empty-terminal branch, dropping 38 write sites' feedback).
 	statusShown string
 	errText     string
+
+	accumulatedResizeX float32
+	accumulatedResizeY float32
 
 	dialogOpen      bool
 	dialogKind      string
@@ -325,6 +329,9 @@ type Shell struct {
 	// hooksStop releases the hook spool tailer (our herdr plugin's event
 	// forwarder); nil when not started (headless sessions).
 	hooksStop func()
+	// hookServer is our in-app Unix domain socket server receiving direct
+	// hook reports from agent integrations.
+	hookServer *apphook.Server
 	// chatRefreshPending debounces hook-driven projection refetches: status
 	// transitions arrive in tight pairs and one refetch covers the burst.
 	chatRefreshMu      sync.Mutex
@@ -541,10 +548,9 @@ func (s *Shell) AttachWindow(win *mygo.Window) {
 	s.bootstrapPending = true
 	s.bootstrapFailed = false
 	slog.Debug("native shell attached", "window_id", win.ID())
-	// Our hook layer (N19): tail the Shardlane herdr plugin's event spool —
-	// the source of the structured interaction model and pane lifecycle
-	// reconciliation.
-	s.AttachHookSpool()
+	// Our hook layer: start in-app Unix domain socket server and tail the
+	// event spool for backward compatibility.
+	s.AttachHookServer()
 	// Appearance changes (system or Settings) re-publish the chat
 	// projection, whose theme field carries the resolved appearance to the
 	// WebView chat page.
@@ -612,6 +618,10 @@ func (s *Shell) Close() {
 	if s.hooksStop != nil {
 		s.hooksStop()
 		s.hooksStop = nil
+	}
+	if s.hookServer != nil {
+		_ = s.hookServer.Close()
+		s.hookServer = nil
 	}
 	if s.watchCancel != nil {
 		s.watchCancel()

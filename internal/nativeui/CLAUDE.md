@@ -78,7 +78,8 @@ branch_menu.go: 本地分支 Popover 可搜索/独立滚动/当前分支优先�
 git_workbench_actions_test.go: Git 本地操作条、Modal、Draft Guard、Merge/Revert Confirm 的 headless 回归
 ds_components.go: 通用卡片、Field、工作区 Chat/Diff 轻量空状态组件
 unified_page_test.go: UI-007/UI-008 Settings/Git/Chat 跨页面基础回归与尺寸矩阵（headless）
-window_actions.go: 原生窗口级行为与标题同步适配器
 pane_header_visuals_test.go: 窗格头部视觉解析、Agent 图标与名称解析、路径格式化及多终端堆叠状态单元测试
+chat_hooks.go: Shell 钩子层：挂载原生 apphook 进程内 IPC 服务与 spool 兼容层，直接接收并更新 Agent 状态与会话绑定，驱动 blocked 交互检测
+chat_hooks_test.go: 钩子事件解析、提示词检测、投影等价去重与原生 apphook 状态/会话更新回归
 
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

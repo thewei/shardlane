@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/wh-studio/herdr-client/internal/apphook"
 	"github.com/wh-studio/herdr-client/internal/conversation"
 	"github.com/wh-studio/herdr-client/internal/herdr"
 )
@@ -197,5 +198,89 @@ func TestReconcileBlockedInteractionsDispatchesSourceless(t *testing.T) {
 	}
 	if pending := len(shell.interactionBroker.PendingForPane("p2")); pending != 0 {
 		t.Fatalf("idle pane must never be detected: %d", pending)
+	}
+}
+
+func TestHandleAppHookStatusUpdatesProjectionAndInteractions(t *testing.T) {
+	shell := NewShell()
+	shell.projection = herdr.Projection{
+		Panes: []herdr.Pane{
+			{ID: "p1", TerminalID: "term-1", ProjectID: "proj-1", TabID: "tab-1"},
+			{ID: "p2", TerminalID: "term-2", ProjectID: "proj-1", TabID: "tab-1"},
+		},
+		Agents: []herdr.Agent{
+			{TerminalID: "term-1", PaneID: "p1", Status: "idle", Revision: 1},
+		},
+	}
+
+	// 1. Existing agent status change to working
+	shell.handleAppHookStatus(apphook.StatusEvent{
+		PaneID: "p1",
+		Status: "working",
+		Agent:  "agy",
+	})
+	if shell.projection.Agents[0].Status != "working" {
+		t.Fatalf("agent status = %q, want working", shell.projection.Agents[0].Status)
+	}
+	if shell.projection.Agents[0].Kind != "agy" {
+		t.Fatalf("agent kind = %q, want agy", shell.projection.Agents[0].Kind)
+	}
+	if shell.projection.Agents[0].Revision != 2 {
+		t.Fatalf("agent revision = %d, want 2", shell.projection.Agents[0].Revision)
+	}
+	if shell.projection.Panes[0].AgentStatus != "working" {
+		t.Fatalf("pane status = %q, want working", shell.projection.Panes[0].AgentStatus)
+	}
+
+	// 2. Synthesize agent for unlisted pane
+	shell.handleAppHookStatus(apphook.StatusEvent{
+		PaneID:    "p2",
+		Status:    "working",
+		Agent:     "claude",
+		SessionID: "sess-claude-1",
+	})
+	if len(shell.projection.Agents) != 2 {
+		t.Fatalf("agents len = %d, want 2", len(shell.projection.Agents))
+	}
+	p2Agent := shell.projection.Agents[1]
+	if p2Agent.PaneID != "p2" || p2Agent.Kind != "claude" || p2Agent.Status != "working" {
+		t.Fatalf("synthesized agent = %+v", p2Agent)
+	}
+	if p2Agent.AgentSession == nil || p2Agent.AgentSession.Value != "sess-claude-1" {
+		t.Fatalf("synthesized session = %+v", p2Agent.AgentSession)
+	}
+}
+
+func TestHandleAppHookSessionUpdatesSessionIdentity(t *testing.T) {
+	shell := NewShell()
+	shell.projection = herdr.Projection{
+		Panes: []herdr.Pane{
+			{ID: "p1", TerminalID: "term-1"},
+		},
+		Agents: []herdr.Agent{
+			{TerminalID: "term-1", PaneID: "p1", Status: "idle", Revision: 5},
+		},
+	}
+
+	shell.handleAppHookSession(apphook.SessionEvent{
+		PaneID:           "p1",
+		Agent:            "agy",
+		AgentSessionID:   "conv-uuid-999",
+		AgentSessionPath: "/tmp/transcript.jsonl",
+		Source:           "shardlane",
+	})
+
+	agent := shell.projection.Agents[0]
+	if agent.AgentSession == nil {
+		t.Fatal("agent session must not be nil")
+	}
+	if agent.AgentSession.Agent != "agy" {
+		t.Fatalf("agent session agent = %q, want agy", agent.AgentSession.Agent)
+	}
+	if agent.AgentSession.Kind != "path" || agent.AgentSession.Value != "/tmp/transcript.jsonl" {
+		t.Fatalf("agent session = %+v", agent.AgentSession)
+	}
+	if agent.Revision != 6 {
+		t.Fatalf("agent revision = %d, want 6", agent.Revision)
 	}
 }

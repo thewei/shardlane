@@ -3,7 +3,7 @@
 Current implementation: Go 1.27.1 + MyGo Native UI (pinned v0.4.1, patched fork vendored under `third_party/mygo`) + official MyGo Terminal/Ghostty; Herdr remains the runtime authority. The previous Rust/GPUI implementation lives only on `rewrite/mygo`/`main`.
 
 <directory>
-internal/ - Go application/domain packages (nativeui presentation, herdr adapter, agent/history/gitworkbench domains, settings, applog, ...)
+internal/ - Go application/domain packages (nativeui presentation, apphook in-app IPC engine, herdr adapter, agent/history/gitworkbench domains, settings, applog, ...)
 resources/ - MyGo packaging resources (app icon)
 third_party/ - vendored patched MyGo framework fork (go.mod replace target; see third_party/mygo/LOCAL-PATCH.md)
 site/ - public site (landing + downloads page) published to GitHub Pages (static HTML/CSS, no build step)
