@@ -96,7 +96,7 @@ func (s *Shell) settingsLayout(c *ui.Context, r *ui.Route) {
 				settingsPage(c, "Terminal", "Native Terminal presentation for attached Herdr Panes.", func() { s.settingsTerminal(c) })
 			case r.Match("/providers"):
 				r.Title("Settings · Providers")
-				settingsPage(c, "Providers", "Integration health and supported provider actions.", func() { s.settingsProviders(c) })
+				settingsPage(c, "Providers", "Herdr integration health and the direct status hooks that report agent activity into this app.", func() { s.settingsProviders(c) })
 			case r.Match("/git"):
 				r.Title("Settings · Git")
 				settingsPage(c, "Git", "Commit message rules and Pi generator preferences.", func() { s.settingsGit(c) })

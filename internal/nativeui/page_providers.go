@@ -5,141 +5,113 @@ import (
 
 	"github.com/egoist/mygo/ui"
 	"github.com/wh-studio/herdr-client/internal/agent"
-	"github.com/wh-studio/herdr-client/internal/agenthooks"
 )
 
 /**
- * [INPUT]: 依赖 agent 集成审计与 agenthooks Hook Doctor、mygo/ui、ds_components 状态件
- * [OUTPUT]: 对外提供 settingsProviders（Settings→Providers 健康页：Herdr 集成审计 + Agent Hooks 检查安装）
- * [POS]: Providers/Integrations 健康面；审计只发生在路由进入/手动刷新/动作完成之后，绝不随渲染轮询
+ * [INPUT]: 依赖 agent 集成审计与 agenthooks 直连 hook 诊断（providers_ui 统一状态机）、mygo/ui、ds_components 状态件
+ * [OUTPUT]: 对外提供 settingsProviders（Settings→Providers 健康页：每个 Provider 一张卡，Integration + Status hook 两个面）
+ * [POS]: Providers 健康面；一次审计覆盖两面，且只发生在路由进入/手动刷新/动作完成之后，绝不随渲染轮询
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 
-// settingsProviders is the Native Providers/Integrations health surface
-// (INT-04/05/07). Audits run on route entry, manual refresh and after
-// actions — never from render and never on a poll.
+// settingsProviders is the unified Native Providers health surface: one
+// card per provider joining the Herdr integration facet and, where one
+// exists, the direct status hook facet. The audit runs on route entry,
+// manual refresh and after actions — never from render and never on a poll.
 func (s *Shell) settingsProviders(c *ui.Context) {
-	if !s.integrations.loaded && !s.integrations.loading && s.integrations.errText == "" {
-		s.requestIntegrationAudit()
+	if !s.providers.loaded && !s.providers.loading && s.providers.errText == "" {
+		s.requestProvidersAudit()
 	}
-	s.consumeIntegrationToast(c)
+	s.consumeProvidersToast(c)
 
 	sp := Spacing()
 	ui.Column(c).FillWidth().Gap(sp.L).Children(func() {
-
-		if s.integrations.errText != "" {
-			inlineNotice(c, ToneError, s.integrations.errText, func() {
-				s.integrations.loading = false
-				s.integrations.errText = ""
-				s.requestIntegrationAudit()
+		if s.providers.errText != "" {
+			inlineNotice(c, ToneError, s.providers.errText, func() {
+				s.providers.loading = false
+				s.providers.errText = ""
+				s.requestProvidersAudit()
 			})
 		}
 
 		ui.Row(c).Gap(sp.M).AlignItems(ui.Center).Children(func() {
-			if ui.Button(c, "Refresh Integration Health").Clicked() {
-				s.requestIntegrationAudit()
+			if ui.Button(c, "Refresh").Clicked() {
+				s.requestProvidersAudit()
 			}
-			if s.integrations.loading {
+			if s.providers.loading {
 				ui.Spinner(c).Size(14, 14)
-				ui.Text(c, "Checking integrations…").FontSize(Typography().Caption).TextColor(c.Theme().TextMuted)
+				ui.Text(c, "Checking providers…").FontSize(Typography().Caption).TextColor(c.Theme().TextMuted)
 			}
 		})
 
-		if s.integrations.loaded {
-			for _, row := range s.integrations.rows {
+		if s.providers.loaded {
+			for _, row := range s.providers.rows {
 				row := row
-				s.integrationRow(c, row)
+				s.providerCard(c, row)
 			}
-		} else if s.integrations.loading {
-			loadingState(c, "Checking provider integrations…")
+		} else if s.providers.loading {
+			loadingState(c, "Checking providers…")
 		}
-
-		s.hookDoctorSection(c)
 	})
 }
 
-// hookDoctorSection renders the direct-connect Agent Hook audit/install
-// surface: one row per provider with its script/wiring diagnosis and the
-// single safe install/update action. Same audit discipline as the
-// integration rows above: entry, manual refresh, after-action — never poll.
-func (s *Shell) hookDoctorSection(c *ui.Context) {
-	sp := Spacing()
-	ui.Text(c, "Agent Hooks").FontSize(Typography().Title).FontWeight(600)
-	ui.Text(c, "Detect and install the lightweight status hooks that report Claude Code and Antigravity activity into this app").
-		FontSize(Typography().Caption).TextColor(c.Theme().TextMuted)
-
-	ui.Row(c).Gap(sp.M).AlignItems(ui.Center).Children(func() {
-		if ui.Button(c, "Check Agent Hooks").Clicked() {
-			s.requestHookDoctorAudit()
+// providerCard renders one provider's merged card. Hook-covered providers
+// lead with our direct status hook; the Herdr integration becomes the
+// fallback lane below it — muted while the hook is healthy (nothing to
+// repair), actionable again only while the hook cannot do the job.
+// Providers without a status hook keep the Herdr integration as the
+// single (and only) mechanism.
+func (s *Shell) providerCard(c *ui.Context, row providerRow) {
+	settingsCard(c, "", func() {
+		if row.hook != nil {
+			hook := row.hook
+			formRow(c, row.name, hook.Detail, func() {
+				s.facetControls(c, row, facetStatusHook, hookStateText(hook.State), hookStateTone(hook.State))
+			})
+			if row.integration != nil {
+				integration := row.integration
+				tone := healthTone(integration.State)
+				if row.hookHealthy() {
+					// The fallback is not load-bearing; present it as
+					// information, never as a warning or a nag.
+					tone = ToneMuted
+				}
+				formRow(c, "Herdr integration (fallback)", integrationRowDetail(*integration), func() {
+					s.facetControls(c, row, facetIntegration, healthStateText(integration.State), tone)
+				})
+			}
+			return
 		}
-		if s.hookDoctor.loading {
+		if row.integration != nil {
+			integration := row.integration
+			formRow(c, row.name, integrationRowDetail(*integration), func() {
+				s.facetControls(c, row, facetIntegration, healthStateText(integration.State), healthTone(integration.State))
+			})
+		} else {
+			// The integration audit failed or has not reconciled this
+			// provider; the inline notice above carries the reason.
+			formRow(c, row.name, "", func() {
+				s.facetControls(c, row, facetIntegration, "Unknown", ToneMuted)
+			})
+		}
+	})
+}
+
+// facetControls renders one facet's state pill plus its single safe action
+// with the in-flight duplicate-disabled state.
+func (s *Shell) facetControls(c *ui.Context, row providerRow, facet providerFacet, stateText string, tone StatusTone) {
+	ui.Row(c).Gap(Spacing().M).AlignItems(ui.Center).Children(func() {
+		statusPill(c, stateText, tone)
+		inFlight := s.providers.actionInFlight(row, facet)
+		label := row.actionLabel(facet)
+		switch {
+		case inFlight:
 			ui.Spinner(c).Size(14, 14)
-			ui.Text(c, "Checking hook scripts…").FontSize(Typography().Caption).TextColor(c.Theme().TextMuted)
-		}
-	})
-
-	if s.hookDoctor.errText != "" {
-		inlineNotice(c, ToneError, s.hookDoctor.errText, func() {
-			s.hookDoctor.errText = ""
-			s.requestHookDoctorAudit()
-		})
-	}
-	if !s.hookDoctor.loaded {
-		if !s.hookDoctor.loading && s.hookDoctor.errText == "" {
-			s.requestHookDoctorAudit()
-		}
-		return
-	}
-	for _, row := range s.hookDoctor.rows {
-		row := row
-		s.hookDoctorRow(c, row)
-	}
-}
-
-// hookDoctorRow renders one provider's hook diagnosis: state pill, detail,
-// and the safe action with its in-flight duplicate-disabled state.
-func (s *Shell) hookDoctorRow(c *ui.Context, row agenthooks.Diagnosis) {
-	settingsCard(c, "", func() {
-		formRow(c, row.Provider.DisplayName(), row.Detail, func() {
-			ui.Row(c).Gap(Spacing().M).AlignItems(ui.Center).Children(func() {
-				statusPill(c, hookStateText(row.State), hookStateTone(row.State))
-				inFlight := s.hookDoctor.actionRunning && s.hookDoctor.actionProvider == row.Provider
-				switch {
-				case inFlight:
-					ui.Spinner(c).Size(14, 14)
-					ui.Button(c, row.ActionLabel()).Disabled(true)
-				case row.Actionable():
-					if ui.Button(c, row.ActionLabel()).Clicked() {
-						s.runHookDoctorAction(row.Provider)
-					}
-				}
-			})
-		})
-	})
-}
-
-// integrationRow renders one provider row: strategy, health, detail, and the
-// single safe action with its in-flight duplicate-disabled state.
-func (s *Shell) integrationRow(c *ui.Context, row agent.ProviderIntegrationHealth) {
-	settingsCard(c, "", func() {
-		formRow(c, row.Provider.DisplayName(), integrationRowDetail(row), func() {
-			ui.Row(c).Gap(Spacing().M).AlignItems(ui.Center).Children(func() {
-				statusPill(c, healthStateText(row.State), healthTone(row.State))
-				inFlight := s.integrations.actionRunning && s.integrations.actionProvider == row.Provider
-				switch {
-				case inFlight:
-					ui.Spinner(c).Size(14, 14)
-					ui.Button(c, row.ActionLabel()).Disabled(true)
-				case row.Actionable():
-					label := row.ActionLabel()
-					if ui.Button(c, label).Clicked() {
-						s.runIntegrationAction(row.Provider)
-					}
-				}
-			})
-		})
-		if row.Detail != "" {
-			ui.Text(c, row.Detail).FontSize(Typography().Caption).TextColor(c.Theme().TextMuted)
+			ui.Button(c, label).Disabled(true)
+		case label != "":
+			if ui.Button(c, label).Clicked() {
+				s.runProviderAction(row, facet)
+			}
 		}
 	})
 }

@@ -298,6 +298,25 @@ func TestStaleScriptDiagnosedAndUpdated(t *testing.T) {
 	}
 }
 
+// TestHookScriptRelayParityWithHerdr pins the session-identity takeover:
+// the embedded script relays pane.report_agent_session to Herdr's socket
+// with the same optional fields herdr's own scripts send, so herdr's
+// official hook group can stay a pure fallback lane.
+func TestHookScriptRelayParityWithHerdr(t *testing.T) {
+	for _, fragment := range []string{
+		"pane.report_agent_session",
+		"agent_session_path",
+		"transcript_path",
+		"transcriptPath",
+		"session_start_source",
+		"# SHARDLANE_HOOK_VERSION=" + itoa(hookScriptVersion),
+	} {
+		if !strings.Contains(hookScriptTemplate, fragment) {
+			t.Fatalf("hook script template missing %q", fragment)
+		}
+	}
+}
+
 func TestWiringDetectionAcrossShapes(t *testing.T) {
 	nested := []any{map[string]any{
 		"matcher": "*",

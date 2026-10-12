@@ -35,8 +35,8 @@ history_filter_test.go: History 筛选空态、结果计数、Provider 选项与
 detail_fact.go: Agent 详情复用的只读字段样式，从退役 Inspector 解耦
 shell.go: 核心 Shell 宿主，协调 Router/Window/Titlebar；首次 Herdr 加载独占中心展示并淡入工作区，Git sidebar 与双模式分栏展示态仅本地持有
 page_settings.go: 五个 Settings section 统一 settingsPage Header/Scroll/最大内容宽度，单一设置项来源，支持外观主题/透明度/密度与终端配置
-page_providers.go: Provider Integration + Agent Hooks（Hook Doctor 检查/安装）健康设置页，仅绘制内容，跟随 settingsPage 公共头部与滚动容器
-hook_doctor_ui.go: Agent Hook 诊断/安装的状态机（进入/刷新/动作后审计、动作在途、一次性 toast、状态→语义色映射）
+page_providers.go: Provider 健康设置页——每个 Provider 一张卡，直连 Status hook 为主面，Herdr integration 降级为 fallback 面（hook 健康时仅次要展示不提供动作），仅绘制内容，跟随 settingsPage 公共头部与滚动容器
+providers_ui.go: Providers 统一状态机（一次审计同时覆盖两面、进入/刷新/动作后审计、hook 主导 + fallback 修复动作门控、在途防重、一次性 toast、两面状态→语义色映射）
 workspace.go: Terminal/Chat/Diff/Commit 唯一主表面，Changes 主内容采用上下可调 Git Review，Chat 保持 Agent 身份门禁
 chat_ui.go: Chat Timeline/Composer 和身份消失时的安全空态，不得泄漏旧 transcript
 gd_surface.go: 下方 Git Diff、无仓库/无变更/无匹配状态，clean 时直达 All Commits 或 Terminal；历史模式只读，工作树工具栏单一调用点

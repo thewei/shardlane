@@ -2,7 +2,7 @@
 > L2 | 父级: /CLAUDE.md
 
 成员清单
-script.go: 内嵌通用 Agent hook 脚本模板（v5，与已验证在装脚本逐字节一致）与所有权/版本标记
+script.go: 内嵌通用 Agent hook 脚本模板（v6，含 Herdr pane.report_agent_session 会话中继及与官方脚本同形状的可选字段）与所有权/版本标记
 agenthooks.go: Hook Doctor 领域包：Provider 诊断（脚本版本+接线完整性）、安全幂等安装（原子写入、拒绝覆盖外来脚本、备份、最小化改写 ~/.claude/settings.json 与 ~/.gemini/config/hooks.json 的 hooks 段）
 agenthooks_test.go: 诊断/安装/幂等/外来文件保护/版本升级回归（临时 HOME，全路径注入）
 

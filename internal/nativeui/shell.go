@@ -152,12 +152,10 @@ type Shell struct {
 	// HistoryService.
 	hist historyState
 
-	// integrations owns the Providers/Integrations health presentation state.
-	integrations integrationUIState
-
-	// hookDoctor owns the direct-connect Agent Hook audit/install state on
-	// the same Providers page (audit on entry/refresh/after-action only).
-	hookDoctor hookDoctorUIState
+	// providers owns the unified Providers health presentation state: one
+	// card per provider joining the Herdr integration facet and the direct
+	// status hook facet (audit on entry/refresh/after-action only).
+	providers providersUIState
 
 	// launch drives the Agent launch transaction over the verified Herdr
 	// transport (history continuation, live handoff, follow-up queue).
@@ -454,8 +452,8 @@ func NewShell(opts ...ShellOption) *Shell {
 	s.settingsFontDraft = s.settings.Terminal.FontFamily
 	s.settingsGitPromptDraft = commitPromptPreference(s.settings.Workbench.CommitPrompt)
 	s.settingsPiBinaryDraft = s.settings.Workbench.PiExecutable
-	s.integrations.service = agent.NewIntegrationHealthService()
-	s.hookDoctor.service = agenthooks.NewManager()
+	s.providers.integrations = agent.NewIntegrationHealthService()
+	s.providers.hooks = agenthooks.NewManager()
 	s.launch = app.NewLaunchService(s.runtime)
 	s.interactionBroker = conversation.NewInteractionBroker(nil)
 	s.portProbe = services.NewPortProbe()

@@ -1,7 +1,7 @@
 package agenthooks
 
 /**
- * [INPUT]: 内嵌的通用 Agent hook 脚本（v5，与已验证的在装脚本逐字节一致）
+ * [INPUT]: 内嵌的通用 Agent hook 脚本（v6，v5 基础上补齐会话中继的可选字段）
  * [OUTPUT]: 对外提供 hookScriptTemplate、hookScriptMarker、hookScriptVersion
  * [POS]: agenthooks 的脚本供给源；install 原子写入 ~/.shardlane/hooks/ 下的 provider 副本
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
@@ -9,7 +9,7 @@ package agenthooks
 
 // hookScriptVersion is the version this build provisions; the marker line
 // inside the template must match.
-const hookScriptVersion = 5
+const hookScriptVersion = 6
 
 // hookScriptMarker identifies files installed by Shardlane; foreign files
 // at our install paths are never overwritten.
@@ -24,7 +24,7 @@ const hookScriptMarker = "installed by Shardlane"
 const hookScriptTemplate = `#!/bin/sh
 # installed by Shardlane
 # managed by Shardlane; reinstalling or updating the hook overwrites this file.
-# SHARDLANE_HOOK_VERSION=5
+# SHARDLANE_HOOK_VERSION=6
 
 set -eu
 
@@ -148,23 +148,36 @@ if os.path.exists(sock_path):
     except Exception:
         pass
 
-# 2. 会话身份接管（v3）：载荷/父进程参数拿到会话 id 后，直接向 Herdr
-# socket 报 pane.report_agent_session（source=shardlane，客户端上报
+# 2. 会话身份接管（v3；v6 补齐字段）：载荷/父进程参数拿到会话 id 后，直接向
+# Herdr socket 报 pane.report_agent_session（source=shardlane，客户端上报
 # 语义）。Herdr 有了 typed session identity，Chat 入口链路即通；
-# herdr 官方 hook 组只在存在时兜底，不再是前置依赖。
+# herdr 官方 hook 组只在存在时兜底，不再是前置依赖。v6 起可选字段与
+# herdr 官方脚本同形状（transcript 路径 + SessionStart 来源），身份接管
+# 完全等价，官方 hook 组可以安全地只做降级备用。
 if session_id and os.environ.get("HERDR_ENV") == "1" and os.environ.get("HERDR_PANE_ID") and os.environ.get("HERDR_SOCKET_PATH"):
     try:
         _seq = time.time_ns()
+        _params = {
+            "pane_id": os.environ["HERDR_PANE_ID"],
+            "source": "shardlane",
+            "agent": agent,
+            "seq": _seq,
+            "agent_session_id": session_id,
+        }
+        _transcript = (
+            hook_data.get("transcript_path")
+            or hook_data.get("transcriptPath")
+        )
+        if isinstance(_transcript, str) and _transcript:
+            _params["agent_session_path"] = _transcript
+        if event_name in ("SessionStart", "session_start"):
+            _start_source = hook_data.get("source")
+            if isinstance(_start_source, str) and _start_source:
+                _params["session_start_source"] = _start_source
         _req = json.dumps({
             "id": f"shardlane:{agent}:{_seq}",
             "method": "pane.report_agent_session",
-            "params": {
-                "pane_id": os.environ["HERDR_PANE_ID"],
-                "source": "shardlane",
-                "agent": agent,
-                "seq": _seq,
-                "agent_session_id": session_id,
-            },
+            "params": _params,
         })
         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as h:
             h.settimeout(0.5)

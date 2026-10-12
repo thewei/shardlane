@@ -9,6 +9,7 @@ import (
 
 	"github.com/egoist/mygo/ui"
 	"github.com/wh-studio/herdr-client/internal/agent"
+	"github.com/wh-studio/herdr-client/internal/agenthooks"
 	"github.com/wh-studio/herdr-client/internal/herdr"
 	"github.com/wh-studio/herdr-client/internal/history"
 )
@@ -39,11 +40,13 @@ func TestRenderSmokeEvidence(t *testing.T) {
 	}
 
 	shell := NewShell(WithHistory(service))
-	// Deterministic integration health for the Providers frame.
-	shell.integrations.service = agent.NewIntegrationHealthServiceWithRunner(func(ctx context.Context, args []string) (string, error) {
+	// Deterministic integration health for the Providers frame; the hook
+	// doctor reads the throwaway home so it reports Not installed.
+	shell.providers.integrations = agent.NewIntegrationHealthServiceWithRunner(func(ctx context.Context, args []string) (string, error) {
 		return "codex: current (v8) (/Users/demo/.codex/herdr-agent-state.sh)\n" +
 			"claude: outdated (v9 < v10) (/Users/demo/.claude/hooks/herdr-agent-state.sh)\n", nil
 	})
+	shell.providers.hooks = agenthooks.NewManagerWithHome(t.TempDir())
 	render := func(name string) {
 		tester := ui.NewTester(shell.View, 1280, 800)
 		// Pump past the router's 250 ms slide transition so the frame shows

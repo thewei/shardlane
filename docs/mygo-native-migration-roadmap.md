@@ -852,7 +852,7 @@ Planning review notes (2026-10-05, post-0.4 closure increment):
 | DS-05 official components | ✅ | `ui.List` (History), `ui.Collapsible` (thinking), `ui.Toast` (integration actions), Router/Breadcrumbs retained |
 | DS-06 Outline spike | ✅ spike / NO-GO for 0.4 | `TestOutlineSpikeParity` passes; migration deferred to 0.5 to avoid a second expansion state machine mid-release |
 | OPS-01..05 Operational status | ✅ | `operational.go` shared model; Titlebar attention + Sidebar rows consume it; OPS-05 dynamic sequence test; no polling |
-| INT-01..07 Integration health | ✅ | strategy registry + `herdr integration status` adapter + `IntegrationHealthService`; Providers Settings page with strategy-gated actions, spinner/reconcile/Toast; route-entry/refresh/post-action cadence only |
+| INT-01..07 Integration health | ✅ | strategy registry + `herdr integration status` adapter + `IntegrationHealthService`; Providers Settings page with strategy-gated actions, spinner/reconcile/Toast; route-entry/refresh/post-action cadence only; 2026-10-12 hook-led single mechanism: the direct status hook leads covered providers (session-identity relay → `pane.report_agent_session`), Herdr integration demoted to a fallback lane whose repair action only surfaces while the hook cannot serve |
 | LAUNCH-01..03 transaction + harness | 🟡 | phase machine + uncertain-delivery fake-runtime harness ported and tested; Herdr transport adapter (agent.start/prompt/readiness) NOT ported — needs live protocol verification |
 | LAUNCH-04 New Task picker | ✅ | capability + integration-health driven Ready/Setup/Updating/Deferred; `TestNewTaskProviderPickerStates` |
 | LAUNCH-05 Start Agent | ❌ NOT DONE (by gate) | stays disabled with truthful copy until the verified transport lands |
