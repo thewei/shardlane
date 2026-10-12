@@ -1,13 +1,14 @@
-// [INPUT]: WorkspacePrimarySurface state, native shell and Git split reviewer.
-// [OUTPUT]: Terminal/Chat/Diff/Commit workspace center without a competing runtime.
-// [POS]: Central surface switch; Git uses its own resizable upper navigator and lower Diff.
-// [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+/**
+ * [INPUT]: 依赖 mygo/ui, internal/agent, WorkspacePrimarySurface 状态
+ * [OUTPUT]: 对外提供 workspacePage, agentCardForPane
+ * [POS]: Terminal/Chat/Diff/Commit 唯一主表面切换中心
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
 package nativeui
 
 import (
 	"github.com/egoist/mygo/ui"
 	"github.com/wh-studio/herdr-client/internal/agent"
-	"github.com/wh-studio/herdr-client/internal/history"
 )
 
 // workspacePage renders the /workspace center through the single
@@ -214,10 +215,7 @@ func (s *Shell) agentCardForPane(targetPaneID string) (agent.AgentCardModel, boo
 	}
 	for _, runtimeAgent := range s.projection.Agents {
 		if runtimeAgent.PaneID == targetPaneID {
-			provider, _ := history.ParseAgentID(runtimeAgent.Kind)
-			if provider == "" && runtimeAgent.AgentSession != nil {
-				provider, _ = history.ParseAgentID(runtimeAgent.AgentSession.Agent)
-			}
+			provider := agentProvider(&runtimeAgent)
 			key := agent.AgentKey{InstanceID: s.activeInstance, TerminalID: runtimeAgent.TerminalID}
 			return agent.AgentCardModel{
 				Key:           key,

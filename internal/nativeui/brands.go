@@ -1,3 +1,10 @@
+/**
+ * [INPUT]: 依赖 history.AgentID/herdr.Agent、embed brands/*.png 以及 ui.NewBitmap
+ * [OUTPUT]: 对外提供 agentMark、agentProvider、markView 以及 Shell.agentMarkForPane
+ * [POS]: Agent 品牌位图资产与视觉标识解析器，统一侧栏卡片、窗口与窗格标题、浮层的品牌 Logo 映射
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
+
 package nativeui
 
 import (
@@ -7,6 +14,7 @@ import (
 	"sync"
 
 	"github.com/egoist/mygo/ui"
+	"github.com/wh-studio/herdr-client/internal/herdr"
 	"github.com/wh-studio/herdr-client/internal/history"
 )
 
@@ -58,6 +66,8 @@ func brandAssetName(provider history.AgentID, dark bool) string {
 		return "claude-code"
 	case history.AgentCodex:
 		return "codex"
+	case history.AgentCommandCode:
+		return "command-code"
 	case history.AgentCopilot:
 		if dark {
 			return "copilot"
@@ -84,6 +94,20 @@ func brandAssetName(provider history.AgentID, dark bool) string {
 		return "pi-light"
 	case history.AgentOMP:
 		return "omp"
+	case history.AgentGrok:
+		if dark {
+			return "grok"
+		}
+		return "grok-light"
+	case history.AgentKimi:
+		if dark {
+			return "kimi"
+		}
+		return "kimi-light"
+	case history.AgentAntigravity:
+		return "antigravity"
+	case history.AgentDSH:
+		return "deepseek"
 	default:
 		return ""
 	}
@@ -116,6 +140,23 @@ func agentMark(provider history.AgentID, dark bool) visualMark {
 	return visualMark{svg: agentGlyph(provider)}
 }
 
+// agentProvider extracts the canonical provider AgentID from a live Herdr Agent,
+// checking Kind first, then falling back to AgentSession.Agent if Kind is empty.
+func agentProvider(a *herdr.Agent) history.AgentID {
+	if a == nil {
+		return ""
+	}
+	if provider, ok := history.ParseAgentID(a.Kind); ok {
+		return provider
+	}
+	if a.AgentSession != nil {
+		if provider, ok := history.ParseAgentID(a.AgentSession.Agent); ok {
+			return provider
+		}
+	}
+	return ""
+}
+
 // agentMarkForPane resolves the mark a Pane row should show: the bound
 // Agent's brand, or the plain terminal glyph for shells.
 func (s *Shell) agentMarkForPane(paneID string, dark bool) (visualMark, bool) {
@@ -123,6 +164,6 @@ func (s *Shell) agentMarkForPane(paneID string, dark bool) (visualMark, bool) {
 	if a == nil {
 		return visualMark{svg: iconTerminal}, false
 	}
-	provider, _ := history.ParseAgentID(a.Kind)
+	provider := agentProvider(a)
 	return agentMark(provider, dark), true
 }

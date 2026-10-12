@@ -2,11 +2,10 @@ package nativeui
 
 import (
 	"github.com/egoist/mygo/ui"
-	"github.com/wh-studio/herdr-client/internal/history"
 )
 
 /**
- * [INPUT]: 依赖 mygo/ui 的 Context/Theme/Popover, herdr-client/internal/history, gorex_style, agent_visual, proc_brands 与 Herdr Pane layout 排序
+ * [INPUT]: 依赖 mygo/ui 的 Context/Theme/Popover, gorex_style, agent_visual, proc_brands, brands 的 agentProvider/agentMark 与 Herdr Pane layout 排序
  * [OUTPUT]: 对外提供 crumbSegment, Shell.breadcrumbSegments, Shell.breadcrumbSegmentsWithTheme, Shell.breadcrumbRow, crumbItemRow
  * [POS]: nativeui 标题栏面包屑与快速切换弹层所有者，展示工作区/Tab/Pane层次并呈现 Agent 与进程品牌图标
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
@@ -46,7 +45,7 @@ func (s *Shell) breadcrumbSegmentsWithTheme(dark bool) []crumbSegment {
 				if tabLabel == "" || tabLabel == "Tab" {
 					tabLabel = a.Name
 					if tabLabel == "" {
-						if provider, _ := history.ParseAgentID(a.Kind); provider != "" {
+						if provider := agentProvider(a); provider != "" {
 							tabLabel = provider.DisplayName()
 						}
 					}
@@ -70,7 +69,7 @@ func (s *Shell) breadcrumbSegmentsWithTheme(dark bool) []crumbSegment {
 			if paneLabel == "" || paneLabel == "Pane" || paneLabel == "Terminal" {
 				paneLabel = a.Name
 				if paneLabel == "" {
-					if provider, _ := history.ParseAgentID(a.Kind); provider != "" {
+					if provider := agentProvider(a); provider != "" {
 						paneLabel = provider.DisplayName()
 					}
 				}
@@ -193,7 +192,7 @@ func (s *Shell) crumbTabRows(c *ui.Context, projectID string) {
 				if label == "" || label == "Tab" {
 					label = a.Name
 					if label == "" {
-						if p, _ := history.ParseAgentID(a.Kind); p != "" {
+						if p := agentProvider(a); p != "" {
 							label = p.DisplayName()
 						}
 					}

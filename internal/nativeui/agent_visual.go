@@ -1,3 +1,10 @@
+/**
+ * [INPUT]: 依赖 mygo/ui 的 SVG/Box、herdr.Agent、history.AgentID 与设计系统状态色
+ * [OUTPUT]: 对外提供 agentGlyph、Shell.paneAgent、statusDot
+ * [POS]: Agent 品牌单色矢量回退图标、窗格 Agent 绑定检索与运行时状态圆点渲染
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
+
 package nativeui
 
 import (
@@ -9,14 +16,15 @@ import (
 // Per-provider marks for live Agents. Monochrome 24×24 paths that read at
 // 14–16 DIP; unknown providers fall back to the generic person mark.
 var (
-	glyphClaude = icon(`<path d="M12 3v18M5.5 5.5l13 13M3 12h18M5.5 18.5l13-13"/>`)
-	glyphCodex  = icon(`<rect x="4" y="4" width="16" height="16" rx="4"/><path d="m9 10 2 2-2 2M13 14h3"/>`)
-	glyphGemini = icon(`<path d="M12 3c.6 5 3.9 8.4 9 9-5.1.6-8.4 4-9 9-.6-5-3.9-8.4-9-9 5.1-.6 8.4-4 9-9Z"/>`)
-	glyphPi     = icon(`<circle cx="12" cy="12" r="8"/><path d="M9 9v6M15 9v6M9 12h6"/>`)
-	glyphCoplot = icon(`<path d="M6 15a6 6 0 0 1 12 0"/><rect x="4" y="15" width="16" height="4" rx="2"/>`)
-	glyphCursor = icon(`<path d="m5 3 14 8-6 2-2 6L5 3Z"/>`)
-	glyphOpen   = icon(`<circle cx="9" cy="12" r="5"/><circle cx="15" cy="12" r="5"/>`)
-	glyphKiro   = icon(`<path d="M12 3 4 21M12 3l8 18M7.5 14h9"/>`)
+	glyphClaude      = icon(`<path d="M12 3v18M5.5 5.5l13 13M3 12h18M5.5 18.5l13-13"/>`)
+	glyphCodex       = icon(`<rect x="4" y="4" width="16" height="16" rx="4"/><path d="m9 10 2 2-2 2M13 14h3"/>`)
+	glyphGemini      = icon(`<path d="M12 3c.6 5 3.9 8.4 9 9-5.1.6-8.4 4-9 9-.6-5-3.9-8.4-9-9 5.1-.6 8.4-4 9-9Z"/>`)
+	glyphPi          = icon(`<circle cx="12" cy="12" r="8"/><path d="M9 9v6M15 9v6M9 12h6"/>`)
+	glyphCoplot      = icon(`<path d="M6 15a6 6 0 0 1 12 0"/><rect x="4" y="15" width="16" height="4" rx="2"/>`)
+	glyphCursor      = icon(`<path d="m5 3 14 8-6 2-2 6L5 3Z"/>`)
+	glyphOpen        = icon(`<circle cx="9" cy="12" r="5"/><circle cx="15" cy="12" r="5"/>`)
+	glyphKiro        = icon(`<path d="M12 3 4 21M12 3l8 18M7.5 14h9"/>`)
+	glyphAntigravity = icon(`<path d="M12 3 4 21h4.5l3.5-7.5 3.5 7.5H20Z"/>`)
 )
 
 // agentGlyph maps a provider identity to its mark, falling back to the
@@ -39,6 +47,8 @@ func agentGlyph(provider history.AgentID) *ui.SVG {
 		return glyphOpen
 	case history.AgentKiro:
 		return glyphKiro
+	case history.AgentAntigravity:
+		return glyphAntigravity
 	default:
 		return iconAgent
 	}

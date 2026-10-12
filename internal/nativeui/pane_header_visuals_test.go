@@ -9,9 +9,9 @@ import (
 )
 
 /**
- * [INPUT]: 依赖 nativeui 的 Shell/paneHeaderVisuals/shortDir/samePath/procFriendlyName, herdr
- * [OUTPUT]: 对外提供 TestPaneHeaderVisualsAgent/TestPaneHeaderVisualsProcess/TestShortDirAndSamePath
- * [POS]: 窗格卡片头部视觉解析、Agent 图标与名称解析、以及跨平台路径格式化的单元测试
+ * [INPUT]: 依赖 nativeui 的 Shell/paneHeaderVisuals/paneStackInfo/shortDir/samePath/procFriendlyName, herdr
+ * [OUTPUT]: 对外提供 TestPaneHeaderVisualsAgent/TestPaneHeaderVisualsProcess/TestShortDirAndSamePath/TestPaneStackInfoAndStackedVisuals
+ * [POS]: 窗格卡片头部视觉解析、Agent 图标与名称解析、跨平台路径格式化以及多终端堆叠状态的单元测试
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 
@@ -21,6 +21,8 @@ func TestPaneHeaderVisualsAgent(t *testing.T) {
 		Agents: []herdr.Agent{
 			{PaneID: "p-claude", Kind: "claude-code", Name: "Refactor Task", Status: "working"},
 			{PaneID: "p-codex", Kind: "codex", Status: "idle"},
+			{PaneID: "p-antigravity", Kind: "antigravity", Status: "working"},
+			{PaneID: "p-agy-session", AgentSession: &herdr.AgentSessionIdentity{Agent: "antigravity-cli"}, Status: "idle"},
 		},
 	}
 
@@ -40,6 +42,24 @@ func TestPaneHeaderVisualsAgent(t *testing.T) {
 	}
 	if titleCodex != "Codex" {
 		t.Fatalf("titleCodex = %q, want 'Codex'", titleCodex)
+	}
+
+	surfaceAG := &terminalSurface{paneID: "p-antigravity", cwd: "/Users/test/project"}
+	markAG, titleAG, _ := s.paneHeaderVisuals(surfaceAG, false)
+	if markAG.bmp == nil {
+		t.Fatalf("antigravity pane mark should have brand bitmap, got %+v", markAG)
+	}
+	if titleAG != "Antigravity CLI" {
+		t.Fatalf("titleAG = %q, want 'Antigravity CLI'", titleAG)
+	}
+
+	surfaceAGSession := &terminalSurface{paneID: "p-agy-session", cwd: "/Users/test/project"}
+	markAGSession, titleAGSession, _ := s.paneHeaderVisuals(surfaceAGSession, false)
+	if markAGSession.bmp == nil {
+		t.Fatalf("antigravity session pane mark should have brand bitmap, got %+v", markAGSession)
+	}
+	if titleAGSession != "Antigravity CLI" {
+		t.Fatalf("titleAGSession = %q, want 'Antigravity CLI'", titleAGSession)
 	}
 }
 
@@ -120,5 +140,62 @@ func TestShellAndFriendlyNames(t *testing.T) {
 	}
 	if got := procFriendlyName("docker-compose.exe"); got != "Docker Compose" {
 		t.Fatalf("procFriendlyName(docker-compose.exe) = %q, want 'Docker Compose'", got)
+	}
+}
+
+func TestPaneStackInfoAndStackedVisuals(t *testing.T) {
+	if iconTerminalStacked2 == nil {
+		t.Fatalf("iconTerminalStacked2 must not be nil")
+	}
+	if iconTerminalStacked3 == nil {
+		t.Fatalf("iconTerminalStacked3 must not be nil")
+	}
+
+	s := NewShell()
+	s.projection = herdr.Projection{
+		FocusedProjectID: "prj", FocusedTabID: "tab", FocusedPaneID: "p1",
+		Tabs: []herdr.Tab{
+			{ID: "tab", ProjectID: "prj"},
+		},
+		Panes: []herdr.Pane{
+			{ID: "p1", TerminalID: "t1", ProjectID: "prj", TabID: "tab"},
+			{ID: "p2", TerminalID: "t2", ProjectID: "prj", TabID: "tab"},
+			{ID: "p3", TerminalID: "t3", ProjectID: "prj", TabID: "tab"},
+		},
+		Layouts: []herdr.Layout{
+			{
+				ProjectID: "prj", TabID: "tab", Zoomed: false,
+				Panes: []herdr.LayoutPane{
+					{PaneID: "p1"},
+					{PaneID: "p2"},
+				},
+			},
+		},
+	}
+
+	// 2 panes, unzoomed (split layout side-by-side)
+	isStacked, count := s.paneStackInfo("p1")
+	if isStacked || count != 2 {
+		t.Fatalf("unzoomed split tab should not be stacked: isStacked=%v, count=%d", isStacked, count)
+	}
+
+	// 2 panes, zoomed (maximized)
+	s.projection.Layouts[0].Zoomed = true
+	isStacked, count = s.paneStackInfo("p1")
+	if !isStacked || count != 2 {
+		t.Fatalf("zoomed 2-pane tab should be stacked: isStacked=%v, count=%d", isStacked, count)
+	}
+
+	// 3 panes, zoomed
+	s.projection.Layouts[0].Panes = append(s.projection.Layouts[0].Panes, herdr.LayoutPane{PaneID: "p3"})
+	isStacked, count = s.paneStackInfo("p1")
+	if !isStacked || count != 3 {
+		t.Fatalf("zoomed 3-pane tab should be stacked: isStacked=%v, count=%d", isStacked, count)
+	}
+
+	// Non-existent pane
+	isStacked, count = s.paneStackInfo("non-existent")
+	if isStacked || count != 1 {
+		t.Fatalf("non-existent pane should return false, 1: isStacked=%v, count=%d", isStacked, count)
 	}
 }

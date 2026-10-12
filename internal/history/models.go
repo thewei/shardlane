@@ -1,3 +1,10 @@
+/**
+ * [INPUT]: 依赖 Go 标准库 strings 与 encoding/json
+ * [OUTPUT]: 对外提供 AgentID 枚举、AllAgents 清单、ParseAgentID 别名归一化与 DisplayName 呈现、会话元数据/消息模型
+ * [POS]: internal/history 的核心数据契约，被整个客户端的 Agent 投影、会话目录与 UI 视觉层消费
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
+
 // Package history owns Shardlane's read-only coding-agent history domain.
 // It never mutates provider-owned history stores and never owns runtime state.
 package history
@@ -75,7 +82,7 @@ func ParseAgentID(value string) (AgentID, bool) {
 		return AgentGrok, true
 	case "kimi":
 		return AgentKimi, true
-	case "antigravity", "agy":
+	case "antigravity", "agy", "antigravity-cli":
 		return AgentAntigravity, true
 	case "dsh":
 		return AgentDSH, true

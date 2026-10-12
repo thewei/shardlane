@@ -2,10 +2,13 @@
 > L2 | 父级: /CLAUDE.md
 
 成员清单
-icons.go: 矢量图标字典，inline SVG 定义，提供常用及跨平台窗格/窗口控制图标（iconMinus/iconSquare）
+icons.go: 矢量图标字典，inline SVG 定义，提供常用及跨平台窗格/窗口控制图标与堆叠多终端图标（iconTerminalStacked2/3）
 proc_brands.go: 进程与工具品牌标识解析器，将前台进程与 Agent CLI 映射为矢量图标与友好名称
+brands.go: Agent 品牌位图资产与视觉标识解析器，将 live Agent 映射为全彩品牌 Logo 与 agentMarkForPane 窗格标识
+agent_visual.go: Agent 品牌矢量回退图标字典、窗格 Agent 绑定与状态指示点（statusDot）
+brands_test.go: Agent 品牌位图资产检索、Antigravity 及其它 Provider 标识与 agentProvider 回退回归
 gorex_style.go: Gorex 风格视觉设计系统，提供渐变背景/卡片配色/shortDir/samePath 等跨平台路径处理
-terminal.go: 终端画布与 Gorex 窗格卡片渲染器，Pane 标题原生拖动交换、悬停目标占位提示及确认后位置动画，保持 Herdr 终端连接权威
+terminal.go: 终端画布与 Gorex 窗格卡片渲染器，Pane 标题双击最大化/恢复、多终端堆叠 Logo 视觉指示与标题原生拖动交换
 breadcrumb_switcher.go: 标题栏面包屑与快速切换弹层所有者，Pane 顺序与 Herdr 实际布局对齐并展示品牌图标
 titlebar.go: 窗口标题栏组件，红绿灯与工具区对齐、视图切换（History 内页先返回根）与 Windows 平台窗口控件支持
 router.go: 单一 Router 的页面归属、精确 History 路径分类与窗口标题路由语义
@@ -29,7 +32,7 @@ history_test.go: History 页面真实 Catalog 场景和会话详情渲染回归
 history_filter_test.go: History 筛选空态、结果计数、Provider 选项与旧行不可点击的 headless 验证
 detail_fact.go: Agent 详情复用的只读字段样式，从退役 Inspector 解耦
 shell.go: 核心 Shell 宿主，协调 Router/Window/Titlebar；首次 Herdr 加载独占中心展示并淡入工作区，Git sidebar 与双模式分栏展示态仅本地持有
-page_settings.go: 五个 Settings section 统一 settingsPage Header/Scroll/最大内容宽度，单一设置项来源
+page_settings.go: 五个 Settings section 统一 settingsPage Header/Scroll/最大内容宽度，单一设置项来源，支持外观主题/透明度/密度与终端配置
 page_providers.go: Provider Integration 设置页仅绘制内容，跟随 settingsPage 的公共头部和滚动容器
 workspace.go: Terminal/Chat/Diff/Commit 唯一主表面，Changes 主内容采用上下可调 Git Review，Chat 保持 Agent 身份门禁
 chat_ui.go: Chat Timeline/Composer 和身份消失时的安全空态，不得泄漏旧 transcript
@@ -74,6 +77,6 @@ git_workbench_actions_test.go: Git 本地操作条、Modal、Draft Guard、Merge
 ds_components.go: 通用卡片、Field、工作区 Chat/Diff 轻量空状态组件
 unified_page_test.go: UI-007/UI-008 Settings/Git/Chat 跨页面基础回归与尺寸矩阵（headless）
 window_actions.go: 原生窗口级行为与标题同步适配器
-pane_header_visuals_test.go: 窗格头部视觉解析、Agent 图标与名称解析、以及跨平台路径格式化的单元测试
+pane_header_visuals_test.go: 窗格头部视觉解析、Agent 图标与名称解析、路径格式化及多终端堆叠状态单元测试
 
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

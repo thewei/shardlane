@@ -8,14 +8,13 @@ import (
 	"github.com/egoist/mygo/plugins/terminal"
 	"github.com/egoist/mygo/ui"
 	"github.com/wh-studio/herdr-client/internal/herdr"
-	"github.com/wh-studio/herdr-client/internal/history"
 	"github.com/wh-studio/herdr-client/internal/settings"
 )
 
 /**
- * [INPUT]: 依赖 mygo/plugins/terminal, mygo/ui, herdr, settings, history, gorex_style
- * [OUTPUT]: 对外提供 terminalCanvas, paneCard, paneCardHeader 的卡片标题拖动交换与动画、syncTerminals, closeAllTerminals, paneHeaderVisuals
- * [POS]: nativeui 的终端画布与 Gorex 窗格卡片主渲染器，管理活动的终端连接与卡片头部视觉呈现
+ * [INPUT]: 依赖 mygo/plugins/terminal, mygo/ui, herdr, settings, gorex_style, brands 的 agentProvider/agentMark
+ * [OUTPUT]: 对外提供 terminalCanvas, paneCard, paneCardHeader, paneStackInfo, paneLogoView, syncTerminals, closeAllTerminals, paneHeaderVisuals
+ * [POS]: nativeui 的终端画布与 Gorex 窗格卡片主渲染器，管理活动的终端连接、堆叠多窗格状态与卡片头部视觉呈现
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 
@@ -235,7 +234,7 @@ func (s *Shell) paneHeaderVisuals(surface *terminalSurface, dark bool) (visualMa
 		mark, _ := s.agentMarkForPane(surface.paneID, dark)
 		title := a.Name
 		if title == "" {
-			provider, _ := history.ParseAgentID(a.Kind)
+			provider := agentProvider(a)
 			if provider != "" {
 				title = provider.DisplayName()
 			} else {
@@ -262,9 +261,76 @@ func (s *Shell) paneHeaderVisuals(surface *terminalSurface, dark bool) (visualMa
 	return visualMark{svg: iconTerminal}, title, detail
 }
 
+// paneStackInfo reports whether surface's pane belongs to a multi-pane split
+// tab currently maximized (zoomed), along with total pane count in that tab.
+func (s *Shell) paneStackInfo(paneID string) (bool, int) {
+	pane := paneByID(s.projection, paneID)
+	if pane == nil {
+		return false, 1
+	}
+	layout, ok := layoutForTab(s.projection, pane.TabID)
+	if !ok || len(layout.Panes) <= 1 {
+		return false, 1
+	}
+	return layout.Zoomed, len(layout.Panes)
+}
+
+// paneLogoView renders the pane card's visual identity mark. When a split-panel
+// tab is maximized (stacking other panes beneath it), it renders an overlapping
+// stacked visual representation (iconTerminalStacked2 for 2 panes,
+// iconTerminalStacked3 for 3+ panes, or cascading backdrop sheets for custom brand
+// marks) along with an informative tooltip and double-click unzoom support.
+func (s *Shell) paneLogoView(c *ui.Context, k *gorexColors, surface *terminalSurface, mark visualMark, isStacked bool, stackCount int) {
+	if !isStacked {
+		ui.Box(c).Size(15, 15).Shrink(0).Children(func() {
+			markView(c, mark, 14.5, k.text)
+		})
+		return
+	}
+
+	tooltip := fmt.Sprintf("%d terminals stacked • Double-click title to restore", stackCount)
+	if mark.svg == iconTerminal {
+		stackedIcon := iconTerminalStacked2
+		if stackCount >= 3 {
+			stackedIcon = iconTerminalStacked3
+		}
+		box := ui.Box(c).Size(16, 16).Shrink(0).Cursor(ui.CursorPointer).Tooltip(tooltip)
+		if box.DoubleClicked() {
+			s.selectPane(surface.paneID)
+			s.zoomPaneAction(surface.paneID)
+		} else if box.Clicked() {
+			s.selectPane(surface.paneID)
+		}
+		box.Children(func() {
+			markView(c, visualMark{svg: stackedIcon}, 15.5, k.text)
+		})
+		return
+	}
+
+	box := ui.Box(c).Size(18, 16).Shrink(0).Cursor(ui.CursorPointer).Tooltip(tooltip)
+	if box.DoubleClicked() {
+		s.selectPane(surface.paneID)
+		s.zoomPaneAction(surface.paneID)
+	} else if box.Clicked() {
+		s.selectPane(surface.paneID)
+	}
+	box.Children(func() {
+		if stackCount >= 3 {
+			ui.Box(c).Absolute().Left(4).Top(-2).Size(13, 13).Radius(3).
+				Border(1, k.text.Alpha(0.2)).Background(k.cardBorder.Alpha(0.35))
+		}
+		ui.Box(c).Absolute().Left(2).Top(-1).Size(14, 14).Radius(3).
+			Border(1, k.text.Alpha(0.38)).Background(k.cardBorder.Alpha(0.55))
+		ui.Box(c).Absolute().Left(0).Top(0).Size(15, 15).Children(func() {
+			markView(c, mark, 14.5, k.text)
+		})
+	})
+}
+
 func (s *Shell) paneCardHeader(c *ui.Context, k *gorexColors, surface *terminalSurface, focused, hovered bool) {
 	dark := c.Theme().Dark
 	mark, title, detail := s.paneHeaderVisuals(surface, dark)
+	isStacked, stackCount := s.paneStackInfo(surface.paneID)
 	h := ui.Row(c).Height(gorexHeaderH).Padding(0, gorexGap, 0, 12).Gap(7).AlignItems(ui.Center).MinWidth(0)
 	// The pane menu lives here since the F144 real-terminal round: the
 	// terminal surface's right click is a program event now, so the card
@@ -280,10 +346,14 @@ func (s *Shell) paneCardHeader(c *ui.Context, k *gorexColors, surface *terminalS
 		s.selectPane(surface.paneID)
 	}
 	h.Children(func() {
-		ui.Box(c).Size(15, 15).Shrink(0).Children(func() {
-			markView(c, mark, 14.5, k.text)
-		})
+		s.paneLogoView(c, k, surface, mark, isStacked, stackCount)
 		caption := ui.Row(c).Grow(1).MinWidth(0).Gap(5).AlignItems(ui.Center).ClipX()
+		if caption.DoubleClicked() {
+			s.selectPane(surface.paneID)
+			s.zoomPaneAction(surface.paneID)
+		} else if caption.Clicked() {
+			s.selectPane(surface.paneID)
+		}
 		if s.canDragPaneCard(surface.paneID) {
 			caption.Drag(paneCardDrag{s.activeInstance, s.selectedTabID, surface.paneID}).
 				Cursor(ui.CursorGrab).Tooltip("Drag to swap pane positions")

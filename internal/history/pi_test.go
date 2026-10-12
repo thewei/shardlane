@@ -164,6 +164,7 @@ func TestParseAgentIDAliases(t *testing.T) {
 		{"codex-cli", AgentCodex, true},
 		{"antigravity", AgentAntigravity, true},
 		{"agy", AgentAntigravity, true},
+		{"antigravity-cli", AgentAntigravity, true},
 		{"command-code", AgentCommandCode, true},
 		{"commandcode", AgentCommandCode, true},
 		{"unknown-agent", "", false},

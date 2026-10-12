@@ -1,3 +1,9 @@
+/**
+ * [INPUT]: 依赖 time, mygo, internal/agent, internal/herdr
+ * [OUTPUT]: 对外提供 Shell.reconcileWorkbench, notifyAgentTransition, workbenchState
+ * [POS]: nativeui 桌面工作台状态中枢，Agent 目录与运行时事件分发
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
 package nativeui
 
 import (
@@ -6,7 +12,6 @@ import (
 	"github.com/egoist/mygo"
 	"github.com/wh-studio/herdr-client/internal/agent"
 	"github.com/wh-studio/herdr-client/internal/herdr"
-	"github.com/wh-studio/herdr-client/internal/history"
 )
 
 // workbenchState is the Shell's 0.5 Agent workbench presentation state: the
@@ -75,7 +80,7 @@ func (s *Shell) reconcileWorkbench() {
 		markers := s.workbench.markers.Observe(key, transition, selected)
 		s.notifyAgentTransition(runtimeAgent, transition)
 
-		provider, _ := history.ParseAgentID(runtimeAgent.Kind)
+		provider := agentProvider(&runtimeAgent)
 		card := agent.ProjectAgentCard(agent.AgentCardInputs{
 			InstanceID:  key.InstanceID,
 			TerminalID:  key.TerminalID,
