@@ -42,6 +42,11 @@ export interface ChatBridgeState {
    */
   hasOlder?: boolean;
   /**
+   * ReadOnly marks a past session shown from the Sessions list: the page
+   * renders the transcript alone — no composer, no interactions.
+   */
+  readOnly?: boolean;
+  /**
    * ContextTokens is the provider-recorded size of the current request
    * context, when the transcript states one (context ring only).
    */

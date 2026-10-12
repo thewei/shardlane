@@ -21,7 +21,7 @@ func sidebarSectionHeader(c *ui.Context, title string, open *bool, trailing func
 		*open = !*open
 	}
 	head.Children(func() {
-		ui.Text(c, title).FontSize(9.5).FontWeight(650).
+		ui.Text(c, title).FontSize(Typography().Micro).FontWeight(WeightSemibold).
 			TextColor(t.TextMuted).Grow(1).SingleLine()
 		if trailing != nil {
 			trailing()

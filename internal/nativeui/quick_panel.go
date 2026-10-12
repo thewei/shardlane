@@ -95,12 +95,11 @@ func (s *Shell) QuickPanelView(c *ui.Context) {
 		entries := snapshot.Entries
 		header := QuickPanelHeader(snapshot, !s.offline)
 		if s.quickPanelTab == 1 {
-			header = "Scripts and listening ports for the selected project"
+			header = "Scripts and open ports"
 		}
 		ui.Column(c).FillWidth().Padding(sp.M, sp.L).Gap(sp.XS).
 			BorderWidth(0, 0, 1, 0).BorderColor(tokens.BorderSubtle).Children(func() {
-			ui.Text(c, "Shardlane").FontSize(Typography().Micro).TextColor(t.TextMuted)
-			ui.Text(c, "Agents & Services").FontSize(Typography().Section + 1).FontWeight(700)
+			ui.Text(c, "Agents & Services").FontSize(Typography().Heading).FontWeight(WeightSemibold)
 			ui.Text(c, header).FontSize(Typography().Caption).TextColor(t.TextMuted).SingleLine()
 		})
 		ui.Row(c).FillWidth().Padding(sp.S, sp.L, 0).Children(func() {
@@ -127,7 +126,7 @@ func (s *Shell) QuickPanelView(c *ui.Context) {
 		ui.Scroll(c).Grow(1).Children(func() {
 			ui.Column(c).FillWidth().Padding(sp.S, sp.L, sp.L).Gap(sp.S).Children(func() {
 				if len(entries) == 0 {
-					emptyState(c, "No active agents", "Agents in this category will appear here.")
+					emptyState(c, "No active agents", "")
 					return
 				}
 				for _, entry := range entries {

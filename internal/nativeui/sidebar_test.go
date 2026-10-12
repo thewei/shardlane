@@ -7,9 +7,56 @@ import (
 	"github.com/wh-studio/herdr-client/internal/herdr"
 )
 
+// TestInnerPageBackPinnedToSidebarFoot pins the unified inner-page chrome:
+// every inner page carries its one way back at the foot of the sidebar,
+// below the page navigation and in place of the Workspace switch, which only
+// the workspace sidebar keeps. A session detail's Back names the Sessions
+// list; the other pages name the Terminal.
+func TestInnerPageBackPinnedToSidebarFoot(t *testing.T) {
+	const height = 800
+	s := NewShell()
+	s.loading = false
+
+	s.router.Replace(routeWorkspace)
+	tester := ui.NewTester(s.View, 1200, height)
+	if !tester.HasText("Choose Session") || tester.HasText("Back to Terminal") {
+		t.Fatalf("workspace sidebar must keep its Workspace switch and no back control; texts=%q", tester.Texts())
+	}
+
+	for _, tc := range []struct{ route, nav, back string }{
+		{"/settings/general", "General", "Back to Terminal"},
+		{routeHistory, "All sessions", "Back to Terminal"},
+		{"/history-projects", "All sessions", "Back to Terminal"},
+		{"/history/codex:abc", "All sessions", "Back to Sessions"},
+	} {
+		s.router.Replace(tc.route)
+		tester := ui.NewTester(s.View, 1200, height)
+		back, ok := tester.Find(tc.back)
+		if !ok {
+			t.Fatalf("%s: sidebar missing %q; texts=%q", tc.route, tc.back, tester.Texts())
+		}
+		if back.X > sidebarWidth || back.Y < height-60 {
+			t.Fatalf("%s: back control at %+v, want the sidebar foot", tc.route, back)
+		}
+		if nav, ok := tester.Find(tc.nav); !ok || nav.Y >= back.Y {
+			t.Fatalf("%s: page navigation %q at %+v must sit above Back %+v", tc.route, tc.nav, nav, back)
+		}
+		if tester.HasText("Choose Session") {
+			t.Fatalf("%s: inner page kept the Workspace switch; texts=%q", tc.route, tester.Texts())
+		}
+		other := "Back to Sessions"
+		if tc.back == other {
+			other = "Back to Terminal"
+		}
+		if tester.HasText(other) {
+			t.Fatalf("%s: unexpected second back control %q; texts=%q", tc.route, other, tester.Texts())
+		}
+	}
+}
+
 // TestInnerPageSidebarPinsPageNavAndBack pins the inner-page style: on
 // Settings and History the app sidebar swaps the runtime navigator for
-// the page's own navigation under a Back control, and Back returns to the
+// the page's own navigation over a Back control, and Back returns to the
 // workspace sidebar with its Terminal view.
 func TestInnerPageSidebarPinsPageNavAndBack(t *testing.T) {
 	s := NewShell()
@@ -39,7 +86,7 @@ func TestSettingsNavLivesInAppSidebar(t *testing.T) {
 	s.router.Replace("/settings/general")
 
 	tester := ui.NewTester(s.View, 1200, 800)
-	for _, want := range []string{"Settings", "General", "Terminal", "Providers", "Runtime", "Diagnostics"} {
+	for _, want := range []string{"Settings", "General", "Terminal", "Agents", "Diagnostics"} {
 		if !tester.HasText(want) {
 			t.Fatalf("settings sidebar missing %q; texts=%q", want, tester.Texts())
 		}

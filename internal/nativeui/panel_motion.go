@@ -50,22 +50,33 @@ func slideWidth(host ui.Element, key any, closed bool, openWidth float32) float3
 	return host.Animate(key, target, panelSlideDuration)
 }
 
-// sidebarSlide mounts the sidebar — plus its zone gutter to the content
-// column — inside the persistent slide host.
+// sidebarSlide mounts the full-height sidebar — its title-bar band, then the
+// navigator — inside the persistent slide host, sliding out to the left as it
+// hides. With a vibrancy window the column draws nothing and the material
+// shows through; without one it falls back to the opaque sidebar token. A
+// hairline marks its trailing edge.
 func (s *Shell) sidebarSlide(c *ui.Context) {
 	// The reference tree and Terminal must have identical sidebar geometry.
+	const full = sidebarWidth + 1
 	host := ui.Row(c.Key("sidebar-slide")).Shrink(0).AlignItems(ui.Stretch)
-	w := slideWidth(host, "width", s.sidebarCollapsed, sidebarWidth+gorexGap)
+	w := slideWidth(host, "width", s.sidebarCollapsed, full)
+	s.sidebarSlideW = w
 	if w <= panelSlideEpsilon {
+		s.sidebarSlideW = 0
 		return
 	}
 	host.Width(w).Clip()
 	host.Children(func() {
-		s.sidebar(c)
-		// The zone gutter between the sidebar and the content column
-		// (2026-10-06): the sidebar has no card edge of its own, so the
-		// cards' margins alone did not read as a gap. Sidebar-visible
-		// content starts a full gorexGap further in.
-		ui.Box(c).Width(gorexGap).Shrink(0).PassThrough()
+		ui.Row(c).Width(full).Shrink(0).AlignItems(ui.Stretch).Margin(0, 0, 0, w-full).Children(func() {
+			column := ui.Column(c).Width(sidebarWidth).Shrink(0)
+			if !c.Vibrancy() {
+				column.Background(s.tokens(c.Theme().Dark).Sidebar)
+			}
+			column.Children(func() {
+				s.sidebarBand(c)
+				s.sidebar(c)
+			})
+			ui.Box(c).Width(1).Background(s.tokens(c.Theme().Dark).BorderSubtle)
+		})
 	})
 }

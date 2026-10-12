@@ -104,7 +104,7 @@ func (s *Shell) pinnedItemsView(c *ui.Context) {
 				ui.Column(c).Grow(1).MinWidth(0).Gap(0).Children(func() {
 					ui.Text(c, label).FontSize(Typography().Body).SingleLine()
 					if cwd != "" {
-						ui.Text(c, cwd).FontSize(9).TextColor(t.TextMuted).SingleLine()
+						ui.Text(c, cwd).FontSize(Typography().Micro).TextColor(t.TextMuted).SingleLine()
 					}
 				})
 			})

@@ -48,7 +48,7 @@ func TestHistoryNoResultsCanClearFilters(t *testing.T) {
 	shell.router.Replace(routeHistory)
 	tester := ui.NewTester(shell.View, 1200, 800)
 	tester.Frame() // the rail renders before the initial History page load
-	if !tester.HasText("Build history") || !tester.HasText("1 sessions") {
+	if !tester.HasText("Build history") || !tester.HasText("1 session") {
 		t.Fatalf("initial list missing: %q", tester.Texts())
 	}
 	shell.hist.query = "session-not-present"

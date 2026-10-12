@@ -6,12 +6,23 @@ import "github.com/egoist/mygo/ui"
 // set owns every common font size, spacing step, radius and control height.
 type TypographyTokens struct {
 	Title     float32 // page title
+	Heading   float32 // detail and sub-page titles
 	Section   float32 // card/section title
 	Body      float32 // primary reading text
 	BodySmall float32 // secondary reading text
 	Caption   float32 // metadata line
 	Micro     float32 // badges, footnotes
 }
+
+// Font weights. Regular text carries most of the UI; emphasis is one step up
+// (medium or semibold), bold is for page titles and numerals. Nothing sits in
+// between — near-identical weights (600/650/700) read as noise, not hierarchy.
+const (
+	WeightRegular  = 400
+	WeightMedium   = 500
+	WeightSemibold = 600
+	WeightBold     = 700
+)
 
 type SpaceTokens struct {
 	XXS float32
@@ -40,15 +51,17 @@ type ControlTokens struct {
 	PaletteField float32
 }
 
-// Typography returns the shared type scale.
+// Typography returns the shared type scale. It follows macOS' own: 13pt
+// section titles, 12pt body, 11pt secondary, with nothing below 10pt.
 func Typography() TypographyTokens {
 	return TypographyTokens{
-		Title:     18,
+		Title:     20,
+		Heading:   16,
 		Section:   13,
-		Body:      11.5,
-		BodySmall: 10.5,
-		Caption:   10,
-		Micro:     9,
+		Body:      12,
+		BodySmall: 11,
+		Caption:   10.5,
+		Micro:     10,
 	}
 }
 
@@ -118,4 +131,44 @@ func (t DesignTokens) StatusColor(tone StatusTone, dark bool) ui.Color {
 func (t DesignTokens) StatusBackground(tone StatusTone, dark bool) ui.Color {
 	color := t.StatusColor(tone, dark)
 	return color.Alpha(0.13)
+}
+
+// TileTone is the fill of a colored icon tile (iconTile): the saturated
+// system colors macOS paints behind sidebar and Settings glyphs. Tiles mark
+// destinations and categories; state keeps using StatusTone.
+type TileTone uint8
+
+const (
+	TileGray TileTone = iota
+	TileBlue
+	TileGreen
+	TileOrange
+	TileRed
+	TilePink
+	TilePurple
+	TileTeal
+	TileYellow
+	TileIndigo
+)
+
+var tileColors = [...][2]ui.Color{
+	TileGray:   {ui.Hex("#8e8e93"), ui.Hex("#8e8e93")},
+	TileBlue:   {ui.Hex("#007aff"), ui.Hex("#0a84ff")},
+	TileGreen:  {ui.Hex("#34c759"), ui.Hex("#30d158")},
+	TileOrange: {ui.Hex("#ff9500"), ui.Hex("#ff9f0a")},
+	TileRed:    {ui.Hex("#ff3b30"), ui.Hex("#ff453a")},
+	TilePink:   {ui.Hex("#ff2d55"), ui.Hex("#ff375f")},
+	TilePurple: {ui.Hex("#af52de"), ui.Hex("#bf5af2")},
+	TileTeal:   {ui.Hex("#30b0c7"), ui.Hex("#40c8e0")},
+	TileYellow: {ui.Hex("#ffb800"), ui.Hex("#ffc60a")},
+	TileIndigo: {ui.Hex("#5856d6"), ui.Hex("#5e5ce6")},
+}
+
+// Color resolves the tile fill for the active appearance.
+func (t TileTone) Color(dark bool) ui.Color {
+	pair := tileColors[t]
+	if dark {
+		return pair[1]
+	}
+	return pair[0]
 }

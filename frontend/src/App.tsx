@@ -98,6 +98,11 @@ export function App() {
   // pinned to the messages the user was reading.
   const headRef = useRef("");
   const heightRef = useRef(0);
+  // A different conversation opens at its newest message, wherever the last
+  // one was scrolled to.
+  useLayoutEffect(() => {
+    stickToBottom.current = true;
+  }, [state?.conversationId]);
   useLayoutEffect(() => {
     const log = logRef.current;
     if (!log) return;
@@ -130,6 +135,9 @@ export function App() {
   // Drafts persist per conversation across pane switches and page reloads
   // (session storage, keyed by conversation id).
   const conversationId = state?.conversationId ?? "";
+  // A past session opened from Sessions: the transcript alone, nothing to
+  // send, answer or queue.
+  const readOnly = state?.readOnly === true;
   useEffect(() => {
     if (!conversationId) return;
     setDraft(sessionStorage.getItem(draftKey(conversationId)) ?? "");
@@ -498,7 +506,7 @@ export function App() {
           New messages ↓
         </button>
       ) : null}
-      {state?.interactions?.length ? (
+      {!readOnly && state?.interactions?.length ? (
         <div className="dock" role="alert">
           {state.interactions.map((interaction) => (
             <div className="interaction" key={interaction.id}>
@@ -559,108 +567,110 @@ export function App() {
           ))}
         </div>
       ) : null}
-      <div className="composer">
-        {state?.outcome ? <div className="outcome">{state.outcome}</div> : null}
-        {state?.queuedText ? (
-          <div className="queued">
-            <span>Queued after turn</span>
-            <button type="button" onClick={cancelQueued}>
-              Cancel
-            </button>
-          </div>
-        ) : null}
-        {completions.length > 0 ? (
-          <div className="completions">
-            {completions.map((name, index) => (
-              <button
-                key={name}
-                type="button"
-                className={index === completionPick ? "pick" : ""}
-                onMouseDown={(event) => {
-                  event.preventDefault(); // keep the textarea focus
-                  acceptCompletion(index);
-                }}
-              >
-                {name}
+      {readOnly ? null : (
+        <div className="composer">
+          {state?.outcome ? <div className="outcome">{state.outcome}</div> : null}
+          {state?.queuedText ? (
+            <div className="queued">
+              <span>Queued after turn</span>
+              <button type="button" onClick={cancelQueued}>
+                Cancel
               </button>
-            ))}
-          </div>
-        ) : null}
-        <div className="composer-row">
-          <button
-            type="button"
-            className="attach"
-            title="Attach a file (inserts an @path mention)"
-            onClick={() => void attach()}
-          >
-            +
-          </button>
-          <button
-            type="button"
-            className={`attach mic${recording ? " recording" : ""}`}
-            title={recording ? "Stop and transcribe" : "Dictate"}
-            disabled={transcribing}
-            onClick={() => (recording ? stopDictation() : void startDictation())}
-          >
-            {recording ? "■" : "Mic"}
-          </button>
-          {recording ? <canvas ref={meterRef} className="mic-meter" width={44} height={28} aria-hidden /> : null}
-          <textarea
-            ref={composerRef}
-            value={draft}
-            placeholder="Send a message… (@ to mention file)"
-            aria-label="Chat prompt"
-            onChange={(event) => setDraft(event.target.value)}
-            onKeyDown={onKeyDown}
-            onCompositionStart={() => (composingRef.current = true)}
-            onCompositionEnd={() => (composingRef.current = false)}
-          />
-          {working && draft.trim() !== "" ? (
-            <button
-              type="button"
-              className="interrupt"
-              title="Interrupt current turn and send message"
-              disabled={sending || interrupting}
-              onClick={() => void interruptSend()}
-            >
-              {interrupting ? "Interrupting…" : "Interrupt & send"}
-            </button>
+            </div>
           ) : null}
-          {showStop ? (
-            <button type="button" className="primary stop" onClick={() => void stop()}>
-              Stop
-            </button>
-          ) : (
+          {completions.length > 0 ? (
+            <div className="completions">
+              {completions.map((name, index) => (
+                <button
+                  key={name}
+                  type="button"
+                  className={index === completionPick ? "pick" : ""}
+                  onMouseDown={(event) => {
+                    event.preventDefault(); // keep the textarea focus
+                    acceptCompletion(index);
+                  }}
+                >
+                  {name}
+                </button>
+              ))}
+            </div>
+          ) : null}
+          <div className="composer-row">
             <button
               type="button"
-              className="primary"
-              disabled={!(canSend || canQueue)}
-              onClick={() => void send()}
+              className="attach"
+              title="Attach a file (inserts an @path mention)"
+              onClick={() => void attach()}
             >
-              {working ? "Queue" : "Send"}
+              +
             </button>
-          )}
+            <button
+              type="button"
+              className={`attach mic${recording ? " recording" : ""}`}
+              title={recording ? "Stop and transcribe" : "Dictate"}
+              disabled={transcribing}
+              onClick={() => (recording ? stopDictation() : void startDictation())}
+            >
+              {recording ? "■" : "Mic"}
+            </button>
+            {recording ? <canvas ref={meterRef} className="mic-meter" width={44} height={28} aria-hidden /> : null}
+            <textarea
+              ref={composerRef}
+              value={draft}
+              placeholder="Send a message… (@ to mention file)"
+              aria-label="Chat prompt"
+              onChange={(event) => setDraft(event.target.value)}
+              onKeyDown={onKeyDown}
+              onCompositionStart={() => (composingRef.current = true)}
+              onCompositionEnd={() => (composingRef.current = false)}
+            />
+            {working && draft.trim() !== "" ? (
+              <button
+                type="button"
+                className="interrupt"
+                title="Interrupt current turn and send message"
+                disabled={sending || interrupting}
+                onClick={() => void interruptSend()}
+              >
+                {interrupting ? "Interrupting…" : "Interrupt & send"}
+              </button>
+            ) : null}
+            {showStop ? (
+              <button type="button" className="primary stop" onClick={() => void stop()}>
+                Stop
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="primary"
+                disabled={!(canSend || canQueue)}
+                onClick={() => void send()}
+              >
+                {working ? "Queue" : "Send"}
+              </button>
+            )}
+          </div>
+          <div className="composer-status">
+            <span className="composer-note-text">
+              {voiceError || (state?.interactions?.length
+                ? "Waiting for your input above."
+                : disposition === "terminal"
+                  ? "Blocked — input required in terminal."
+                  : working
+                    ? "Working • Queue appends follow-up; Interrupt sends immediately."
+                    : transcribing
+                      ? "Transcribing…"
+                      : recording
+                        ? "Listening… click ■ to finish."
+                        : "")}
+            </span>
+            <span className="composer-facts">
+              {state?.contextTokens ? <ContextRing used={state.contextTokens} /> : null}
+              {state?.model ? <span className="model-pill">{state.model}</span> : null}
+            </span>
+          </div>
         </div>
-        <div className="composer-status">
-          <span className="composer-note-text">
-            {voiceError || (state?.interactions?.length
-              ? "Waiting for your input above."
-              : disposition === "terminal"
-                ? "Blocked — input required in terminal."
-                : working
-                  ? "Working • Queue appends follow-up; Interrupt sends immediately."
-                  : transcribing
-                    ? "Transcribing…"
-                    : recording
-                      ? "Listening… click ■ to finish."
-                      : "")}
-          </span>
-          <span className="composer-facts">
-            {state?.contextTokens ? <ContextRing used={state.contextTokens} /> : null}
-            {state?.model ? <span className="model-pill">{state.model}</span> : null}
-          </span>
-        </div>
-      </div>
+      )}
     </div>
   );
 }

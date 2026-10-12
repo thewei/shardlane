@@ -21,12 +21,12 @@ func gitActionBarCompact(windowWidth float32, sidebarVisible, inspectorVisible b
 	if windowWidth <= 0 {
 		return false // no geometry established yet
 	}
-	center := windowWidth - 2*gorexGap
+	center := windowWidth
 	if sidebarVisible {
-		center -= sidebarWidth + gorexGap
+		center -= sidebarWidth
 	}
 	if inspectorVisible {
-		center -= float32(inspectorWidth) + gorexGap
+		center -= float32(inspectorWidth)
 	}
 	return center < gitActionBarMinExpandedCenterWidth
 }
@@ -44,9 +44,9 @@ func (s *Shell) gitWorkbenchActionBar(c *ui.Context) {
 	width, _ := c.Size()
 	// The file navigator is a separate column inside the center: don't
 	// overestimate the actual Diff toolbar space at common window widths.
-	actualDiffWidth := width - 2*gorexGap - gitFilePaneDefaultWidth
+	actualDiffWidth := width - gitFilePaneDefaultWidth
 	if !s.sidebarCollapsed {
-		actualDiffWidth -= sidebarWidth + gorexGap
+		actualDiffWidth -= sidebarWidth
 	}
 	compact := actualDiffWidth < gitActionBarMinExpandedCenterWidth
 	ui.Row(c).FillWidth().MinWidth(0).Gap(sp.S).AlignItems(ui.Center).Children(func() {
@@ -57,12 +57,12 @@ func (s *Shell) gitWorkbenchActionBar(c *ui.Context) {
 		canStage := !s.git.opBusy && len(stage) > 0 && (!busySequencer || s.git.sequencer.Unmerged == 0)
 		canUnstage := !s.git.opBusy && len(unstage) > 0 && !busySequencer
 		if !compact {
-			stageBtn := ui.Button(c, "Stage All").FontSize(Typography().Caption)
+			stageBtn := compactButton(c, "Stage All")
 			stageBtn.Disabled(!canStage)
 			if stageBtn.Clicked() {
 				s.stageFiles(stage)
 			}
-			unstageBtn := ui.Button(c, "Unstage All").FontSize(Typography().Caption)
+			unstageBtn := compactButton(c, "Unstage All")
 			unstageBtn.Disabled(!canUnstage)
 			if unstageBtn.Clicked() {
 				s.unstageFiles(unstage)

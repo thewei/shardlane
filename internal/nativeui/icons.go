@@ -9,22 +9,28 @@ import "github.com/egoist/mygo/ui"
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 
+// iconStroke is the one stroke weight of every outline icon (24-unit grid):
+// a light, SF-Symbols-like line. Heavier strokes made small glyphs read as
+// clip-art, so weight is tuned here and nowhere else.
+const iconStroke = "1.5"
+
 func icon(shapes string) *ui.SVG {
-	return ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">` + shapes + `</svg>`))
+	return ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="` + iconStroke + `" stroke-linecap="round" stroke-linejoin="round">` + shapes + `</svg>`))
 }
 
 // The icon language follows the same light outline vocabulary as Lucide/shadcn
 // while remaining self-contained in the native executable.
 var (
-	iconWorkspace        = icon(`<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M8 5V3h8v2"/>`)
-	iconGlobe            = icon(`<circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>`)
-	iconFolder           = icon(`<path d="M3 7h7l2 2h9v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M3 7V5a2 2 0 0 1 2-2h5l2 2"/>`)
-	iconFolderOpen       = icon(`<path d="M3 7h7l2 2h9"/><path d="M3 7V5a2 2 0 0 1 2-2h5l2 2"/><path d="M3 10h18l-2 9H5z"/>`)
-	iconTab              = icon(`<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 9h10"/>`)
-	iconTerminal         = icon(`<rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3 3-3 3"/><path d="M13 15h4"/>`)
+	iconWorkspace   = icon(`<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M8 5V3h8v2"/>`)
+	iconGlobe       = icon(`<circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>`)
+	iconFolder      = icon(`<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>`)
+	iconFolderOpen  = icon(`<path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/>`)
+	iconTab         = icon(`<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 9h10"/>`)
+	iconTerminal    = icon(`<rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3 3-3 3"/><path d="M13 15h4"/>`)
 	iconChat        = icon(`<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>`)
 	iconAgent       = icon(`<circle cx="12" cy="8" r="4"/><path d="M5 21a7 7 0 0 1 14 0"/>`)
-	iconAgentBot    = icon(`<path d="M12 8V4H8"/><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/>`)
+	iconActivity    = icon(`<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>`)
+	iconInfo        = icon(`<circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8h.01"/>`)
 	iconSearch      = icon(`<circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/>`)
 	iconHistory     = icon(`<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l3 2"/>`)
 	iconSettings    = icon(`<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6V21h-4v-.1a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H3v-4h.1a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1a1.7 1.7 0 0 0 1.9.3A1.7 1.7 0 0 0 10 3V3h4v.1a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9A1.7 1.7 0 0 0 21 10h.1v4H21a1.7 1.7 0 0 0-1.6 1z"/>`)
@@ -38,12 +44,12 @@ var (
 	iconChevronDown = icon(`<path d="m6 9 6 6 6-6"/>`)
 	iconBranch      = icon(`<circle cx="6" cy="6" r="3"/><path d="M6 9v3a3 3 0 0 0 3 3h6"/><circle cx="18" cy="18" r="3"/><path d="M18 15V9a3 3 0 0 0-3-3"/>`)
 	iconFile        = icon(`<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/>`)
-	iconChanges     = icon(`<path d="M14 3h5a2 2 0 0 1 2 2v7"/><path d="M8 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"/><path d="M12 9v6M9 12h6"/><path d="M14 17h6M17 14v6"/>`)
+	iconChanges     = icon(`<path d="M12 3v14"/><path d="M5 10h14"/><path d="M5 21h14"/>`)
 	iconPin         = icon(`<path d="M12 17v5"/><path d="M9 3h6l1 7 3 3H5l3-3 1-7Z"/>`)
-	iconTrash       = icon(`<path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/>`)
+	iconEyeOff      = icon(`<path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.4 10.4 0 0 1 12 5c7 0 10 7 10 7a13.2 13.2 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.5 13.5 0 0 0 2 12s3 7 10 7a9.7 9.7 0 0 0 5.39-1.61"/><path d="M2 2l20 20"/>`)
 	iconEllipsis    = icon(`<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>`)
 	iconTask        = icon(`<rect x="3" y="3" width="18" height="18" rx="3"/><path d="m8 12 2.5 2.5L16 9"/>`)
-	iconPanel       = icon(`<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/>`)
+	iconPanel       = icon(`<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/>`)
 	iconMinus       = icon(`<path d="M5 12h14"/>`)
 	iconSquare      = icon(`<rect width="18" height="18" x="3" y="3" rx="2"/>`)
 )

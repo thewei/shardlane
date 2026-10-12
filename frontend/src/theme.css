@@ -3,30 +3,30 @@
    follows the system via matchMedia (App.tsx sets data-theme). */
 
 :root {
-  --content: #f7f2f4;
+  --content: #f5f5f7;
   --panel: #ffffff;
-  --border-subtle: rgba(0, 0, 0, 0.09);
-  --text: #241f28;
-  --text-muted: #6f6878;
-  --accent: #7c4d64;
+  --border-subtle: rgba(0, 0, 0, 0.08);
+  --text: #18181b;
+  --text-muted: #71717a;
+  --accent: #0a84ff;
   --accent-contrast: #ffffff;
-  --danger: #b3405b;
-  --danger-bg: rgba(179, 64, 91, 0.1);
+  --danger: #ff3b30;
+  --danger-bg: rgba(255, 59, 48, 0.1);
   --ok: #2f7d5c;
   --working: #8a6d1f;
   --code-bg: rgba(0, 0, 0, 0.05);
 }
 
 :root[data-theme="dark"] {
-  --content: #231e27;
-  --panel: #2c2631;
-  --border-subtle: rgba(255, 255, 255, 0.1);
-  --text: #efe9f1;
-  --text-muted: #a49aab;
-  --accent: #d8a4bc;
-  --accent-contrast: #241f28;
-  --danger: #e08498;
-  --danger-bg: rgba(224, 132, 152, 0.12);
+  --content: #161618;
+  --panel: #1f1f22;
+  --border-subtle: rgba(255, 255, 255, 0.08);
+  --text: #f4f4f5;
+  --text-muted: #98989f;
+  --accent: #0a84ff;
+  --accent-contrast: #ffffff;
+  --danger: #ff453a;
+  --danger-bg: rgba(255, 69, 58, 0.14);
   --ok: #6fc29b;
   --working: #d4b45e;
   --code-bg: rgba(255, 255, 255, 0.07);

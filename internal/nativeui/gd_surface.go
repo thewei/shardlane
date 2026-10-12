@@ -163,10 +163,10 @@ func (s *Shell) gdSyncButtons(c *ui.Context, pal *gdPalette) {
 	if st := s.git.upstream; st.OK && (st.Ahead > 0 || st.Behind > 0) {
 		ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
 			if st.Ahead > 0 {
-				ui.Text(c, "↑"+itoa(st.Ahead)).Font(gdCodeFont()).FontSize(11).FontWeight(600).TextColor(pal.addText)
+				ui.Text(c, "↑"+itoa(st.Ahead)).Font(gdCodeFont()).FontSize(Typography().BodySmall).FontWeight(WeightSemibold).TextColor(pal.addText)
 			}
 			if st.Behind > 0 {
-				ui.Text(c, "↓"+itoa(st.Behind)).Font(gdCodeFont()).FontSize(11).FontWeight(600).TextColor(pal.delText)
+				ui.Text(c, "↓"+itoa(st.Behind)).Font(gdCodeFont()).FontSize(Typography().BodySmall).FontWeight(WeightSemibold).TextColor(pal.delText)
 			}
 		}).Tooltip("Ahead/behind " + st.Remote + "/" + st.Branch)
 	}
@@ -197,7 +197,7 @@ func (s *Shell) gdDiffRow(c *ui.Context, pal *gdPalette, i int) {
 		s.gdFileHeader(c, pal, int(r.file), f)
 	case gdRowNote:
 		s.gdCard(c, pal).Padding(10, 16).Background(pal.gapBg).Children(func() {
-			ui.Text(c, s.gdFileNote(f)).FontSize(12).TextColor(pal.gapText)
+			ui.Text(c, s.gdFileNote(f)).FontSize(Typography().Body).TextColor(pal.gapText)
 		})
 	case gdRowGap:
 		s.gdGapRow(c, pal, f, r)
@@ -344,9 +344,9 @@ func (s *Shell) gdFileHeader(c *ui.Context, pal *gdPalette, idx int, f *gdFile) 
 				ui.RichText(c,
 					ui.Span{Text: dir, Color: t.TextMuted},
 					ui.Span{Text: name, Color: pathColor, Weight: 600},
-				).Font(gdCodeFont()).FontSize(13).SingleLine()
+				).Font(gdCodeFont()).FontSize(Typography().Section).SingleLine()
 				if cf.OldPath != "" && cf.OldPath != cf.Path {
-					ui.Text(c, "from "+cf.OldPath).Font(gdCodeFont()).FontSize(11).TextColor(t.TextMuted).SingleLine()
+					ui.Text(c, "from "+cf.OldPath).Font(gdCodeFont()).FontSize(Typography().BodySmall).TextColor(t.TextMuted).SingleLine()
 				}
 			})
 		})
@@ -369,12 +369,12 @@ func (s *Shell) gdFileHeader(c *ui.Context, pal *gdPalette, idx int, f *gdFile) 
 		if adds, dels := f.sideCounts(); gdCountable(cf) && (adds > 0 || dels > 0) {
 			ui.Row(c).Gap(8).Padding(4, 9).Radius(14).Background(pal.pill).Shrink(0).
 				Tooltip(gdLines(adds, "added") + ", " + gdLines(dels, "removed")).Children(func() {
-				ui.Text(c, "+"+gdThousands(adds)).Font(gdCodeFont()).FontSize(12).FontWeight(600).TextColor(pal.addText)
-				ui.Text(c, "-"+gdThousands(dels)).Font(gdCodeFont()).FontSize(12).FontWeight(600).TextColor(pal.delText)
+				ui.Text(c, "+"+gdThousands(adds)).Font(gdCodeFont()).FontSize(Typography().Body).FontWeight(WeightSemibold).TextColor(pal.addText)
+				ui.Text(c, "-"+gdThousands(dels)).Font(gdCodeFont()).FontSize(Typography().Body).FontWeight(WeightSemibold).TextColor(pal.delText)
 			})
 		}
 		if cf.Generated {
-			ui.Text(c, "Generated").FontSize(11).FontWeight(600).Padding(4, 9).Radius(14).
+			ui.Text(c, "Generated").FontSize(Typography().BodySmall).FontWeight(WeightSemibold).Padding(4, 9).Radius(14).
 				Background(pal.ref.Alpha(0.15)).TextColor(pal.ref).Shrink(0)
 		}
 		s.gdViewedButton(c, pal, f, viewed)
@@ -405,7 +405,7 @@ func (s *Shell) gdViewedButton(c *ui.Context, pal *gdPalette, f *gdFile, viewed 
 		} else {
 			box.Border(1.5, ui.RGBA(127, 127, 127, 0.45))
 		}
-		ui.Text(c, "Viewed").FontSize(12).FontWeight(600).TextColor(map[bool]ui.Color{true: pal.viewed, false: t.Text}[viewed])
+		ui.Text(c, "Viewed").FontSize(Typography().Body).FontWeight(WeightSemibold).TextColor(map[bool]ui.Color{true: pal.viewed, false: t.Text}[viewed])
 	})
 }
 
@@ -473,7 +473,7 @@ func (s *Shell) gdGapRow(c *ui.Context, pal *gdPalette, f *gdFile, r *gdRow) {
 			if n == 1 {
 				text = "1 unmodified line"
 			}
-			ui.Text(c, text).FontSize(12).TextColor(pal.gapText)
+			ui.Text(c, text).FontSize(Typography().Body).TextColor(pal.gapText)
 		})
 		if label.Hovered() && can {
 			label.Underline()
@@ -492,7 +492,7 @@ func (s *Shell) gdGapRow(c *ui.Context, pal *gdPalette, f *gdFile, r *gdRow) {
 		}
 		if n > gdExpandStep {
 			b := ui.ButtonBase(c).Padding(3, 8).Radius(6).Disabled(!can).Children(func() {
-				ui.Text(c, "Expand all").FontSize(12).FontWeight(600).TextColor(pal.gapText)
+				ui.Text(c, "Expand all").FontSize(Typography().Body).FontWeight(WeightSemibold).TextColor(pal.gapText)
 			})
 			if b.Hovered() {
 				b.Background(pal.hover)
@@ -502,7 +502,7 @@ func (s *Shell) gdGapRow(c *ui.Context, pal *gdPalette, f *gdFile, r *gdRow) {
 			}
 		}
 		if h := int(r.gap); h < len(f.hunks()) && f.hunks()[h].Section != "" {
-			ui.Text(c, f.hunks()[h].Section).Font(gdCodeFont()).FontSize(12).TextColor(pal.gapText).SingleLine().Grow(1).Shrink(1).MinWidth(0)
+			ui.Text(c, f.hunks()[h].Section).Font(gdCodeFont()).FontSize(Typography().Body).TextColor(pal.gapText).SingleLine().Grow(1).Shrink(1).MinWidth(0)
 		}
 	})
 }
@@ -717,15 +717,15 @@ func (s *Shell) gdCommitCard(c *ui.Context, pal *gdPalette) {
 		ui.Row(c).FillWidth().Padding(10, 16).Gap(12).AlignItems(ui.Center).
 			Radius(gdCardRadius).Background(pal.headerBg).Border(1, pal.cardBorder).Children(func() {
 			ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Gap(1).Children(func() {
-				ui.Text(c, cm.Subject).FontSize(14).FontWeight(600).SingleLine()
+				ui.Text(c, cm.Subject).FontSize(Typography().Section).FontWeight(WeightSemibold).SingleLine()
 				ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 					ui.Textf(c, "%s committed %s", cm.Author, gdRelativeTime(cm.Time)).
-						FontSize(11).TextColor(t.TextMuted).Shrink(0)
+						FontSize(Typography().BodySmall).TextColor(t.TextMuted).Shrink(0)
 					ui.Spacer(c)
-					ui.Text(c, cm.Short).Font(gdCodeFont()).FontSize(12).TextColor(pal.ref).Shrink(0)
+					ui.Text(c, cm.Short).Font(gdCodeFont()).FontSize(Typography().Body).TextColor(pal.ref).Shrink(0)
 				})
 			})
-			if ui.Button(c, "Back to Local Changes").FontSize(Typography().Micro).Shrink(0).Clicked() {
+			if compactButton(c, "Back to Local Changes").Shrink(0).Clicked() {
 				s.reviewLocalChanges()
 			}
 		})
@@ -793,7 +793,7 @@ func gdSearchInput(c *ui.Context, query *string, placeholder string, focus, typi
 	box := ui.Row(c).Height(28).Padding(0, 6, 0, 8).Gap(6).Radius(7).Background(ui.RGBA(127, 127, 127, 0.12))
 	box.Children(func() {
 		ui.Icon(c, iconSearch).FontSize(13).TextColor(t.TextMuted)
-		in := ui.TextInputBase(c, query).Placeholder(placeholder).Label(placeholder).FontSize(13).Grow(1).MinWidth(0)
+		in := ui.TextInputBase(c, query).Placeholder(placeholder).Label(placeholder).FontSize(Typography().Section).Grow(1).MinWidth(0)
 		if *focus {
 			in.Focus()
 			*focus = false
@@ -824,13 +824,12 @@ func (s *Shell) gdEmptyPanel(c *ui.Context, _ *gdPalette, title, detail string, 
 	workspaceEmptyBanner(c, iconFileDiff, title, detail, actions)
 }
 
-// gdThinking shows that the changes are loading.
+// gdThinking is the loading state of the changes view.
 func (s *Shell) gdThinking(c *ui.Context) {
 	t := c.Theme()
 	ui.Column(c).Grow(1).Center().Gap(8).Children(func() {
 		ui.Spinner(c).Size(18, 18)
-		label := ui.Text(c, "Thinking…").Italic().FontSize(13).Font(gdCodeFont()).TextColor(t.TextMuted)
-		label.Opacity(0.5 + 0.5*label.Loop("pulse", 1600*time.Millisecond, ui.Bounce(ui.EaseInOut)))
+		ui.Text(c, "Loading changes…").FontSize(Typography().Body).TextColor(t.TextMuted)
 	})
 }
 
@@ -840,8 +839,8 @@ func (s *Shell) gdChangedPill(c *ui.Context, pal *gdPalette) {
 	ui.Row(c).Justify(ui.Center).Padding(8, 12, 0).Children(func() {
 		ui.Row(c).Gap(6).Padding(5, 6, 5, 12).Radius(16).Background(pal.viewed.Alpha(0.1).Over(pal.codeBg)).
 			Border(1, pal.viewed.Alpha(0.2)).Children(func() {
-			ui.Text(c, "Local changes detected,").FontSize(13).FontWeight(600).TextColor(pal.viewed.Mix(t.Text, 0.6))
-			ui.Text(c, "use sidebar ↻ to refresh.").FontSize(12).TextColor(t.TextMuted)
+			ui.Text(c, "Files changed on disk").FontSize(Typography().Section).FontWeight(WeightSemibold).TextColor(pal.viewed.Mix(t.Text, 0.6))
+			ui.Text(c, "Refresh to update.").FontSize(Typography().Body).TextColor(t.TextMuted)
 			if gdIconButton(c, iconClose, "Dismiss").Size(22, 22).Clicked() {
 				s.git.staleBanner = false
 			}

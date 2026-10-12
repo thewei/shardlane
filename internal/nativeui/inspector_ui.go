@@ -33,39 +33,39 @@ func (s *Shell) inspectorPage(c *ui.Context, paneID string) {
 		if ok {
 			title = card.Title
 		}
-		pageHeader(c, title, "Read-only agent inspection: identity, status dimensions and bound conversation.")
+		pageHeader(c, title, "")
 		if s.inspector.errText != "" {
 			inlineNotice(c, ToneError, s.inspector.errText, nil)
 		}
 		if s.inspector.loading {
-			loadingState(c, "Loading inspector…")
+			loadingState(c, "Loading…")
 			return
 		}
 		ui.Scroll(c).Grow(1).Children(func() {
-			ui.Column(c).FillWidth().Padding(sp.M, sp.XL).Gap(sp.L).Children(func() {
+			ui.Column(c).FillWidth().MaxWidth(settingsContentMaxWidth).Padding(0, sp.XL, sp.XL).Gap(sp.XL).Children(func() {
 				if ok {
-					settingsCard(c, "Status dimensions", func() {
-						formRow(c, "Runtime phase", string(card.RuntimePhase), func() {})
-						formRow(c, "Sendability", string(card.Sendability), func() {})
-						formRow(c, "Attention", agent.OperationalLabel(card.Attention), func() {})
-						formRow(c, "Markers", markerText(card.Unread, card.ReviewPending), func() {})
-					})
-					settingsCard(c, "Location", func() {
-						formRow(c, "Project", card.ProjectName, func() {})
-						formRow(c, "Pane", card.PaneID, func() {})
-						formRow(c, "Tab", card.TabID, func() {})
-					})
+					settingsGroup(c, "Status",
+						row("Runtime", "", func() { valueText(c, string(card.RuntimePhase)) }),
+						row("Can receive input", "", func() { valueText(c, string(card.Sendability)) }),
+						row("Attention", "", func() { valueText(c, agent.OperationalLabel(card.Attention)) }),
+						row("Markers", "", func() { valueText(c, markerText(card.Unread, card.ReviewPending)) }),
+					)
+					settingsGroup(c, "Location",
+						row("Project", "", func() { valueText(c, card.ProjectName) }),
+						row("Pane", "", func() { valueText(c, card.PaneID) }),
+						row("Tab", "", func() { valueText(c, card.TabID) }),
+					)
 					s.inspectorUsageCard(c, card)
 				}
 				if s.inspector.window != nil && len(s.inspector.window.Messages) > 0 {
-					settingsCard(c, "Bound conversation (bounded window)", func() {
+					settingsCard(c, "Conversation", func() {
 						for _, message := range s.inspector.window.Messages {
 							if message.Text == "" {
 								continue
 							}
 							ui.Row(c).FillWidth().Gap(sp.S).Children(func() {
-								ui.Text(c, strings.ToUpper(string(message.Role))).FontSize(Typography().Micro).FontWeight(700).TextColor(t.TextMuted)
-								preview, _ := clipPreview(message.Text, 200, 4)
+								ui.Text(c, strings.ToUpper(string(message.Role))).FontSize(Typography().Micro).FontWeight(WeightSemibold).TextColor(t.TextMuted)
+								preview := clipPreview(message.Text, 200, 4)
 								ui.Text(c, preview).FontSize(Typography().BodySmall).Grow(1)
 							})
 						}
@@ -98,25 +98,27 @@ func (s *Shell) inspectorUsageCard(c *ui.Context, card agent.AgentCardModel) {
 		return
 	}
 	usage := agent.BuildAgentUsageSnapshot(card.Key, s.inspector.window.Meta)
-	settingsCard(c, "Usage facts", func() {
-		if !usage.HasFacts() {
-			formRow(c, "Usage", "No provider-reported facts", func() {})
-			return
-		}
-		if line := usage.FormatUsageLine(); line != "" {
-			formRow(c, "Summary", line, func() {})
-		}
-		if usage.Model != "" {
-			formRow(c, "Model", usage.Model, func() {})
-		}
-		if usage.Tokens != nil {
-			formRow(c, "Tokens", fmt.Sprintf("%s (%d)", agent.FormatTokenCount(*usage.Tokens), *usage.Tokens), func() {})
-		}
-		if usage.Quota != nil {
-			formRow(c, "Allowance", fmt.Sprintf("%s %d%% used", usage.Quota.Label, usage.Quota.UsedPercent), func() {})
-		}
-		formRow(c, "Source", string(usage.Source), func() {})
-	})
+	if !usage.HasFacts() {
+		settingsGroup(c, "Usage", row("Usage", "", func() { valueText(c, "Not reported") }))
+		return
+	}
+	var rows []settingsRow
+	if line := usage.FormatUsageLine(); line != "" {
+		rows = append(rows, row("Summary", "", func() { valueText(c, line) }))
+	}
+	if usage.Model != "" {
+		rows = append(rows, row("Model", "", func() { valueText(c, usage.Model) }))
+	}
+	if usage.Tokens != nil {
+		text := fmt.Sprintf("%s (%d)", agent.FormatTokenCount(*usage.Tokens), *usage.Tokens)
+		rows = append(rows, row("Tokens", "", func() { valueText(c, text) }))
+	}
+	if usage.Quota != nil {
+		text := fmt.Sprintf("%s %d%% used", usage.Quota.Label, usage.Quota.UsedPercent)
+		rows = append(rows, row("Allowance", "", func() { valueText(c, text) }))
+	}
+	rows = append(rows, row("Source", "", func() { valueText(c, string(usage.Source)) }))
+	settingsGroup(c, "Usage", rows...)
 }
 
 // loadInspector resolves the agent card and, when a conversation is bound,

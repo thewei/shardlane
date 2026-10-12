@@ -67,7 +67,7 @@ func (s *Shell) changesToolView(c *ui.Context) {
 				if strings.TrimSpace(s.changes.filter) != "" {
 					msg = "No matching files"
 				}
-				ui.Text(c, msg).FontSize(12).TextColor(t.TextMuted).Padding(12)
+				ui.Text(c, msg).FontSize(Typography().Body).TextColor(t.TextMuted).Padding(12)
 			}
 		})
 
@@ -118,9 +118,9 @@ func (s *Shell) gdChangesFooter(c *ui.Context, pal *gdPalette, snap *gitworkbenc
 			ui.Text(c, "partial").FontSize(Typography().Micro).TextColor(t.TextMuted)
 		}
 		ui.Row(c).Gap(6).Tooltip("Total change: " + gdLines(snap.TotalAdditions, "added") + ", " + gdLines(snap.TotalDeletions, "removed")).Children(func() {
-			ui.Text(c, "Total:").FontSize(11).FontWeight(600).TextColor(t.TextMuted)
-			ui.Text(c, "+"+gdThousands(snap.TotalAdditions)).Font(gdCodeFont()).FontSize(11).FontWeight(600).TextColor(pal.addText)
-			ui.Text(c, "-"+gdThousands(snap.TotalDeletions)).Font(gdCodeFont()).FontSize(11).FontWeight(600).TextColor(pal.delText)
+			ui.Text(c, "Total:").FontSize(Typography().BodySmall).FontWeight(WeightSemibold).TextColor(t.TextMuted)
+			ui.Text(c, "+"+gdThousands(snap.TotalAdditions)).Font(gdCodeFont()).FontSize(Typography().BodySmall).FontWeight(WeightSemibold).TextColor(pal.addText)
+			ui.Text(c, "-"+gdThousands(snap.TotalDeletions)).Font(gdCodeFont()).FontSize(Typography().BodySmall).FontWeight(WeightSemibold).TextColor(pal.delText)
 		})
 		// Commit is deliberately available only once, in the center
 		// Workbench toolbar. This footer is a read-only total summary.
@@ -186,7 +186,7 @@ func (s *Shell) renderChangesRow(c *ui.Context, pal *gdPalette, row gitworkbench
 				ic.Rotate(ic.Animate("rot", target, 150*time.Millisecond))
 			})
 			ui.Icon(c, iconFolder).FontSize(14).TextColor(muted)
-			ui.Text(c, node.Name).FontSize(13).SingleLine().Grow(1).Shrink(1).MinWidth(0).Tooltip(node.Path)
+			ui.Text(c, node.Name).FontSize(Typography().Section).SingleLine().Grow(1).Shrink(1).MinWidth(0).Tooltip(node.Path)
 			if !s.gdReviewingCommit() && (pane == gdViewUnstaged || pane == gdViewStaged) {
 				paths := gitDirectoryPaths(s.gitSnapshot(), node.Path, pane)
 				if len(paths) > 0 {
@@ -199,7 +199,7 @@ func (s *Shell) renderChangesRow(c *ui.Context, pal *gdPalette, row gitworkbench
 					if button.Hovered() {
 						button.Background(pal.hover)
 					}
-					button.Children(func() { ui.Text(c, label).FontSize(13).FontWeight(700) })
+					button.Children(func() { ui.Text(c, label).FontSize(Typography().Section).FontWeight(WeightSemibold) })
 					button.Disabled(s.git.opBusy)
 					if button.Clicked() {
 						action(paths)
@@ -213,7 +213,7 @@ func (s *Shell) renderChangesRow(c *ui.Context, pal *gdPalette, row gitworkbench
 		ui.Icon(c, iconFile).FontSize(14).TextColor(muted)
 		// Full path on hover (F113): the 250px pane truncates names so
 		// service_index.go and service_index_test.go read as the same row.
-		name := ui.Text(c, node.Name).FontSize(13).SingleLine().Grow(1).Shrink(1).MinWidth(0).Tooltip(node.Path)
+		name := ui.Text(c, node.Name).FontSize(Typography().Section).SingleLine().Grow(1).Shrink(1).MinWidth(0).Tooltip(node.Path)
 		if viewed && !(selected && focused) {
 			name.TextColor(t.TextMuted)
 		}
@@ -228,14 +228,14 @@ func (s *Shell) renderChangesRow(c *ui.Context, pal *gdPalette, row gitworkbench
 			if !r.Hovered() && !b.Hovered() {
 				b.Opacity(0)
 			}
-			b.Children(func() { ui.Text(c, tip).FontSize(12) })
+			b.Children(func() { ui.Text(c, tip).FontSize(Typography().Body) })
 			if b.Clicked() {
 				action([]string{cf.Path})
 			}
 		}
 		if gdCountable(&cf) && (cf.Additions > 0 || cf.Deletions > 0) {
 			ui.Textf(c, "+%s -%s", gdCompact(cf.Additions), gdCompact(cf.Deletions)).
-				Font(gdCodeFont()).FontSize(10).FontWeight(600).TextColor(muted).Shrink(0).
+				Font(gdCodeFont()).FontSize(Typography().Micro).FontWeight(WeightSemibold).TextColor(muted).Shrink(0).
 				Tooltip(gdLines(cf.Additions, "added") + ", " + gdLines(cf.Deletions, "removed"))
 		}
 		letter := gdStatusLetterColor(cf.Status, pal, t)
@@ -245,7 +245,7 @@ func (s *Shell) renderChangesRow(c *ui.Context, pal *gdPalette, row gitworkbench
 		case viewed:
 			letter = t.TextMuted
 		}
-		ui.Text(c, gdStatusLetter(&cf)).Font(gdCodeFont()).FontSize(11).FontWeight(700).TextColor(letter).
+		ui.Text(c, gdStatusLetter(&cf)).Font(gdCodeFont()).FontSize(Typography().BodySmall).FontWeight(WeightSemibold).TextColor(letter).
 			Width(12).TextAlign(ui.Center).Shrink(0)
 	})
 	// Directory disclosure is independent of List.Changed: selecting the

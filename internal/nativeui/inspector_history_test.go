@@ -47,10 +47,10 @@ func TestInspectorIdentityAndStatusDimensions(t *testing.T) {
 	tester := ui.NewTester(shell.View, 1200, 800)
 	for _, want := range []string{
 		"Ranger",
-		"Status dimensions",
-		"Runtime phase",
+		"Status",
+		"Runtime",
 		string(agent.PhaseBlocked),
-		"Sendability",
+		"Can receive input",
 		string(agent.NeedsTerminal),
 		"Attention",
 		agent.OperationalLabel(agent.OpNeedsAttention),
@@ -59,7 +59,7 @@ func TestInspectorIdentityAndStatusDimensions(t *testing.T) {
 		"Location",
 		"Pane",
 		"p1",
-		"Bound conversation (bounded window)",
+		"Conversation",
 		"Fix the flaky test",
 	} {
 		if !tester.HasText(want) {
@@ -83,10 +83,10 @@ func TestInspectorUnboundConversationStillRenders(t *testing.T) {
 	}
 	shell.router.Replace("/inspector/p1")
 	tester := ui.NewTester(shell.View, 1200, 800)
-	if !tester.HasText("Status dimensions") || !tester.HasText("Location") {
+	if !tester.HasText("Status") || !tester.HasText("Location") {
 		t.Fatalf("identity dimensions missing; texts=%q", tester.Texts())
 	}
-	if tester.HasText("Bound conversation (bounded window)") {
+	if tester.HasText("Conversation") {
 		t.Fatalf("unbound inspector rendered a transcript; texts=%q", tester.Texts())
 	}
 }
@@ -94,6 +94,7 @@ func TestInspectorUnboundConversationStillRenders(t *testing.T) {
 // TestSessionsGroupsByProject pins the N19 #9 grouped Sessions view:
 // sessions group under their project with counts, the "No project" fallback
 // catches sessions without a path, and rows carry the resume-ready facts.
+// Only the latest project is open; the others unfold on a header click.
 func TestSessionsGroupsByProject(t *testing.T) {
 	shell := NewShell()
 	shell.hist.service = newFakeHistoryView()
@@ -114,12 +115,28 @@ func TestSessionsGroupsByProject(t *testing.T) {
 		"First",
 		"Second",
 		"No project",
-		"1 sessions",
-		"Loose",
+		"1 session",
 	} {
 		if !tester.HasText(want) {
 			t.Fatalf("grouped view missing %q; texts=%q", want, tester.Texts())
 		}
+	}
+	if tester.HasText("Loose") {
+		t.Fatalf("an older project must start collapsed; texts=%q", tester.Texts())
+	}
+	if err := tester.Click("Project No project"); err != nil {
+		t.Fatal(err)
+	}
+	tester.Frame()
+	if !tester.HasText("Loose") {
+		t.Fatalf("clicking the header did not open the project; texts=%q", tester.Texts())
+	}
+	if err := tester.Click("Project alpha"); err != nil {
+		t.Fatal(err)
+	}
+	tester.Frame()
+	if tester.HasText("First") || !tester.HasText("Loose") {
+		t.Fatalf("the latest project must collapse on a click, others stay; texts=%q", tester.Texts())
 	}
 	// Hidden by default: the recycle toggle reveals them, Restore returns.
 	shell.toggleSessionHidden("codex:c")

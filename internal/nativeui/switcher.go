@@ -86,7 +86,7 @@ func (s *Shell) agentSwitcherOverlay(c *ui.Context) {
 		ui.Column(c).Width(460).Padding(sp.L).Gap(sp.XS).
 			Radius(Radius().Card).Material(glass.Glass{}).
 			Border(1, designTokens(c.Theme().Dark).BorderSubtle).Children(func() {
-			ui.Text(c, "Switch Agent").FontSize(Typography().Section).FontWeight(650)
+			ui.Text(c, "Switch Agent").FontSize(Typography().Section).FontWeight(WeightSemibold)
 			ui.Text(c, fmt.Sprintf("Ctrl-Tab cycle · Enter commit · Esc cancel (%d agent%s)", len(cards), pluralS(len(cards)))).
 				FontSize(Typography().Caption).TextColor(c.Theme().TextMuted)
 			for index, card := range cards {

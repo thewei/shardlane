@@ -21,8 +21,8 @@ func (s *Shell) commitAISection(c *ui.Context, snap *gitworkbench.ChangesSnapsho
 	sp := Spacing()
 	t := c.Theme()
 	if !s.commitPromptPreviewOpen {
-		open := ui.Button(c, "Draft Commit Message…").FontSize(Typography().Caption).
-			Tooltip("Generate candidate with Pi or inspect prompt")
+		open := compactButton(c, "Draft Commit Message…").
+			Tooltip("Write a commit message with Pi")
 		open.Disabled(len(s.selectedCommitPaths()) == 0)
 		if open.Clicked() {
 			s.commitPromptPreviewOpen = true
@@ -36,23 +36,23 @@ func (s *Shell) commitAISection(c *ui.Context, snap *gitworkbench.ChangesSnapsho
 	ui.Column(c).FillWidth().MinWidth(0).Gap(sp.S).Padding(sp.M).
 		Border(1, designTokens(t.Dark).BorderSubtle).Radius(Radius().Control).Children(func() {
 		ui.Row(c).FillWidth().Gap(sp.S).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, "Commit message draft").FontSize(Typography().Section).FontWeight(650).Grow(1)
-			if ui.Button(c, "Hide draft").FontSize(Typography().Caption).Clicked() {
+			ui.Text(c, "Commit message draft").FontSize(Typography().Section).FontWeight(WeightSemibold).Grow(1)
+			if compactButton(c, "Hide draft").Clicked() {
 				s.cancelPiCommitSuggestion()
 				s.commitPromptPreviewOpen = false
 			}
 		})
 		ui.Textf(c, "%d included · %d sensitive excluded", preview.IncludedFiles, preview.ExcludedFiles).
 			FontSize(Typography().Caption).TextColor(t.TextMuted)
-		ui.Checkbox(c, &s.commitPromptIncludeExcerpt, "Include code excerpts (explicit opt-in)")
-		ui.Text(c, "Drafts candidate from staged changes based on commit rules (Settings → Git).").
+		ui.Checkbox(c, &s.commitPromptIncludeExcerpt, "Include code excerpts")
+		ui.Text(c, "Follows the commit rules in Settings → Git.").
 			FontSize(Typography().Caption).TextColor(t.TextMuted)
 		if preview.Text == "" {
-			ui.Text(c, "No eligible selected files. Sensitive paths stay excluded.").
+			ui.Text(c, "Nothing to summarize. Sensitive files are left out.").
 				FontSize(Typography().Caption).TextColor(t.Warning)
 		}
 		if preview.Truncated {
-			ui.Text(c, "Review shortened to the safety limit.").FontSize(Typography().Caption).
+			ui.Text(c, "The changes are long, so only part is included.").FontSize(Typography().Caption).
 				TextColor(t.Warning)
 		}
 		ui.Row(c).FillWidth().Gap(sp.S).Wrap().AlignItems(ui.Center).Children(func() {
@@ -97,7 +97,7 @@ func (s *Shell) commitAISection(c *ui.Context, snap *gitworkbench.ChangesSnapsho
 			}
 		}
 		if s.commitAIManualEntryOpen || s.commitAIResponse != "" {
-			ui.Text(c, "Suggested commit message").FontSize(Typography().Caption).FontWeight(650)
+			ui.Text(c, "Suggested commit message").FontSize(Typography().Caption).FontWeight(WeightSemibold)
 			ui.TextArea(c, &s.commitAIResponse).Height(76).Grow(0).
 				Placeholder("Subject followed by optional body").Label("Message suggestion")
 			if s.commitAIError != "" {

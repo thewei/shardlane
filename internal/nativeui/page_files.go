@@ -46,7 +46,7 @@ func (s *Shell) filesPage(c *ui.Context) {
 			BorderWidth(0, 0, 1, 0).BorderColor(tokens.BorderSubtle).Children(func() {
 			ui.Icon(c, iconFolder).Size(16, 16).TextColor(t.TextMuted)
 			ui.Column(c).Grow(1).MinWidth(0).Gap(sp.XXS).Children(func() {
-				ui.Text(c, "Files").FontSize(Typography().Section).FontWeight(650)
+				ui.Text(c, "Files").FontSize(Typography().Section).FontWeight(WeightSemibold)
 				if root != "" {
 					ui.Text(c, root).FontSize(Typography().Caption).
 						TextColor(t.TextMuted).SingleLine().Tooltip(root)
@@ -63,21 +63,19 @@ func (s *Shell) filesPage(c *ui.Context) {
 		})
 		if root == "" {
 			ui.Column(c).Grow(1).Center().Children(func() {
-				emptyState(c, "No project files", "Select a Project or Tab with a working directory to browse files.")
+				emptyState(c, "No folder", "Open a tab in a project to browse its files.")
 			})
 			return
 		}
 		if selected == "" || preview == nil || preview.Path != selected {
 			ui.Column(c).Grow(1).Center().Gap(sp.S).Children(func() {
 				ui.Icon(c, iconFile).Size(28, 28).TextColor(t.TextMuted)
-				ui.Text(c, "Select a file to preview").FontSize(Typography().Section).FontWeight(600)
-				ui.Text(c, "Browse directories in the left sidebar. Selecting a file shows its contents here.").
-					FontSize(Typography().Caption).TextColor(t.TextMuted)
+				ui.Text(c, "Select a file to preview").FontSize(Typography().Section).FontWeight(WeightSemibold)
 			})
 			return
 		}
 		ui.Row(c).FillWidth().Padding(sp.S, sp.L).Gap(sp.M).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, filepath.Base(selected)).FontSize(Typography().Body).FontWeight(650).
+			ui.Text(c, filepath.Base(selected)).FontSize(Typography().Body).FontWeight(WeightSemibold).
 				Grow(1).SingleLine().Tooltip(selected)
 			ui.Text(c, filesview.FormatFileSize(preview.SizeBytes)).
 				FontSize(Typography().Caption).TextColor(t.TextMuted)
@@ -87,7 +85,7 @@ func (s *Shell) filesPage(c *ui.Context) {
 		})
 		if preview.IsBinary {
 			ui.Column(c).Grow(1).Center().Children(func() {
-				emptyState(c, "Binary file", "Text preview is unavailable for this file. Use Reveal in Finder to open it externally.")
+				emptyState(c, "Can't preview this file", "It isn't a text file. Reveal it in Finder to open it.")
 			})
 			return
 		}

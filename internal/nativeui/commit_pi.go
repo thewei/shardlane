@@ -29,7 +29,7 @@ func (s *Shell) startPiCommitSuggestion() {
 	selected := s.selectedCommitPaths()
 	preview := gitworkbench.PrepareCommitPrompt(snap, selected, s.commitPromptIncludeExcerpt)
 	if preview.Text == "" {
-		s.piCommitError = "No eligible selected files. Choose another file; sensitive paths are excluded."
+		s.piCommitError = "Nothing to summarize. Pick another file; sensitive files are left out."
 		return
 	}
 	rules := commitPromptPreference(s.settings.Workbench.CommitPrompt)

@@ -16,7 +16,7 @@ func TestChatUnboundShowsEmptyState(t *testing.T) {
 	shell := NewShell()
 	shell.router.Replace("/chat")
 	tester := ui.NewTester(shell.View, 1200, 800)
-	if !tester.HasText("No conversation selected") {
+	if !tester.HasText("No conversation") {
 		t.Fatalf("missing empty state; texts=%q", tester.Texts())
 	}
 }

@@ -89,7 +89,7 @@ func gitRefMatches(filter string, values ...string) bool {
 
 func (s *Shell) gitEmptySection(c *ui.Context, count int) {
 	if count == 0 {
-		ui.Text(c, "No matching items").Padding(4, 18).FontSize(11).TextColor(c.Theme().TextMuted)
+		ui.Text(c, "No matching items").Padding(4, 18).FontSize(Typography().BodySmall).TextColor(c.Theme().TextMuted)
 	}
 }
 
@@ -177,9 +177,9 @@ func (s *Shell) gitTreeRow(c *ui.Context, title, tooltip string, depth int, fold
 			svg = iconFolder
 		}
 		ui.Icon(c, svg).FontSize(12).TextColor(t.TextMuted)
-		ui.Text(c, title).FontSize(11).SingleLine().Grow(1).MinWidth(0)
+		ui.Text(c, title).FontSize(Typography().BodySmall).SingleLine().Grow(1).MinWidth(0)
 		if current {
-			ui.Text(c, "✓").FontSize(11).TextColor(t.Accent)
+			ui.Text(c, "✓").FontSize(Typography().BodySmall).TextColor(t.Accent)
 		}
 	})
 	if row.Clicked() {

@@ -111,16 +111,16 @@ func (s *Shell) gitQuickCommitComposer(c *ui.Context) {
 			ui.Checkbox(c, &s.gitQuickAmend, "Amend")
 			if s.piQuickRunning {
 				ui.Spinner(c).Size(13, 13)
-				ui.Text(c, "Generating subject…").FontSize(10).TextColor(t.TextMuted)
-				if ui.Button(c, "Cancel").FontSize(10).Clicked() {
+				ui.Text(c, "Generating subject…").FontSize(Typography().Micro).TextColor(t.TextMuted)
+				if compactButton(c, "Cancel").Clicked() {
 					s.cancelQuickAICommit()
 				}
 			}
 			ui.Spacer(c)
-			ui.Textf(c, "%d files", len(snap.Files)).FontSize(10).TextColor(t.TextMuted)
+			ui.Textf(c, "%d files", len(snap.Files)).FontSize(Typography().Micro).TextColor(t.TextMuted)
 			blocked := s.git.opBusy || s.git.committing || s.git.branchBusy ||
 				len(snap.Files) == 0 || (s.git.sequencerChecked && s.git.sequencer.Active())
-			button := ui.PrimaryButton(c, "Commit").FontSize(11)
+			button := ui.PrimaryButton(c, "Commit").FontSize(Typography().BodySmall)
 			button.Disabled(blocked || s.piQuickRunning)
 			if button.Clicked() {
 				s.openCommitSurface()
@@ -143,7 +143,7 @@ func (s *Shell) gitQuickCommitComposer(c *ui.Context) {
 			})
 		})
 		if s.piQuickError != "" {
-			ui.Text(c, s.piQuickError).FontSize(11).TextColor(t.Warning).MaxWidth(600)
+			ui.Text(c, s.piQuickError).FontSize(Typography().BodySmall).TextColor(t.Warning).MaxWidth(600)
 		}
 	})
 }
@@ -163,8 +163,8 @@ func (s *Shell) gitCommitHistoryPane(c *ui.Context) {
 	t := c.Theme()
 	ui.Column(c).Grow(1).MinHeight(0).Children(func() {
 		ui.Row(c).FillWidth().Height(36).Padding(6, 12).Gap(8).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, "All Commits").FontSize(12).FontWeight(650)
-			ui.Textf(c, "%d", len(s.git.commits)).FontSize(11).TextColor(t.TextMuted)
+			ui.Text(c, "All Commits").FontSize(Typography().Body).FontWeight(WeightSemibold)
+			ui.Textf(c, "%d", len(s.git.commits)).FontSize(Typography().BodySmall).TextColor(t.TextMuted)
 		})
 		ui.Row(c).FillWidth().Padding(0, 12, 5).Children(func() {
 			gdSearchInput(c, &s.gitCommitFilter, "Search commits", &s.changes.filterFocus, &s.git.gdTyping)
@@ -185,7 +185,7 @@ func (s *Shell) gitCommitReview(c *ui.Context) {
 				if s.gitLowerTab == i {
 					btn.Background(t.SurfaceHover).TextColor(t.Text)
 				}
-				btn.Children(func() { ui.Text(c, tab).FontSize(11).FontWeight(600) })
+				btn.Children(func() { ui.Text(c, tab).FontSize(Typography().BodySmall).FontWeight(WeightSemibold) })
 				if btn.Clicked() {
 					s.gitLowerTab = i
 				}
@@ -194,10 +194,10 @@ func (s *Shell) gitCommitReview(c *ui.Context) {
 		if cm := s.git.commitMeta; cm != nil {
 			ui.Row(c).FillWidth().Height(27).Padding(0, 12).Gap(10).AlignItems(ui.Center).
 				BorderWidth(0, 0, 1, 0).BorderColor(t.Border).Children(func() {
-				ui.Text(c, cm.Author).FontSize(11).FontWeight(600)
-				ui.Text(c, cm.Short).Font(gdCodeFont()).FontSize(10).TextColor(t.TextMuted)
-				ui.Text(c, cm.Subject).FontSize(11).SingleLine().Grow(1).MinWidth(0)
-				ui.Text(c, cm.Time.Format("Jan 2, 2006 15:04")).FontSize(10).TextColor(t.TextMuted)
+				ui.Text(c, cm.Author).FontSize(Typography().BodySmall).FontWeight(WeightSemibold)
+				ui.Text(c, cm.Short).Font(gdCodeFont()).FontSize(Typography().Micro).TextColor(t.TextMuted)
+				ui.Text(c, cm.Subject).FontSize(Typography().BodySmall).SingleLine().Grow(1).MinWidth(0)
+				ui.Text(c, cm.Time.Format("Jan 2, 2006 15:04")).FontSize(Typography().Micro).TextColor(t.TextMuted)
 			})
 		}
 		if !s.gdReviewingCommit() {
@@ -231,9 +231,9 @@ func (s *Shell) gitCommitFiles(c *ui.Context) {
 	snap := s.git.commitSnap
 	ui.Column(c).Grow(1).MinHeight(0).MinWidth(0).Children(func() {
 		ui.Row(c).FillWidth().Height(27).Padding(0, 10).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, "Changed Files").FontSize(11).FontWeight(650)
+			ui.Text(c, "Changed Files").FontSize(Typography().BodySmall).FontWeight(WeightSemibold)
 			if snap != nil {
-				ui.Textf(c, "  %d", len(snap.Files)).FontSize(10).TextColor(t.TextMuted)
+				ui.Textf(c, "  %d", len(snap.Files)).FontSize(Typography().Micro).TextColor(t.TextMuted)
 			}
 		})
 		ui.Row(c).FillWidth().Padding(0, 8, 3).Children(func() {
@@ -255,7 +255,7 @@ func (s *Shell) gitCommitFiles(c *ui.Context) {
 			})
 		list.Children(func() {
 			if len(rows) == 0 {
-				ui.Text(c, "No matching files").Padding(12).FontSize(11).TextColor(t.TextMuted)
+				ui.Text(c, "No matching files").Padding(12).FontSize(Typography().BodySmall).TextColor(t.TextMuted)
 			}
 		})
 	})
@@ -266,13 +266,13 @@ func (s *Shell) gitCommitDetails(c *ui.Context) {
 	cm := s.git.commitMeta
 	ui.Column(c).Grow(1).MinHeight(0).Padding(18).Gap(9).Children(func() {
 		if cm == nil {
-			ui.Text(c, "Reading commit…").FontSize(12).TextColor(t.TextMuted)
+			ui.Text(c, "Reading commit…").FontSize(Typography().Body).TextColor(t.TextMuted)
 			return
 		}
-		ui.Text(c, cm.Subject).FontSize(14).FontWeight(650)
-		ui.Text(c, "Author: "+cm.Author).FontSize(12)
-		ui.Text(c, "Commit: "+cm.Hash).Font(gdCodeFont()).FontSize(11).TextColor(t.TextMuted)
-		ui.Text(c, cm.Time.Format(time.RFC1123)).FontSize(11).TextColor(t.TextMuted)
+		ui.Text(c, cm.Subject).FontSize(Typography().Section).FontWeight(WeightSemibold)
+		ui.Text(c, "Author: "+cm.Author).FontSize(Typography().Body)
+		ui.Text(c, "Commit: "+cm.Hash).Font(gdCodeFont()).FontSize(Typography().BodySmall).TextColor(t.TextMuted)
+		ui.Text(c, cm.Time.Format(time.RFC1123)).FontSize(Typography().BodySmall).TextColor(t.TextMuted)
 		ui.Row(c).Gap(8).Children(func() {
 			if ui.Button(c, "Copy hash").Clicked() {
 				s.copyToClipboard(cm.Hash)

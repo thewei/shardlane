@@ -22,14 +22,14 @@ func TestSettingsDiagnosticsSnapshotView(t *testing.T) {
 	tester.Frame()
 
 	for _, want := range []string{
-		"Diagnostics & Logs",
-		"System & Runtime Facts",
+		"Diagnostics",
+		"About",
 		// Unpackaged test builds report the dev fallback instead of a
 		// hardcoded version (diagnostics.BuildSnapshot).
-		"Shardlane dev",
-		"Protocol 22",
-		"Application Logs",
-		"Export Sanitized Diagnostics",
+		"dev",
+		"protocol 22",
+		"Logs",
+		"Copy Diagnostics",
 	} {
 		if !tester.HasText(want) {
 			t.Fatalf("diagnostics view missing %q; texts=%q", want, tester.Texts())
@@ -48,12 +48,12 @@ func TestSettingsDiagnosticsExportAction(t *testing.T) {
 	tester.Frame()
 
 	// Trigger export
-	if err := tester.Click("Export Sanitized Diagnostics"); err != nil {
+	if err := tester.Click("Copy Diagnostics"); err != nil {
 		t.Fatal(err)
 	}
 
 	tester.Frame()
-	if !tester.HasText("Sanitized diagnostics copied to clipboard") {
+	if !tester.HasText("Copied to the clipboard") {
 		t.Fatalf("expected export status message; texts=%q", tester.Texts())
 	}
 }

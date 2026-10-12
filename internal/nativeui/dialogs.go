@@ -32,13 +32,13 @@ func (s *Shell) dialogs(c *ui.Context) {
 	if s.mergeDialogOpen {
 		ui.Modal(c, &s.mergeDialogOpen, func() {
 			ui.Column(c).Width(430).MaxWidth(480).Gap(Spacing().M).Children(func() {
-				ui.Text(c, "Merge branch").FontSize(Typography().Title).FontWeight(650)
-				ui.Text(c, s.mergeTarget).FontSize(Typography().Body).FontWeight(600).SingleLine().Tooltip(s.mergeTarget)
+				ui.Text(c, "Merge branch").FontSize(Typography().Title).FontWeight(WeightSemibold)
+				ui.Text(c, s.mergeTarget).FontSize(Typography().Body).FontWeight(WeightSemibold).SingleLine().Tooltip(s.mergeTarget)
 				ui.Segmented(c, &s.mergeStrategy, "Fast-forward only", "Create merge commit").FillWidth()
 				if s.mergeStrategy == 0 {
-					ui.Text(c, "Only moves the branch forward when histories have not diverged. No merge commit is created.").FontSize(Typography().Caption).TextColor(c.Theme().TextMuted)
+					ui.Text(c, "Moves the branch forward if it has not diverged. No merge commit.").FontSize(Typography().Caption).TextColor(c.Theme().TextMuted)
 				} else {
-					ui.Text(c, "Creates a merge commit. Conflicts may require resolving files before Continue or Abort.").FontSize(Typography().Caption).TextColor(c.Theme().TextMuted)
+					ui.Text(c, "Creates a merge commit. You may need to resolve conflicts.").FontSize(Typography().Caption).TextColor(c.Theme().TextMuted)
 				}
 				ui.Row(c).FillWidth().Gap(Spacing().S).Justify(ui.End).Children(func() {
 					if ui.Button(c, "Cancel Merge").Clicked() {
@@ -70,8 +70,7 @@ func (s *Shell) dialogs(c *ui.Context) {
 				_, height := c.Size()
 				ui.Column(c).Width(680).MaxWidth(760).Height(min(height-100, 600)).
 					MinHeight(240).MinWidth(0).Gap(Spacing().M).Children(func() {
-					ui.Text(c, "Commit changes").FontSize(Typography().Title).FontWeight(700)
-					ui.Text(c, "Review the selected files and message before committing.").FontSize(Typography().Caption).TextColor(c.Theme().TextMuted)
+					ui.Text(c, "Commit changes").FontSize(Typography().Title).FontWeight(WeightSemibold)
 					s.commitSurface(c)
 				})
 			})
@@ -79,7 +78,7 @@ func (s *Shell) dialogs(c *ui.Context) {
 	}
 	if s.dialogOpen {
 		ui.Modal(c, &s.dialogOpen, func() {
-			ui.Text(c, s.dialogTitle).Bold().FontSize(16)
+			ui.Text(c, s.dialogTitle).FontWeight(WeightSemibold).FontSize(Typography().Heading)
 			field := ui.TextInput(c, &s.dialogValue).Label(s.dialogLabel).AutoFocus().Width(360)
 			submit := field.Submitted()
 			ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
@@ -147,6 +146,8 @@ func (s *Shell) submitConfirm(kind, target string) {
 		s.mutate(func() (herdr.Projection, error) { return s.runtime.CloseTab(s.activeInstance, target) })
 	case "close-pane":
 		s.mutate(func() (herdr.Projection, error) { return s.runtime.ClosePane(s.activeInstance, target) })
+	case "history-continue":
+		s.runContinue(target)
 	default:
 		s.runGitConfirm(kind, target)
 	}
@@ -184,7 +185,7 @@ func (s *Shell) createWorkspace(displayName string) {
 			s.loading = false
 			s.errText = ""
 			s.offline = false
-			s.status = "Native Terminal"
+			s.status = ""
 			s.applyProjection(projection, true)
 		})
 	}()

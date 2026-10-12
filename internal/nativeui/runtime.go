@@ -109,7 +109,7 @@ func (s *Shell) openInstanceAsync(name string, generation uint64) {
 			s.activeInstance = name
 			s.errText = ""
 			s.offline = false
-			s.status = "Native Terminal"
+			s.status = ""
 			s.applyProjection(projection, true)
 			s.loading = false
 			s.bootstrapPending = false
@@ -148,7 +148,7 @@ func (s *Shell) mutateWithSelection(adoptResult bool, fn func() (herdr.Projectio
 			}
 			s.loading = false
 			s.offline = false
-			s.status = "Native Terminal"
+			s.status = ""
 			if adoptResult {
 				s.adoptRuntimeSelection(projection)
 			}

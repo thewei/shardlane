@@ -40,8 +40,8 @@ func (s *Shell) quickPanelStat(c *ui.Context, label string, count int, tone Stat
 		Label(fmt.Sprintf("%s (%d)", label, count)).
 		Tooltip("Show " + label + " agents")
 	button.Children(func() {
-		ui.Text(c, fmt.Sprintf("%d", count)).FontSize(Typography().Section + 4).
-			FontWeight(700).TextColor(tokens.StatusColor(tone, c.Theme().Dark))
+		ui.Text(c, fmt.Sprintf("%d", count)).FontSize(Typography().Heading).
+			FontWeight(WeightSemibold).TextColor(tokens.StatusColor(tone, c.Theme().Dark))
 		ui.Text(c, label).FontSize(Typography().Caption).TextColor(c.Theme().TextMuted)
 	})
 	if button.Clicked() {
@@ -99,15 +99,15 @@ func (s *Shell) agentQuickPanelDetail(c *ui.Context, snapshot StatusCenterSnapsh
 				}
 			}
 			if card == nil {
-				ui.Text(c, "Agent unavailable").FontSize(Typography().Section).Bold()
-				ui.Text(c, "This Agent is no longer present in the current session.").FontSize(Typography().BodySmall).TextColor(t.TextMuted)
+				ui.Text(c, "Agent not found").FontSize(Typography().Section).FontWeight(WeightSemibold)
+				ui.Text(c, "It may have been closed.").FontSize(Typography().BodySmall).TextColor(t.TextMuted)
 				return
 			}
 			ui.Column(c).FillWidth().Gap(5).Children(func() {
 				ui.Row(c).Gap(sp.S).AlignItems(ui.Center).Children(func() {
 					markView(c, agentMark(card.Provider, t.Dark), 22, t.TextMuted)
-					ui.Text(c, fallbackText(card.Title, card.ProjectName, "Agent")).FontSize(Typography().Section + 2).
-						FontWeight(700).Grow(1).SingleLine().Tooltip(card.Title)
+					ui.Text(c, fallbackText(card.Title, card.ProjectName, "Agent")).FontSize(Typography().Heading).
+						FontWeight(WeightSemibold).Grow(1).SingleLine().Tooltip(card.Title)
 				})
 				ui.Text(c, fmt.Sprintf("%s · %s", card.Provider.DisplayName(), agent.OperationalLabel(card.Attention))).
 					FontSize(Typography().BodySmall).TextColor(t.TextMuted)
@@ -116,7 +116,6 @@ func (s *Shell) agentQuickPanelDetail(c *ui.Context, snapshot StatusCenterSnapsh
 				if card.ProjectName != "" {
 					historyFact(c, "Project", card.ProjectName, "")
 				}
-				historyFact(c, "Runtime", string(card.RuntimePhase), "")
 				if card.Unread {
 					historyFact(c, "Activity", "Unread update", "")
 				}
@@ -142,7 +141,7 @@ func (s *Shell) agentQuickPanelDetail(c *ui.Context, snapshot StatusCenterSnapsh
 				}
 			})
 			ui.Row(c).FillWidth().Gap(sp.S).Children(func() {
-				if card.PaneID != "" && ui.Button(c, "Inspect Agent").Clicked() {
+				if card.PaneID != "" && ui.Button(c, "Details").Clicked() {
 					s.hideQuickPanel()
 					s.router.Push("/inspector/" + card.PaneID)
 				}

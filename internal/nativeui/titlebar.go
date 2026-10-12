@@ -16,55 +16,77 @@ import (
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 
-// The title bar follows the gorex header (2026-10-06): it floats on the
-// window's background gradient with no fill of its own, the identity sits
-// in a host-chip under the traffic lights, and the trailing controls are
-// borderless icon buttons. gorex's terminal tab strip is deliberately not
-// carried over — the sidebar owns navigation (2026-10-06 product note).
+// The content column's title bar (2026-10-12): the sidebar owns the left of
+// the window top to bottom, so this bar only spans the content — the
+// workspace identity (switcher path over the selected Pane's directory) and
+// the trailing tools, on the canvas color with no fill of its own. Other
+// routes carry their own page title, so the bar stays empty there instead
+// of repeating it.
 func (s *Shell) titlebar(c *ui.Context) {
 	t := c.Theme()
 	k := gorexColorsOf(t.Dark)
 	bar := c.TitleBar()
-	// Two rows on the workspace route (2026-10-05 round two): the
-	// switcher path above, the selected Pane's path below. Compact chrome
-	// (2026-10-06, second pass): one icon-button row fits in 34, the two
-	// breadcrumb rows in 42. The row never grows past bar.Height (2026-10-06
+	// Two rows on the workspace route: the switcher path above, the selected
+	// Pane's path below. The row never grows past bar.Height (2026-10-06
 	// annotation F142): the traffic lights sit centered inside exactly
 	// bar.Height (MyGo places them btnHeight + 2×TrafficLightPosition.Y
 	// tall), so centering this row's content in the same height puts every
-	// control on the lights' horizontal line — any extra slack pushed the
-	// icons visibly below the lights and left a dead band under the bar.
-	height := titlebarHeight(bar.Height, s.router.Path() == routeWorkspace)
+	// control on the lights' horizontal line.
 	workspace := s.router.Path() == routeWorkspace
-	left := max(bar.Left, 12) + 4
+	height := titlebarHeight(bar.Height, workspace)
+	// While the sidebar slides shut the content column reaches the window's
+	// left edge: its content then clears the traffic lights and the toggle.
+	left := max(gorexGap*2, sidebarToggleClearance(bar)-s.sidebarSlideW)
 	ui.Row(c).
 		Height(height).
-		Padding(0, max(bar.Right, 10), 0, left).
+		Padding(0, max(bar.Right, 12), 0, left).
 		Gap(8).
 		DragWindow().
 		AlignItems(ui.Center).
 		Children(func() {
-			// The header's leading cluster (2026-10-06 A6-A9): the sidebar
-			// collapse toggle.
-			sidebarLabel := "Show Sidebar"
-			if !s.sidebarCollapsed {
-				sidebarLabel = "Hide Sidebar"
-			}
-			if gorexIconButton(c, k, iconPanel, sidebarLabel, sidebarLabel+" (⌘B)", false, gorexIconBtn, 16).Clicked() {
-				s.toggleSidebar()
-			}
-
 			if workspace {
 				ui.Column(c).Grow(1).MinWidth(0).Children(func() {
 					s.breadcrumbRow(c)
 					s.crumbPathRow(c)
 				})
 			} else {
-				ui.Text(c, s.currentRouteTitle()).FontWeight(600).Grow(1).
-					SingleLine().TextColor(k.text)
+				ui.Box(c).Grow(1).PassThrough()
 			}
 			s.titlebarTools(c, k)
 		})
+}
+
+// sidebarToggleX is where the toggle sits: right after the traffic lights.
+func sidebarToggleX(bar ui.TitleBar) float32 { return max(bar.Left, 12) + 4 }
+
+// sidebarToggleClearance is how far from the window's left edge the content
+// must start to leave the lights and the toggle uncovered.
+func sidebarToggleClearance(bar ui.TitleBar) float32 {
+	return sidebarToggleX(bar) + gorexIconBtn + 8
+}
+
+// sidebarBand is the sidebar's top inset: the strip beside the traffic
+// lights, draggable like the rest of the title bar.
+func (s *Shell) sidebarBand(c *ui.Context) {
+	ui.Box(c).FillWidth().Shrink(0).Height(max(c.TitleBar().Height, 38)).DragWindow()
+}
+
+// sidebarToggle is the one show/hide control of the sidebar. It floats at a
+// fixed spot after the traffic lights and never moves with the slide, so the
+// pointer always finds it where it was.
+func (s *Shell) sidebarToggle(c *ui.Context) {
+	k := gorexColorsOf(c.Theme().Dark)
+	bar := c.TitleBar()
+	label := "Show Sidebar"
+	if !s.sidebarCollapsed {
+		label = "Hide Sidebar"
+	}
+	y := (max(bar.Height, 38) - gorexIconBtn) / 2
+	ui.Box(c).Absolute().Left(sidebarToggleX(bar)).Top(y).Children(func() {
+		if gorexIconButton(c, k, iconPanel, label, label+" (⌘B)", false, gorexIconBtn, gorexIconGlyph).Clicked() {
+			s.toggleSidebar()
+		}
+	})
 }
 
 // titlebarHeight keeps the bar at the window controls' own height: MyGo
@@ -90,11 +112,11 @@ func (s *Shell) titlebarTools(c *ui.Context, k *gorexColors) {
 	s.titlebarViewSwitch(c, k)
 	// Files is a top-level workbench; its tree shares the left navigation,
 	// and preview owns the whole center instead of stealing a right rail.
-	if gorexIconButton(c, k, iconFolder, "Files view", "Browse project files", s.router.Path() == routeFiles, gorexIconBtn, 16).Clicked() {
+	if gorexIconButton(c, k, iconFolder, "Files view", "Browse project files", s.router.Path() == routeFiles, gorexIconBtn, gorexIconGlyph).Clicked() {
 		s.showViewFiles()
 	}
 	s.titlebarActivity(c, k)
-	if gorexIconButton(c, k, iconPin, windowPinLabel, windowPinLabel, s.windowPinned, gorexIconBtn, 15).Clicked() {
+	if gorexIconButton(c, k, iconPin, windowPinLabel, windowPinLabel, s.windowPinned, gorexIconBtn, gorexIconGlyph).Clicked() {
 		s.toggleWindowPinned()
 	}
 	s.windowControls(c, k)
@@ -117,7 +139,7 @@ func (s *Shell) windowControls(c *ui.Context, k *gorexColors) {
 	maximized := win.IsMaximized()
 	ui.Row(c).Gap(2).AlignItems(ui.Center).Shrink(0).Children(func() {
 		ui.Box(c).Size(1, 16).Margin(0, 6).Background(k.textFaint.Alpha(0.25))
-		if gorexIconButton(c, k, iconMinus, "Minimize", "Minimize", false, gorexIconBtn, 16).Clicked() {
+		if gorexIconButton(c, k, iconMinus, "Minimize", "Minimize", false, gorexIconBtn, gorexIconGlyph).Clicked() {
 			win.Minimize()
 		}
 		glyph, label := iconSquare, "Maximize"
@@ -175,7 +197,7 @@ func (s *Shell) titlebarViewSwitch(c *ui.Context, k *gorexColors) {
 	_, _, onChanges, onHistory := s.viewSwitchActive()
 	// N19 #7: Terminal and Chat switched inside their card headers now; the
 	// window header keeps the app-level views.
-	if gorexIconButton(c, k, iconChanges, "Changes view", "Changes", onChanges, gorexIconBtn, 15).Clicked() {
+	if gorexIconButton(c, k, iconChanges, "Changes view", "Changes", onChanges, gorexIconBtn, gorexIconGlyph).Clicked() {
 		s.showViewChanges()
 	}
 	historyTip := "History"
@@ -187,7 +209,7 @@ func (s *Shell) titlebarViewSwitch(c *ui.Context, k *gorexColors) {
 			historyTip = "All conversations"
 		}
 	}
-	if gorexIconButton(c, k, iconHistory, "History view", historyTip, onHistory, gorexIconBtn, 15).Clicked() {
+	if gorexIconButton(c, k, iconHistory, "History view", historyTip, onHistory, gorexIconBtn, gorexIconGlyph).Clicked() {
 		s.showViewHistory()
 	}
 }
@@ -275,9 +297,6 @@ func (s *Shell) showHistoryIndex() {
 	if s.router.Path() == routeHistory {
 		return
 	}
-	if strings.HasPrefix(s.router.Path(), routeHistory+"/") {
-		s.cancelHistoryDetailRequest()
-	}
 	s.router.Push(routeHistory)
 }
 
@@ -306,7 +325,7 @@ func (s *Shell) crumbPathRow(c *ui.Context) {
 	}
 	ui.Row(c).Height(12).MinWidth(0).Gap(4).AlignItems(ui.Center).Tooltip(cwd).Children(func() {
 		ui.Icon(c, iconFolder).Size(9, 9).TextColor(t.TextMuted).Shrink(0)
-		ui.Text(c, cwd).FontSize(Typography().Micro).TextColor(t.TextMuted).SingleLine()
+		ui.Text(c, shortDir(cwd)).FontSize(Typography().Micro).TextColor(t.TextMuted).SingleLine()
 	})
 }
 
@@ -360,7 +379,7 @@ func (s *Shell) titlebarActivity(c *ui.Context, k *gorexColors) {
 		// The trigger's accessible label carries the actionable summary
 		// when there is one ("1 attention · 1 review"), the plain name
 		// otherwise; the badge floats the total at the top-right corner.
-		anchor = gorexIconButton(c, k, iconAgentBot, label, label, false, gorexIconBtn, 16)
+		anchor = gorexIconButton(c, k, iconActivity, label, label, false, gorexIconBtn, gorexIconGlyph)
 		if total > 0 {
 			ui.Box(c).Absolute().Right(0).Top(0).Children(func() {
 				dark := c.Theme().Dark
@@ -372,7 +391,7 @@ func (s *Shell) titlebarActivity(c *ui.Context, k *gorexColors) {
 					Radius(Radius().Row).
 					Background(designTokens(dark).StatusColor(tone, dark))
 				badge.Children(func() {
-					ui.Text(c, strconv.Itoa(total)).FontSize(9).FontWeight(700).TextColor(textColor)
+					ui.Text(c, strconv.Itoa(total)).FontSize(Typography().Micro).FontWeight(WeightSemibold).TextColor(textColor)
 				})
 			})
 		}

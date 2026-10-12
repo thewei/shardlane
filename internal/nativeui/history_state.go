@@ -2,7 +2,7 @@ package nativeui
 
 /**
  * [INPUT]: 依赖 HistoryService 的只读列表/详情查询与 MyGo 窗口调度
- * [OUTPUT]: 提供 History 查询代际隔离、筛选重置、列表与详情的瞬态状态
+ * [OUTPUT]: 提供 History 查询代际隔离、筛选重置、列表/分组/多选/行内预览的瞬态状态及各 Provider 会话总数
  * [POS]: History 页面状态编排层；查询/筛选不改变 Herdr Runtime 或来源历史文件
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -41,6 +41,12 @@ type HistoryProviderView interface {
 	AvailableProviders(ctx context.Context) ([]history.AgentID, error)
 }
 
+// HistoryProviderCountView is optional for test fakes; the production service
+// reports each Provider's catalog-wide session total for the Sessions tabs.
+type HistoryProviderCountView interface {
+	ProviderCounts(ctx context.Context) ([]history.ProviderCount, error)
+}
+
 // historyState is the Shell's presentation state for the Native History
 // surfaces. All runtime facts come from the read-only HistoryService; the
 // state only tracks requests in flight and the bounded windows they returned.
@@ -54,45 +60,55 @@ type historyState struct {
 	// unfiltered (All) load — the filter rail is derived from it instead of
 	// a hardcoded trio that hid every other provider (2026-10-06 F37).
 	providers []history.AgentID
-	loaded    bool
-	loading   bool
-	errText   string
-	sessions  []history.SessionSummary
+	// counts is each Provider's catalog-wide session total, refreshed with
+	// every list request (it never depends on the search or tab scope).
+	counts   map[history.AgentID]int
+	loaded   bool
+	loading  bool
+	errText  string
+	sessions []history.SessionSummary
+	// scanning is true while a background catalog scan runs: the catalog is
+	// rebuilt in memory on every launch, so an empty list during that time
+	// means "still reading", not "no sessions".
+	scanning bool
 
 	// listState owns the persistent native List behavior for the session
 	// list (RENDER-01): stable keys, selection and keyboard navigation.
 	listState    ui.ListState
 	listSelected int
 
-	// N19 #9: the grouped Sessions view state — collapsed project groups,
-	// expanded row fact sheets, and the recycle toggle.
-	groupCollapsed map[string]bool
-	rowExpanded    map[string]bool
-	showHidden     bool
+	// N19 #9: the grouped Sessions view state — the user's explicit
+	// open/closed choice per project (absent: the default, the latest
+	// project open) and the recycle toggle.
+	groupOpen  map[string]bool
+	showHidden bool
 
-	detail *historyDetail
+	// Multi-select (history_select.go): selecting is the mode, selected the
+	// session keys ticked in it. Transient — filters and Done clear both.
+	selecting bool
+	selected  map[string]bool
+
+	// preview is the one inline session preview open in the list
+	// (history_preview.go); previewGen/previewCancel make a newer open win.
+	preview       historyPreview
+	previewGen    atomic.Uint64
+	previewCancel context.CancelFunc
+
+	// Continue (history_continue.go): the plan awaiting the user's confirm,
+	// whether a confirmed one is still running, and the runtime seam tests
+	// replace.
+	pendingContinue *continueRequest
+	continuing      bool
+	continuation    continuationRuntime
+
+	// viewFrame counts Shell.View calls and detailFrame is the frame the
+	// session detail page last built in; the read-only chat binding is
+	// released once the page stops building (history_detail.go).
+	viewFrame   uint64
+	detailFrame uint64
 
 	listGen    atomic.Uint64
 	listCancel context.CancelFunc
-	openGen    atomic.Uint64
-	openCancel context.CancelFunc
-}
-
-type historyDetail struct {
-	key     string
-	meta    history.SessionMeta
-	window  history.TranscriptWindow
-	loading bool
-	errText string
-	// expanded tracks per-block presentation disclosure state (thinking).
-	expanded map[string]bool
-
-	// scroll owns the detail's explicit scroll position (CLOSURE-03);
-	// paging intents set the position the next frame should show.
-	scroll        ui.ScrollState
-	anchorPending bool
-	scrollToTop   bool
-	scrollToBot   bool
 }
 
 // dispatch runs fn on a background lane in the real app and synchronously in
@@ -132,6 +148,17 @@ func (s *Shell) requestHistoryList() {
 	}
 	s.dispatch(func() {
 		summaries, err := service.List(ctx, query)
+		var counts map[history.AgentID]int
+		if source, ok := service.(HistoryProviderCountView); ok && err == nil {
+			if totals, lookupErr := source.ProviderCounts(ctx); lookupErr == nil {
+				counts = make(map[history.AgentID]int, len(totals))
+				for _, total := range totals {
+					counts[total.Agent] = total.Count
+				}
+			} else if ctx.Err() == nil {
+				slog.Warn("history provider counts unavailable", "error", lookupErr)
+			}
+		}
 		var providers []history.AgentID
 		if err == nil && query.Provider == "" && query.Search == "" {
 			providers = distinctAgents(summaries)
@@ -155,6 +182,9 @@ func (s *Shell) requestHistoryList() {
 			}
 			s.hist.loaded = true
 			s.hist.sessions = summaries
+			if counts != nil {
+				s.hist.counts = counts
+			}
 			// Nothing is selected until the user selects it: the zero value
 			// 0 pre-highlighted the first row as if chosen (2026-10-06 F15).
 			s.hist.listSelected = -1
@@ -173,6 +203,8 @@ func (s *Shell) applyHistoryFilters() {
 	s.hist.sessions = nil
 	s.hist.listSelected = -1
 	s.hist.loaded = false
+	s.closeHistoryPreview()
+	s.clearHistorySelection()
 	s.requestHistoryList()
 }
 
@@ -208,103 +240,6 @@ func (s *Shell) feedRecentFromHistory(summaries []history.SessionSummary) {
 	s.recentItems = items
 }
 
-// openHistoryConversation starts (or switches) the bounded detail window.
-// A newer request cancels the obsolete one and its stale application.
-func (s *Shell) openHistoryConversation(key string) {
-	if s.hist.service == nil || key == "" {
-		return
-	}
-	if s.hist.detail != nil && s.hist.detail.key == key && (s.hist.detail.loading || s.hist.detail.errText == "" && s.hist.detail.window.Key != "") {
-		return
-	}
-	if s.hist.openCancel != nil {
-		s.hist.openCancel()
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	s.hist.openCancel = cancel
-	generation := s.hist.openGen.Add(1)
-	s.hist.detail = &historyDetail{key: key, loading: true}
-	service := s.hist.service
-
-	s.dispatch(func() {
-		window, err := service.Open(ctx, history.ConversationWindowRequest{ConversationID: key})
-		s.applyOnWindow(func() {
-			if generation != s.hist.openGen.Load() {
-				return
-			}
-			detail := &historyDetail{key: key}
-			if err != nil {
-				detail.errText = err.Error()
-			} else {
-				detail.meta = window.Meta
-				detail.window = window
-				detail.anchorPending = window.AnchorIndex >= 0
-			}
-			s.hist.detail = detail
-		})
-	})
-}
-
-// pageHistoryDetail loads the adjacent bounded window with a 12-message
-// overlap, replacing the current window in place.
-func (s *Shell) pageHistoryDetail(earlier bool) {
-	detail := s.hist.detail
-	if detail == nil || detail.loading || s.hist.service == nil {
-		return
-	}
-	current := detail.window
-	const overlap = 12
-	var start int
-	if earlier {
-		start = current.Start - (len(current.Messages) - overlap)
-	} else {
-		start = current.Start + (len(current.Messages) - overlap)
-	}
-	if start < 0 {
-		start = 0
-	}
-	generation := s.hist.openGen.Add(1)
-	detail.loading = true
-	service := s.hist.service
-	key := detail.key
-
-	s.dispatch(func() {
-		window, err := service.Open(context.Background(), history.ConversationWindowRequest{
-			ConversationID: key,
-			StartIndex:     &start,
-		})
-		s.applyOnWindow(func() {
-			if generation != s.hist.openGen.Load() || s.hist.detail == nil || s.hist.detail.key != key {
-				return
-			}
-			s.hist.detail.loading = false
-			if err != nil {
-				s.hist.detail.errText = err.Error()
-				return
-			}
-			s.hist.detail.window = window
-			// Intentional paging position (CLOSURE-03): earlier reveals new
-			// content above (show the window top), later reveals new content
-			// below (follow the end).
-			s.hist.detail.scrollToTop = earlier
-			s.hist.detail.scrollToBot = !earlier
-		})
-	})
-}
-
-// cancelHistoryWork drops obsolete in-flight history requests (conversation
-// switch, route leave). Generation guards keep stale results from applying.
-func (s *Shell) cancelHistoryDetailRequest() {
-	if s.hist.openCancel != nil {
-		s.hist.openCancel()
-		s.hist.openCancel = nil
-	}
-	s.hist.openGen.Add(1)
-	if s.hist.detail != nil {
-		s.hist.detail = nil
-	}
-}
-
 // refreshHistoryScan cancels any running scan, reconciles the catalog once,
 // and reloads the visible list.
 func (s *Shell) refreshHistoryScan() {
@@ -326,10 +261,7 @@ func (s *Shell) stopHistory() {
 		s.hist.listCancel()
 		s.hist.listCancel = nil
 	}
-	if s.hist.openCancel != nil {
-		s.hist.openCancel()
-		s.hist.openCancel = nil
-	}
+	s.closeHistoryPreview()
 }
 
 func (s *Shell) stopHistoryScanKeepState() {
@@ -351,11 +283,13 @@ func (s *Shell) startHistoryScan() {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	s.hist.cancel = cancel
+	s.hist.scanning = true
 	service := s.hist.service
 	go func() {
 		result, err := service.Scan(ctx)
 		if err != nil && ctx.Err() == nil {
 			slog.Warn("history scan failed", "error", err)
+			s.applyOnWindow(func() { s.hist.scanning = false })
 			return
 		}
 		if err == nil {
@@ -363,6 +297,7 @@ func (s *Shell) startHistoryScan() {
 		}
 		s.applyOnWindow(func() {
 			if ctx.Err() == nil {
+				s.hist.scanning = false
 				s.hist.loaded = false
 			}
 		})

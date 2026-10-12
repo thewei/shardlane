@@ -49,7 +49,7 @@ func navButton(c *ui.Context, glyph *ui.SVG, label, shortcut string, selected bo
 	tokens := designTokens(t.Dark)
 	b := ui.ButtonBase(c).
 		FillWidth().
-		Height(31).
+		Height(Controls().RowHeight).
 		PaddingX(8).
 		Gap(7).
 		Radius(6).
@@ -61,10 +61,31 @@ func navButton(c *ui.Context, glyph *ui.SVG, label, shortcut string, selected bo
 		if glyph != nil {
 			ui.Icon(c, glyph).Size(14, 14).TextColor(t.TextMuted)
 		}
-		ui.Text(c, label).FontSize(11).Grow(1).SingleLine()
+		ui.Text(c, label).FontSize(Typography().Body).Grow(1).SingleLine()
 		if shortcut != "" {
-			ui.Text(c, shortcut).FontSize(10).TextColor(t.TextMuted).SingleLine()
+			ui.Text(c, shortcut).FontSize(Typography().Micro).TextColor(t.TextMuted).SingleLine()
 		}
+	})
+	return b
+}
+
+// navTileButton is a destination row led by a colored icon tile: the
+// sidebar list of a multi-page surface such as Settings.
+func navTileButton(c *ui.Context, glyph *ui.SVG, tone TileTone, label string, selected bool) ui.Element {
+	tokens := designTokens(c.Theme().Dark)
+	b := ui.ButtonBase(c).
+		FillWidth().
+		Height(Controls().RowHeight).
+		PaddingX(8).
+		Gap(8).
+		Radius(6).
+		Label(label)
+	if tint, ok := rowTint(tokens, selected, b.Hovered()); ok {
+		b.Background(tint)
+	}
+	b.Children(func() {
+		iconTile(c, glyph, tone, 20)
+		ui.Text(c, label).FontSize(Typography().Body).Grow(1).SingleLine().PassThrough()
 	})
 	return b
 }
@@ -72,8 +93,8 @@ func navButton(c *ui.Context, glyph *ui.SVG, label, shortcut string, selected bo
 func sectionLabel(c *ui.Context, label string) {
 	ui.Text(c, label).
 		Padding(7, 8, 4).
-		FontSize(9.5).
-		FontWeight(650).
+		FontSize(Typography().BodySmall).
+		FontWeight(WeightMedium).
 		TextColor(c.Theme().TextMuted)
 }
 
@@ -270,7 +291,7 @@ func treeRow(c *ui.Context, spec treeRowSpec) ui.Element {
 				// Breathe between the glyph and its label (2026-10-05).
 				ui.Box(c).Width(5).Shrink(0).PassThrough()
 			}
-			ui.Text(c, spec.Label).FontSize(11).Grow(1).SingleLine().PassThrough()
+			ui.Text(c, spec.Label).FontSize(Typography().Body).Grow(1).SingleLine().PassThrough()
 			hovered := row.Hovered()
 			// The collapsed pane tally (2026-10-07): tiny muted digits at
 			// the trailing edge; under the pointer it steps aside for the

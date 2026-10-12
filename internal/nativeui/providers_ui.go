@@ -13,7 +13,7 @@ import (
 /**
  * [INPUT]: 依赖 agent.IntegrationHealthService（herdr integration status/install 审计）与 agenthooks.Manager（直连状态 hook 诊断/安装）、mygo/ui 状态件
  * [OUTPUT]: 对外提供 providersUIState、providerRow、providerFacet/facetIntegration/facetStatusHook、requestProvidersAudit、runProviderAction、consumeProvidersToast、actionInFlight、actionLabel、healthTone/healthStateText、hookStateTone/hookStateText、statusHookFor
- * [POS]: Settings→Providers 页的统一状态机：每个 Provider 一张卡。直连 Status hook 是主机制（状态→应用 socket，会话身份→pane.report_agent_session 中继 Herdr）；Herdr 官方 integration 对 hook 已覆盖的 Provider 降级为 fallback 面（hook 健康时仅次要展示，不提供动作；hook 不能履职时才浮出修复动作）。一次审计同时覆盖两面；审计只在路由进入/手动刷新/动作完成后发生，从不随渲染轮询。两个领域包保持分离，只在展示层合流
+ * [POS]: Settings→Agents 页的统一状态机：每个 Agent 一行（hook 主行 + Herdr integration 子行）。直连 Status hook 是主机制（状态→应用 socket，会话身份→pane.report_agent_session 中继 Herdr）；Herdr 官方 integration 对 hook 已覆盖的 Provider 降级为 fallback 面（hook 健康时仅次要展示，不提供动作；hook 不能履职时才浮出修复动作）。一次审计同时覆盖两面；审计只在路由进入/手动刷新/动作完成后发生，从不随渲染轮询。两个领域包保持分离，只在展示层合流
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 
@@ -310,19 +310,19 @@ func healthStateText(state agent.IntegrationHealthState) string {
 	case agent.HealthChecking:
 		return "Checking"
 	case agent.HealthCurrent:
-		return "Current"
+		return "Up to date"
 	case agent.HealthOutdated:
-		return "Outdated"
+		return "Update available"
 	case agent.HealthNotInstalled:
 		return "Not installed"
 	case agent.HealthManagedByHerdr:
 		return "Managed by Herdr"
 	case agent.HealthManagedBridgeReady:
-		return "Managed bridge ready"
+		return "Ready"
 	case agent.HealthDeferred:
-		return "Deferred"
+		return "Not available yet"
 	case agent.HealthUnsupported:
-		return "Unsupported"
+		return "Not supported"
 	case agent.HealthError:
 		return "Error"
 	default:
@@ -350,13 +350,13 @@ func hookStateTone(state agenthooks.State) StatusTone {
 func hookStateText(state agenthooks.State) string {
 	switch state {
 	case agenthooks.StateOK:
-		return "Current"
+		return "Up to date"
 	case agenthooks.StateNotInstalled:
 		return "Not installed"
 	case agenthooks.StateOutdated:
-		return "Outdated"
+		return "Update available"
 	case agenthooks.StateUnsupported:
-		return "Unsupported"
+		return "Not supported"
 	default:
 		return string(state)
 	}

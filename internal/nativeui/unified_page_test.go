@@ -21,9 +21,9 @@ func TestSettingsSectionsShareHeaderAndBoundedScrollableBody(t *testing.T) {
 		title string
 		body  string
 	}{
-		{"/settings/general", "Appearance, layout and window preferences.", "Appearance"},
-		{"/settings/terminal", "Native Terminal presentation for attached Herdr Panes.", "Presentation"},
-		{"/settings/runtime", "Current Herdr session and application runtime facts.", "Refresh Runtime"},
+		{"/settings/general", "General", "Appearance"},
+		{"/settings/terminal", "Terminal", "Font"},
+		{"/settings/diagnostics", "Diagnostics", "About"},
 	} {
 		t.Run(tc.route, func(t *testing.T) {
 			for _, size := range [][2]int{{960, 640}, {1200, 800}, {1512, 982}} {
@@ -54,15 +54,6 @@ func TestTerminalSettingsTransparentBackgroundIsSingleControl(t *testing.T) {
 	// text. One control produces exactly two records, not one.
 	if count != 2 {
 		t.Fatalf("transparent background field labels = %d (want one control): %q", count, tester.Texts())
-	}
-	descriptionCount := 0
-	for _, label := range tester.Texts() {
-		if strings.Contains(label, "Let the window gradient show through the terminal paper") {
-			descriptionCount++
-		}
-	}
-	if descriptionCount != 1 {
-		t.Fatalf("transparent background description repeated %d times", descriptionCount)
 	}
 }
 

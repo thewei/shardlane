@@ -20,38 +20,126 @@ func appPage(c *ui.Context, title, subtitle string, body func()) {
 func sectionHeader(c *ui.Context, label string) {
 	typ := Typography()
 	sp := Spacing()
-	ui.Text(c, label).FontSize(typ.Micro).FontWeight(700).
+	ui.Text(c, label).FontSize(typ.Micro).FontWeight(WeightBold).
 		TextColor(c.Theme().TextMuted).Padding(0, 0, sp.XS)
 }
 
-// settingsCard is the shared settings/grouping card.
+// groupLabel is the quiet caption above a card: small, muted, medium weight.
+func groupLabel(c *ui.Context, label string) {
+	ui.Text(c, label).FontSize(Typography().BodySmall).FontWeight(WeightMedium).
+		TextColor(c.Theme().TextMuted).Padding(0, 0, 0, Spacing().XS)
+}
+
+// settingsCard is the shared grouping card for free-form content: a quiet
+// label above a padded, hairline-bordered panel.
 func settingsCard(c *ui.Context, title string, body func()) {
-	t := c.Theme()
-	typ := Typography()
 	sp := Spacing()
-	ui.Column(c).FillWidth().Radius(Radius().Card).Background(designTokens(t.Dark).Panel).
-		Border(1, designTokens(t.Dark).BorderSubtle).Padding(sp.L).Gap(sp.M).Children(func() {
+	tokens := designTokens(c.Theme().Dark)
+	ui.Column(c).FillWidth().Gap(sp.S).Children(func() {
 		if title != "" {
-			ui.Text(c, title).FontSize(typ.Section).FontWeight(650)
+			groupLabel(c, title)
 		}
-		body()
+		ui.Column(c).FillWidth().Radius(Radius().Card).Background(tokens.Panel).
+			Border(1, tokens.BorderSubtle).Padding(sp.L).Gap(sp.M).Children(body)
 	})
 }
 
-// formRow is one labeled preference/control row.
+// settingsRow is one line of a settingsGroup: an optional lead (an icon or
+// brand mark), the label with an optional quiet note, then the trailing
+// control. An attached row continues the row above it, with no divider.
+type settingsRow struct {
+	lead        func()
+	label, note string
+	control     func()
+	attached    bool
+}
+
+// row builds a settingsRow.
+func row(label, note string, control func()) settingsRow {
+	return settingsRow{label: label, note: note, control: control}
+}
+
+// settingsGroup is the grouped list used by every settings-like surface: a
+// quiet label above one rounded panel whose rows are split by inset
+// hairlines, as in macOS' own Settings.
+func settingsGroup(c *ui.Context, title string, rows ...settingsRow) {
+	sp := Spacing()
+	tokens := designTokens(c.Theme().Dark)
+	ui.Column(c).FillWidth().Gap(sp.S).Children(func() {
+		if title != "" {
+			groupLabel(c, title)
+		}
+		ui.Column(c).FillWidth().Radius(Radius().Card).Background(tokens.Panel).
+			Border(1, tokens.BorderSubtle).Clip().Children(func() {
+			for i, r := range rows {
+				if i > 0 && !r.attached {
+					ui.Row(c).FillWidth().Height(1).Shrink(0).Children(func() {
+						ui.Box(c).Width(rowInset).Shrink(0)
+						ui.Box(c).Grow(1).FillHeight().Background(tokens.BorderSubtle)
+					})
+				}
+				formRowLead(c, r.lead, r.label, r.note, r.control)
+			}
+		})
+	})
+}
+
+// rowInset is the horizontal padding of a grouped row; dividers start at it.
+const rowInset float32 = 14
+
+// formRow is one labeled row: the label leads at regular weight, an optional
+// note sits under it in muted caption type, and the control trails.
 func formRow(c *ui.Context, label, detail string, control func()) {
+	formRowLead(c, nil, label, detail, control)
+}
+
+// formRowLead is formRow with a leading icon or mark. The row is built
+// control-first and laid out in reverse, so the control precedes its label in
+// focus and reading order — the order macOS' own switch and field rows use.
+func formRowLead(c *ui.Context, lead func(), label, detail string, control func()) {
 	t := c.Theme()
 	typ := Typography()
 	sp := Spacing()
-	ui.Row(c).FillWidth().Gap(sp.L).AlignItems(ui.Center).Children(func() {
-		ui.Column(c).Width(240).Shrink(0).Gap(2).Children(func() {
-			ui.Text(c, label).FontSize(typ.Body).FontWeight(600)
+	ui.Row(c).FillWidth().MinHeight(Controls().RowHeight+8).Padding(sp.M, rowInset).Gap(sp.L).AlignItems(ui.Center).Reverse().Children(func() {
+		if control != nil {
+			control()
+		}
+		ui.Column(c).Grow(1).MinWidth(0).Gap(2).Children(func() {
+			ui.Text(c, label).FontSize(typ.Body)
 			if detail != "" {
 				ui.Text(c, detail).FontSize(typ.Caption).TextColor(t.TextMuted)
 			}
 		})
-		control()
+		if lead != nil {
+			lead()
+		}
 	})
+}
+
+// valueText is the muted trailing value of a fact row.
+func valueText(c *ui.Context, value string) {
+	ui.Text(c, value).FontSize(Typography().Body).TextColor(c.Theme().TextMuted).Selectable()
+}
+
+// iconTile paints a glyph in white on a rounded system-color square: the
+// colored marker of a destination or category.
+func iconTile(c *ui.Context, glyph *ui.SVG, tone TileTone, size float32) {
+	ui.Box(c).Size(size, size).Shrink(0).Radius(size * 0.26).
+		Background(tone.Color(c.Theme().Dark)).Center().Children(func() {
+		ui.Icon(c, glyph).Size(size*0.62, size*0.62).TextColor(ui.Hex("#ffffff")).PassThrough()
+	})
+}
+
+// compactButton is the secondary action of dense surfaces — Git toolbars,
+// list rows, popover menus: a regular Button at the footnote size. Surfaces
+// never restate that size on a Button; the dense tier changes here, once.
+func compactButton(c *ui.Context, label string) ui.Element {
+	return ui.Button(c, label).FontSize(Typography().Micro)
+}
+
+// compactPrimaryButton is compactButton's accent-filled form.
+func compactPrimaryButton(c *ui.Context, label string) ui.Element {
+	return ui.PrimaryButton(c, label).FontSize(Typography().Micro)
 }
 
 // emptyState is the shared nothing-here state.
@@ -60,7 +148,7 @@ func emptyState(c *ui.Context, title, detail string) {
 	typ := Typography()
 	sp := Spacing()
 	ui.Column(c).Grow(1).Center().Gap(sp.XS).Children(func() {
-		ui.Text(c, title).Bold()
+		ui.Text(c, title).FontWeight(WeightSemibold)
 		if detail != "" {
 			ui.Text(c, detail).FontSize(typ.BodySmall).TextColor(t.TextMuted)
 		}
@@ -80,7 +168,7 @@ func workspaceEmptyBanner(c *ui.Context, glyph *ui.SVG, title, detail string, ac
 			AlignItems(ui.Center).Children(func() {
 			ui.Icon(c, glyph).Size(18, 18).TextColor(t.TextMuted).Shrink(0)
 			ui.Column(c).Grow(1).MinWidth(0).Gap(sp.XS).Children(func() {
-				ui.Text(c, title).FontSize(Typography().Section).FontWeight(650)
+				ui.Text(c, title).FontSize(Typography().Section).FontWeight(WeightSemibold)
 				if detail != "" {
 					ui.Text(c, detail).FontSize(Typography().BodySmall).TextColor(t.TextMuted)
 				}
@@ -148,7 +236,7 @@ func statusPill(c *ui.Context, text string, tone StatusTone) {
 		Radius(Radius().Row).Padding(sp.XXS, sp.S).
 		Background(tokens.StatusBackground(tone, dark)).Shrink(0).Children(func() {
 		ui.Box(c).Size(6, 6).Radius(3).Background(color).Shrink(0)
-		ui.Text(c, text).FontSize(typ.Micro).FontWeight(650).TextColor(color)
+		ui.Text(c, text).FontSize(typ.Micro).FontWeight(WeightSemibold).TextColor(color)
 	})
 }
 
@@ -190,7 +278,7 @@ func toolCard(c *ui.Context, name string, inputPreview string, output *string, i
 			})
 			ui.Text(c, fallbackText(inputPreview, name)).FontSize(typ.Caption).TextColor(t.TextMuted).SingleLine()
 			if output != nil && *output != "" {
-				preview, _ := clipPreview(*output, 400, 4)
+				preview := clipPreview(*output, 400, 4)
 				ui.Text(c, preview).FontSize(typ.Caption).TextColor(t.TextMuted)
 			}
 		})

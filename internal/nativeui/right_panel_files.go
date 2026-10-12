@@ -22,9 +22,9 @@ func (s *Shell) filesToolView(c *ui.Context) {
 	ui.Column(c).Grow(1).MinHeight(0).Children(func() {
 		ui.Row(c).FillWidth().Padding(sp.XS, sp.M).Gap(sp.S).AlignItems(ui.Center).Children(func() {
 			rel := filepath.Base(root)
-			ui.Text(c, rel).FontSize(Typography().Caption).FontWeight(600).Grow(1).SingleLine()
+			ui.Text(c, rel).FontSize(Typography().Caption).FontWeight(WeightSemibold).Grow(1).SingleLine()
 
-			if ui.Button(c, "Refresh").FontSize(Typography().Micro).Clicked() {
+			if compactButton(c, "Refresh").Clicked() {
 				s.rightPanel.cachedDirEntries = make(map[string][]filesview.Entry)
 				s.requestDirectory(root)
 			}
@@ -148,17 +148,17 @@ func (s *Shell) renderDirectoryLevel(c *ui.Context, dir string, depth int) {
 					})
 				}
 
-				name := ui.Text(c, e.Name).FontSize(13).Grow(1).SingleLine().Shrink(1).MinWidth(0)
+				name := ui.Text(c, e.Name).FontSize(Typography().Section).Grow(1).SingleLine().Shrink(1).MinWidth(0)
 				if e.IsSymlink {
 					name.TextColor(t.TextMuted)
 				}
 
 				if !isDir && e.SizeBytes > 0 {
 					ui.Text(c, filesview.FormatFileSize(e.SizeBytes)).
-						Font(gdCodeFont()).FontSize(10).TextColor(t.TextMuted).Shrink(0).
+						Font(gdCodeFont()).FontSize(Typography().Micro).TextColor(t.TextMuted).Shrink(0).
 						Tooltip(e.Path)
 				} else if e.IsSymlink {
-					ui.Text(c, "→").Font(gdCodeFont()).FontSize(11).TextColor(t.TextMuted).Shrink(0)
+					ui.Text(c, "→").Font(gdCodeFont()).FontSize(Typography().BodySmall).TextColor(t.TextMuted).Shrink(0)
 				}
 			})
 			row = r

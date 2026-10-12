@@ -85,7 +85,7 @@ func TestHistoryDeepLinkBackTargetsParentNotPreviousPage(t *testing.T) {
 	s.router.Replace("/settings/general")
 	s.router.Push("/history/session-direct")
 	tester := ui.NewTester(s.View, 1200, 800)
-	if err := tester.Click("Back to History"); err != nil {
+	if err := tester.Click("Back to Sessions"); err != nil {
 		t.Fatal(err)
 	}
 	if got := s.router.Path(); got != routeHistory {

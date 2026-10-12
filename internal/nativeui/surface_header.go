@@ -23,13 +23,13 @@ import (
 // Terminal/Chat pair in the window header and lives in both card headers.
 func (s *Shell) surfaceToggle(c *ui.Context, k *gorexColors, from WorkspaceSurfaceKind, paneID string) {
 	if from == WorkspaceSurfaceChat {
-		if gorexIconButton(c, k, iconTerminal, "Terminal", "Switch to Terminal", false, gorexIconBtn, 15).Clicked() {
+		if gorexIconButton(c, k, iconTerminal, "Terminal", "Switch to Terminal", false, gorexIconBtn, gorexIconGlyph).Clicked() {
 			s.rememberPaneSurface(paneID, WorkspaceSurfaceTerminal)
 			s.showViewTerminal()
 		}
 		return
 	}
-	if gorexIconButton(c, k, iconChat, "Chat", "Switch to Chat (⇧⌘C)", false, gorexIconBtn, 15).Clicked() {
+	if gorexIconButton(c, k, iconChat, "Chat", "Switch to Chat (⇧⌘C)", false, gorexIconBtn, gorexIconGlyph).Clicked() {
 		s.rememberPaneSurface(paneID, WorkspaceSurfaceChat)
 		s.showViewChat()
 	}
@@ -85,7 +85,7 @@ func (s *Shell) chatSurfaceHeader(c *ui.Context, k *gorexColors) {
 		ui.Box(c).Size(15, 15).Shrink(0).Children(func() {
 			markView(c, mark, 14.5, k.text)
 		})
-		ui.Text(c, title).FontSize(12.5).FontWeight(600).TextColor(k.text).
+		ui.Text(c, title).FontSize(Typography().Body).FontWeight(WeightSemibold).TextColor(k.text).
 			SingleLine().Ellipsis("…").Shrink(0).MaxWidthPercent(60)
 		s.agentStatusDotForPane(c, k, s.chatPaneID)
 		if _, hasCard := s.agentCardForPane(s.chatPaneID); hasCard && s.chatConversationID != "" {
@@ -137,7 +137,7 @@ func (s *Shell) paneFindBar(c *ui.Context, k *gorexColors, surface *terminalSurf
 		BorderWidth(0, 0, 1, 0).BorderColor(k.cardBorder).MinWidth(0)
 	h.Children(func() {
 		field := ui.TextInput(c, &s.findQuery).Grow(1).MinWidth(0).
-			Placeholder("Find in pane (Enter: previous, ⌥Enter: next)").Label("Find")
+			Placeholder("Find in pane").Label("Find")
 		field.AutoFocus()
 		if field.Submitted() {
 			s.paneFindRun(surface.paneID, "backward", true)
@@ -148,10 +148,10 @@ func (s *Shell) paneFindBar(c *ui.Context, k *gorexColors, surface *terminalSurf
 		if field.Shortcut(0, ui.KeyEscape) {
 			s.closePaneFind()
 		}
-		if ui.Button(c, "Prev").FontSize(Typography().Caption).Clicked() {
+		if compactButton(c, "Prev").Clicked() {
 			s.paneFindRun(surface.paneID, "backward", false)
 		}
-		if ui.Button(c, "Next").FontSize(Typography().Caption).Clicked() {
+		if compactButton(c, "Next").Clicked() {
 			s.paneFindRun(surface.paneID, "forward", false)
 		}
 		switch {
@@ -165,7 +165,7 @@ func (s *Shell) paneFindBar(c *ui.Context, k *gorexColors, surface *terminalSurf
 		case s.findQuery != "":
 			ui.Text(c, "No matches").FontSize(Typography().Caption).TextColor(c.Theme().TextMuted).Shrink(0)
 		}
-		if gorexIconButton(c, k, iconMinus, "Close find", "Close", false, 22, 13).Clicked() {
+		if gorexIconButton(c, k, iconClose, "Close find", "Close", false, gorexPaneBtn, gorexPaneGlyph).Clicked() {
 			s.closePaneFind()
 		}
 	})

@@ -20,7 +20,7 @@ func TestGitPreferencesPageDefaultAndSave(t *testing.T) {
 	s.loading = false
 	s.router.Replace("/settings/git")
 	tester := ui.NewTester(s.View, 1200, 800)
-	for _, title := range []string{"Git", "Commit Message", "Save Commit Rules", "Restore Default Rules", "Pi CLI", "Save Pi Path"} {
+	for _, title := range []string{"Git", "Commit message rules", "Save commit rules", "Restore default commit rules", "Pi", "Save Pi path"} {
 		if !tester.HasText(title) {
 			t.Fatalf("Git Settings missing %q: %q", title, tester.Texts())
 		}
@@ -29,20 +29,20 @@ func TestGitPreferencesPageDefaultAndSave(t *testing.T) {
 		t.Fatal("default commit policy missing")
 	}
 	s.settingsGitPromptDraft = "fix(scope): describe precise changes"
-	if err := tester.Click("Save Commit Rules"); err != nil {
+	if err := tester.Click("Save commit rules"); err != nil {
 		t.Fatal(err)
 	}
 	if s.settings.Workbench.CommitPrompt != "fix(scope): describe precise changes" {
 		t.Fatal("Commit rules were not persisted through settings service")
 	}
 	s.settingsPiBinaryDraft = "/tmp/explicit-pi"
-	if err := tester.Click("Save Pi Path"); err != nil {
+	if err := tester.Click("Save Pi path"); err != nil {
 		t.Fatal(err)
 	}
 	if s.settings.Workbench.PiExecutable != "/tmp/explicit-pi" {
 		t.Fatal("Pi path not persisted")
 	}
-	if err := tester.Click("Restore Default Rules"); err != nil {
+	if err := tester.Click("Restore default commit rules"); err != nil {
 		t.Fatal(err)
 	}
 	if s.settings.Workbench.CommitPrompt != "" || s.settingsGitPromptDraft != settings.DefaultCommitPrompt {

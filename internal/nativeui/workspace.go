@@ -45,7 +45,7 @@ func (s *Shell) workspacePage(c *ui.Context) {
 // workspaceErrorBanner is the shared reconnect banner above any surface.
 func (s *Shell) workspaceErrorBanner(c *ui.Context, t *ui.Theme) {
 	ui.Row(c).Padding(7, 12).Background(t.Danger.Alpha(0.12)).BorderWidth(0, 0, 1, 0).BorderColor(t.Danger.Alpha(0.35)).Children(func() {
-		ui.Text(c, s.errText).TextColor(t.Danger).FontSize(11).Grow(1).SingleLine()
+		ui.Text(c, s.errText).TextColor(t.Danger).FontSize(Typography().BodySmall).Grow(1).SingleLine()
 		if ui.Button(c, "Retry").Clicked() {
 			s.reloadInstances(false)
 		}
@@ -62,7 +62,9 @@ func (s *Shell) terminalSurface(c *ui.Context) {
 			if s.shellState() == stateLoading {
 				ui.Spinner(c).Size(24, 24)
 			}
-			ui.Text(c, s.status).TextColor(t.TextMuted)
+			if s.status != "" || s.shellState() != stateLoading {
+				ui.Text(c, fallbackText(s.status, "No terminal open")).TextColor(t.TextMuted)
+			}
 		})
 		return
 	}

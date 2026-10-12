@@ -66,7 +66,7 @@ func (s *Shell) routeView(c *ui.Context) {
 		default:
 			r.Title("Not Found")
 			ui.Column(c).Grow(1).Center().Gap(8).Children(func() {
-				ui.Text(c, "Page not found").Bold()
+				ui.Text(c, "Page not found").FontWeight(WeightSemibold)
 				if ui.Button(c, "Back to Workspace").Clicked() {
 					s.router.Replace(routeWorkspace)
 				}

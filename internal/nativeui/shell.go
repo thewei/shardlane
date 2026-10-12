@@ -10,7 +10,6 @@ import (
 	"context"
 	"log/slog"
 	"path/filepath"
-	"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -158,7 +157,7 @@ type Shell struct {
 	providers providersUIState
 
 	// launch drives the Agent launch transaction over the verified Herdr
-	// transport (history continuation, live handoff, follow-up queue).
+	// transport (history continuation, follow-up queue).
 	launch *app.LaunchService
 
 	// workbench owns the 0.5 Agent workbench presentation state.
@@ -206,6 +205,10 @@ type Shell struct {
 	// sidebarCollapsed hides the sidebar (2026-10-06 A6): session-only
 	// presentation state, toggled from the header's leading cluster.
 	sidebarCollapsed bool
+	// sidebarSlideW is the sidebar's animated width this frame: the title
+	// bar reads it to clear the traffic lights and the sidebar toggle once
+	// the sidebar stops covering them.
+	sidebarSlideW float32
 	// windowPinned mirrors the main window's always-on-top level for the
 	// titlebar pin's selected face: session-only presentation state, never
 	// persisted and only ever changed through toggleWindowPinned.
@@ -308,7 +311,12 @@ type Shell struct {
 	// disabled until 2026-10-11.
 	chatConversationID string
 	chatPaneID         string
-	chatTurns          []conversation.TimelineTurn
+	// chatReadOnly marks a detached history transcript — the Sessions
+	// detail shows it through the same chat view with no pane, no live tail
+	// and no composer; chatSession is that session's meta for the header.
+	chatReadOnly bool
+	chatSession  *history.SessionMeta
+	chatTurns    []conversation.TimelineTurn
 	// chatModel is the last model the transcript window recorded
 	// (presentation pill only).
 	chatModel string
@@ -646,9 +654,13 @@ func (s *Shell) Close() {
 	herdr.CloseBridges()
 }
 func (s *Shell) View(c *ui.Context) {
+	s.hist.viewFrame++
+	s.releaseIdleHistoryChat()
 	theme := shardlaneTheme(s.resolvedDark(c.Theme().Dark))
 	c.SetTheme(theme)
-	if runtime.GOOS == "darwin" {
+	// The window's sidebar material shows wherever the view draws no
+	// background; without one the root keeps the theme's canvas.
+	if c.Vibrancy() {
 		c.Root().Background(ui.Transparent)
 	} else {
 		c.Root().Background(theme.Background)
@@ -678,13 +690,15 @@ func (s *Shell) View(c *ui.Context) {
 		s.syncRouteVisibility()
 	}
 
-	// The gorex background gradient runs under the whole window: the
-	// title bar, the sidebar and the workspace's terminal cards all sit
-	// on it directly — one continuous surface, no fills of their own
-	// under the chrome (2026-10-06 revised plan).
-	ui.Column(c).Fill().Draw(func(p *ui.Painter, r ui.Rect) {
-		paintGorexBackground(p, r, gorexColorsOf(theme.Dark))
-	}).Children(func() {
+	// The window is one flat surface: the sidebar (a vibrancy material on
+	// macOS) runs the full height beside the content column, which carries
+	// the title bar and the route on the opaque canvas. Only the loading
+	// page, which has no sidebar, paints the canvas behind everything.
+	frame := ui.Column(c).Fill()
+	if s.bootstrapPending || s.bootstrapFailed {
+		frame.Background(s.tokens(theme.Dark).Content)
+	}
+	frame.Children(func() {
 		// Prime the persistent container's entrance animation at zero
 		// without fading the loader itself. The first ready frame eases in
 		// only the real workspace chrome, respecting Reduce Motion.
@@ -695,10 +709,13 @@ func (s *Shell) View(c *ui.Context) {
 		} else {
 			content.Opacity(content.Animate("workspace-enter", 1, 260*time.Millisecond))
 			content.Children(func() {
-				s.titlebar(c)
 				ui.Row(c).Grow(1).MinHeight(0).AlignItems(ui.Stretch).Children(func() {
 					s.sidebarSlide(c)
-					s.routeView(c)
+					ui.Column(c).Grow(1).MinWidth(0).Background(s.tokens(theme.Dark).Content).Children(func() {
+						s.titlebar(c)
+						s.routeView(c)
+					})
+					s.sidebarToggle(c)
 				})
 			})
 		}

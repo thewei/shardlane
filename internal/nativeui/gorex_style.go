@@ -13,31 +13,28 @@ import (
 
 /**
  * [INPUT]: 依赖 github.com/egoist/mygo/plugins/terminal, github.com/egoist/mygo/ui, os, path/filepath, runtime
- * [OUTPUT]: 对外提供 gorexColors/gorexColorsOf/paintGorexBackground/gorexContentCard/gorexIconButton/gorexActivityDot/gorexAttentionDot/shortDir/samePath/tildePath
- * [POS]: nativeui 的 Gorex 风格视觉设计系统实现，被 workspace/terminal/titlebar 等模块消费
+ * [OUTPUT]: 对外提供 gorexColors/gorexColorsOf/gorexContentCard/gorexIconButton/gorexActivityDot/gorexAttentionDot/shortDir/samePath/tildePath
+ * [POS]: nativeui 的窗口 chrome 与终端卡片视觉实现（扁平中性面、细线图标按钮），被 workspace/terminal/titlebar 等模块消费
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 
-// The gorex visual language (examples/gorex), adopted by the Shardlane
-// workspace on 2026-10-06: a soft multi-stop gradient window background,
-// translucent rounded terminal cards with in-card pane headers, and
-// borderless round icon buttons. Presentation only — Herdr runtime facts,
-// colors included, are never authored here; these palettes style surfaces,
-// and the terminal palettes feed the official MyGo terminal plugin.
+// The workspace chrome (gorex heritage, flattened on 2026-10-12): a flat
+// neutral canvas under a vibrancy sidebar, terminal cards with in-card pane
+// headers and a hairline edge, and borderless icon buttons. No gradients,
+// no shadows — depth comes from surface contrast alone. Presentation only:
+// Herdr runtime facts, colors included, are never authored here; these
+// palettes style surfaces, and the terminal palettes feed the official MyGo
+// terminal plugin.
 
 // gorexColors is the shared surface palette, in light and dark windows.
 type gorexColors struct {
-	// The window's background: a gradient from top through mid to bottom,
-	// and a tint toward the right.
-	bgTop, bgMid, bgLow, bgBottom, bgTint ui.Color
-
-	card, cardFocused, cardBorder, cardBorderFocused ui.Color
+	// cardPaper is the pane card's opaque surface; cardBorder its hairline.
+	cardPaper, cardBorder ui.Color
 	// cardTranslucent is the pane-card paper when the terminal background
 	// itself is transparent (Settings → Terminal): a see-through fill that
-	// lets the window gradient read through the undrawn terminal
+	// lets what is behind the window read through the undrawn terminal
 	// background.
-	cardTranslucent       ui.Color
-	shadow, shadowFocused ui.Color
+	cardTranslucent ui.Color
 
 	text, textMuted, textFaint, iconMuted ui.Color
 	hover, pressed                        ui.Color
@@ -49,19 +46,9 @@ type gorexColors struct {
 }
 
 var gorexLightColors = gorexColors{
-	bgTop:    ui.Hex("#f6e7f6"),
-	bgMid:    ui.Hex("#efe1e6"),
-	bgLow:    ui.Hex("#eee0d3"),
-	bgBottom: ui.Hex("#ece1bd"),
-	bgTint:   ui.RGBA(242, 214, 222, 0.35),
-
-	card:              ui.RGBA(255, 255, 255, 0.66),
-	cardFocused:       ui.RGBA(255, 255, 255, 0.95),
-	cardTranslucent:   ui.RGBA(255, 255, 255, 0.58),
-	cardBorder:        ui.RGBA(255, 255, 255, 0.72),
-	cardBorderFocused: ui.RGBA(255, 255, 255, 1),
-	shadow:            ui.RGBA(60, 40, 50, 0.07),
-	shadowFocused:     ui.RGBA(60, 40, 50, 0.12),
+	cardPaper:       ui.Hex("#ffffff"),
+	cardTranslucent: ui.RGBA(255, 255, 255, 0.58),
+	cardBorder:      ui.RGBA(0, 0, 0, 0.09),
 
 	text:      ui.Hex("#1d1d1f"),
 	textMuted: ui.Hex("#636366"),
@@ -77,19 +64,9 @@ var gorexLightColors = gorexColors{
 }
 
 var gorexDarkColors = gorexColors{
-	bgTop:    ui.Hex("#2c2131"),
-	bgMid:    ui.Hex("#231e27"),
-	bgLow:    ui.Hex("#221f22"),
-	bgBottom: ui.Hex("#2a2619"),
-	bgTint:   ui.RGBA(80, 40, 60, 0.25),
-
-	card:              ui.RGBA(20, 20, 24, 0.5),
-	cardFocused:       ui.Hex("#1e1e22"),
-	cardTranslucent:   ui.RGBA(30, 30, 34, 0.6),
-	cardBorder:        ui.RGBA(255, 255, 255, 0.05),
-	cardBorderFocused: ui.RGBA(255, 255, 255, 0.14),
-	shadow:            ui.RGBA(0, 0, 0, 0.25),
-	shadowFocused:     ui.RGBA(0, 0, 0, 0.4),
+	cardPaper:       ui.Hex("#1e1e22"),
+	cardTranslucent: ui.RGBA(30, 30, 34, 0.6),
+	cardBorder:      ui.RGBA(255, 255, 255, 0.08),
 
 	text:      ui.Hex("#f2f2f7"),
 	textMuted: ui.Hex("#aeaeb2"),
@@ -116,9 +93,14 @@ func gorexColorsOf(dark bool) *gorexColors {
 // every other spacing here derives from it.
 const (
 	gorexGap     = 8
-	gorexCardR   = 12
-	gorexHeaderH = 33
-	gorexIconBtn = 30
+	gorexCardR   = 10 // Radius().Card: pane cards and grouped panels share it
+	gorexHeaderH = 34
+	// Toolbar buttons are gorexIconBtn with a gorexIconGlyph glyph; the
+	// denser pane-header and find-bar buttons use the smaller pair.
+	gorexIconBtn   = 28
+	gorexIconGlyph = 16
+	gorexPaneBtn   = 24
+	gorexPaneGlyph = 14
 	// Each card frame insets half the gutter, so adjacent cards keep a
 	// full gorexGap between them; the canvas padding adds the other half,
 	// completing the edge gutter (edges land on exactly gorexGap too).
@@ -133,29 +115,13 @@ const (
 	resizeDispatchCap  = float32(0.8)
 )
 
-// paintGorexBackground paints the window's background gradient.
-func paintGorexBackground(p *ui.Painter, r ui.Rect, k *gorexColors) {
-	h1, h2 := r.H*0.38, r.H*0.32
-	p.FillGradient(ui.Rect{X: r.X, Y: r.Y, W: r.W, H: h1 + 1}, ui.LinearGradient{From: k.bgTop, To: k.bgMid, Angle: 180}, 0)
-	p.FillGradient(ui.Rect{X: r.X, Y: r.Y + h1, W: r.W, H: h2 + 1}, ui.LinearGradient{From: k.bgMid, To: k.bgLow, Angle: 180}, 0)
-	p.FillGradient(ui.Rect{X: r.X, Y: r.Y + h1 + h2, W: r.W, H: r.H - h1 - h2}, ui.LinearGradient{From: k.bgLow, To: k.bgBottom, Angle: 180}, 0)
-	clear := k.bgTint
-	clear.A = 0
-	p.FillGradient(r, ui.LinearGradient{From: clear, To: k.bgTint, Angle: 90, Start: 0.35, End: 1}, 0)
-}
-
-// gorexContentCard hosts one primary content surface (the Diff surface
-// today) in a gorex card: the gradient shows around it at a full
-// gorexGap, the card carries the surface.
+// gorexContentCard hosts one primary content surface (Diff, Chat, History,
+// Files, Settings) as the flat page itself: full-bleed in the content column,
+// on the canvas color. There is no floating card, border or shadow around a
+// page — only terminal panes are cards.
 func gorexContentCard(c *ui.Context, k *gorexColors, build func()) {
-	ui.Box(c).Grow(1).MinWidth(0).Padding(gorexGap).Children(func() {
-		card := ui.Column(c).Grow(1).MinWidth(0).Radius(gorexCardR).Clip().
-			Background(k.cardFocused).Border(1, k.cardBorderFocused).
-			Shadow(0, 1, 2, 0, k.shadowFocused).
-			Shadow(0, 6, 22, -2, k.shadowFocused)
-		card.Transition(ui.ElementTransition{Colors: true, Duration: 160 * time.Millisecond})
-		card.Children(build)
-	})
+	ui.Column(c).Grow(1).MinWidth(0).Clip().
+		Background(designTokens(c.Theme().Dark).Content).Children(build)
 }
 
 // gorexIconButton is a borderless button of an icon, with a face on hover;
@@ -209,7 +175,7 @@ func gorexAttentionDot(c *ui.Context, col ui.Color, tooltip string) ui.Element {
 func gorexTerminalThemes() (light, dark *terminal.Theme) {
 	return &terminal.Theme{
 		Foreground: ui.Hex("#2a2d31"),
-		Background: ui.Hex("#fbfbfb"),
+		Background: ui.Hex("#ffffff"),
 		Cursor:     ui.Hex("#3a3d42"),
 		Selection:  ui.RGBA(46, 111, 208, 0.2),
 		Palette: [16]ui.Color{

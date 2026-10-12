@@ -2,8 +2,8 @@ package nativeui
 
 /**
  * [INPUT]: 依赖 Shell 当前 Router/Workspace/Agent 投影、共享 agentCardRow 和 native Quick Panel
- * [OUTPUT]: 提供 Sidebar 的 Workspace 树、Git 引用导航、History/Settings 导航与 Agent 行点击/右键动作
- * [POS]: 唯一左栏宿主，Git 引用树由 git_sidebar_tree 负责，Agent 详情复用 Quick Panel
+ * [OUTPUT]: 提供 Sidebar 的 Workspace 树、Git 引用导航、History/Settings 导航、内页底部返回控件（取代 Workspace 切换页脚）与 Agent 行点击/右键动作
+ * [POS]: 唯一左栏宿主，Git 引用树由 git_sidebar_tree 负责，Agent 详情复用 Quick Panel；内页返回统一落在页脚
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 
@@ -20,23 +20,15 @@ import (
 func (s *Shell) sidebar(c *ui.Context) {
 	t := c.Theme()
 	tokens := s.tokens(t.Dark)
-	// No fill of its own (2026-10-06 revised plan): the sidebar floats on
-	// the window's background gradient, one continuous surface with the
-	// transparent title bar above it. The old top action row is gone
-	// (2026-10-06 A7-A9); the header's trailing cluster owns the view
-	// switch (2026-10-07).
-	ui.Column(c).Width(sidebarWidth).Shrink(0).Children(func() {
+	// No fill of its own: the sidebar column (sidebarSlide) is the vibrancy
+	// material or its opaque fallback, one continuous surface with the band
+	// beside the traffic lights above this body. The header's trailing
+	// cluster owns the view switch (2026-10-07).
+	ui.Column(c).Width(sidebarWidth).Grow(1).MinHeight(0).Shrink(0).Children(func() {
 		if s.sidebarInDiffMode() {
 			// Git references are full-height navigation, not compressed toolbar chips.
 			ui.Row(c).FillWidth().Padding(8, 9, 6).Children(func() {
 				s.gitSidebarHeader(c)
-			})
-			ui.Divider(c)
-		} else if s.sidebarInnerPage() {
-			// The inner-page back control: it leaves the page for the
-			// workspace sidebar and its Terminal view.
-			ui.Row(c).FillWidth().Padding(0, 8, 4).Children(func() {
-				s.sidebarBackRow(c)
 			})
 			ui.Divider(c)
 		}
@@ -76,10 +68,17 @@ func (s *Shell) sidebar(c *ui.Context) {
 			s.handleSidebarSelection(s.selected)
 		}
 
-		// The Workspace is the bound Herdr instance, so switching belongs in
-		// the footer rather than nesting Projects under a Workspace tree.
-		ui.Row(c).Height(42).Padding(6, 8).Gap(6).AlignItems(ui.Center).
+		// The sidebar foot. Inner pages put their one way back here — the same
+		// spot on every page — in place of the Workspace switch. On the
+		// workspace sidebar the Workspace is the bound Herdr instance, so
+		// switching belongs in the footer rather than nesting Projects under
+		// a Workspace tree.
+		ui.Row(c).Height(42).Padding(5, 8).Gap(6).AlignItems(ui.Center).
 			BorderWidth(1, 0, 0, 0).BorderColor(tokens.BorderSubtle).Children(func() {
+			if s.sidebarInnerPage() {
+				s.sidebarBackRow(c)
+				return
+			}
 			s.sessionSelector(c)
 			if iconButton(c, iconSettings, "Settings").Clicked() {
 				s.router.Push(routeSettings)
@@ -102,17 +101,25 @@ func (s *Shell) sidebarInDiffMode() bool {
 }
 
 // sidebarInnerPage reports whether the current route is an inner page:
-// Settings or History (list, detail, by-project). Inner pages swap the
-// sidebar body for their own navigation below the back control.
+// Settings, History (list, detail, by-project) or Files. Inner pages swap
+// the sidebar body for their own navigation and pin the back control to the
+// sidebar foot.
 func (s *Shell) sidebarInnerPage() bool {
 	path := s.router.Path()
 	return isHistoryRoute(path) || path == routeFiles || strings.HasPrefix(path, "/settings/")
 }
 
-// sidebarBackRow names the destination precisely: the Workspace's Terminal,
-// not the last visible Diff/Chat/Commit surface. The global router history
-// shortcut remains independent of this explicit product navigation.
+// sidebarBackRow names the destination precisely. A session detail returns
+// to the Sessions list; every other inner page returns to the Workspace's
+// Terminal, not the last visible Diff/Chat/Commit surface. The global router
+// history shortcut remains independent of this explicit product navigation.
 func (s *Shell) sidebarBackRow(c *ui.Context) {
+	if strings.HasPrefix(s.router.Path(), routeHistory+"/") {
+		if navButton(c, iconArrowLeft, "Back to Sessions", "", false).Clicked() {
+			s.showHistoryIndex()
+		}
+		return
+	}
 	if navButton(c, iconArrowLeft, "Back to Terminal", "", false).Clicked() {
 		s.showViewTerminal()
 	}
@@ -140,9 +147,9 @@ func (s *Shell) sidebarFilesView(c *ui.Context) {
 	snap := s.gdActiveSnapshot()
 	ui.Column(c).Grow(1).MinHeight(0).Children(func() {
 		ui.Row(c).FillWidth().Padding(6, 12, 2).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, "Local Changes").FontSize(12).FontWeight(650)
+			ui.Text(c, "Local Changes").FontSize(Typography().Body).FontWeight(WeightSemibold)
 			if snap != nil {
-				ui.Textf(c, "  %d files", len(snap.Files)).FontSize(11).TextColor(t.TextMuted)
+				ui.Textf(c, "  %d files", len(snap.Files)).FontSize(Typography().BodySmall).TextColor(t.TextMuted)
 			}
 		})
 
@@ -155,7 +162,7 @@ func (s *Shell) sidebarFilesView(c *ui.Context) {
 
 		if s.git.root == "" {
 			ui.Column(c).Grow(1).Center().Padding(16).Children(func() {
-				ui.Text(c, "No Git repository").FontSize(12).TextColor(t.TextMuted)
+				ui.Text(c, "No Git repository").FontSize(Typography().Body).TextColor(t.TextMuted)
 			})
 			return
 		}
@@ -164,7 +171,7 @@ func (s *Shell) sidebarFilesView(c *ui.Context) {
 				if s.git.refreshing {
 					ui.Spinner(c).Size(16, 16)
 				}
-				ui.Text(c, "Reading changes…").FontSize(12).TextColor(t.TextMuted)
+				ui.Text(c, "Reading changes…").FontSize(Typography().Body).TextColor(t.TextMuted)
 			})
 			return
 		}
@@ -189,7 +196,7 @@ func (s *Shell) sidebarFilesView(c *ui.Context) {
 					&s.unstagedChoice, gdViewUnstaged, func(row gitworkbench.FlatRow) { s.changesClickSide(row, gdViewUnstaged) })
 				list.Children(func() {
 					if len(unstagedRows) == 0 {
-						ui.Text(c, "No unstaged files").FontSize(12).TextColor(t.TextMuted).Padding(12)
+						ui.Text(c, "No unstaged files").FontSize(Typography().Body).TextColor(t.TextMuted).Padding(12)
 					}
 				})
 			}
@@ -206,7 +213,7 @@ func (s *Shell) sidebarFilesView(c *ui.Context) {
 					&s.stagedChoice, gdViewStaged, func(row gitworkbench.FlatRow) { s.changesClickSide(row, gdViewStaged) })
 				list.Children(func() {
 					if len(stagedRows) == 0 {
-						ui.Text(c, "No staged files").FontSize(12).TextColor(t.TextMuted).Padding(12)
+						ui.Text(c, "No staged files").FontSize(Typography().Body).TextColor(t.TextMuted).Padding(12)
 					}
 				})
 				if s.unstagedOpen && len(unstagedFiles) > 0 {
@@ -299,7 +306,7 @@ func (s *Shell) commitsPane(c *ui.Context, pal *gdPalette) {
 			labels := 0
 			for _, branch := range s.git.branches {
 				if branch.HeadShort != "" && strings.HasPrefix(cm.Hash, branch.HeadShort) && labels < 2 {
-					ui.Text(c, branch.Name).FontSize(10).FontWeight(650).
+					ui.Text(c, branch.Name).FontSize(Typography().Micro).FontWeight(WeightSemibold).
 						Padding(2, 5).Radius(3).Background(t.Accent.Alpha(0.18)).
 						TextColor(t.Accent).MaxWidth(140).SingleLine().Tooltip(branch.Name)
 					labels++
@@ -308,16 +315,16 @@ func (s *Shell) commitsPane(c *ui.Context, pal *gdPalette) {
 			for _, branch := range s.git.remoteBranches {
 				if branch.HeadShort != "" && strings.HasPrefix(cm.Hash, branch.HeadShort) && labels < 2 {
 					name := branch.Remote + "/" + branch.Name
-					ui.Text(c, name).FontSize(10).FontWeight(650).
+					ui.Text(c, name).FontSize(Typography().Micro).FontWeight(WeightSemibold).
 						Padding(2, 5).Radius(3).Background(t.SurfaceHover).
 						TextColor(ref).MaxWidth(140).SingleLine().Tooltip(name)
 					labels++
 				}
 			}
-			ui.Text(c, cm.Subject).FontSize(12).Grow(1).MinWidth(0).SingleLine()
-			ui.Text(c, cm.Author).FontSize(11).TextColor(muted).Width(90).SingleLine()
-			ui.Text(c, cm.Short).Font(gdCodeFont()).FontSize(11).TextColor(ref).Width(64).SingleLine()
-			ui.Text(c, gdRelativeTime(cm.Time)).FontSize(11).TextColor(muted).Width(62).SingleLine()
+			ui.Text(c, cm.Subject).FontSize(Typography().Body).Grow(1).MinWidth(0).SingleLine()
+			ui.Text(c, cm.Author).FontSize(Typography().BodySmall).TextColor(muted).Width(90).SingleLine()
+			ui.Text(c, cm.Short).Font(gdCodeFont()).FontSize(Typography().BodySmall).TextColor(ref).Width(64).SingleLine()
+			ui.Text(c, gdRelativeTime(cm.Time)).FontSize(Typography().BodySmall).TextColor(muted).Width(62).SingleLine()
 		})
 	}).Grow(1).MinHeight(0).Padding(4, 8).Gap(4)
 	s.commitsList.Key = func(i int) any {
@@ -328,7 +335,7 @@ func (s *Shell) commitsPane(c *ui.Context, pal *gdPalette) {
 	}
 	list.Children(func() {
 		if len(entries) == 0 {
-			ui.Text(c, "No matching commits").FontSize(12).TextColor(t.TextMuted).Padding(12)
+			ui.Text(c, "No matching commits").FontSize(Typography().Body).TextColor(t.TextMuted).Padding(12)
 		}
 	})
 }
@@ -439,9 +446,9 @@ func (s *Shell) gdSectionHeader(c *ui.Context, pal *gdPalette, title string, cou
 			ic.Rotate(ic.Animate("rot", target, 150*time.Millisecond))
 		})
 		toggleMenu(open, toggle)
-		ui.Text(c, title).FontSize(11).FontWeight(650).LetterSpacing(0.4).TextColor(t.TextMuted)
+		ui.Text(c, title).FontSize(Typography().BodySmall).FontWeight(WeightSemibold).LetterSpacing(0.4).TextColor(t.TextMuted)
 		if count > 0 {
-			ui.Text(c, itoa(count)).FontSize(11).FontWeight(600).TextColor(t.TextMuted)
+			ui.Text(c, itoa(count)).FontSize(Typography().BodySmall).FontWeight(WeightSemibold).TextColor(t.TextMuted)
 		}
 		ui.Spacer(c)
 		if count == 0 || s.git.opBusy {
@@ -453,7 +460,7 @@ func (s *Shell) gdSectionHeader(c *ui.Context, pal *gdPalette, title string, cou
 			b.Background(pal.hover).TextColor(t.Text)
 		}
 		b.Children(func() {
-			ui.Text(c, actionLabel).FontSize(10).FontWeight(600)
+			ui.Text(c, actionLabel).FontSize(Typography().Micro).FontWeight(WeightSemibold)
 		})
 		if b.Clicked() {
 			action(paths)

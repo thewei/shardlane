@@ -17,12 +17,12 @@ func (s *Shell) gitSidebarHeader(c *ui.Context) {
 	ui.Row(c).FillWidth().Gap(7).AlignItems(ui.Center).Children(func() {
 		ui.Icon(c, iconBranch).FontSize(13).TextColor(t.TextMuted)
 		ui.Column(c).Grow(1).MinWidth(0).Gap(0).Children(func() {
-			ui.Text(c, s.gitRepoName()).FontSize(12).FontWeight(650).SingleLine()
+			ui.Text(c, s.gitRepoName()).FontSize(Typography().Body).FontWeight(WeightSemibold).SingleLine()
 			if branch := s.currentBranchName(); branch != "" {
-				ui.Text(c, branch).FontSize(10).TextColor(t.TextMuted).SingleLine().Tooltip(branch)
+				ui.Text(c, branch).FontSize(Typography().Micro).TextColor(t.TextMuted).SingleLine().Tooltip(branch)
 			}
 		})
-		if ui.Button(c, "↻").FontSize(13).Tooltip("Refresh repository").Clicked() {
+		if gorexIconButton(c, gorexColorsOf(t.Dark), iconRefresh, "Refresh repository", "Refresh repository", false, gorexPaneBtn, gorexPaneGlyph).Clicked() {
 			s.refreshGitChanges()
 		}
 	})
@@ -31,13 +31,18 @@ func (s *Shell) gitSidebarHeader(c *ui.Context) {
 func (s *Shell) gitRepositorySidebar(c *ui.Context) {
 	t := c.Theme()
 	ui.Column(c).Grow(1).MinHeight(0).Padding(7, 5, 0).Gap(5).Children(func() {
-		s.gitNavigationRow(c, "Local Changes", !s.commitsMode, func() {
-			s.commitsMode = false
-			s.reviewLocalChanges()
-		})
-		s.gitNavigationRow(c, "All Commits", s.commitsMode, func() {
-			s.showGitCommits()
-		})
+		mode := 0
+		if s.commitsMode {
+			mode = 1
+		}
+		if ui.Segmented(c, &mode, "Local Changes", "All Commits").FillWidth().Changed() {
+			if mode == 0 {
+				s.commitsMode = false
+				s.reviewLocalChanges()
+			} else {
+				s.showGitCommits()
+			}
+		}
 		ui.Row(c).FillWidth().Padding(4, 4, 2).Children(func() {
 			filter := ui.TextInput(c, &s.gitRefsFilter).FillWidth().Height(28).
 				Placeholder("Filter references").Label("Filter Git references")
@@ -52,7 +57,7 @@ func (s *Shell) gitRepositorySidebar(c *ui.Context) {
 			}
 		})
 		if s.git.root == "" {
-			ui.Text(c, "No Git repository").Padding(10).FontSize(11).TextColor(t.TextMuted)
+			ui.Text(c, "No Git repository").Padding(10).FontSize(Typography().BodySmall).TextColor(t.TextMuted)
 			return
 		}
 		ui.Scroll(c).Grow(1).MinHeight(0).Children(func() {
@@ -182,28 +187,6 @@ func (s *Shell) gitRepositorySidebar(c *ui.Context) {
 	})
 }
 
-func (s *Shell) gitNavigationRow(c *ui.Context, title string, active bool, action func()) {
-	t := c.Theme()
-	row := ui.ButtonBase(c.Key("git-nav:"+title)).FillWidth().Height(28).Padding(0, 8).Gap(8).Radius(5).
-		Label(title).FocusRing(false).AlignItems(ui.Center)
-	if active {
-		row.Background(t.Accent.Alpha(.15)).TextColor(t.Accent)
-	} else if row.Hovered() {
-		row.Background(t.SurfaceHover)
-	}
-	row.Children(func() {
-		svg := iconHistory
-		if title == "Local Changes" {
-			svg = iconFolder
-		}
-		ui.Icon(c, svg).FontSize(13)
-		ui.Text(c, title).FontSize(12).FontWeight(600)
-	})
-	if row.Clicked() {
-		action()
-	}
-}
-
 func (s *Shell) gitSidebarSection(c *ui.Context, name string, count int, popup *bool, panel func(*ui.Context), children func()) {
 	t := c.Theme()
 	key := s.gitFoldKey("section/" + name)
@@ -220,14 +203,14 @@ func (s *Shell) gitSidebarSection(c *ui.Context, name string, count int, popup *
 				ch = iconChevron
 			}
 			ui.Icon(c, ch).FontSize(11).TextColor(t.TextMuted)
-			ui.Text(c, name).FontSize(12).FontWeight(650).Grow(1)
-			ui.Textf(c, "%d", count).FontSize(10).TextColor(t.TextMuted)
+			ui.Text(c, name).FontSize(Typography().Body).FontWeight(WeightSemibold).Grow(1)
+			ui.Textf(c, "%d", count).FontSize(Typography().Micro).TextColor(t.TextMuted)
 		})
 		if toggle.Clicked() {
 			s.gitTreeClosed[key] = !s.gitTreeClosed[key]
 		}
 		if popup != nil && panel != nil {
-			button := ui.Button(c, "···").Label(name+" actions").FontSize(12).Tooltip(name+" actions").
+			button := ui.Button(c, "···").Label(name+" actions").FontSize(Typography().Body).Tooltip(name+" actions").
 				Padding(1, 4).Background(ui.Transparent)
 			toggleMenu(popup, button)
 			if *popup {

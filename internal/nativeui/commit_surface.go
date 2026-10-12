@@ -52,7 +52,7 @@ func (s *Shell) commitSurface(c *ui.Context) {
 				// Subject.
 				ui.Column(c).FillWidth().Gap(sp.XXS).Children(func() {
 					ui.Row(c).FillWidth().Gap(sp.S).AlignItems(ui.Center).Children(func() {
-						ui.Text(c, "Subject").FontSize(Typography().Caption).FontWeight(600).Grow(1)
+						ui.Text(c, "Subject").FontSize(Typography().Caption).FontWeight(WeightSemibold).Grow(1)
 						amend := s.surface.commit.Amend
 						ui.Checkbox(c, &amend, "")
 						s.surface.commit.Amend = amend
@@ -73,23 +73,23 @@ func (s *Shell) commitSurface(c *ui.Context) {
 
 				// Body.
 				ui.Column(c).FillWidth().Gap(sp.XXS).Children(func() {
-					ui.Text(c, "Description (optional)").FontSize(Typography().Caption).FontWeight(600)
+					ui.Text(c, "Description (optional)").FontSize(Typography().Caption).FontWeight(WeightSemibold)
 					ui.TextArea(c, &s.surface.commit.Body).Grow(0).Height(72).Placeholder("Extra detail").Label("Commit description")
 				})
 
 				// Selected-file checklist (GWB-223 selection checklist).
 				ui.Column(c).FillWidth().Gap(sp.XXS).Children(func() {
 					ui.Row(c).FillWidth().Gap(sp.S).AlignItems(ui.Center).Children(func() {
-						ui.Text(c, "Files to include").FontSize(Typography().Caption).FontWeight(600).Grow(1)
+						ui.Text(c, "Files to include").FontSize(Typography().Caption).FontWeight(WeightSemibold).Grow(1)
 						ui.Textf(c, "%d / %d", len(s.selectedCommitPaths()), len(snap.Files)).
 							FontSize(Typography().Micro).TextColor(t.TextMuted)
-						if ui.Button(c, "Select all").FontSize(Typography().Micro).Clicked() {
+						if compactButton(c, "Select all").Clicked() {
 							for _, file := range snap.Files {
 								s.surface.commit.Selected[file.Path] = true
 							}
 							s.cancelPiCommitSuggestion()
 						}
-						if ui.Button(c, "Clear selection").FontSize(Typography().Micro).Clicked() {
+						if compactButton(c, "Clear selection").Clicked() {
 							for _, file := range snap.Files {
 								s.surface.commit.Selected[file.Path] = false
 							}
@@ -102,7 +102,7 @@ func (s *Shell) commitSurface(c *ui.Context) {
 						ui.Row(c).FillWidth().Padding(sp.XXS, sp.XS).Gap(sp.S).AlignItems(ui.Center).Children(func() {
 							ui.Checkbox(c, &checked, "")
 							s.surface.commit.Selected[cf.Path] = checked
-							ui.Text(c, cf.Status.Letter()).FontSize(Typography().Micro).FontWeight(700).
+							ui.Text(c, cf.Status.Letter()).FontSize(Typography().Micro).FontWeight(WeightSemibold).
 								TextColor(tokens.StatusColor(statusTone(cf.Status), t.Dark))
 							ui.Text(c, cf.Path).FontSize(Typography().BodySmall).Grow(1).MinWidth(0).SingleLine().Tooltip(cf.Path)
 							ui.Text(c, "+"+itoa(cf.Additions)+" -"+itoa(cf.Deletions)).
@@ -141,7 +141,7 @@ func (s *Shell) commitActionFooter(c *ui.Context) {
 	ui.Column(c).FillWidth().BorderWidth(1, 0, 0, 0).
 		BorderColor(designTokens(t.Dark).BorderSubtle).Padding(sp.M, sp.L).Gap(sp.S).Children(func() {
 		if s.commitDiscardPrompt {
-			ui.Text(c, "Discard this commit message draft?").FontSize(Typography().Caption).FontWeight(650)
+			ui.Text(c, "Discard this commit message draft?").FontSize(Typography().Caption).FontWeight(WeightSemibold)
 			ui.Row(c).Gap(sp.S).Children(func() {
 				if ui.Button(c, "Keep Editing").Clicked() {
 					s.commitDiscardPrompt = false

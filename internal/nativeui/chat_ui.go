@@ -27,13 +27,13 @@ func (s *Shell) chatTimelineRow(c *ui.Context, turn conversation.TimelineTurn, t
 		switch {
 		case turn.UserRow:
 			ui.Row(c).Gap(sp.S).AlignItems(ui.Center).Children(func() {
-				ui.Text(c, "USER").FontSize(Typography().Micro).FontWeight(700).TextColor(t.TextMuted)
+				ui.Text(c, "USER").FontSize(Typography().Micro).FontWeight(WeightSemibold).TextColor(t.TextMuted)
 			})
 			ui.Text(c, turn.Text).FontSize(Typography().Body)
 			return
 		default:
 			ui.Row(c).Gap(sp.S).AlignItems(ui.Center).Children(func() {
-				ui.Text(c, "ASSISTANT").FontSize(Typography().Micro).FontWeight(700).TextColor(t.TextMuted)
+				ui.Text(c, "ASSISTANT").FontSize(Typography().Micro).FontWeight(WeightSemibold).TextColor(t.TextMuted)
 				if turn.Failed {
 					statusPill(c, "Stopped", ToneError)
 				}
@@ -182,9 +182,9 @@ func (s *Shell) workspaceChatSurface(c *ui.Context) {
 func (s *Shell) chatPage(c *ui.Context) {
 	sp := Spacing()
 	ui.Column(c).Grow(1).MinWidth(0).Background(designTokens(c.Theme().Dark).Content).Children(func() {
-		pageHeader(c, "Chat", "One conversation surface over the Herdr-owned live agent session.")
+		pageHeader(c, "Chat", "")
 		if s.chatConversationID == "" {
-			emptyState(c, "No conversation selected", "Open a conversation from History or an Agent card to bind this surface.")
+			emptyState(c, "No conversation", "Open one from Sessions or an agent.")
 			return
 		}
 		if s.chatLoading {
@@ -194,7 +194,6 @@ func (s *Shell) chatPage(c *ui.Context) {
 		ui.Row(c).Padding(0, sp.XL, sp.S).Gap(sp.M).AlignItems(ui.Center).Children(func() {
 			summary := s.chatDispositionSummary()
 			statusPill(c, summary, dispositionTone(s.chatDispositionNow()))
-			ui.Text(c, s.chatConversationID).FontSize(Typography().Caption).TextColor(c.Theme().TextMuted).SingleLine()
 		})
 		// N19 Phase 2: with the WebView chat enabled the body is the
 		// embedded page over the presentation-only bridge; the header band,
@@ -316,14 +315,23 @@ func (s *Shell) chatAfterPrompt(requestID, text string, disposition conversation
 	s.publishChatBridge()
 }
 
-// bindChatConversation binds one conversation and fills the timeline from
-// the read-only HistoryService bounded window (CONV-07/CONV-09): latest
-// generation wins, stale loads cannot apply.
+// bindChatConversation binds one pane's history conversation and fills the
+// timeline from the read-only HistoryService bounded window (CONV-07/
+// CONV-09): latest generation wins, stale loads cannot apply.
 func (s *Shell) bindChatConversation(conversationID string) {
+	s.bindChatWindow(conversationID, false)
+}
+
+// bindChatWindow is the one history-window binding. The window is the
+// newest messages (chat order: the conversation opens at its end and
+// "Earlier messages" pages upward). readOnly detaches the chat from every
+// pane — the Sessions detail: no live tail, no composer, no runtime — and
+// keeps the session's own meta for the header.
+func (s *Shell) bindChatWindow(conversationID string, readOnly bool) {
 	if conversationID == "" || s.hist.service == nil {
 		return
 	}
-	if s.chatConversationID == conversationID && (s.chatLoading || len(s.chatTurns) > 0) {
+	if s.chatConversationID == conversationID && s.chatReadOnly == readOnly && (s.chatLoading || len(s.chatTurns) > 0) {
 		return
 	}
 	s.stopLiveTail()
@@ -337,16 +345,26 @@ func (s *Shell) bindChatConversation(conversationID string) {
 	s.chatOpenCancel = cancel
 	generation := s.chatGen.Add(1)
 	s.chatConversationID = conversationID
+	s.chatReadOnly = readOnly
+	s.chatSession = nil
+	if readOnly {
+		s.chatPaneID = ""
+		s.chatSourcelessPaneID = ""
+		s.chatQueuedText = ""
+		s.chatOutcome = ""
+	}
 	s.chatLoading = true
 	s.chatTurns = nil
+	s.chatTurnExpanded = nil
 	s.chatWindowMessages = nil
 	s.chatWindowStart = 0
 	s.chatHasOlder = false
 	s.chatContextTokens = nil
 	service := s.hist.service
+	s.publishChatBridge()
 
 	s.dispatch(func() {
-		window, err := service.Open(ctx, history.ConversationWindowRequest{ConversationID: conversationID})
+		window, err := service.Open(ctx, history.ConversationWindowRequest{ConversationID: conversationID, Tail: true})
 		s.applyOnWindow(func() {
 			if generation != s.chatGen.Load() {
 				return
@@ -362,10 +380,40 @@ func (s *Shell) bindChatConversation(conversationID string) {
 				s.chatTurns = conversation.DeriveTimeline(items)
 				s.chatModel = lastModelFromItems(items)
 				s.chatContextTokens = lastContextFromMessages(window.Messages)
+				if readOnly {
+					meta := window.Meta
+					s.chatSession = &meta
+				}
 			}
 			s.publishChatBridge()
 		})
 	})
+}
+
+// releaseHistoryChat drops a read-only history binding once its page is
+// gone, so no stale transcript can be mistaken for a pane's conversation
+// (the inspector and the Workspace chat read the same state).
+func (s *Shell) releaseHistoryChat() {
+	if !s.chatReadOnly {
+		return
+	}
+	s.chatGen.Add(1)
+	if s.chatOpenCancel != nil {
+		s.chatOpenCancel()
+		s.chatOpenCancel = nil
+	}
+	s.chatReadOnly = false
+	s.chatSession = nil
+	s.chatConversationID = ""
+	s.chatLoading = false
+	s.chatTurns = nil
+	s.chatWindowMessages = nil
+	s.chatWindowStart = 0
+	s.chatHasOlder = false
+	s.chatContextTokens = nil
+	s.chatModel = ""
+	s.chatOutcome = ""
+	s.publishChatBridge()
 }
 
 // chatDispositionNow derives the composer disposition live from the

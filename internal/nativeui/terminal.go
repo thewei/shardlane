@@ -449,31 +449,26 @@ func (s *Shell) resizePane(paneID, direction string, amount float64) bool {
 	return true
 }
 
-// paneCard draws one attached Herdr Pane as a gorex card: a rounded,
-// translucent surface with a hairline border and a soft double shadow —
-// a notch stronger when the Pane is the selected one — the pane header
-// over its terminal. The gutter lives in the frame (see terminalCanvas);
-// the card fills its frame exactly.
+// paneCard draws one attached Herdr Pane as a card: a rounded, opaque
+// surface with a hairline border — accent-tinted when the Pane is the
+// selected one — the pane header over its terminal. The gutter lives in the
+// frame (see terminalCanvas); the card fills its frame exactly.
 func (s *Shell) paneCard(c *ui.Context, k *gorexColors, surface *terminalSurface) {
 	focused := surface.focused
 	card := ui.Column(c).Fill().Radius(gorexCardR).Clip().MinWidth(0).MinHeight(0)
-	// The card surface is the opaque paper (gorex cardFocused) on both
-	// states: the translucent fill made the card edge melt into the pale
-	// gradient, and the gutter to the right panel read as zero (2026-10-06
-	// terminal-view spacing report). Focus still shows through a stronger
-	// border and shadow. The Transparent-terminal preference swaps in a
-	// deliberately see-through paper so the window gradient shows through
-	// the undrawn terminal background — the user's opt-in look.
-	bg, border, shadow := k.cardFocused, k.cardBorder, k.shadow
+	// The card surface is the opaque paper on both states, so the card edge
+	// never melts into the canvas. The Transparent-terminal preference swaps
+	// in a deliberately see-through paper — the user's opt-in look.
+	bg, border := k.cardPaper, k.cardBorder
 	if s.settings.Terminal.Transparent {
 		bg = k.cardTranslucent
 	}
 	if focused {
-		border, shadow = k.cardBorderFocused, k.shadowFocused
+		// A focused pane is the only one that takes the accent: a quiet ring
+		// is enough to tell which split receives the keyboard.
+		border = c.Theme().Accent.Alpha(0.6)
 	}
-	card.Background(bg).Border(1, border).
-		Shadow(0, 1, 2, 0, shadow).
-		Shadow(0, 6, 22, -2, shadow)
+	card.Background(bg).Border(1, border)
 	var dropAction paneCardDropAction
 	var dropLabel string
 	if dragged, over := ui.DragOver[treeNodeDrag](card); over && s.canDropOnPaneCard(dragged, surface.paneID, s.selectedTabID) {
@@ -519,11 +514,11 @@ func (s *Shell) paneCard(c *ui.Context, k *gorexColors, surface *terminalSurface
 		if dropAction != paneCardDropNone {
 			ui.Row(c.Key("card-drop-target")).Absolute().Right(12).Top(gorexHeaderH+12).
 				Padding(6, 10).Radius(7).Background(c.Theme().Surface).
-				Border(1, c.Theme().Accent.Alpha(0.5)).Shadow(0, 2, 10, 0, shadow).
+				Border(1, c.Theme().Accent.Alpha(0.5)).
 				PassThrough().Transition(ui.ElementTransition{
 				Enter: &ui.Motion{Y: 6}, Exit: &ui.Motion{Y: -4}, Duration: 140 * time.Millisecond,
 			}).Children(func() {
-				ui.Text(c, dropLabel).FontSize(11).FontWeight(600).
+				ui.Text(c, dropLabel).FontSize(Typography().BodySmall).FontWeight(WeightSemibold).
 					TextColor(c.Theme().Accent).PassThrough()
 			})
 		}
@@ -621,7 +616,7 @@ func (s *Shell) paneLogoView(c *ui.Context, k *gorexColors, surface *terminalSur
 			Radius(Radius().Row).
 			Background(designTokens(dark).StatusColor(ToneInfo, dark))
 		badge.Children(func() {
-			ui.Text(c, strconv.Itoa(stackCount)).FontSize(8).FontWeight(700).TextColor(textColor)
+			ui.Text(c, strconv.Itoa(stackCount)).FontSize(Typography().Micro).FontWeight(WeightSemibold).TextColor(textColor)
 		})
 	})
 }
@@ -665,10 +660,10 @@ func (s *Shell) paneCardHeader(c *ui.Context, k *gorexColors, surface *terminalS
 			}
 		}
 		caption.Children(func() {
-			ui.Text(c, title).FontSize(12.5).FontWeight(600).TextColor(k.text).
+			ui.Text(c, title).FontSize(Typography().Body).FontWeight(WeightSemibold).TextColor(k.text).
 				SingleLine().Ellipsis("…").Shrink(0).MaxWidthPercent(80)
 			if detail != "" {
-				ui.Text(c, detail).FontSize(12.5).FontWeight(500).TextColor(k.text.Alpha(0.86)).
+				ui.Text(c, detail).FontSize(Typography().BodySmall).TextColor(k.textMuted).
 					SingleLine().Ellipsis("…").Shrink(1).MinWidth(0)
 			}
 			s.paneStatusDot(c, k, surface)
@@ -679,7 +674,7 @@ func (s *Shell) paneCardHeader(c *ui.Context, k *gorexColors, surface *terminalS
 			// sidebar rows and the title-bar ⋯ menu, never a second menu.
 			// Always rendered (not hover-gated): a menu anchor that vanishes
 			// when the pointer enters the dropdown would be a trap.
-			more := gorexIconButton(c, k, iconEllipsis, "Pane menu", "Pane menu", false, 22, 13)
+			more := gorexIconButton(c, k, iconEllipsis, "Pane menu", "Pane menu", false, gorexPaneBtn, gorexPaneGlyph)
 			more.Menu(func(m *ui.Menu) {
 				s.terminalPaneMenu(c, m, surface)
 			})
@@ -695,19 +690,19 @@ func (s *Shell) paneCardHeader(c *ui.Context, k *gorexColors, surface *terminalS
 				// card header, not in the window header.
 				s.surfaceToggle(c, k, WorkspaceSurfaceTerminal, surface.paneID)
 			}
-			if gorexIconButton(c, k, iconSplit, "Split Right", "Split Right", false, 26, 15).Clicked() {
+			if gorexIconButton(c, k, iconSplit, "Split Right", "Split Right", false, gorexPaneBtn, gorexPaneGlyph).Clicked() {
 				s.selectPane(surface.paneID)
 				s.splitPaneAction(surface.paneID, "right")
 			}
-			if gorexIconButton(c, k, iconSplitDown, "Split Down", "Split Down", false, 26, 15).Clicked() {
+			if gorexIconButton(c, k, iconSplitDown, "Split Down", "Split Down", false, gorexPaneBtn, gorexPaneGlyph).Clicked() {
 				s.selectPane(surface.paneID)
 				s.splitPaneAction(surface.paneID, "down")
 			}
-			if gorexIconButton(c, k, iconZoom, "Zoom / Unzoom", "Zoom / Unzoom", false, 26, 15).Clicked() {
+			if gorexIconButton(c, k, iconZoom, "Zoom / Unzoom", "Zoom / Unzoom", false, gorexPaneBtn, gorexPaneGlyph).Clicked() {
 				s.selectPane(surface.paneID)
 				s.zoomPaneAction(surface.paneID)
 			}
-			if gorexIconButton(c, k, iconClose, "Close Pane", "Close Pane", false, 26, 15).Clicked() {
+			if gorexIconButton(c, k, iconClose, "Close Pane", "Close Pane", false, gorexPaneBtn, gorexPaneGlyph).Clicked() {
 				s.closePaneAction(surface.paneID)
 			}
 		})

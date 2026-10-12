@@ -223,12 +223,12 @@ func TestCommandCenterUnifiedSearch(t *testing.T) {
 func TestSettingsUsesNestedRoute(t *testing.T) {
 	s := NewShell()
 	s.loading = false
-	s.router.Replace("/settings/runtime")
+	s.router.Replace("/settings/diagnostics")
 	s.activeInstance = "default"
 	s.projection = herdr.Projection{Protocol: 22}
 
 	tester := ui.NewTester(s.View, 1200, 800)
-	for _, want := range []string{"Settings", "General", "Terminal", "Runtime", "Herdr protocol: 22"} {
+	for _, want := range []string{"Settings", "General", "Terminal", "Diagnostics", "protocol 22"} {
 		if !tester.HasText(want) {
 			t.Fatalf("settings missing %q; texts=%q", want, tester.Texts())
 		}

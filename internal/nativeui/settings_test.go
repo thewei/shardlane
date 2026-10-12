@@ -72,7 +72,7 @@ func TestSettingsGeneralPageUpdatesService(t *testing.T) {
 	s.router.Replace("/settings/general")
 	tester := ui.NewTester(s.View, 1200, 800)
 
-	if !tester.HasText("Appearance") || !tester.HasText("Restore window state") || !tester.HasText("Window opacity") {
+	if !tester.HasText("Appearance") || !tester.HasText("Restore window position") || !tester.HasText("Window opacity") {
 		t.Fatalf("general page missing controls; texts=%q", tester.Texts())
 	}
 	if err := tester.Click("Light"); err != nil {
@@ -84,7 +84,7 @@ func TestSettingsGeneralPageUpdatesService(t *testing.T) {
 	if s.settings.General.Appearance != "light" {
 		t.Fatal("presentation snapshot was not refreshed")
 	}
-	if err := tester.Click("Enabled"); err != nil {
+	if err := tester.Click("Restore window position"); err != nil {
 		t.Fatal(err)
 	}
 	if s.settingsService.Current().General.RestoreWindow {
@@ -98,12 +98,12 @@ func TestSettingsTerminalPageUpdatesService(t *testing.T) {
 	s.router.Replace("/settings/terminal")
 	tester := ui.NewTester(s.View, 1200, 800)
 
-	for _, want := range []string{"Font family", "Font size", "Line height", "Scrollback", "Option as Alt"} {
+	for _, want := range []string{"Font family", "Font size", "Line height", "Scrollback", "Use Option as Alt"} {
 		if !tester.HasText(want) {
 			t.Fatalf("terminal page missing %q; texts=%q", want, tester.Texts())
 		}
 	}
-	if err := tester.Click("Enabled"); err != nil {
+	if err := tester.Click("Use Option as Alt"); err != nil {
 		t.Fatal(err)
 	}
 	if s.settingsService.Current().Terminal.OptionAsAlt {

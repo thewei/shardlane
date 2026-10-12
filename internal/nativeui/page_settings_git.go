@@ -23,50 +23,39 @@ func commitPromptPreference(value string) string {
 
 func (s *Shell) settingsGit(c *ui.Context) {
 	sp := Spacing()
-	ui.Column(c).FillWidth().Gap(sp.L).Children(func() {
-		settingsCard(c, "Commit Message", func() {
-			ui.Text(c, "Rules applied when generating commit message candidates for selected files.").FontSize(Typography().Caption).TextColor(c.Theme().TextMuted)
-			ui.TextArea(c, &s.settingsGitPromptDraft).FillWidth().Height(250).Label("Git commit rules")
-			ui.Row(c).Gap(sp.S).Children(func() {
-				if ui.PrimaryButton(c, "Save Commit Rules").Clicked() {
-					draft := strings.TrimSpace(s.settingsGitPromptDraft)
-					if len(draft) == 0 || len(draft) > 5000 {
-						s.pendingToast = "Commit rules must contain 1–5000 characters."
-						return
-					}
-					s.applySettings(func(v *settings.Settings) error { v.Workbench.CommitPrompt = draft; return nil })
-					s.pendingToast = "Git commit rules saved."
+	settingsCard(c, "Commit message rules", func() {
+		ui.TextArea(c, &s.settingsGitPromptDraft).FillWidth().Height(220).Label("Git commit rules")
+		ui.Row(c).Gap(sp.S).Children(func() {
+			if ui.PrimaryButton(c, "Save").Label("Save commit rules").Clicked() {
+				draft := strings.TrimSpace(s.settingsGitPromptDraft)
+				if len(draft) == 0 || len(draft) > 5000 {
+					s.pendingToast = "Commit rules must contain 1–5000 characters."
+					return
 				}
-				if ui.Button(c, "Restore Default Rules").Clicked() {
-					s.settingsGitPromptDraft = settings.DefaultCommitPrompt
-					s.applySettings(func(v *settings.Settings) error { v.Workbench.CommitPrompt = ""; return nil })
-					s.pendingToast = "Default commit rules restored."
-				}
-			})
+				s.applySettings(func(v *settings.Settings) error { v.Workbench.CommitPrompt = draft; return nil })
+				s.pendingToast = "Commit rules saved."
+			}
+			if ui.Button(c, "Restore Default").Label("Restore default commit rules").Clicked() {
+				s.settingsGitPromptDraft = settings.DefaultCommitPrompt
+				s.applySettings(func(v *settings.Settings) error { v.Workbench.CommitPrompt = ""; return nil })
+				s.pendingToast = "Default commit rules restored."
+			}
 		})
-		settingsCard(c, "Pi CLI", func() {
-			ui.Text(c, "One-shot invocation of the local Pi CLI to draft commit subjects without altering repository files or state.").FontSize(Typography().Caption).TextColor(c.Theme().TextMuted)
-			ui.Form(c, func() {
-				ui.Field(c, "Pi executable", func() {
-					ui.TextInput(c, &s.settingsPiBinaryDraft).FillWidth().Label("Pi executable path").
-						Placeholder("Use pi on PATH, or set an absolute path")
-				}).Description("Native apps may not inherit your shell PATH. Set an absolute path if Pi cannot be found.")
-			})
-			ui.Row(c).Gap(sp.S).Children(func() {
-				if ui.PrimaryButton(c, "Save Pi Path").Clicked() {
+	})
+	settingsGroup(c, "Commit message generator",
+		row("Pi path", "Leave empty to find pi automatically.", func() {
+			ui.Row(c).Gap(sp.S).AlignItems(ui.Center).Children(func() {
+				ui.TextInput(c, &s.settingsPiBinaryDraft).Width(220).Label("Pi executable path").Placeholder("pi")
+				if ui.Button(c, "Save").Label("Save Pi path").Clicked() {
 					draft := strings.TrimSpace(s.settingsPiBinaryDraft)
 					if len(draft) > 1024 {
 						s.pendingToast = "Pi path is too long."
 						return
 					}
 					s.applySettings(func(v *settings.Settings) error { v.Workbench.PiExecutable = draft; return nil })
-					s.pendingToast = "Pi executable preference saved."
-				}
-				if ui.Button(c, "Use PATH").Clicked() {
-					s.settingsPiBinaryDraft = ""
-					s.applySettings(func(v *settings.Settings) error { v.Workbench.PiExecutable = ""; return nil })
+					s.pendingToast = "Pi path saved."
 				}
 			})
-		})
-	})
+		}),
+	)
 }

@@ -140,6 +140,16 @@ func agentMark(provider history.AgentID, dark bool) visualMark {
 	return visualMark{svg: agentGlyph(provider)}
 }
 
+// agentTile is an agent's mark in a quiet rounded tile: the leading identity
+// of list rows (Agents settings, Sessions).
+func agentTile(c *ui.Context, provider history.AgentID, size float32) {
+	t := c.Theme()
+	ui.Box(c).Size(size, size).Shrink(0).Radius(size * 0.26).
+		Background(designTokens(t.Dark).PanelHover).Center().Children(func() {
+		markView(c, agentMark(provider, t.Dark), size*0.64, t.TextMuted)
+	})
+}
+
 // agentProvider extracts the canonical provider AgentID from a live Herdr Agent,
 // checking Kind first, then falling back to AgentSession.Agent if Kind is empty.
 func agentProvider(a *herdr.Agent) history.AgentID {

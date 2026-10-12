@@ -3,7 +3,6 @@ package nativeui
 import (
 	"testing"
 
-	"github.com/egoist/mygo/ui"
 	"github.com/wh-studio/herdr-client/internal/settings"
 )
 
@@ -130,7 +129,7 @@ func TestDesignTokensHighContrast(t *testing.T) {
 	shell := NewShell()
 	shell.settings.General.HighContrast = true
 	darkTokens := shell.tokens(true)
-	if darkTokens.Content != ui.Hex("#1c1c1e") {
+	if darkTokens.Content != designTokens(true).Content {
 		t.Fatalf("content background mutated: %+v", darkTokens.Content)
 	}
 }

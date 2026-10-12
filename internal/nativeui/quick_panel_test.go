@@ -86,7 +86,7 @@ func TestQuickPanelViewRendersAgentsWithStatusTabGroup(t *testing.T) {
 	shell := quickPanelShell(t)
 	tester := ui.NewTester(shell.QuickPanelView, QuickPanelWidth, QuickPanelHeight)
 	for _, want := range []string{
-		"Shardlane",
+		"Agents & Services",
 		"1 needs attention · 1 working · 3 agents",
 		"Scout", "Ranger", "Sleeper",
 	} {

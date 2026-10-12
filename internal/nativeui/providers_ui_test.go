@@ -59,7 +59,7 @@ func TestProvidersPageHookLeadsIntegrationFallsBack(t *testing.T) {
 	if got := countTextExact(tester.Texts(), "Claude Code"); got != 1 {
 		t.Fatalf("Claude Code shown %d times, want one merged card; texts=%q", got, tester.Texts())
 	}
-	if !tester.HasText("Herdr integration (fallback)") {
+	if !tester.HasText("Herdr integration") {
 		t.Fatalf("fallback lane missing; texts=%q", tester.Texts())
 	}
 
@@ -110,7 +110,7 @@ func TestProvidersPageHookLeadsIntegrationFallsBack(t *testing.T) {
 	if !tester.HasText("Claude Code status hook is current") {
 		t.Fatalf("hook toast missing; texts=%q", tester.Texts())
 	}
-	if !tester.HasText("Hook script v6 wired to all 5 events") {
+	if !tester.HasText("Live status is on") {
 		t.Fatalf("reconciled hook detail missing; texts=%q", tester.Texts())
 	}
 	if got := countTextExact(tester.Texts(), "Install integration"); got != 1 {
@@ -137,13 +137,13 @@ func TestProvidersPageHookOnlyAndDeferred(t *testing.T) {
 	if !tester.HasText("Aider") {
 		t.Fatalf("aider informational card missing; texts=%q", tester.Texts())
 	}
-	if !tester.HasText("Not detected on this machine; if you use Aider, its pane status comes from Herdr screen detection") {
+	if !tester.HasText("Status comes from Herdr's screen detection") {
 		t.Fatalf("aider honest detail missing; texts=%q", tester.Texts())
 	}
 	if tester.HasText("Update integration") || tester.HasText("Update status hook") {
 		t.Fatalf("unexpected update actions; texts=%q", tester.Texts())
 	}
-	if !tester.HasText("Deferred") {
+	if !tester.HasText("Not available yet") {
 		t.Fatalf("deferred provider state missing; texts=%q", tester.Texts())
 	}
 	// The empty integration audit leaves every registry provider

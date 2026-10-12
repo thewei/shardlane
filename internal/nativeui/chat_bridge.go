@@ -91,6 +91,9 @@ type ChatBridgeState struct {
 	// HasOlder reports an earlier history page exists (history-bound chats
 	// only; the live tail is bounded by design).
 	HasOlder bool `json:"hasOlder,omitempty"`
+	// ReadOnly marks a past session shown from the Sessions list: the page
+	// renders the transcript alone — no composer, no interactions.
+	ReadOnly bool `json:"readOnly,omitempty"`
 	// ContextTokens is the provider-recorded size of the current request
 	// context, when the transcript states one (context ring only).
 	ContextTokens *int64 `json:"contextTokens,omitempty"`
@@ -534,7 +537,13 @@ func (s *Shell) chatBridgeState() ChatBridgeState {
 		Theme:          s.chatBridgeTheme(),
 		Turns:          make([]ChatBridgeTurn, 0, len(s.chatTurns)),
 	}
-	if card, ok := s.agentCardForSelectedPane(); ok {
+	if s.chatReadOnly {
+		state.ReadOnly = true
+		if s.chatSession != nil {
+			state.Title = fallbackText(s.chatSession.Title, history.Untitled)
+			state.Provider = s.chatSession.Agent.DisplayName()
+		}
+	} else if card, ok := s.agentCardForSelectedPane(); ok {
 		state.Title = card.Title
 		state.Provider = card.ProviderLabel
 	}

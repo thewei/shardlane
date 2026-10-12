@@ -9,16 +9,13 @@ import (
 // pageHeader is the shared page header band (Design System v2).
 func pageHeader(c *ui.Context, title, subtitle string) {
 	t := c.Theme()
-	tokens := designTokens(t.Dark)
 	typ := Typography()
 	sp := Spacing()
 	ui.Column(c).
 		Padding(sp.XL, sp.XL, sp.L).
 		Gap(sp.XS).
-		BorderWidth(0, 0, 1, 0).
-		BorderColor(tokens.BorderSubtle).
 		Children(func() {
-			ui.Text(c, title).FontSize(typ.Title).Bold()
+			ui.Text(c, title).FontSize(typ.Title).FontWeight(WeightBold)
 			if subtitle != "" {
 				ui.Text(c, subtitle).FontSize(typ.BodySmall).TextColor(t.TextMuted)
 			}

@@ -126,7 +126,7 @@ func (s *Shell) breadcrumbRow(c *ui.Context) {
 							})
 						}
 						ui.Text(c, segment.label).FontSize(Typography().Caption).
-							FontWeight(600).SingleLine().Shrink(0)
+							FontWeight(WeightSemibold).SingleLine().Shrink(0)
 						if !last {
 							ui.Text(c, "›").FontSize(Typography().Micro).
 								TextColor(t.TextMuted).Shrink(0)

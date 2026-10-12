@@ -18,6 +18,9 @@ var (
 // DesignTokens are Shardlane's reusable presentation tokens. They deliberately
 // stay close to macOS system surfaces and shadcn's neutral, low-contrast style.
 type DesignTokens struct {
+	// Sidebar is the opaque sidebar fill for windows that cannot show the
+	// vibrancy material (non-macOS, headless); with vibrancy the sidebar
+	// draws nothing and the material shows through.
 	Sidebar       ui.Color
 	SidebarHover  ui.Color
 	SidebarSelect ui.Color
@@ -48,11 +51,11 @@ func (s *Shell) resolvedDark(systemDark bool) bool {
 func shardlaneTheme(dark bool) *ui.Theme {
 	if !dark {
 		t := *ui.LightTheme()
-		t.Background = ui.Hex("#fbfbfc")
-		t.Surface = ui.Hex("#f4f4f5")
-		t.SurfaceHover = ui.Hex("#ededee")
-		t.SurfacePressed = ui.Hex("#e4e4e7")
-		t.Border = ui.Hex("#e4e4e7")
+		t.Background = ui.Hex("#f5f5f7")
+		t.Surface = ui.Hex("#ffffff")
+		t.SurfaceHover = ui.Hex("#f2f2f5")
+		t.SurfacePressed = ui.Hex("#e8e8ec")
+		t.Border = ui.Hex("#dcdce1")
 		t.Text = ui.Hex("#18181b")
 		t.TextMuted = ui.Hex("#71717a")
 		t.Accent = accentLight
@@ -67,11 +70,11 @@ func shardlaneTheme(dark bool) *ui.Theme {
 	}
 
 	t := *ui.DarkTheme()
-	t.Background = ui.Hex("#1c1c1e")
-	t.Surface = ui.Hex("#252527")
-	t.SurfaceHover = ui.Hex("#2c2c2f")
-	t.SurfacePressed = ui.Hex("#343438")
-	t.Border = ui.Hex("#38383d")
+	t.Background = ui.Hex("#161618")
+	t.Surface = ui.Hex("#252528")
+	t.SurfaceHover = ui.Hex("#2d2d31")
+	t.SurfacePressed = ui.Hex("#36363b")
+	t.Border = ui.Hex("#3a3a40")
 	t.Text = ui.Hex("#f4f4f5")
 	t.TextMuted = ui.Hex("#98989f")
 	t.Accent = accentDark
@@ -133,13 +136,13 @@ func designTokens(dark bool) DesignTokens {
 func designTokensWithContrast(dark bool, highContrast bool) DesignTokens {
 	if !dark {
 		tokens := DesignTokens{
-			Sidebar:       ui.RGBA(246, 246, 248, 0.84),
-			SidebarHover:  ui.RGBA(0, 0, 0, 0.045),
-			SidebarSelect: ui.RGBA(10, 132, 255, 0.13),
-			Content:       ui.Hex("#fbfbfc"),
+			Sidebar:       ui.Hex("#e9e9ed"),
+			SidebarHover:  ui.RGBA(0, 0, 0, 0.05),
+			SidebarSelect: ui.RGBA(10, 132, 255, 0.14),
+			Content:       ui.Hex("#f5f5f7"),
 			Panel:         ui.Hex("#ffffff"),
-			PanelHover:    ui.Hex("#f7f7f8"),
-			BorderSubtle:  ui.RGBA(24, 24, 27, 0.09),
+			PanelHover:    ui.Hex("#f2f2f5"),
+			BorderSubtle:  ui.RGBA(0, 0, 0, 0.08),
 			TreeLine:      ui.RGBA(113, 113, 122, 0.28),
 			Text:          ui.Hex("#18181b"),
 			TextMuted:     ui.Hex("#71717a"),
@@ -154,13 +157,13 @@ func designTokensWithContrast(dark bool, highContrast bool) DesignTokens {
 		return tokens
 	}
 	tokens := DesignTokens{
-		Sidebar:       ui.RGBA(28, 28, 30, 0.78),
-		SidebarHover:  ui.RGBA(255, 255, 255, 0.055),
-		SidebarSelect: ui.RGBA(10, 132, 255, 0.18),
-		Content:       ui.Hex("#1c1c1e"),
-		Panel:         ui.Hex("#232326"),
-		PanelHover:    ui.Hex("#29292d"),
-		BorderSubtle:  ui.RGBA(255, 255, 255, 0.09),
+		Sidebar:       ui.Hex("#1f1f22"),
+		SidebarHover:  ui.RGBA(255, 255, 255, 0.06),
+		SidebarSelect: ui.RGBA(10, 132, 255, 0.22),
+		Content:       ui.Hex("#161618"),
+		Panel:         ui.Hex("#1f1f22"),
+		PanelHover:    ui.Hex("#27272b"),
+		BorderSubtle:  ui.RGBA(255, 255, 255, 0.08),
 		TreeLine:      ui.RGBA(152, 152, 159, 0.26),
 		Text:          ui.Hex("#f4f4f5"),
 		TextMuted:     ui.Hex("#98989f"),

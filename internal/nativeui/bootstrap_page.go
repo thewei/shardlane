@@ -17,13 +17,12 @@ func (s *Shell) bootstrapPage(c *ui.Context) {
 	ui.Column(c).Fill().Center().Gap(12).Padding(32).Children(func() {
 		if s.bootstrapPending {
 			ui.Spinner(c).Size(27, 27)
-			ui.Text(c, "Loading Herdr workspaces…").FontSize(14).FontWeight(600).TextColor(t.Text)
-			ui.Text(c, "Connecting and restoring your workspace").FontSize(11).TextColor(t.TextMuted)
+			ui.Text(c, "Loading Herdr workspaces…").FontSize(Typography().Section).FontWeight(WeightSemibold).TextColor(t.Text)
 			return
 		}
-		ui.Text(c, "Unable to load workspaces").FontSize(15).FontWeight(650)
+		ui.Text(c, "Unable to load workspaces").FontSize(Typography().Heading).FontWeight(WeightSemibold)
 		if s.errText != "" {
-			ui.Text(c, s.errText).FontSize(12).TextColor(t.TextMuted).MaxWidth(560)
+			ui.Text(c, s.errText).FontSize(Typography().Body).TextColor(t.TextMuted).MaxWidth(560)
 		}
 		if ui.PrimaryButton(c, "Retry connection").Clicked() {
 			s.bootstrapPending = true

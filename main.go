@@ -108,7 +108,7 @@ func main() {
 
 	mygo.App.WhenReady(func() {
 		slog.Info("application ready", "log_path", applog.Path())
-		win := mygo.NewWindow(mygo.WindowOptions{
+		opts := mygo.WindowOptions{
 			Title:  "Shardlane",
 			Width:  1280,
 			Height: 820,
@@ -120,18 +120,25 @@ func main() {
 			// Restore the last bounds (position/size/maximized) unless the
 			// user disabled restoration in Settings → General.
 			StateKey: app.WindowStateKey(settingsService.Current().General.RestoreWindow),
-			// The gorex-style header (2026-10-06) draws itself under the
-			// traffic lights: hidden title bar, lights at the header chip's
-			// height, and a base color matching the background gradient's mid
-			// stop so the first frame does not flash white.
+			// The sidebar runs under the traffic lights and the content's
+			// title bar draws itself beside them: hidden title bar, lights
+			// at the bar's height, and a base color matching the content
+			// canvas so the first frame does not flash.
 			TitleBarStyle:        mygo.TitleBarHidden,
 			TrafficLightPosition: &mygo.Point{X: 16, Y: 15},
-			BackgroundColor:      "light-dark(#efe1e6, #231e27)",
+			BackgroundColor:      "light-dark(#f5f5f7, #161618)",
 			Opacity:              settingsService.Current().General.EffectiveOpacity(),
 			// SingleInstanceLock focus-on-second-launch only has a window to
 			// focus once this handle exists; keep it in the ready closure.
 			Content: ui.View(shell.View),
-		})
+		}
+		if runtime.GOOS == "darwin" {
+			// The sidebar is the system's translucent sidebar material:
+			// it shows wherever the view draws no background (a window with
+			// a material loses its menu bar on Windows, so only macOS opts in).
+			opts.Vibrancy = mygo.VibrancySidebar
+		}
+		win := mygo.NewWindow(opts)
 		shell.AttachWindow(win)
 		win.OnClose(func(e *mygo.CloseEvent) {
 			if !quitting {

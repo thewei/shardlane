@@ -68,7 +68,7 @@ func TestCommitAIPromptRequiresPreviewAndExplicitOptIn(t *testing.T) {
 		t.Fatal(err)
 	}
 	tester.Frame()
-	for _, want := range []string{"Commit message draft", "Include code excerpts (explicit opt-in)", "Generate with Pi", "Review prompt"} {
+	for _, want := range []string{"Commit message draft", "Include code excerpts", "Generate with Pi", "Review prompt"} {
 		if !tester.HasText(want) {
 			t.Fatalf("preview lacks %q: %q", want, tester.Texts())
 		}

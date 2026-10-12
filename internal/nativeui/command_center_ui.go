@@ -118,8 +118,8 @@ func (s *Shell) buildCommandCenterActions() []commandcenter.Action {
 		// /settings/general and read as two identical commands (F16).
 		commandcenter.Action{ID: "app.settings", Title: "Settings", Section: "App",
 			Keywords: []string{"preferences", "appearance", "theme", "density", "language"}, Kind: commandcenter.TargetSetting, TargetID: "/settings/general", Available: true},
-		commandcenter.Action{ID: "app.hook-doctor", Title: "Check & Install Agent Hooks", Section: "App",
-			Keywords: []string{"hooks", "agent hooks", "hook doctor", "providers", "claude", "antigravity"}, Kind: commandcenter.TargetRoute, TargetID: "/settings/providers", Available: true},
+		commandcenter.Action{ID: "app.hook-doctor", Title: "Set Up Agents", Section: "App",
+			Keywords: []string{"agents", "hooks", "integration", "install", "update", "claude", "antigravity"}, Kind: commandcenter.TargetRoute, TargetID: "/settings/providers", Available: true},
 		commandcenter.Action{ID: "app.open-files", Title: "Browse Files", Section: "App",
 			Keywords: []string{"directory", "tree", "file preview"}, Kind: commandcenter.TargetRoute, TargetID: "action:open-files", Available: true},
 	)

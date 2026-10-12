@@ -49,10 +49,10 @@ func (s *Shell) tagsMenuPanel(c *ui.Context) {
 	t := c.Theme()
 	sp := Spacing()
 	s.repoMenuPanel(c, func() {
-		ui.Text(c, "Tags").FontSize(Typography().Caption).FontWeight(650).TextColor(t.TextMuted)
+		ui.Text(c, "Tags").FontSize(Typography().Caption).FontWeight(WeightSemibold).TextColor(t.TextMuted)
 		ui.Row(c).FillWidth().Gap(sp.XS).AlignItems(ui.Center).Children(func() {
 			ui.TextInput(c, &s.tagDraft).Grow(1).Placeholder("New tag name").Label("New tag name")
-			if ui.PrimaryButton(c, "Create").FontSize(Typography().Micro).Clicked() {
+			if compactPrimaryButton(c, "Create").Clicked() {
 				draft := s.tagDraft
 				s.tagsMenuOpen = false
 				s.createTag(draft)
@@ -69,7 +69,7 @@ func (s *Shell) tagsMenuPanel(c *ui.Context) {
 				Radius(Radius().Control).Children(func() {
 				ui.Icon(c, iconTag).FontSize(13).TextColor(t.TextMuted)
 				ui.Text(c, tg.Name).Font(gdCodeFont()).FontSize(Typography().BodySmall).Grow(1).SingleLine()
-				if ui.Button(c, "Delete").FontSize(Typography().Micro).Clicked() {
+				if compactButton(c, "Delete").Clicked() {
 					s.tagsMenuOpen = false
 					s.deleteTagConfirm(tg.Name)
 				}
@@ -84,9 +84,9 @@ func (s *Shell) stashesMenuPanel(c *ui.Context) {
 	t := c.Theme()
 	sp := Spacing()
 	s.repoMenuPanel(c, func() {
-		ui.Text(c, "Stashes").FontSize(Typography().Caption).FontWeight(650).TextColor(t.TextMuted)
+		ui.Text(c, "Stashes").FontSize(Typography().Caption).FontWeight(WeightSemibold).TextColor(t.TextMuted)
 		ui.Row(c).FillWidth().Padding(sp.XS, sp.S).Children(func() {
-			b := ui.Button(c, "Stash All Changes").FontSize(Typography().Micro)
+			b := compactButton(c, "Stash All Changes")
 			if s.git.opBusy || !s.dirtyWorktree() {
 				b.Disabled(true)
 			}
@@ -104,11 +104,11 @@ func (s *Shell) stashesMenuPanel(c *ui.Context) {
 			ui.Row(c).FillWidth().Padding(sp.XS, sp.S).Gap(sp.XS).AlignItems(ui.Center).Children(func() {
 				ui.Text(c, st.Ref).Font(gdCodeFont()).FontSize(Typography().Micro).TextColor(t.TextMuted).Shrink(0)
 				ui.Text(c, st.Subject).FontSize(Typography().BodySmall).Grow(1).MinWidth(0).SingleLine()
-				if ui.Button(c, "Pop").FontSize(Typography().Micro).Clicked() {
+				if compactButton(c, "Pop").Clicked() {
 					s.stashesMenuOpen = false
 					s.popStash(st.Ref)
 				}
-				if ui.Button(c, "Drop").FontSize(Typography().Micro).Clicked() {
+				if compactButton(c, "Drop").Clicked() {
 					s.stashesMenuOpen = false
 					s.dropStash(st.Ref)
 				}
@@ -123,9 +123,9 @@ func (s *Shell) worktreesMenuPanel(c *ui.Context) {
 	t := c.Theme()
 	sp := Spacing()
 	s.repoMenuPanel(c, func() {
-		ui.Text(c, "Worktrees").FontSize(Typography().Caption).FontWeight(650).TextColor(t.TextMuted)
+		ui.Text(c, "Worktrees").FontSize(Typography().Caption).FontWeight(WeightSemibold).TextColor(t.TextMuted)
 		ui.Row(c).FillWidth().Padding(sp.XS, sp.S).Children(func() {
-			b := ui.Button(c, "Add Worktree…").FontSize(Typography().Micro)
+			b := compactButton(c, "Add Worktree…")
 			if s.git.opBusy {
 				b.Disabled(true)
 			}
@@ -147,15 +147,15 @@ func (s *Shell) worktreesMenuPanel(c *ui.Context) {
 			ui.Row(c).FillWidth().Padding(sp.XS, sp.S).Gap(sp.XS).AlignItems(ui.Center).Children(func() {
 				ui.Column(c).Grow(1).MinWidth(0).Gap(0).Children(func() {
 					ui.Text(c, label).FontSize(Typography().BodySmall).SingleLine()
-					ui.Text(c, w.Path).Font(gdCodeFont()).FontSize(9).TextColor(t.TextMuted).SingleLine()
+					ui.Text(c, w.Path).Font(gdCodeFont()).FontSize(Typography().Micro).TextColor(t.TextMuted).SingleLine()
 				})
 				if !w.Bare {
-					if ui.Button(c, "Open").FontSize(Typography().Micro).Clicked() {
+					if compactButton(c, "Open").Clicked() {
 						s.worktreesMenuOpen = false
 						s.openExternalPath(w.Path)
 					}
 				}
-				if ui.Button(c, "Copy Path").FontSize(Typography().Micro).Clicked() {
+				if compactButton(c, "Copy Path").Clicked() {
 					s.copyToClipboard(w.Path)
 				}
 			})

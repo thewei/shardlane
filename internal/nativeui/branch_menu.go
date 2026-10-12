@@ -41,7 +41,7 @@ func (s *Shell) branchMenuPanel(c *ui.Context) {
 		Background(designTokens(t.Dark).Panel).Children(func() {
 		matches := matchingLocalBranches(s.git.branches, s.branchFilter)
 		ui.Row(c).FillWidth().Gap(sp.S).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, "Branches").FontSize(Typography().Section).FontWeight(650).Grow(1)
+			ui.Text(c, "Branches").FontSize(Typography().Section).FontWeight(WeightSemibold).Grow(1)
 			ui.Textf(c, "%d local", len(s.git.branches)).FontSize(Typography().Caption).TextColor(t.TextMuted)
 		})
 		ui.TextInput(c, &s.branchFilter).FillWidth().Height(30).
@@ -73,11 +73,11 @@ func (s *Shell) branchMenuPanel(c *ui.Context) {
 						}
 						ui.Text(c, label).FontSize(Typography().BodySmall).Grow(1).MinWidth(0).SingleLine().Tooltip(b.Name)
 						if !current {
-							if ui.Button(c, "Switch").FontSize(Typography().Micro).Clicked() {
+							if compactButton(c, "Switch").Clicked() {
 								s.branchMenuOpen = false
 								s.confirmSwitchBranch(b.Name)
 							}
-							more := ui.Button(c, "More…").FontSize(Typography().Micro)
+							more := compactButton(c, "More…")
 							more.Menu(func(m *ui.Menu) {
 								if m.Item("Merge into current branch…").Chosen() {
 									s.branchMenuOpen = false
@@ -97,7 +97,7 @@ func (s *Shell) branchMenuPanel(c *ui.Context) {
 		ui.Row(c).FillWidth().Gap(sp.XS).AlignItems(ui.Center).Children(func() {
 			ui.TextInput(c, &s.branchDraft).Grow(1).MinWidth(0).
 				Placeholder("New branch name").Label("New branch name")
-			create := ui.Button(c, "Create branch…").FontSize(Typography().Caption)
+			create := compactButton(c, "Create branch…")
 			create.Disabled(strings.TrimSpace(s.branchDraft) == "" || s.git.branchBusy)
 			if create.Clicked() {
 				draft := s.branchDraft

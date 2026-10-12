@@ -44,7 +44,7 @@ func (s *Shell) gitSequencerActions(c *ui.Context) {
 		continueButton := ui.Button(c, "Continue "+gitOperationLabel(state.Kind))
 		continueButton.Disabled(s.git.opBusy || state.Unmerged > 0)
 		if state.Unmerged > 0 {
-			continueButton.Tooltip("Resolve and stage all unmerged files, then refresh from Git sidebar")
+			continueButton.Tooltip("Resolve and stage every conflicted file first")
 		}
 		if continueButton.Clicked() {
 			s.continueSequencer()
@@ -68,12 +68,12 @@ func (s *Shell) gitSequencerBanner(c *ui.Context) {
 	ui.Column(c).FillWidth().Padding(Spacing().S, Spacing().L).Gap(Spacing().XS).
 		Background(c.Theme().Warning.Alpha(0.10)).Children(func() {
 		ui.Text(c, gitOperationLabel(state.Kind)+" needs attention").
-			FontSize(Typography().Section).FontWeight(650)
+			FontSize(Typography().Section).FontWeight(WeightSemibold)
 		if state.Unmerged > 0 {
-			ui.Text(c, fmt.Sprintf("%d unresolved file(s) · Resolve each conflict, stage, then refresh.", state.Unmerged)).
+			ui.Text(c, fmt.Sprintf("%d file(s) with conflicts. Resolve and stage them, then refresh.", state.Unmerged)).
 				FontSize(Typography().Caption)
 		} else {
-			ui.Text(c, "No unresolved index entries. Review staged resolution before continuing.").
+			ui.Text(c, "No conflicts left. Review the staged result, then continue.").
 				FontSize(Typography().Caption)
 		}
 		ui.Row(c).FillWidth().Gap(Spacing().S).AlignItems(ui.Center).Children(func() {
@@ -90,10 +90,10 @@ func (s *Shell) gitSequencerBanner(c *ui.Context) {
 		})
 		if s.gitConflictFilesExpanded {
 			ui.Column(c).FillWidth().Gap(Spacing().XXS).Children(func() {
-				ui.Text(c, "Files needing resolution").FontSize(Typography().Caption).FontWeight(650)
+				ui.Text(c, "Files needing resolution").FontSize(Typography().Caption).FontWeight(WeightSemibold)
 				for _, path := range state.UnmergedPaths {
 					_, index := s.gdFileForPath(path)
-					link := ui.Button(c, "Review conflict: "+path).FontSize(Typography().Caption).MaxWidth(270).Tooltip(path)
+					link := compactButton(c, "Review conflict: "+path).MaxWidth(270).Tooltip(path)
 					link.Disabled(index < 0)
 					if link.Clicked() && index >= 0 {
 						s.revealDiffFile(path)

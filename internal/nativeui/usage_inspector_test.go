@@ -43,7 +43,7 @@ func TestInspectorUsageFactsCard(t *testing.T) {
 	shell.router.Replace("/inspector/p1")
 	tester := ui.NewTester(shell.View, 1200, 800)
 	for _, want := range []string{
-		"Usage facts",
+		"Usage",
 		"claude-sonnet-4-5 · 38k tok",
 		"38k (38000)",
 		"history-session",
@@ -60,14 +60,14 @@ func TestInspectorUsageFactsAbsent(t *testing.T) {
 	shell := inspectorShell(t, history.SessionMeta{Agent: history.AgentClaudeCode}, true)
 	shell.router.Replace("/inspector/p1")
 	tester := ui.NewTester(shell.View, 1200, 800)
-	if !tester.HasText("No provider-reported facts") {
+	if !tester.HasText("Not reported") {
 		t.Fatalf("fact-less session must say so; texts=%q", tester.Texts())
 	}
 
 	unbound := inspectorShell(t, history.SessionMeta{}, false)
 	unbound.router.Replace("/inspector/p1")
 	unboundTester := ui.NewTester(unbound.View, 1200, 800)
-	if unboundTester.HasText("Usage facts") {
+	if unboundTester.HasText("Usage") {
 		t.Fatalf("unbound inspector must not render a usage card; texts=%q", unboundTester.Texts())
 	}
 }

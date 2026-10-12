@@ -269,7 +269,7 @@
 
 .who {
   font-size: 10px;
-  font-weight: 700;
+  font-weight: 600;
   color: var(--text-muted);
   letter-spacing: 0.04em;
 }
@@ -481,7 +481,7 @@ details.tool.error > summary {
 .md h4 {
   margin: 8px 0 4px;
   font-size: 13px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .md blockquote {
@@ -663,7 +663,7 @@ details.tool.error > summary {
 
 .composer .attach.mic {
   font-size: 11px;
-  font-weight: 700;
+  font-weight: 600;
   width: 40px;
 }
 

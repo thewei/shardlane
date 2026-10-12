@@ -40,7 +40,7 @@ func TestAgentQuickPanelFocusedDetailsAndBack(t *testing.T) {
 	selected := cards[0].Key
 	shell.quickPanelAgent = &selected
 	tester := ui.NewTester(shell.QuickPanelView, QuickPanelWidth, QuickPanelHeight)
-	for _, want := range []string{"← All Agents", "Open Terminal", "Open Chat", "Inspect Agent", "Context"} {
+	for _, want := range []string{"← All Agents", "Open Terminal", "Open Chat", "Details", "Context"} {
 		if !tester.HasText(want) {
 			t.Fatalf("focused agent lacks %q: %q", want, tester.Texts())
 		}
@@ -62,7 +62,7 @@ func TestAgentQuickPanelRejectsGoneAgent(t *testing.T) {
 	key := agent.AgentKey{InstanceID: "gone-instance", TerminalID: "gone-terminal"}
 	shell.quickPanelAgent = &key
 	tester := ui.NewTester(shell.QuickPanelView, QuickPanelWidth, QuickPanelHeight)
-	if !tester.HasText("Agent unavailable") {
+	if !tester.HasText("Agent not found") {
 		t.Fatalf("missing gone-agent safe state: %q", tester.Texts())
 	}
 	if tester.HasText("Open Terminal") || tester.HasText("Open Chat") {
