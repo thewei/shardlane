@@ -25,6 +25,11 @@ var (
 	glyphOpen        = icon(`<circle cx="9" cy="12" r="5"/><circle cx="15" cy="12" r="5"/>`)
 	glyphKiro        = icon(`<path d="M12 3 4 21M12 3l8 18M7.5 14h9"/>`)
 	glyphAntigravity = icon(`<path d="M12 3 4 21h4.5l3.5-7.5 3.5 7.5H20Z"/>`)
+	glyphGrok        = icon(`<path d="m4 4 16 16M20 4 4 20M9 4h6M9 20h6"/>`)
+	glyphKimi        = icon(`<circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 0 0 16 8 8 0 0 1 0-16Z"/>`)
+	glyphDSH         = icon(`<path d="M4 14c3-4 7-6 13-4-2 4-5 6-9 6-3 0-4-2-4-2Z"/><path d="M14 6l3-2-1 4"/>`)
+	glyphCommandCode = icon(`<rect x="3" y="5" width="18" height="14" rx="3"/><path d="m7 10 3 2-3 2M13 14h4"/>`)
+	glyphQoder       = icon(`<circle cx="11" cy="11" r="7"/><path d="m16 16 5 5"/>`)
 )
 
 // agentGlyph maps a provider identity to its mark, falling back to the
@@ -33,8 +38,10 @@ func agentGlyph(provider history.AgentID) *ui.SVG {
 	switch provider {
 	case history.AgentClaudeCode:
 		return glyphClaude
-	case history.AgentCodex, history.AgentOMP, history.AgentCommandCode:
+	case history.AgentCodex, history.AgentOMP:
 		return glyphCodex
+	case history.AgentCommandCode:
+		return glyphCommandCode
 	case history.AgentGemini:
 		return glyphGemini
 	case history.AgentPi:
@@ -49,6 +56,14 @@ func agentGlyph(provider history.AgentID) *ui.SVG {
 		return glyphKiro
 	case history.AgentAntigravity:
 		return glyphAntigravity
+	case history.AgentGrok:
+		return glyphGrok
+	case history.AgentKimi:
+		return glyphKimi
+	case history.AgentDSH:
+		return glyphDSH
+	case history.AgentQoder:
+		return glyphQoder
 	default:
 		return iconAgent
 	}

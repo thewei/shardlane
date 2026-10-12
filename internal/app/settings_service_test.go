@@ -127,12 +127,23 @@ func TestValidateSettings(t *testing.T) {
 		{"line height below one", func(v *settings.Settings) { v.Terminal.LineHeight = 0.5 }},
 		{"scrollback too small", func(v *settings.Settings) { v.Terminal.Scrollback = 1024 }},
 		{"empty font family", func(v *settings.Settings) { v.Terminal.FontFamily = "  " }},
+		{"opacity negative", func(v *settings.Settings) { v.General.Opacity = -0.1 }},
+		{"opacity too high", func(v *settings.Settings) { v.General.Opacity = 1.1 }},
+		{"opacity below minimum", func(v *settings.Settings) { v.General.Opacity = 0.3 }},
 	}
 	for _, tc := range cases {
 		value := settings.Default()
 		tc.mutate(&value)
 		if err := ValidateSettings(&value); err == nil {
 			t.Fatalf("%s: expected validation failure", tc.name)
+		}
+	}
+
+	for _, validOpacity := range []float64{0, 0.5, 0.85, 1.0} {
+		value := settings.Default()
+		value.General.Opacity = validOpacity
+		if err := ValidateSettings(&value); err != nil {
+			t.Fatalf("valid opacity %v failed validation: %v", validOpacity, err)
 		}
 	}
 }

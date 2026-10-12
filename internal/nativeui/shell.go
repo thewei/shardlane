@@ -504,6 +504,7 @@ func (s *Shell) applySettings(mutate func(*settings.Settings) error) {
 		// SetSource marshals to the main thread and waits; headless tests
 		// have no main loop, so only apply with a window attached.
 		s.syncThemeSource()
+		s.syncWindowOpacity()
 	}
 }
 
@@ -524,6 +525,13 @@ func (s *Shell) syncThemeSource() {
 	mygo.Theme.SetSource(source)
 }
 
+// syncWindowOpacity applies Settings -> General -> Opacity to the attached window.
+func (s *Shell) syncWindowOpacity() {
+	if s.win != nil {
+		s.win.SetOpacity(s.settings.General.EffectiveOpacity())
+	}
+}
+
 // Launch exposes the launch service for the desktop entrypoint's durable
 // ledger attachment and tests.
 func (s *Shell) Launch() *app.LaunchService { return s.launch }
@@ -541,6 +549,7 @@ func (s *Shell) AttachWindow(win *mygo.Window) {
 	// projection, whose theme field carries the resolved appearance to the
 	// WebView chat page.
 	s.syncThemeSource()
+	s.syncWindowOpacity()
 	mygo.Theme.OnUpdated(func() {
 		s.applyOnWindow(func() { s.publishChatBridge() })
 	})

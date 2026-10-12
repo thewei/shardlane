@@ -90,6 +90,12 @@ func ValidateSettings(value *settings.Settings) error {
 	default:
 		return fmt.Errorf("unknown appearance %q", value.General.Appearance)
 	}
+	if value.General.Opacity < 0 || value.General.Opacity > 1.0 {
+		return fmt.Errorf("opacity %g outside 0.0..1.0", value.General.Opacity)
+	}
+	if value.General.Opacity > 0 && value.General.Opacity < 0.5 {
+		return fmt.Errorf("opacity %g below minimum 0.5", value.General.Opacity)
+	}
 	if value.Terminal.FontSize < 6 || value.Terminal.FontSize > 32 {
 		return fmt.Errorf("terminal font size %g outside 6..32", value.Terminal.FontSize)
 	}

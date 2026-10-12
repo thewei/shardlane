@@ -126,6 +126,7 @@ func main() {
 			TitleBarStyle:        mygo.TitleBarHidden,
 			TrafficLightPosition: &mygo.Point{X: 16, Y: 15},
 			BackgroundColor:      "light-dark(#efe1e6, #231e27)",
+			Opacity:              settingsService.Current().General.EffectiveOpacity(),
 			// SingleInstanceLock focus-on-second-launch only has a window to
 			// focus once this handle exists; keep it in the ready closure.
 			Content: ui.View(shell.View),

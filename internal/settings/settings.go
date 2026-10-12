@@ -43,6 +43,21 @@ type GeneralSettings struct {
 	// decision 2026-10-11). Off keeps the Native chat surface; the native
 	// implementation retires only at WebView acceptance parity.
 	WebViewChat bool `json:"webview_chat,omitempty"`
+	// Opacity controls the transparency of the application window shell
+	// (0.50 to 1.00). An unset (0) or out-of-range value defaults to 1.00 (opaque).
+	Opacity float64 `json:"opacity,omitempty"`
+}
+
+// EffectiveOpacity returns the window shell opacity, clamped to [0.50, 1.00].
+// Unset or invalid values (<= 0 or > 1.00) safely default to 1.00 (fully opaque).
+func (g GeneralSettings) EffectiveOpacity() float64 {
+	if g.Opacity <= 0 || g.Opacity > 1.0 {
+		return 1.0
+	}
+	if g.Opacity < 0.5 {
+		return 0.5
+	}
+	return g.Opacity
 }
 
 type TerminalSettings struct {
@@ -135,6 +150,7 @@ func Default() Settings {
 			Density:       "default",
 			HighContrast:  false,
 			WebViewChat:   true,
+			Opacity:       1.0,
 		},
 		Voice: VoiceSettings{
 			EndpointURL: "https://api.openai.com/v1",

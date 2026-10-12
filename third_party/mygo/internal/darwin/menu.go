@@ -268,6 +268,51 @@ type tray struct {
 	item   id
 	button id
 	owner  int
+
+	// clickScreen and clickAnchor track the screen and bounds where the tray
+	// icon was clicked when operated on a secondary display (0.7 §17/multi-monitor).
+	clickScreen id
+	clickAnchor NSRect
+}
+
+func (t *tray) recordClick() {
+	p := msgPoint(class("NSEvent"), sel("mouseLocation"))
+	screens := arrayItems(send(class("NSScreen"), "screens"))
+	t.clickScreen = 0
+	t.clickAnchor = NSRect{}
+	if len(screens) <= 1 {
+		return
+	}
+	for i := 1; i < len(screens); i++ {
+		s := screens[i]
+		frame := msgRect(s, sel("frame"))
+		if p.X >= frame.Origin.X && p.X < frame.Origin.X+frame.Size.Width &&
+			p.Y >= frame.Origin.Y && p.Y < frame.Origin.Y+frame.Size.Height {
+			t.clickScreen = s
+			vis := msgRect(s, sel("visibleFrame"))
+			menuH := (frame.Origin.Y + frame.Size.Height) - (vis.Origin.Y + vis.Size.Height)
+			if menuH <= 0 {
+				menuH = 24
+			}
+			anchorY := vis.Origin.Y + vis.Size.Height
+			if anchorY <= frame.Origin.Y || anchorY >= frame.Origin.Y+frame.Size.Height {
+				anchorY = frame.Origin.Y + frame.Size.Height - menuH
+			}
+			minX := frame.Origin.X
+			maxX := frame.Origin.X + frame.Size.Width - 24
+			anchorX := p.X - 12
+			if anchorX < minX {
+				anchorX = minX
+			} else if anchorX > maxX {
+				anchorX = maxX
+			}
+			t.clickAnchor = NSRect{
+				Origin: NSPoint{X: anchorX, Y: anchorY},
+				Size:   NSSize{Width: 24, Height: menuH},
+			}
+			return
+		}
+	}
 }
 
 func registerTrayTarget() {
@@ -277,6 +322,7 @@ func registerTrayTarget() {
 			if t == nil {
 				return
 			}
+			t.recordClick()
 			ev := send(theBackend.app, "currentEvent")
 			if ev != 0 && sendInt(ev, "type") == 4 { // NSEventTypeRightMouseUp
 				t.h.RightClicked()
@@ -367,6 +413,9 @@ func (t *tray) PopUpMenu(m *platform.Menu) {
 }
 
 func (t *tray) Bounds() platform.Rect {
+	if t.clickScreen != 0 {
+		return rectFromMac(t.clickAnchor)
+	}
 	win := send(t.button, "window")
 	if win == 0 {
 		return platform.Rect{}
@@ -383,4 +432,6 @@ func (t *tray) Destroy() {
 	send(send(class("NSStatusBar"), "systemStatusBar"), "removeStatusItem:", uintptr(t.item))
 	release(t.item)
 	t.item = 0
+	t.clickScreen = 0
+	t.clickAnchor = NSRect{}
 }

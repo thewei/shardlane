@@ -47,8 +47,9 @@ func splitHeaderTestShell(t *testing.T) (*Shell, *ui.Tester) {
 		terms[key] = term
 		t.Cleanup(func() { _ = term.Close() })
 	}
-	shell.terminals["t1"] = &terminalSurface{key: "t1", paneID: "p1", term: terms["t1"], label: "p1"}
-	shell.terminals["t2"] = &terminalSurface{key: "t2", paneID: "p2", term: terms["t2"], label: "p2"}
+	area := herdr.LayoutRect{Width: 120, Height: 40}
+	shell.terminals["t1"] = &terminalSurface{key: "t1", paneID: "p1", term: terms["t1"], label: "p1", area: area, rect: herdr.LayoutRect{Width: 60, Height: 40}}
+	shell.terminals["t2"] = &terminalSurface{key: "t2", paneID: "p2", term: terms["t2"], label: "p2", area: area, rect: herdr.LayoutRect{X: 60, Width: 60, Height: 40}}
 	tt := ui.NewTester(func(c *ui.Context) { shell.terminalCanvas(c) }, 1200, 800)
 	tt.Frame()
 	return shell, tt
@@ -182,5 +183,33 @@ func TestPaneHeaderMoreButtonOpensPaneMenu(t *testing.T) {
 	tt.CloseMenu()
 	if shell.selectedPaneID != "p1" {
 		t.Fatalf("opening the menu must not steal the selection: %q", shell.selectedPaneID)
+	}
+}
+
+func TestPaneHeaderDoubleClickZoom(t *testing.T) {
+	shell, tt := splitHeaderTestShell(t)
+
+	r, ok := tt.Find("p1")
+	if !ok {
+		t.Fatalf("pane title 'p1' not found")
+	}
+
+	x, y := r.X+r.W/2, r.Y+r.H/2
+	tt.ClickAt(x, y)
+	tt.ClickAt(x, y)
+
+	if shell.selectedPaneID != "p1" {
+		t.Fatalf("double clicking pane header must focus it: selected=%q", shell.selectedPaneID)
+	}
+
+	r2, ok := tt.Find("p2")
+	if !ok {
+		t.Fatalf("pane title 'p2' not found")
+	}
+	x2, y2 := r2.X + r2.W/2, r2.Y + r2.H/2
+	tt.ClickAt(x2, y2)
+	tt.ClickAt(x2, y2)
+	if shell.selectedPaneID != "p2" {
+		t.Fatalf("double clicking pane header p2 must focus it: selected=%q", shell.selectedPaneID)
 	}
 }

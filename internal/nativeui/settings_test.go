@@ -72,7 +72,7 @@ func TestSettingsGeneralPageUpdatesService(t *testing.T) {
 	s.router.Replace("/settings/general")
 	tester := ui.NewTester(s.View, 1200, 800)
 
-	if !tester.HasText("Appearance") || !tester.HasText("Restore window state") {
+	if !tester.HasText("Appearance") || !tester.HasText("Restore window state") || !tester.HasText("Window opacity") {
 		t.Fatalf("general page missing controls; texts=%q", tester.Texts())
 	}
 	if err := tester.Click("Light"); err != nil {

@@ -2,6 +2,7 @@ package nativeui
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"strings"
 
@@ -11,6 +12,13 @@ import (
 	"github.com/wh-studio/herdr-client/internal/diagnostics"
 	"github.com/wh-studio/herdr-client/internal/settings"
 )
+
+/**
+ * [INPUT]: 依赖 github.com/egoist/mygo, github.com/egoist/mygo/ui, settings, applog, diagnostics
+ * [OUTPUT]: 对外提供 Shell.settingsLayout/settingsGeneral/settingsTerminal/settingsRuntime/settingsDiagnostics
+ * [POS]: nativeui 设置页面宿主与统一表单容器，呈现并持久化用户外观与运行时偏好
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
 
 var appearanceOptions = []string{"System", "Light", "Dark"}
 
@@ -156,6 +164,20 @@ func (s *Shell) settingsGeneral(c *ui.Context) {
 						})
 					}
 				}).Description("Increases contrast of borders, dividers, and secondary text.")
+
+				ui.Field(c, "Window opacity", func() {
+					pct := math.Round(s.settings.General.EffectiveOpacity() * 100)
+					ui.Row(c).AlignItems(ui.Center).Gap(Spacing().M).Children(func() {
+						slider := ui.Slider(c, &pct, 50, 100).Step(1).Width(200).Label("Window opacity")
+						if slider.Changed() {
+							s.applySettings(func(v *settings.Settings) error {
+								v.General.Opacity = pct / 100
+								return nil
+							})
+						}
+						ui.Text(c, fmt.Sprintf("%d%%", int(pct))).Width(45).TextColor(c.Theme().TextMuted)
+					})
+				}).Description("Controls the transparency of the application window and shell gradient.")
 			})
 		})
 		settingsCard(c, "Window", func() {

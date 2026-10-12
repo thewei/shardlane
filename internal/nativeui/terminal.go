@@ -246,10 +246,10 @@ func (s *Shell) paneHeaderVisuals(surface *terminalSurface, dark bool) (visualMa
 	}
 
 	if act, ok := s.serviceIndex.Panes[surface.paneID]; ok && act.Proc != "" && !isShell(act.Proc) {
-		if svg := procBrand(act.Proc); svg != nil {
+		if mark, ok := s.procMarkForPaneWithTheme(surface.paneID, dark); ok {
 			title := procFriendlyName(act.Proc)
 			detail := shortDir(surface.cwd)
-			return visualMark{svg: svg}, title, detail
+			return mark, title, detail
 		}
 	}
 

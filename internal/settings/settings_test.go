@@ -146,3 +146,24 @@ func TestFileStoreSessionRoundTrip(t *testing.T) {
 		t.Fatalf("session right panel = %#v", got.Session)
 	}
 }
+
+func TestGeneralSettingsEffectiveOpacity(t *testing.T) {
+	cases := []struct {
+		input float64
+		want  float64
+	}{
+		{0.0, 1.0},
+		{-0.5, 1.0},
+		{1.5, 1.0},
+		{0.3, 0.5},
+		{0.5, 0.5},
+		{0.85, 0.85},
+		{1.0, 1.0},
+	}
+	for _, tc := range cases {
+		g := GeneralSettings{Opacity: tc.input}
+		if got := g.EffectiveOpacity(); got != tc.want {
+			t.Fatalf("EffectiveOpacity(%v) = %v, want %v", tc.input, got, tc.want)
+		}
+	}
+}

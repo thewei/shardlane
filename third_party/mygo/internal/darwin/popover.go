@@ -53,6 +53,21 @@ func (w *window) popoverAnchor() (view id, r NSRect, edge uint) {
 		if t.item == 0 {
 			return 0, r, edge
 		}
+		if t.clickScreen != 0 {
+			if w.trayAnchorWin == 0 {
+				w.trayAnchorWin = msgInitWindow(send(class("NSWindow"), "alloc"), sel("initWithContentRect:styleMask:backing:defer:"),
+					t.clickAnchor, 0, nsBackingStoreBuffered, false)
+				send(w.trayAnchorWin, "setReleasedWhenClosed:", 0)
+				send(w.trayAnchorWin, "setOpaque:", 0)
+				send(w.trayAnchorWin, "setBackgroundColor:", uintptr(send(class("NSColor"), "clearColor")))
+				send(w.trayAnchorWin, "setLevel:", nsPopUpMenuWindowLevel)
+				send(w.trayAnchorWin, "setCollectionBehavior:", collectionTransient|collectionIgnoresCycle|collectionFullScreenAuxiliary)
+				send(w.trayAnchorWin, "setIgnoresMouseEvents:", 1)
+				send(w.trayAnchorWin, "orderFront:", 0)
+			}
+			anchorView := send(w.trayAnchorWin, "contentView")
+			return anchorView, msgRect(anchorView, sel("bounds")), edge
+		}
 		return t.button, msgRect(t.button, sel("bounds")), edge
 	}
 	a, p := w.flyout.Anchor, w.parent
@@ -139,6 +154,7 @@ func (w *window) closePopover() {
 }
 
 func (w *window) cleanupPopover() {
+	w.destroyTrayAnchorWin()
 	w.forgetPopoverWindow()
 	send(w.popover, "setDelegate:", 0)
 	if sendBool(w.popover, "isShown") {
@@ -148,6 +164,15 @@ func (w *window) cleanupPopover() {
 	send(w.popover, "setContentViewController:", 0)
 	release(w.popover)
 	release(w.popoverController)
+}
+
+func (w *window) destroyTrayAnchorWin() {
+	if w.trayAnchorWin != 0 {
+		send(w.trayAnchorWin, "orderOut:", 0)
+		send(w.trayAnchorWin, "close")
+		release(w.trayAnchorWin)
+		w.trayAnchorWin = 0
+	}
 }
 
 func popoverDelegateMethods() []objc.MethodDef {
@@ -171,6 +196,7 @@ func popoverDelegateMethods() []objc.MethodDef {
 			if w == nil {
 				return
 			}
+			w.destroyTrayAnchorWin()
 			w.forgetPopoverWindow()
 			if w.popoverClosing {
 				w.popoverClosing = false
@@ -193,6 +219,12 @@ func (t *tray) pressed() bool {
 	case 1, 3: // NSEventTypeLeftMouseDown, RightMouseDown
 	default:
 		return false
+	}
+	if t.clickScreen != 0 {
+		loc := msgPoint(class("NSEvent"), sel("mouseLocation"))
+		a := t.clickAnchor
+		return loc.X >= a.Origin.X-10 && loc.X < a.Origin.X+a.Size.Width+10 &&
+			loc.Y >= a.Origin.Y-10 && loc.Y < a.Origin.Y+a.Size.Height+10
 	}
 	win := send(t.button, "window")
 	if win == 0 || send(ev, "window") != win {

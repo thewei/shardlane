@@ -68,6 +68,7 @@ type window struct {
 	// tells that the backend closes it, not the user.
 	popover, popoverController id
 	popoverClosing             bool
+	trayAnchorWin              id
 
 	lastMouseDown id
 	dropped       []string         // DroppedFiles

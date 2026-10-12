@@ -33,18 +33,37 @@ branch in `node.Focus` after its nil/invalid-state guard in `ui/input.go`, one l
 (`ui/combobox.go`), and the `TestSearchField` regression in
 `ui/combobox_test.go`.
 
+## Delta 3: multi-display tray flyout anchoring on macOS (2026-10-12)
+
+`internal/darwin`: in multi-monitor setups, macOS status items (`NSStatusItem`)
+reside physically in the primary screen's window (`screens[0]`). When the user
+clicks the tray icon while operating on a secondary display, the click event's
+mouse position identifies the target display; `tray.recordClick` computes the
+corresponding menu-bar anchor on that display, `tray.Bounds` projects that anchor,
+and `w.popoverAnchor` binds an auxiliary transparent anchor window on that display
+so that the native `NSPopover` (or `PlaceFlyout`) renders directly on the operated
+screen without jumping to the primary display and stealing focus.
+
+Reason: Shardlane multi-monitor workflow — clicking the status tray while working
+in an editor on a secondary monitor must display the quick panel on that monitor
+rather than dragging the window and cursor focus over to the main screen.
+
+Sites: `clickScreen` and `clickAnchor` tracking + `recordClick` in
+`internal/darwin/menu.go`; `trayAnchorWin` and secondary-display anchoring +
+dismissal cleanup in `internal/darwin/popover.go`; `trayAnchorWin` field in
+`internal/darwin/window.go`.
+
 ## Upgrade path
 
-Rebased onto v0.4.1 on 2026-10-11 (both deltas remain absent upstream;
-the v0.3.7-era diff is the reference; v0.4.1 additionally ships the
-Flyout API the quick panel builds on, so no flyout delta is carried).
-When an upstream mygo release ships both (a terminal option of the same
-name/semantics and field-focus delegation), delete the
-`replace github.com/egoist/mygo => ./third_party/mygo` directive in
-`go.mod`, bump the pin, and delete this checkout. Shardlane code already
-uses only the public option and needs no changes.
+Rebased onto v0.4.1 on 2026-10-11 (terminal option and field-focus delegation
+remain absent upstream; multi-monitor tray anchoring added 2026-10-12).
+When an upstream mygo release ships these fixes, delete the
+`replace github.com/egoist/mygo => ./third_party/mygo` directive in `go.mod`,
+bump the pin, and delete this checkout. Shardlane code already uses only the
+public option and needs no changes.
 
 Delta vs v0.4.1: an `Options` field + a 4-line guard in `view.pointerEvent`;
 an unexported `node.focusTo` field, a delegation branch after the nil-safe
-`hasState` guard in `node.Focus`, and one line in `field`. Preserve the upstream
+`hasState` guard in `node.Focus`, and one line in `field`; multi-display tray
+anchoring in `internal/darwin/{menu,popover,window}.go`. Preserve the upstream
 `TestOptionalElementInput/nil` behavior when rebasing this patch.

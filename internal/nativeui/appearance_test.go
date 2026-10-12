@@ -43,6 +43,24 @@ func TestAppearanceSettingsRoundTrip(t *testing.T) {
 	if shell.settings.General.Density != "comfortable" {
 		t.Fatalf("expected density 'comfortable', got %q", shell.settings.General.Density)
 	}
+
+	// Default opacity
+	if shell.settings.General.EffectiveOpacity() != 1.0 {
+		t.Fatalf("expected default opacity 1.0, got %v", shell.settings.General.EffectiveOpacity())
+	}
+
+	// Mutate opacity to 0.85
+	shell.applySettings(func(s *settings.Settings) error {
+		s.General.Opacity = 0.85
+		return nil
+	})
+
+	if shell.settings.General.Opacity != 0.85 {
+		t.Fatalf("expected opacity 0.85, got %v", shell.settings.General.Opacity)
+	}
+	if shell.settings.General.EffectiveOpacity() != 0.85 {
+		t.Fatalf("expected effective opacity 0.85, got %v", shell.settings.General.EffectiveOpacity())
+	}
 }
 
 // TestSidebarDensityVariations pins P19: sidebar density controls
