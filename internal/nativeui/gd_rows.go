@@ -66,7 +66,7 @@ func (s *Shell) gdFileVisible(i int) bool {
 // only changes were whitespace-only hunks, which git omits, have nothing.
 func (s *Shell) gdHasContent(f *gdFile) bool {
 	cf := f.cf
-	return len(cf.Hunks) > 0 || cf.Binary || cf.TooLarge ||
+	return len(cf.Hunks) > 0 || cf.Binary || cf.TooLarge || cf.Deferred ||
 		cf.Status != gitworkbench.StatusModified || (cf.OldPath != "" && cf.OldPath != cf.Path)
 }
 
@@ -76,8 +76,16 @@ func (s *Shell) gdFileNote(f *gdFile) string {
 	switch {
 	case cf.Binary:
 		return "Binary file changed."
-	case cf.TooLarge:
-		return "File is too large, so the review skipped rendering it."
+	case cf.TooLarge, f.large.state == gdLargeTooLarge:
+		return "Too large to show here."
+	case cf.Deferred:
+		switch f.large.state {
+		case gdLargeLoading:
+			return "Loading…"
+		case gdLargeFailed:
+			return "Couldn't load the diff: " + f.large.err
+		}
+		return "Large diff"
 	case len(cf.Hunks) == 0 && cf.OldPath != "" && cf.OldPath != cf.Path:
 		return "File renamed without changes."
 	case len(cf.Hunks) == 0 && cf.Status == gitworkbench.StatusAdded, len(cf.Hunks) == 0 && cf.Status == gitworkbench.StatusUntracked:
@@ -114,6 +122,8 @@ func gdStatusLetter(cf *gitworkbench.ChangeFile) string {
 // buildGdRows lays out the rows of the files.
 func (s *Shell) buildGdRows() {
 	rows := s.git.gdRows[:0]
+	gen := s.git.gdLoadGen.Load()
+	needLoad := false
 	if cm := s.git.commitMeta; s.gdReviewingCommit() && cm != nil {
 		rows = append(rows, gdRow{kind: gdRowCommit})
 	}
@@ -132,7 +142,9 @@ func (s *Shell) buildGdRows() {
 			rows = append(rows, gdRow{kind: gdRowEnd, file: idx})
 			continue
 		}
-		f.computeWords()
+		if !f.loaded && f.loadGen != gen {
+			needLoad = true
+		}
 		split := s.gdSplitFile(f)
 		addGap := func(g gdGap) {
 			if g.count <= 0 {
@@ -204,6 +216,10 @@ func (s *Shell) buildGdRows() {
 	}
 	s.git.gdRows = rows
 	s.git.gdRowsDirty = false
+	// A file opened after the last load pass gets its contents now.
+	if needLoad {
+		s.loadGdContents()
+	}
 }
 
 // appendGdContext adds a line of context the user expanded.

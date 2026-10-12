@@ -25,7 +25,7 @@ func (s *Shell) changesClickSide(row gitworkbench.FlatRow, view gdViewSide) {
 func (s *Shell) openChangesSide(path string, view gdViewSide) {
 	s.openChanges(path)
 	if f, _ := s.gdFileForPath(path); f != nil {
-		f.view = view
+		f.setView(view)
 		s.git.gdRowsDirty = true
 	}
 }

@@ -42,6 +42,18 @@ const (
 	MaxPatchBytesPerFile = 4 << 20 // 4 MiB
 	// MaxUntrackedFiles bounds individually listed untracked entries.
 	MaxUntrackedFiles = 1000
+	// LargeDiffLines is the changed-line count (additions plus deletions)
+	// past which a file's diff waits behind a Show button instead of being
+	// read, parsed and drawn with the rest of the review.
+	LargeDiffLines = 5000
+	// MaxOnDemandPatchBytes bounds the diff of one file read when the user
+	// opens it; past it the file is too large for the review.
+	MaxOnDemandPatchBytes = 16 << 20 // 16 MiB
+	// OnDemandTimeout is the deadline of that read.
+	OnDemandTimeout = 20 * time.Second
+	// maxDiffExcludes bounds how many large files the bulk diff reads leave
+	// out by pathspec; the rest are deferred after the read.
+	maxDiffExcludes = 64
 )
 
 // OpClass separates read policy from mutation policy.

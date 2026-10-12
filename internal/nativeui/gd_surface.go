@@ -196,9 +196,7 @@ func (s *Shell) gdDiffRow(c *ui.Context, pal *gdPalette, i int) {
 	case gdRowHeader:
 		s.gdFileHeader(c, pal, int(r.file), f)
 	case gdRowNote:
-		s.gdCard(c, pal).Padding(10, 16).Background(pal.gapBg).Children(func() {
-			ui.Text(c, s.gdFileNote(f)).FontSize(Typography().Body).TextColor(pal.gapText)
-		})
+		s.gdNoteRow(c, pal, f)
 	case gdRowGap:
 		s.gdGapRow(c, pal, f, r)
 	case gdRowLine:
@@ -211,6 +209,34 @@ func (s *Shell) gdDiffRow(c *ui.Context, pal *gdPalette, i int) {
 		ui.Box(c).Height(4).Background(pal.codeBg).
 			BorderWidth(0, 1, 1, 1).BorderColor(pal.cardBorder).Radius(0, 0, gdCardRadius, gdCardRadius)
 	}
+}
+
+// gdNoteRow says why a file's lines do not show. A large diff offers Show
+// (Retry after a failed read) and spins while it loads.
+func (s *Shell) gdNoteRow(c *ui.Context, pal *gdPalette, f *gdFile) {
+	s.gdCard(c, pal).Padding(10, 16).Background(pal.gapBg).AlignItems(ui.Center).Gap(10).Children(func() {
+		if f.cf.Deferred && f.large.state == gdLargeLoading {
+			ui.Spinner(c).Size(14, 14).Shrink(0)
+		}
+		ui.Text(c, s.gdFileNote(f)).FontSize(Typography().Body).TextColor(pal.gapText).Grow(1).MinWidth(0)
+		if label := gdLargeAction(f); label != "" && compactButton(c, label).Shrink(0).Clicked() {
+			s.gdShowLarge(f)
+		}
+	})
+}
+
+// gdLargeAction is the label of the button a deferred file offers, "" for none.
+func gdLargeAction(f *gdFile) string {
+	if !f.cf.Deferred {
+		return ""
+	}
+	switch f.large.state {
+	case gdLargeIdle:
+		return "Show"
+	case gdLargeFailed:
+		return "Retry"
+	}
+	return ""
 }
 
 // gdCard is a row inside a file's card, between its sides.
@@ -557,7 +583,7 @@ func (s *Shell) gdSideOf(f *gdFile, r *gdRow, side gdSide) gdLineSide {
 			ls.segs = f.newHL[l.NewLine-1]
 		}
 	}
-	ls.words = f.words[[2]int{int(r.hunk), int(idx)}]
+	ls.words = f.wordsAt(int(r.hunk), int(idx))
 	return ls
 }
 

@@ -461,6 +461,7 @@ func (r *Runner) CommitSnapshot(ctx context.Context, root, hash string) (*Change
 		from = emptyTreeID(ctx, r, root)
 	}
 	rangeArg := from + ".." + hash
+	snap.DiffBase = rangeArg
 
 	ns, err := r.Read(ctx, root, "diff", "--name-status", "-z", "-M", rangeArg)
 	if err != nil {
@@ -472,7 +473,10 @@ func (r *Runner) CommitSnapshot(ctx context.Context, root, hash string) (*Change
 	var untracked []string // none in a commit; keeps the census below honest
 	_ = untracked
 	budget := &snapshotBudget{limit: MaxSnapshotBytes}
-	patch, err := r.Read(ctx, root,
+	// Line counts first: they say which files are too big to read with the rest.
+	nsStats, _ := r.Read(ctx, root, "diff", "--numstat", "-z", "-M", rangeArg)
+	numstat := parseNumstatZ(nsStats)
+	patch, whole, err := r.readDiff(ctx, root, largeDiffExcludes(entries, numstat),
 		"diff", "--no-color", "--no-ext-diff", "--no-textconv", "-M", "-U3",
 		"--submodule=short", rangeArg)
 	if err != nil {
@@ -483,10 +487,8 @@ func (r *Runner) CommitSnapshot(ctx context.Context, root, hash string) (*Change
 		snap.Truncated = true
 	}
 	patches := parsePatchSet(patch)
-	nsStats, _ := r.Read(ctx, root, "diff", "--numstat", "-z", "-M", rangeArg)
-	numstat := parseNumstatZ(nsStats)
 
-	files, adds, dels := emitChangeFiles(entries, patches, numstat, nil, nil)
+	files, adds, dels := emitChangeFiles(entries, patches, numstat, nil, nil, emitOptions{DeferAll: !whole})
 	for i := range files {
 		// Name-status entries always set the first column; a commit review
 		// has no index sides.

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -43,18 +44,44 @@ type gdFile struct {
 	loaded             bool
 	// collapsed hides the file's lines.
 	collapsed bool
+	// loadGen is the content-load generation that asked for this file's
+	// contents, so a file is requested once per generation.
+	loadGen uint64
+	// large is the on-demand state of a deferred file (idle when it is not).
+	large gdLarge
 	// expanded is how many lines of each gap of unchanged lines show, from
 	// its top and its bottom.
 	expanded map[int]gdGapShown
-	// words are the changed ranges of lines replaced by others, by the
-	// index of the hunk and of the line in it.
+	// words memoizes the changed ranges of lines replaced by others, by the
+	// index of the hunk and of the line in it. A pair is computed when one of
+	// its lines is first drawn, never for the whole diff; pairs holds, per
+	// hunk, the partner of each line (-1 for none).
 	words map[[2]int][]gitworkbench.WordRange
-	// metric is computed once the contents are loaded.
+	pairs [][]int32
+	// metric is computed once per change of the shown hunks or contents.
 	metric      gdFileMetrics
 	metricsDone bool
 	// spans keeps the styled code of the lines shown, which does not change
 	// from frame to frame.
 	spans map[gdSpanKey][]ui.Span
+}
+
+// gdLargeState is where a deferred file stands on its way to being shown.
+type gdLargeState uint8
+
+const (
+	gdLargeIdle     gdLargeState = iota // behind Show
+	gdLargeLoading                      // the on-demand read runs
+	gdLargeFailed                       // the read failed; Retry
+	gdLargeTooLarge                     // past the on-demand limit: nothing to offer
+	gdLargeShown                        // its hunks arrived
+)
+
+// gdLarge is the on-demand state of a deferred file.
+type gdLarge struct {
+	state gdLargeState
+	err   string                // why the read failed, on one line
+	diff  gitworkbench.FileDiff // what it read, kept to carry over a refresh
 }
 
 // gdSpanKey identifies the code of a line on one side, in the light or the
@@ -111,7 +138,7 @@ func (f *gdFile) hunks() []gitworkbench.Hunk {
 
 // sideCounts are the +/− totals of the hunks the review shows.
 func (f *gdFile) sideCounts() (adds, dels int) {
-	if f.view == gdViewCombined {
+	if f.view == gdViewCombined || f.cf.Deferred {
 		return f.cf.Additions, f.cf.Deletions
 	}
 	for _, h := range f.hunks() {
@@ -212,25 +239,105 @@ func (f *gdFile) canExpand() bool {
 	return f.newLines != nil || f.oldLines != nil
 }
 
-// computeWords finds the changed words of the lines a hunk replaces.
-func (f *gdFile) computeWords() {
-	if f.words != nil {
+// wordsAt returns the changed ranges of one line of a shown hunk. Its
+// delete/add pair is computed on the first request and kept, so a diff of
+// any size pays only for the lines that are drawn.
+func (f *gdFile) wordsAt(hunk, line int) []gitworkbench.WordRange {
+	if r, ok := f.words[[2]int{hunk, line}]; ok {
+		return r
+	}
+	partner := f.partnerOf(hunk, line)
+	if partner < 0 {
+		return nil
+	}
+	lines := f.hunks()[hunk].Lines
+	del, add := line, partner
+	if lines[line].Kind == gitworkbench.KindAdd {
+		del, add = partner, line
+	}
+	ra, rb, ok := gitworkbench.WordDiff(lines[del].Text, lines[add].Text)
+	if !ok {
+		ra, rb = nil, nil
+	}
+	if f.words == nil {
+		f.words = map[[2]int][]gitworkbench.WordRange{}
+	}
+	f.words[[2]int{hunk, del}] = ra
+	f.words[[2]int{hunk, add}] = rb
+	return f.words[[2]int{hunk, line}]
+}
+
+// partnerOf returns the index of the line a hunk's line is paired with, as a
+// split view shows them side by side, or -1.
+func (f *gdFile) partnerOf(hunk, line int) int {
+	hunks := f.hunks()
+	if hunk < 0 || hunk >= len(hunks) || line < 0 || line >= len(hunks[hunk].Lines) {
+		return -1
+	}
+	if f.pairs == nil {
+		f.pairs = make([][]int32, len(hunks))
+	}
+	if f.pairs[hunk] == nil {
+		lines := hunks[hunk].Lines
+		partners := make([]int32, len(lines))
+		for i := range partners {
+			partners[i] = -1
+		}
+		for _, p := range gdPairs(lines) {
+			partners[p.del], partners[p.add] = int32(p.add), int32(p.del)
+		}
+		f.pairs[hunk] = partners
+	}
+	return int(f.pairs[hunk][line])
+}
+
+// setView picks which side's hunks the review shows. What was derived from
+// the previous side's hunks (marks, styled lines, widths) goes with them.
+func (f *gdFile) setView(view gdViewSide) {
+	if f.view == view {
 		return
 	}
-	f.words = map[[2]int][]gitworkbench.WordRange{}
-	for hi := range f.hunks() {
-		lines := f.hunks()[hi].Lines
-		for _, p := range gdPairs(lines) {
-			ra, rb, ok := gitworkbench.WordDiff(lines[p.del].Text, lines[p.add].Text)
-			if ok {
-				f.words[[2]int{hi, p.del}] = ra
-				f.words[[2]int{hi, p.add}] = rb
-			}
-		}
+	f.view = view
+	f.resetDerived()
+}
+
+// resetDerived drops everything computed from the shown hunks.
+func (f *gdFile) resetDerived() {
+	f.words, f.pairs, f.spans = nil, nil, nil
+	f.metricsDone = false
+}
+
+// finishLarge records the outcome of a deferred file's on-demand read.
+func (f *gdFile) finishLarge(d gitworkbench.FileDiff, err error) {
+	if err == nil {
+		f.adoptLarge(d)
+		return
+	}
+	ge, _ := gitworkbench.GitError(err)
+	switch {
+	case ge != nil && ge.Class == gitworkbench.ErrTooLarge:
+		f.large = gdLarge{state: gdLargeTooLarge}
+	case ge != nil && ge.Class == gitworkbench.ErrTimeout:
+		f.large = gdLarge{state: gdLargeFailed, err: "timed out"}
+	default:
+		f.large = gdLarge{state: gdLargeFailed, err: firstErrLine(err)}
 	}
 }
 
-// metrics computes the line-number digits and the widest line of the file.
+// adoptLarge shows a deferred file with the hunks an on-demand read produced.
+// They go on a private copy of the change: the snapshot stays immutable.
+func (f *gdFile) adoptLarge(d gitworkbench.FileDiff) {
+	shown := *f.cf
+	shown.Deferred = false
+	shown.Hunks, shown.StagedHunks, shown.UnstagedHunks = d.Hunks, d.StagedHunks, d.UnstagedHunks
+	f.cf = &shown
+	f.large = gdLarge{state: gdLargeShown, diff: d}
+	f.resetDerived()
+}
+
+// metrics computes the line-number digits and the widest line of the file,
+// once: it runs for every drawn row, so it must stay a lookup. Loading the
+// contents, expanding a gap or switching sides clears metricsDone.
 func (f *gdFile) metrics() gdFileMetrics {
 	if f.metricsDone {
 		return f.metric
@@ -252,7 +359,7 @@ func (f *gdFile) metrics() gdFileMetrics {
 		}
 	}
 	f.metric = gdFileMetrics{digits: max(len(itoa(maxNum)), 2), maxCols: maxCols}
-	f.metricsDone = f.loaded
+	f.metricsDone = true
 	return f.metric
 }
 
@@ -318,12 +425,23 @@ func (s *Shell) gdSetFiles() {
 		nf := &gdFile{cf: cf}
 		switch p := prev[cf.Path]; {
 		case p != nil && p.cf.Fingerprint == cf.Fingerprint:
+			// A large diff the user opened stays open while the file is as it
+			// was and staged the same way (the per-side hunks come with it).
+			if cf.Deferred && p.large.state == gdLargeShown && p.cf.Staged == cf.Staged && p.cf.Unstaged == cf.Unstaged {
+				nf.adoptLarge(p.large.diff)
+			}
 			nf.view = p.view
 			nf.collapsed = p.collapsed
 			nf.expanded = p.expanded
 			nf.oldLines, nf.newLines = p.oldLines, p.newLines
 			nf.oldHL, nf.newHL = p.oldHL, p.newHL
 			nf.loaded = p.loaded
+			// The fingerprint vouches for the combined hunks only; the staged
+			// and unstaged parses behind the other sides are not part of it.
+			if p.view == gdViewCombined {
+				nf.words, nf.pairs, nf.spans = p.words, p.pairs, p.spans
+				nf.metric, nf.metricsDone = p.metric, p.metricsDone
+			}
 		default:
 			nf.collapsed = s.gdIsViewed(nf) || cf.Generated
 		}
@@ -376,6 +494,38 @@ func gdSplitLines(s string) []string {
 	return lines
 }
 
+// gdLoadOrder lists the files whose contents still need reading: the ones
+// nearest the file in view first (the later of two equally near ones first,
+// as the review is read downward). Loaded files are done, collapsed ones wait
+// until they open, and a deferred diff until it is shown, so a long review
+// reads what is on screen before the rest.
+func (s *Shell) gdLoadOrder() []*gdFile {
+	var order []*gdFile
+	index := map[*gdFile]int{}
+	for i, f := range s.git.gdFiles {
+		if f.loaded || f.cf.Deferred || f.collapsed && !s.gdForceOpen(i) {
+			continue
+		}
+		index[f] = i
+		order = append(order, f)
+	}
+	current := s.git.gdCurrent
+	dist := func(f *gdFile) int {
+		d := index[f] - current
+		if d < 0 {
+			d = -d
+		}
+		return d
+	}
+	slices.SortStableFunc(order, func(a, b *gdFile) int {
+		if da, db := dist(a), dist(b); da != db {
+			return da - db
+		}
+		return index[b] - index[a]
+	})
+	return order
+}
+
 // loadGdContents reads both sides of the files, for their colors and their
 // unchanged lines, and shows them as they come (godiff loadContents, on the
 // shell's guarded lanes).
@@ -383,18 +533,16 @@ func (s *Shell) loadGdContents() {
 	if s.git == nil || s.git.root == "" || s.win == nil {
 		return
 	}
-	var pending []*gdFile
-	for _, f := range s.git.gdFiles {
-		if !f.loaded {
-			pending = append(pending, f)
-		}
-	}
+	pending := s.gdLoadOrder()
 	if len(pending) == 0 {
 		return
 	}
 	root := s.git.root
 	head := s.git.snapshot.Head
 	gen := s.git.gdLoadGen.Add(1)
+	for _, f := range pending {
+		f.loadGen = gen
+	}
 
 	go func() {
 		jobs := make(chan *gdLoaded)
@@ -461,6 +609,31 @@ func (s *Shell) loadGdContents() {
 				flush()
 			}
 		}
+	}()
+}
+
+// gdShowLarge reads a deferred file's diff on demand, off the UI lane; Show
+// and Retry both land here.
+func (s *Shell) gdShowLarge(f *gdFile) {
+	snap := s.gdActiveSnapshot()
+	if s.git == nil || s.git.root == "" || snap == nil || !f.cf.Deferred || f.large.state == gdLargeLoading {
+		return
+	}
+	f.large = gdLarge{state: gdLargeLoading}
+	s.git.gdRowsDirty = true
+	runner, root, base, files, cf := s.git.runner, s.git.root, snap.DiffBase, s.git.gdFilesFor, *f.cf
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), gitworkbench.OnDemandTimeout)
+		defer cancel()
+		diff, err := runner.ReadFileDiff(ctx, root, base, cf)
+		s.applyOnUI(func() {
+			// A refresh that replaced the files has dropped this one with them.
+			if s.git == nil || s.git.gdFilesFor != files {
+				return
+			}
+			f.finishLarge(diff, err)
+			s.git.gdRowsDirty = true
+		})
 	}()
 }
 

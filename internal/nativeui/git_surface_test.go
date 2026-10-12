@@ -13,7 +13,7 @@ import (
 
 // gitSurfaceTestShell builds a shell bound to a repo context with a seeded
 // snapshot (headless; no live Herdr needed for surface behavior).
-func gitSurfaceTestShell(t *testing.T, root string) *Shell {
+func gitSurfaceTestShell(t testing.TB, root string) *Shell {
 	t.Helper()
 	shell := NewShell()
 	shell.activeInstance = "inst-1"

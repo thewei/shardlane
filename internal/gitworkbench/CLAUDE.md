@@ -10,8 +10,8 @@ Git workbench 是 Shardlane 的本地 Git 域服务：Runner 负责仓库读取�
 - `cache.go`：按仓库根目录缓存 Git 变更快照。
 - `changes.go`：工作树变更查询入口。
 - `changes_parsing.go`：Git 状态和变更输出解析。
-- `changes_snapshot.go`：变更快照的构建与稳定字段。
-- `changes_untracked.go`：未跟踪文件补充与界限。
+- `changes_snapshot.go`：变更快照的构建与稳定字段；numstat 先行，超 `LargeDiffLines` 的文件排除出批量读取并延迟（Deferred）。
+- `changes_untracked.go`：未跟踪文件补充与界限；超行数/4 MiB 的延迟、大文件二进制嗅探、按需整读（≤16 MiB）。
 - `commit.go`：受保护的提交事务。
 - `commit_prompt.go`：提交消息提示词生成规则。
 - `commit_prompt_preview.go`：生成提示词的隐私限制与预览。
@@ -20,6 +20,8 @@ Git workbench 是 Shardlane 的本地 Git 域服务：Runner 负责仓库读取�
 - `context.go`：Git 仓库根定位和上下文边界。
 - `generated.go`：仓库生成文件辅助规则。
 - `helpers_test.go`：测试仓库准备工具。
+- `large_diff.go`：大 diff 延迟——批量读取的 pathspec 排除（重命名双侧）、读取溢出整体延迟、延迟文件指纹戳（尺寸+时间）、`ReadFileDiff` 按需读单文件（含两侧 hunks，≤16 MiB）。
+- `large_diff_test.go`：真实仓库回归——超阈值/超 4 MiB 延迟、超读取上限不再令快照失败、重命名/未跟踪/提交快照、按需读取与过大错误。
 - `highlight.go`：语法高亮适配。
 - `history_actions.go`：历史提交撤销/恢复的安全约束。
 - `history_actions_test.go`：历史操作边界测试。

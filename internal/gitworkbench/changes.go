@@ -53,10 +53,11 @@ type ChangeFile struct {
 	Deletions   int
 	Binary      bool
 	Generated   bool
-	TooLarge    bool
+	Deferred    bool // diff held back for its size: counts known, Patch/Hunks empty until ReadFileDiff
+	TooLarge    bool // cannot be shown even on demand (untracked, past MaxOnDemandPatchBytes)
 	Untracked   bool
 	Fingerprint string
-	Patch       []byte // parsed-model source; nil when TooLarge/Binary
+	Patch       []byte // parsed-model source; nil when Deferred/TooLarge/Binary
 	Hunks       []Hunk
 	Truncated   bool // patch retained below full size
 	// Staged/Unstaged mark which sides of git's status carry the change,
@@ -79,6 +80,7 @@ type ChangesSnapshot struct {
 	NoHead    bool
 	Signature string
 	Files     []ChangeFile
+	DiffBase  string // revision the combined diffs compare: HEAD, the empty tree, or from..to of a commit
 
 	TotalAdditions int
 	TotalDeletions int

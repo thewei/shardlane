@@ -53,6 +53,13 @@ const maxPatchFileLines = 1 << 20
 // parsePatchSet splits a full `git diff` output into per-file patches keyed
 // by destination path.
 func parsePatchSet(data []byte) map[string]*filePatch {
+	return parsePatchSetLimit(data, MaxPatchBytesPerFile*2)
+}
+
+// parsePatchSetLimit is parsePatchSet keeping up to limit bytes of each
+// file's section parsed; past it, or past maxPatchFileLines lines, a file is
+// marked tooLarge and keeps what was read.
+func parsePatchSetLimit(data []byte, limit int) map[string]*filePatch {
 	result := make(map[string]*filePatch)
 	if len(data) == 0 {
 		return result
@@ -87,13 +94,13 @@ func parsePatchSet(data []byte) map[string]*filePatch {
 			continue // preamble outside any file section
 		}
 		current.raw = append(current.raw, []byte(line+"\n")...)
-		if len(current.raw) > MaxPatchBytesPerFile*2 {
+		if len(current.raw) > limit || len(body) >= maxPatchFileLines {
 			current.tooLarge = true // keep the section, stop retaining body
 			continue
 		}
 		body = append(body, line)
 		bodyBytes += len(line)
-		if bodyBytes > MaxPatchBytesPerFile*2 {
+		if bodyBytes > limit {
 			current.tooLarge = true
 		}
 	}
@@ -322,7 +329,12 @@ func parseRange(s string) (start, count int) {
 
 // parsePatch parses a single-file patch (untracked synthesis path).
 func parsePatch(data []byte) *filePatch {
-	set := parsePatchSet(data)
+	return parsePatchLimit(data, MaxPatchBytesPerFile*2)
+}
+
+// parsePatchLimit is parsePatch with parsePatchSetLimit's size limit.
+func parsePatchLimit(data []byte, limit int) *filePatch {
+	set := parsePatchSetLimit(data, limit)
 	for _, fp := range set {
 		return fp
 	}

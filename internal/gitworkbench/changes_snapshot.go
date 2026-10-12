@@ -44,6 +44,7 @@ func (r *Runner) Snapshot(ctx context.Context, root string) (*ChangesSnapshot, e
 	stagedHunks := map[string][]Hunk{}
 	unstagedHunks := map[string][]Hunk{}
 	hasStaged, hasUnstaged := false, false
+	deferAll := false
 	for _, e := range entries {
 		if containsAny(e.XY, "?") {
 			continue
@@ -56,41 +57,46 @@ func (r *Runner) Snapshot(ctx context.Context, root string) (*ChangesSnapshot, e
 		}
 	}
 	if len(entries) > len(untracked) {
-		// The tree-vs-HEAD patch (index + worktree combined), no color,
-		// no external diff, rename detection on (plan §14).
 		diffRef := "HEAD"
 		if facts.NoHead {
 			diffRef = emptyTreeID(ctx, r, root)
 		}
-		patch, err := r.Read(ctx, root,
+		snap.DiffBase = diffRef
+
+		// Line counts come first: they say which files are too big to read
+		// along with the rest. NUL-delimited, numstat carries arbitrary
+		// filenames verbatim (P1-07).
+		if ns, err := r.Read(ctx, root, "diff", "--numstat", "-z", "-M", diffRef); err == nil {
+			numstat = parseNumstatZ(ns)
+		}
+		skip := largeDiffExcludes(entries, numstat)
+
+		// The tree-vs-HEAD patch (index + worktree combined), no color,
+		// no external diff, rename detection on (plan §14).
+		patch, whole, err := r.readDiff(ctx, root, skip,
 			"diff", "--no-color", "--no-ext-diff", "--no-textconv", "-M", "-U3",
 			"--submodule=short", diffRef)
 		if err != nil {
 			snap.Err = err.Error()
 			return snap, err
 		}
+		deferAll = !whole
 		if !budget.take(int64(len(patch))) {
 			snap.Truncated = true
 		}
 		trackedPatch = patch
 
-		// NUL-delimited numstat carries arbitrary filenames verbatim (P1-07).
-		ns, err := r.Read(ctx, root, "diff", "--numstat", "-z", "-M", diffRef)
-		if err == nil {
-			numstat = parseNumstatZ(ns)
-		}
-
 		// The per-side parses behind the staged/unstaged split views, only
 		// when a side actually carries changes.
-		if hasStaged {
-			if p, err := r.Read(ctx, root,
-				"diff", "--cached", "--no-color", "--no-ext-diff", "--no-textconv", "-M", "-U3"); err == nil {
+		if hasStaged && !deferAll {
+			if p, ok, err := r.readDiff(ctx, root, skip,
+				"diff", "--cached", "--no-color", "--no-ext-diff", "--no-textconv", "-M", "-U3"); err == nil && ok {
 				stagedHunks = hunksByPath(parsePatchSet(p))
 			}
 		}
-		if hasUnstaged {
-			if p, err := r.Read(ctx, root,
-				"diff", "--no-color", "--no-ext-diff", "--no-textconv", "-M", "-U3"); err == nil {
+		if hasUnstaged && !deferAll {
+			if p, ok, err := r.readDiff(ctx, root, skip,
+				"diff", "--no-color", "--no-ext-diff", "--no-textconv", "-M", "-U3"); err == nil && ok {
 				unstagedHunks = hunksByPath(parsePatchSet(p))
 			}
 		}
@@ -99,7 +105,7 @@ func (r *Runner) Snapshot(ctx context.Context, root string) (*ChangesSnapshot, e
 	patches := parsePatchSet(trackedPatch)
 
 	// Emit tracked entries in porcelain order.
-	files, adds, dels := emitChangeFiles(entries, patches, numstat, stagedHunks, unstagedHunks)
+	files, adds, dels := emitChangeFiles(entries, patches, numstat, stagedHunks, unstagedHunks, emitOptions{Root: root, DeferAll: deferAll})
 	snap.Files, snap.TotalAdditions, snap.TotalDeletions = files, adds, dels
 
 	// Untracked entries: content read per file, bounded (plan §15).
@@ -129,7 +135,7 @@ func (r *Runner) Snapshot(ctx context.Context, root string) (*ChangesSnapshot, e
 // emitChangeFiles projects parsed status entries, patches and numstat into
 // the snapshot's file list. Shared by the work-tree snapshot and the commit
 // snapshot (whose entries carry the status in the first column only).
-func emitChangeFiles(entries []porcelainEntry, patches map[string]*filePatch, numstat map[string]numstatLine, stagedHunks, unstagedHunks map[string][]Hunk) (files []ChangeFile, totalAdditions, totalDeletions int) {
+func emitChangeFiles(entries []porcelainEntry, patches map[string]*filePatch, numstat map[string]numstatLine, stagedHunks, unstagedHunks map[string][]Hunk, opts emitOptions) (files []ChangeFile, totalAdditions, totalDeletions int) {
 	for _, e := range entries {
 		if containsAny(e.XY, "?") {
 			continue
@@ -149,7 +155,10 @@ func emitChangeFiles(entries []porcelainEntry, patches map[string]*filePatch, nu
 			cf.Deletions = int(ns.Del)
 			cf.Binary = ns.Binary
 		}
-		if fp, ok := patches[e.Path]; ok {
+		// Past LargeDiffLines changed lines (or with no bulk patch at all) a
+		// text file is deferred: its counts stay, its patch is not kept.
+		deferred := !cf.Binary && (opts.DeferAll || cf.Additions+cf.Deletions > LargeDiffLines)
+		if fp, ok := patches[e.Path]; ok && !deferred {
 			cf.Patch = fp.raw
 			cf.Hunks = fp.hunks
 			cf.Binary = cf.Binary || fp.binary
@@ -157,15 +166,20 @@ func emitChangeFiles(entries []porcelainEntry, patches map[string]*filePatch, nu
 				cf.Additions, cf.Deletions = 0, 0
 			}
 			if len(fp.raw) > MaxPatchBytesPerFile {
-				cf.TooLarge = true
-				cf.Patch = nil
-				cf.Hunks = nil
+				deferred = true
 			}
-		} else if status == StatusDeleted {
+		} else if status == StatusDeleted && !deferred {
 			cf.Binary = false
 		}
 		cf.Generated = IsGenerated(e.Path)
-		cf.Fingerprint = fingerprint(status, cf.Path, cf.OldPath, cf.Additions, cf.Deletions, cf.Patch)
+		identity := cf.Patch
+		if deferred {
+			// With no patch to digest, the file's own size and time stand in.
+			cf.Deferred = true
+			cf.Patch, cf.Hunks, cf.StagedHunks, cf.UnstagedHunks = nil, nil, nil, nil
+			identity = deferredStamp(opts.Root, cf.Path)
+		}
+		cf.Fingerprint = fingerprint(status, cf.Path, cf.OldPath, cf.Additions, cf.Deletions, identity)
 		files = append(files, cf)
 		totalAdditions += cf.Additions
 		totalDeletions += cf.Deletions
