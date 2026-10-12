@@ -210,6 +210,14 @@ type Shell struct {
 	// bar reads it to clear the traffic lights and the sidebar toggle once
 	// the sidebar stops covering them.
 	sidebarSlideW float32
+	// sidebarW is the sidebar's width: sidebarWidth until the user drags
+	// the trailing edge (panel_motion.go), then session-persisted like the
+	// Right Panel's width.
+	sidebarW float32
+	// sidebarWDragging mirrors "the resize handle was pressed last frame":
+	// while true the slide width snaps to its target instead of easing
+	// after the moving drag target.
+	sidebarWDragging bool
 	// windowPinned mirrors the main window's always-on-top level for the
 	// titlebar pin's selected face: session-only presentation state, never
 	// persisted and only ever changed through toggleWindowPinned.
@@ -478,6 +486,7 @@ func NewShell(opts ...ShellOption) *Shell {
 	s.stagedSelected = -1
 	s.stagedList.Selected = &s.stagedSelected
 	s.stagedPaneHeight = 220
+	s.sidebarW = sidebarWidth
 	s.gitUpperHeight = gitSplitDefaultTop
 	s.gitFilePaneWidth = gitFilePaneDefaultWidth
 	s.gitLowerTab = 1

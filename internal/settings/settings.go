@@ -132,6 +132,8 @@ type SessionSettings struct {
 	PinsOpen         bool     `json:"pins_open"`
 	ExpandedProjects []string `json:"expanded_projects,omitempty"`
 	ExpandedTabs     []string `json:"expanded_tabs,omitempty"`
+	// SidebarWidth is the dragged left-sidebar width (0 = the default).
+	SidebarWidth int `json:"sidebar_width,omitempty"`
 	// Right panel cosmetics (Changes/Files/Services).
 	RightPanelOpen    bool   `json:"right_panel_open"`
 	RightPanelSurface string `json:"right_panel_surface,omitempty"`

@@ -24,7 +24,7 @@ func (s *Shell) sidebar(c *ui.Context) {
 	// material or its opaque fallback, one continuous surface with the band
 	// beside the traffic lights above this body. The header's trailing
 	// cluster owns the view switch (2026-10-07).
-	ui.Column(c).Width(sidebarWidth).Grow(1).MinHeight(0).Shrink(0).Children(func() {
+	ui.Column(c).Width(s.sidebarW).Grow(1).MinHeight(0).Shrink(0).Children(func() {
 		if s.sidebarInDiffMode() {
 			// Git references are full-height navigation, not compressed toolbar chips.
 			s.sidebarProjectHeader(c, s.git.root, "Refresh repository", s.refreshGitChanges)

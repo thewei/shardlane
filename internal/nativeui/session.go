@@ -70,6 +70,19 @@ func clampSessionWidth(width int) int {
 	return width
 }
 
+// clampSessionSidebarWidth bounds a restored sidebar width to the drag
+// limits' static bounds; the window is unknown at restore time, so the
+// window-relative cap applies only on the next drag.
+func clampSessionSidebarWidth(width int) int {
+	if width < int(sidebarMinWidth) {
+		return int(sidebarMinWidth)
+	}
+	if width > int(sidebarMaxWidth) {
+		return int(sidebarMaxWidth)
+	}
+	return width
+}
+
 // captureSession reads the shell's navigation and panel cosmetics into a
 // snapshot. Pure read over presentation state; safe from any lane that
 // already owns the shell.
@@ -85,6 +98,7 @@ func (s *Shell) captureSession() settings.SessionSettings {
 		PinsOpen:          s.pinsOpen,
 		ExpandedProjects:  sortedSetKeys(s.expandedProjects),
 		ExpandedTabs:      sortedSetKeys(s.expandedTabs),
+		SidebarWidth:      int(s.sidebarW),
 		RightPanelOpen:    s.rightPanel.open,
 		RightPanelSurface: string(s.rightPanel.surface),
 		RightPanelWidth:   s.rightPanel.width,
@@ -150,6 +164,9 @@ func (s *Shell) restoreSession() {
 	}
 	for _, id := range session.ExpandedTabs {
 		s.expandedTabs[id] = true
+	}
+	if session.SidebarWidth != 0 {
+		s.sidebarW = float32(clampSessionSidebarWidth(session.SidebarWidth))
 	}
 	s.rightPanel.open = session.RightPanelOpen
 	switch RightPanelSurface(session.RightPanelSurface) {

@@ -81,7 +81,7 @@ func (s *Shell) gitFilePaneLimits(windowW float32) (width, maxWidth float32) {
 	if width == 0 {
 		width = gitFilePaneDefaultWidth
 	}
-	maxWidth = windowW - sidebarWidth - 270
+	maxWidth = windowW - s.sidebarW - 270
 	if maxWidth < gitFilePaneMinWidth {
 		maxWidth = gitFilePaneMinWidth
 	}
@@ -94,7 +94,7 @@ func (s *Shell) gitCenterWidth(windowW float32) float32 {
 	if s.sidebarCollapsed {
 		return windowW
 	}
-	return windowW - sidebarWidth
+	return windowW - s.sidebarW
 }
 
 // gitFilePaneOpen tells whether the file navigator shows in a window this
