@@ -2,7 +2,7 @@ package nativeui
 
 /**
  * [INPUT]: 依赖 mygo/ui 的 Menu/Element、internal/herdr 的 pane 变更 RPC（SplitPane/TogglePaneZoom）、dialogs 的确认通道
- * [OUTPUT]: 对外提供 headerOverflow（⋯ 菜单）、splitPaneAction/zoomPaneAction/closePaneAction（pane 动作唯一实现）、paneOverflowItems/surfaceOverflowItems（菜单构建器）
+ * [OUTPUT]: 对外提供 headerOverflow（Actions pull-down 菜单）、splitPaneAction/zoomPaneAction/closePaneAction（pane 动作唯一实现）、paneOverflowItems/surfaceOverflowItems（菜单构建器）
  * [POS]: nativeui 的 pane 动作单一来源：卡片头按钮、右键菜单、侧栏行、标题栏溢出全部走这里；单 Pane 的 zoom 语义（两侧栏最大化，F143）在此收口
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -14,16 +14,15 @@ import (
 	"github.com/wh-studio/herdr-client/internal/herdr"
 )
 
-// headerOverflow is the ⋯ button after the title-bar breadcrumb path: one
-// menu holding the current surface's actions (2026-10-05 header review).
-// Pane items come from paneOverflowItems — the same builder behind the
-// tree rows' hover "..." and the pane right-click menu.
+// headerOverflow is the Actions pull-down after the title-bar breadcrumb
+// path: one menu holding the current surface's actions (2026-10-05 header
+// review). Pane items come from paneOverflowItems — the same builder behind
+// the tree rows' right-click menu and the pane header's menu.
 func (s *Shell) headerOverflow(c *ui.Context) {
 	k := gorexColorsOf(c.Theme().Dark)
 	var trigger ui.Element
 	ui.Box(c).Children(func() {
-		b := gorexIconButton(c, k, iconEllipsis, "More actions", "More actions", false, gorexIconBtn, gorexIconGlyph)
-		trigger = b
+		trigger = gorexPulldown(c, k, iconActions, "Actions", gorexIconBtn, gorexIconGlyph)
 	})
 	trigger.Menu(func(m *ui.Menu) {
 		s.surfaceOverflowItems(m)
@@ -81,8 +80,8 @@ func (s *Shell) closePaneAction(paneID string) {
 }
 
 // paneOverflowItems is the ONE pane menu builder (2026-10-05 round two):
-// the attached pane's right-click menu, the project tree row's hover
-// "..." and the title-bar overflow's pane section all render these items.
+// the attached pane's right-click menu, the project tree row's right-click
+// menu and the title-bar Actions pane section all render these items.
 func (s *Shell) paneOverflowItems(m *ui.Menu, paneID, label string) {
 	if s.isPanePinned(paneID) {
 		if m.Item("Unpin").Chosen() {
@@ -113,7 +112,7 @@ func (s *Shell) paneOverflowItems(m *ui.Menu, paneID, label string) {
 	}
 }
 
-// surfaceOverflowItems fills the title-bar "..." with the current
+// surfaceOverflowItems fills the title-bar Actions menu with the current
 // surface's actions (plan §8.2..8.4).
 func (s *Shell) surfaceOverflowItems(m *ui.Menu) {
 	switch s.surface.current() {

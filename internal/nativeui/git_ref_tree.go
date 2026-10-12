@@ -88,9 +88,14 @@ func gitRefMatches(filter string, values ...string) bool {
 }
 
 func (s *Shell) gitEmptySection(c *ui.Context, count int) {
-	if count == 0 {
-		ui.Text(c, "No matching items").Padding(4, 18).FontSize(Typography().BodySmall).TextColor(c.Theme().TextMuted)
+	if count > 0 {
+		return
 	}
+	label := "None"
+	if strings.TrimSpace(s.gitRefsFilter) != "" {
+		label = "No matches"
+	}
+	ui.Text(c, label).Padding(2, 0, 4, treeGlyphX(0)).FontSize(Typography().BodySmall).TextColor(c.Theme().TextMuted)
 }
 
 // A filtered tree starts fully expanded, yet a user's click must still fold
@@ -103,10 +108,19 @@ func (s *Shell) gitFoldKey(normal string) string {
 	return normal
 }
 
-func (s *Shell) gitRenderRefTree(c *ui.Context, scope string, roots []*gitRefNode, depth int, click func(string), menu func(string, *ui.Menu)) {
+// gitRefKinds names a ref tree's rows for assistive technology and tests.
+var gitRefKinds = map[string]string{"local": "Branch", "remote": "Remote branch", "tag": "Tag"}
+
+// gitRenderRefTree draws one slash-grouped ref tree from level (0 for the
+// rows directly under a section).
+func (s *Shell) gitRenderRefTree(c *ui.Context, scope string, roots []*gitRefNode, level int, click func(string), menu func(string, *ui.Menu)) {
 	if len(roots) == 0 {
 		s.gitEmptySection(c, 0)
 		return
+	}
+	leafGlyph := iconBranch
+	if scope == "tag" {
+		leafGlyph = iconTag
 	}
 	var visit func(*gitRefNode, int)
 	visit = func(n *gitRefNode, level int) {
@@ -124,7 +138,12 @@ func (s *Shell) gitRenderRefTree(c *ui.Context, scope string, roots []*gitRefNod
 				}
 			}
 		}
-		s.gitTreeRow(c, n.name, value, level, folder, closed, current, func() {
+		item := gitTreeItem{title: n.name, tooltip: value, kind: gitRefKinds[scope], glyph: leafGlyph,
+			level: level, folder: folder, closed: closed, current: current}
+		if folder {
+			item.kind, item.glyph = "Folder", iconFolder
+		}
+		s.gitTreeRow(c, item, func() {
 			if folder {
 				s.gitTreeClosed[key] = !s.gitTreeClosed[key]
 			} else {
@@ -145,42 +164,31 @@ func (s *Shell) gitRenderRefTree(c *ui.Context, scope string, roots []*gitRefNod
 		}
 	}
 	for _, root := range roots {
-		visit(root, depth)
+		visit(root, level)
 	}
 }
 
-func (s *Shell) gitTreeRow(c *ui.Context, title, tooltip string, depth int, folder, closed, current bool, action func(), menu func(*ui.Menu)) {
-	t := c.Theme()
-	inset := float32(5 + depth*12)
-	// A stash subject can repeat; title includes the unique stash reference.
-	row := ui.ButtonBase(c.Key("git-ref:"+title+"@"+tooltip)).Height(23).FillWidth().MinWidth(0).Padding(0, 6).
-		Gap(5).Radius(4).FocusRing(false).Label(title).Tooltip(tooltip).AlignItems(ui.Center)
-	if current {
-		row.Background(t.Accent.Alpha(.11)).TextColor(t.Accent)
-	} else if row.Hovered() {
-		row.Background(t.SurfaceHover)
+// gitTreeItem is one row of a Git sidebar tree.
+type gitTreeItem struct {
+	title, tooltip, kind    string
+	glyph                   *ui.SVG
+	level                   int
+	folder, closed, current bool
+}
+
+// gitTreeRow draws one row on the shared sidebar grid. A stash subject can
+// repeat; its title carries the unique stash reference.
+func (s *Shell) gitTreeRow(c *ui.Context, it gitTreeItem, action func(), menu func(*ui.Menu)) {
+	var trailing func()
+	if it.current {
+		trailing = func() {
+			ui.Icon(c, iconCheck).FontSize(11).TextColor(c.Theme().Accent).Shrink(0)
+		}
 	}
-	row.ContextMenu(menu)
-	row.Children(func() {
-		ui.Box(c).Width(inset).Shrink(0)
-		if folder {
-			chevron := iconChevronDown
-			if closed {
-				chevron = iconChevron
-			}
-			ui.Icon(c, chevron).FontSize(10).TextColor(t.TextMuted)
-		} else {
-			ui.Box(c).Width(11).Shrink(0)
-		}
-		svg := iconBranch
-		if folder {
-			svg = iconFolder
-		}
-		ui.Icon(c, svg).FontSize(12).TextColor(t.TextMuted)
-		ui.Text(c, title).FontSize(Typography().BodySmall).SingleLine().Grow(1).MinWidth(0)
-		if current {
-			ui.Text(c, "✓").FontSize(Typography().BodySmall).TextColor(t.Accent)
-		}
+	row := s.sidebarTreeRow(c, sidebarTreeSpec{
+		Key: "git-ref:" + it.title + "@" + it.tooltip, Title: it.title, Label: it.kind + " " + it.title,
+		Tooltip: it.tooltip, Level: it.level, Folder: it.folder, Expanded: !it.closed,
+		Glyph: it.glyph, Current: it.current, Trailing: trailing, Menu: menu,
 	})
 	if row.Clicked() {
 		action()

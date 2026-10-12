@@ -43,18 +43,22 @@ func TestGitLayoutButtonsActuallySwitchAndStayVisible(t *testing.T) {
 			t.Fatalf("Split did not restore layout on pass %d", i)
 		}
 	}
-	if err := tt.Click("More Git actions"); err != nil {
+	if err := tt.Click("Git actions"); err != nil {
 		t.Fatal(err)
 	}
 	tt.Frame()
 	menu := strings.Join(tt.Menu(), " | ")
-	for _, want := range []string{"Fetch", "Pull", "Push", "Git Preferences"} {
+	for _, want := range []string{"Stash All Changes", "View All Commits", "Git Preferences"} {
 		if !strings.Contains(menu, want) {
-			t.Fatalf("overflow lost %s: %s", want, menu)
+			t.Fatalf("Git actions lost %s: %s", want, menu)
 		}
 	}
-	if strings.Contains(menu, "Refresh") {
-		t.Fatalf("duplicate Refresh in Git actions: %s", menu)
+	// Fetch / Pull / Push are toolbar icons now; Refresh lives in the
+	// sidebar header. Neither repeats in the pull-down.
+	for _, dup := range []string{"Fetch", "Pull", "Push", "Refresh"} {
+		if strings.Contains(menu, dup) {
+			t.Fatalf("duplicate %s in Git actions: %s", dup, menu)
+		}
 	}
 	tt.CloseMenu()
 }

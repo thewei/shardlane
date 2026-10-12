@@ -7,7 +7,7 @@ proc_brands.go: 进程与工具/服务品牌标识解析器，将前台进程、
 brands.go: Agent 品牌位图资产与视觉标识解析器，将 live Agent 映射为全彩品牌 Logo 与 agentMarkForPane 窗格标识
 agent_visual.go: Agent 品牌矢量回退图标字典、窗格 Agent 绑定与状态指示点（statusDot）
 brands_test.go: Agent 品牌位图资产检索、Antigravity 及其它 Provider 标识与 agentProvider 回退回归
-gorex_style.go: 扁平视觉系统：卡片/配色、图标按钮度量（gorexIconBtn·Glyph、gorexPaneBtn·Glyph 为唯一尺寸来源）与 shortDir/samePath 路径处理；无渐变、无投影
+gorex_style.go: 扁平视觉系统：卡片/配色、图标按钮度量（gorexIconBtn·Glyph、gorexPaneBtn·Glyph 为唯一尺寸来源）、gorexPulldown 图标+下拉箭头（标题栏 Actions）与 shortDir/samePath 路径处理；无渐变、无投影
 terminal.go: 终端画布与 Gorex 窗格卡片渲染器，Pane 标题双击最大化/恢复、最大化 Tab 的窗格 Logo 数量角标（Tab 内面板数，无重叠堆叠画）、窗格标题取 Agent 名（Shardlane 生成的短名 <kind>-<6hex> 不当标题，回落到 Agent 品牌名）、标题原生拖动放置（跨窗格/跨 Tab 移动、拆分与交换）与 split 分隔条拖拽调宽高（解析为 Herdr pane.resize，双击回到 50/50；布局权威在 Herdr）
 breadcrumb_switcher.go: 标题栏面包屑与快速切换弹层所有者，Pane 顺序与 Herdr 实际布局对齐并展示品牌图标
 titlebar.go: 内容列标题栏（面包屑与工具区）、整高侧栏上的红绿灯带与侧栏切换钮（sidebarBand/sidebarToggle）、视图切换（History 内页先返回根）与 Windows 平台窗口控件支持
@@ -16,17 +16,17 @@ navigation_semantics_test.go: UI-009 顶栏/侧栏同级返回、重复点击、
 panel_motion.go: 整高侧栏（macOS vibrancy 材质、无 vibrancy 时不透明回退）的收起/展开动画；无右栏布局宿主
 panel_motion_test.go: Reduce Motion 下左导航收起/恢复，以及各窗口宽度无右栏回归
 right_panel.go: 旧会话设置兼容字段及 Files 缓存、根目录 identity fence、URL Preview 管理；**不绘制右栏**
-right_panel_files.go: /files 左侧目录缓存/树及点击加载预览的适配器
+right_panel_files.go: /files 左侧目录缓存/树（共用侧栏网格行与项目/分支头部）及点击加载预览的适配器
 page_files.go: Header Files 独立页面：左树/中预览、当前 Tab CWD 归属和空态
 quick_panel.go: 托盘与顶栏 Agent 快捷浮层宿主，提供 Agent 概览与 Services 双 Tab 及详情卡片
 quick_panel_services.go: Agent 浮层里的 Services 内容：当前 Tab Scripts 与观测端口
 quick_panel_test.go: QuickPanel 尺寸伸缩、卡片详情点击与空态行为测试
 right_panel_git_test.go: Diff/历史 Commit 保留左导航/中预览而不绘制旧 Review Inspector
 command_center_ui.go: Command Center Files 操作直达独立 /files 页面，不受旧右栏宽度限制
-project_tree.go: 侧栏 Workspace/Tab/Pane 原生拖拽入口及运行状态树，尊重 Herdr 权威顺序而非按 Agent 状态重排
+project_tree.go: 侧栏 Workspace/Tab/Pane 原生拖拽入口及运行状态树，尊重 Herdr 权威顺序而非按 Agent 状态重排；行内无 "…"，项目行悬停 "+"（New Tab），其余动作经右键菜单
 reorder.go: 作用域隔离的拖放语义与目标插入索引、跨 Tab/Project 移动与拆分位置计算、Herdr mutation 分发和 Pane layout 顺序投影
 reorder_test.go: Drag/Drop 真正鼠标事件、插入索引、跨 Tab/Project 移动校验、窗格卡片放置动作推导和投影排序回归
-components.go: 共用导航树行与视觉组件，拖动时提供原生浮动预览、同级插入占位条、容器高亮、动画及命中目标
+components.go: 共用导航树行与视觉组件（treeRow 悬停图标动作 Action）、sidebarRowHeight 密度令牌，拖动时提供原生浮动预览、同级插入占位条、容器高亮、动画及命中目标
 workbench.go: 桌面工作台状态中枢，Agent 目录与运行时事件分发
 page_history.go: Sessions 中心列表布局（参照 magpie 会话历史）：Agent 标签条（All + 各 Provider，带会话数）、搜索/Select/Hidden/Refresh 工具簇（窄窗口整体换行）、项目分组卡片（默认只展开最近一个项目，头部在卡内）与行（标题/事实行/Token 列/日期↔悬停菜单固定占位，点行内展开预览）、有界结果计数文案
 history_state.go: HistoryService 列表查询的生成代际隔离，筛选清空旧可选行/预览/多选；Provider 元数据选择与各 Provider 总数（可选 HistoryProviderCountView）；分组展开、多选、行内预览与详情页帧戳（只读 Chat 绑定的空闲释放）状态
@@ -53,31 +53,36 @@ providers_ui.go: Providers 统一状态机（经 herdr.RunCLI 取 integration �
 workspace.go: Terminal/Chat/Diff/Commit 唯一主表面，Changes 主内容采用上下可调 Git Review，Chat 保持 Agent 身份门禁
 chat_ui.go: Chat Timeline/Composer 和身份消失时的安全空态，不得泄漏旧 transcript；bindChatWindow（Tail 窗口）供 Workspace 历史绑定与 Sessions 详情只读绑定共用，releaseHistoryChat 保证只读绑定不外泄给窗格/Inspector
 gd_surface.go: 下方 Git Diff、无仓库/无变更/无匹配状态，clean 时直达 All Commits 或 Terminal；历史模式只读，工作树工具栏单一调用点
-git_workbench_actions.go: Git 视图操作条（Stage/Unstage All、始终可见 Split/Unified、⋯ 更多菜单）；仓库 Refresh 唯一入口在 Git 侧栏，按 Diff 实际宽度折叠批量操作
-git_sidebar_tree.go: 左侧 Git 引用导航入口、分组操作弹窗和仓库身份展示，Worktrees/Branches/Remotes/Tags/Stashes 使用同一树组件
-git_ref_tree.go: Git 引用按斜线构树、目录键稳定、筛选时独立折叠/再次展开、右键菜单，不执行 Git IO
+git_workbench_actions.go: Git 视图操作条（Stage/Unstage All、Fetch/Pull/Push 图标、始终可见 Split/Unified、Git actions 下拉）；仓库 Refresh 唯一入口在 Git 侧栏，按 Diff 实际宽度折叠批量操作
+git_sidebar_tree.go: 左侧 Git 引用导航，Worktrees/Branches/Remotes/Tags/Stashes 共用 sidebarTreeRow；分区悬停 "+" 与右键菜单承载创建动作，无 "···"
+git_ref_tree.go: Git 引用按斜线构树、目录键稳定、筛选时独立折叠/再次展开、行经 sidebarTreeRow（网格+导向线）、右键菜单，不执行 Git IO
 git_review_split.go: Changes 双模式主工作台，Local Changes 文件树+Diff+底部 Commit 分离按钮（经 Pi 只填 Subject）；All Commits 为图谱上层+只读文件树/Diff 下层
 git_review_split_test.go: Git 双模式分栏、960 DIP 几何、拖拽、历史只读与底部草稿统一 Commit Modal 测试
 git_tree_interaction_test.go: 所有 Git 引用组反复折叠/展开、筛选后目录折叠与恢复回归
 git_file_tree_fold_test.go: Local Changes/All Commits 中重复点击相同文件目录的折叠与再展开回归
 git_directory_actions.go: Staged/Unstaged 独立目录子文件解析，路径边界准确，不以目录路径批量 Git add
 git_quick_ai.go: 底部 Pi 提交生成器；异步 root/snapshot/草稿门禁、仅安全元数据、只填 Subject，拒绝自动提交
-git_workbench_polish_test.go: Split/Unified 真实点击、目录选中与边界、唯一 Refresh、⋯ 菜单和异步草稿门禁回归
+git_workbench_polish_test.go: Split/Unified 真实点击、目录选中与边界、唯一 Refresh、Git actions 菜单和异步草稿门禁回归
 git_commit_graph.go: 历史提交真实父 SHA 的 merge lanes 纯渲染投影；无运行时 Git IO
 git_commit_graph_test.go: 提交父节点拓扑及合并分支回归
 git_layout_render_test.go: 仅显式启用时输出 Local Changes/All Commits 实际 MyGo 渲染截图
-changes_panel.go: Changed File Tree 目录每次直接点击均切换折叠，不依赖 List.Changed；文件行保留多选及 Diff 导航
+changes_panel.go: Changed File Tree 行落在共用侧栏网格（chevron 槽·图标·标题·悬停图标动作·+N -N·状态字母）、导向线、行高走密度令牌；目录每次直接点击均切换折叠，不依赖 List.Changed；文件行保留多选及 Diff 导航
 bootstrap_page.go: 启动时全屏居中 Loading 或可重试的错误页面，尚未初次完成 Herdr projection 时不挂载侧栏或顶部菜单
 bootstrap_page_test.go: 初次加载/故障时隐藏交互、中心位置与就绪后切换的 headless 回归
 runtime.go: 首次 Herdr 列举、异步 Projection、初次 terminal coordination 完成前的 bootstrap gate；移除第二次阻塞枚举
 panel_motion.go: Git/Terminal 左栏统一 252 DIP 宽度和折叠动画，不再依路由改变宽度
-repo_bar.go: 仅保留 Git 树分组弹窗、变更文件点击和菜单辅助函数，不再绘制顶部压缩 chips
-branch_menu.go: 分支管理的可搜索弹窗及安全切换动作，入口由左侧 Git 树分组菜单持有
+repo_bar.go: 仅保留变更文件点击与 toggleMenu popover 辅助函数；仓库菜单见 git_sidebar_tree 与 sidebar_switchers
+branch_menu.go: 当前分支优先的搜索过滤与受保护的切换/创建入口，弹层由 sidebar_switchers 持有
+sidebar_tree.go: 侧栏层级唯一对齐网格（chevron 槽·图标·标题、首层对齐分区标题）、导向线、统一行构建器 sidebarTreeRow 与行高令牌 treeRowHeight；Git 引用与 Files 树共用
+sidebar_switchers.go: Git/Files 侧栏共用头部：项目名与分支名各自是可搜索的 pull-down 快速切换，外加刷新图标
+sidebar_tree_test.go: 网格对齐、导向线连续、分区无 "···"、悬停 "+"、创建对话框、项目/分支快速切换、Workspace 行无 "…" 与标题栏 Actions 回归
+changes_tree_test.go: Changes 文件树共用网格（逐层缩进一格）与行内图标动作命名回归
+layout_width_test.go: 宽窗口内容列居中封顶（Settings 760、Sessions 1040、提交表单 760）回归
 git_service_snapshot.go: 仓库绑定快照/提交历史及本地远程跟踪引用的分离异步获取与 generation root 隔离
 commit_surface.go: 原生 Commit Dialog 唯一草稿，滚动正文 + 固定底部 Commit/Cancel、Select all/Clear selection
 commit_ai_ui.go: Commit 内折叠的 Pi 生成、敏感路径受限 Prompt 原文预览与复制、手动候选消息编辑；默认只展示必要选项
 commit_modal_layout_test.go: 960×640/1200×800 长文件与 Pi 展开后固定 CTA 几何、文件选择批量操作回归
-branch_menu_filter_test.go: 搜索过滤、当前分支优先、创建入口始终可见、跨仓库过滤状态清理
+branch_menu_filter_test.go: 搜索过滤与当前分支优先
 commit_pi.go: Pi 一次性候选生成 UI 协调、后台取消/超时、repo/snapshot/paths identity fence，拒绝自动 git commit
 page_settings_git.go: Git 配置页：可编辑的只含风格的 Conventional Commit 规则（安全约束固定在 agent.BuildPiCommitPrompt，不在页面展示）、显式保存/恢复、Pi CLI 可执行路径
 design_system.go: 排版/间距/圆角/控件高度/TileTone 令牌，字号字重只经此处取值，禁止字面量

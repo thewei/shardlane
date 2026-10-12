@@ -54,6 +54,34 @@ func TestInnerPageBackPinnedToSidebarFoot(t *testing.T) {
 	}
 }
 
+// The Diff/Commit sidebar is a Git navigator, not the Workspace tree: like
+// every inner view it ends in the one way back to the Terminal, in place of
+// the Workspace switch.
+func TestDiffSidebarFootIsBackToTerminal(t *testing.T) {
+	const height = 800
+	s := gitSurfaceTestShell(t, t.TempDir())
+	s.loading = false
+	s.showSurface(WorkspaceSurfaceDiff)
+	tester := ui.NewTester(s.View, 1200, height)
+	tester.Frame()
+	back, ok := tester.Find("Back to Terminal")
+	if !ok {
+		t.Fatalf("Diff sidebar missing Back to Terminal; texts=%q", tester.Texts())
+	}
+	if back.X > sidebarWidth || back.Y < height-60 {
+		t.Fatalf("back control at %+v, want the sidebar foot", back)
+	}
+	if tester.HasText("Choose Session") {
+		t.Fatalf("Diff sidebar kept the Workspace switch; texts=%q", tester.Texts())
+	}
+	if err := tester.Click("Back to Terminal"); err != nil {
+		t.Fatal(err)
+	}
+	if s.surface.current() != WorkspaceSurfaceTerminal || s.router.Path() != routeWorkspace {
+		t.Fatalf("back landed on surface %v at %s, want the workspace Terminal", s.surface.current(), s.router.Path())
+	}
+}
+
 // TestInnerPageSidebarPinsPageNavAndBack pins the inner-page style: on
 // Settings and History the app sidebar swaps the runtime navigator for
 // the page's own navigation over a Back control, and Back returns to the

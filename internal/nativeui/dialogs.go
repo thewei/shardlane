@@ -11,7 +11,24 @@ import (
 func (s *Shell) openTextDialog(kind, target, title, label, value string) {
 	s.dialogKind, s.dialogTarget = kind, target
 	s.dialogTitle, s.dialogLabel, s.dialogValue = title, label, value
+	s.dialogAction = ""
 	s.dialogOpen = true
+}
+
+// openCreateDialog asks for the name of something new in the current
+// repository. The dialog is bound to that repository: a submit after the
+// context moved on is refused rather than applied elsewhere.
+func (s *Shell) openCreateDialog(kind, title, label string) {
+	if s.git == nil || s.git.root == "" {
+		return
+	}
+	s.openTextDialog(kind, s.git.root, title, label, "")
+	s.dialogAction = "Create"
+}
+
+// openNewBranchDialog starts a new local branch from HEAD.
+func (s *Shell) openNewBranchDialog() {
+	s.openCreateDialog("git-create-branch", "New Branch", "Branch name")
 }
 
 func (s *Shell) openConfirm(kind, target, title, message string) {
@@ -85,7 +102,11 @@ func (s *Shell) dialogs(c *ui.Context) {
 				if ui.Button(c, "Cancel").Clicked() {
 					s.dialogOpen = false
 				}
-				if ui.PrimaryButton(c, "Save").Clicked() {
+				action := s.dialogAction
+				if action == "" {
+					action = "Save"
+				}
+				if ui.PrimaryButton(c, action).Clicked() {
 					submit = true
 				}
 			})
@@ -127,6 +148,16 @@ func (s *Shell) submitTextDialog(kind, target, value string) {
 		s.mutate(func() (herdr.Projection, error) { return s.runtime.RenamePane(s.activeInstance, target, value) })
 	case "git-add-worktree":
 		s.addWorktree(value)
+	case "git-create-branch", "git-create-tag":
+		if s.git == nil || s.git.root == "" || s.git.root != target {
+			s.pendingToast = "Repository changed. Reopen the dialog to continue."
+			return
+		}
+		if kind == "git-create-branch" {
+			s.confirmCreateBranch(value)
+		} else {
+			s.createTag(value)
+		}
 	}
 }
 

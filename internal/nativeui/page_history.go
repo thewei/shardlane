@@ -54,15 +54,17 @@ func (s *Shell) historyPage(c *ui.Context) {
 		s.requestHistoryList()
 	}
 	ui.Column(c).Grow(1).MinWidth(0).Children(func() {
-		pageHeader(c, "Sessions", "")
-		if s.hist.errText != "" {
-			inlineNotice(c, ToneError, s.hist.errText, func() {
-				s.hist.loading = false
-				s.hist.errText = ""
-				s.requestHistoryList()
-			})
-		}
-		s.historyToolbar(c)
+		contentColumn(c, listColumnWidth, func() {
+			pageHeader(c, "Sessions", "")
+			if s.hist.errText != "" {
+				inlineNotice(c, ToneError, s.hist.errText, func() {
+					s.hist.loading = false
+					s.hist.errText = ""
+					s.requestHistoryList()
+				})
+			}
+			s.historyToolbar(c)
+		})
 		s.historyListBody(c)
 	})
 }
@@ -252,16 +254,18 @@ func (s *Shell) historyListBody(c *ui.Context) {
 		}
 		searching := strings.TrimSpace(s.hist.query) != ""
 		ui.Scroll(c).Grow(1).Children(func() {
-			ui.Column(c).FillWidth().Padding(0, sp.XL, sp.XL).Gap(sp.L).Children(func() {
-				ui.Text(c, count).FontSize(Typography().Caption).TextColor(t.TextMuted).Padding(0, 0, 0, sp.XS)
-				for i, group := range groups {
-					// The latest project opens by default; a search opens
-					// every project it matched in.
-					s.sessionGroup(c, group, i == 0 || searching)
-				}
-				if s.hist.loading {
-					ui.Text(c, "Updating…").FontSize(Typography().Caption).TextColor(t.TextMuted)
-				}
+			contentColumn(c, listColumnWidth, func() {
+				ui.Column(c).FillWidth().Padding(0, sp.XL, sp.XL).Gap(sp.L).Children(func() {
+					ui.Text(c, count).FontSize(Typography().Caption).TextColor(t.TextMuted).Padding(0, 0, 0, sp.XS)
+					for i, group := range groups {
+						// The latest project opens by default; a search opens
+						// every project it matched in.
+						s.sessionGroup(c, group, i == 0 || searching)
+					}
+					if s.hist.loading {
+						ui.Text(c, "Updating…").FontSize(Typography().Caption).TextColor(t.TextMuted)
+					}
+				})
 			})
 		})
 		if s.hist.selecting {
@@ -392,7 +396,7 @@ func (s *Shell) sessionGroup(c *ui.Context, group sessionGroupView, defaultOpen 
 
 // sessionRow renders one session as a quiet list row: agent mark, title over
 // a muted fact line, the token total, and the date — which gives way to a
-// "…" menu under the pointer. A click unfolds the inline preview (or, while
+// pull-down chevron under the pointer. A click unfolds the inline preview (or, while
 // selecting, ticks the row); everything else lives in the menu and the
 // preview's actions.
 func (s *Shell) sessionRow(c *ui.Context, summary history.SessionSummary) {
@@ -434,11 +438,11 @@ func (s *Shell) sessionRow(c *ui.Context, summary history.SessionSummary) {
 			// 22 wide plus the margin fills the date's footprint, so the
 			// hover swap does not shift the row.
 			more := ui.ButtonBase(c).Size(22, 22).Margin(0, 0, 0, historyDateWidth-22).Radius(5).Shrink(0).Center().
-				Label("More actions for " + title)
+				Label("Actions for " + title)
 			if more.Hovered() {
 				more.Background(tokens.SidebarHover)
 			}
-			more.Children(func() { ui.Icon(c, iconEllipsis).Size(13, 13).TextColor(t.TextMuted) })
+			more.Children(func() { ui.Icon(c, iconChevronDown).Size(12, 12).TextColor(t.TextMuted) })
 			more.Menu(menu)
 		} else {
 			ui.Text(c, historyShortDate(summary.Meta.UpdatedAt, time.Now())).FontSize(Typography().Caption).
@@ -458,10 +462,11 @@ func (s *Shell) sessionRow(c *ui.Context, summary history.SessionSummary) {
 // Fixed slots of the right-hand row columns.
 const (
 	historyMetricWidth float32 = 56
-	historyDateWidth   float32 = 52
+	// historyDateWidth fits the longest list date ("Mar 4, 2025").
+	historyDateWidth float32 = 72
 )
 
-// sessionMenu is the one action list of a session (the row's "…" button and
+// sessionMenu is the one action list of a session (the row's pull-down and
 // right-click menu, and the detail header's, share it). Open only makes
 // sense from the list.
 func (s *Shell) sessionMenu(m *ui.Menu, meta history.SessionMeta, withOpen bool) {

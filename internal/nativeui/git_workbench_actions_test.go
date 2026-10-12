@@ -39,7 +39,7 @@ func TestGitToolbarCompactKeepsPrimaryActions(t *testing.T) {
 	s.showSurface(WorkspaceSurfaceDiff)
 	tester := ui.NewTester(s.View, 960, 640)
 	tester.Frame()
-	for _, want := range []string{"Commit subject draft", "Commit", "More Git actions"} {
+	for _, want := range []string{"Commit subject draft", "Commit", "Git actions", "Fetch", "Pull (fast-forward only)", "Push"} {
 		if !tester.HasText(want) {
 			t.Fatalf("compact toolbar lacks %q: %q", want, tester.Texts())
 		}
@@ -51,6 +51,26 @@ func TestGitToolbarCompactKeepsPrimaryActions(t *testing.T) {
 	tester.Frame()
 	if !tester.HasText("Stage All") || !tester.HasText("Unstage All") {
 		t.Fatalf("expanded toolbar did not restore batch actions: %q", tester.Texts())
+	}
+}
+
+// Fetch / Pull / Push are icon buttons in the toolbar (not menu rows); each
+// press starts the repository operation.
+func TestGitToolbarSyncIconsStartOperations(t *testing.T) {
+	for _, label := range []string{"Fetch", "Pull (fast-forward only)", "Push"} {
+		s := gitSurfaceTestShell(t, t.TempDir())
+		s.showSurface(WorkspaceSurfaceDiff)
+		tt := ui.NewTester(s.View, 1280, 760)
+		tt.Frame()
+		if s.git.opBusy {
+			t.Fatalf("%s: no repository operation should run before the press", label)
+		}
+		if err := tt.Click(label); err != nil {
+			t.Fatal(err)
+		}
+		if !s.git.opBusy {
+			t.Fatalf("%s icon did not start a repository operation", label)
+		}
 	}
 }
 
@@ -238,14 +258,9 @@ func TestGitBranchMergeAsksBeforeMutation(t *testing.T) {
 	s := gitSurfaceTestShell(t, t.TempDir())
 	s.showSurface(WorkspaceSurfaceDiff)
 	s.git.branches = []gitworkbench.Branch{{Name: "main", Current: true}, {Name: "topic"}}
-	s.branchMenuOpen = true
 	tester := ui.NewTester(s.View, 1200, 800)
-	if !tester.HasText("More…") {
-		t.Fatalf("branch row missing overflow action: %q", tester.Texts())
-	}
-	// Native NSMenu cannot be driven by headless Tester. Its handler closes
-	// the branch Popover before showing the strategy modal.
-	s.branchMenuOpen = false
+	// The branch row's context-menu entry is pinned in sidebar_tree_test.go;
+	// its handler closes the branch pull-down before showing the strategy modal.
 	s.openMergeDialog("topic")
 	if !s.mergeDialogOpen || s.confirmOpen {
 		t.Fatal("branch merge must open the strategy dialog before confirmation")

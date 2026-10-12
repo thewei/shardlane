@@ -127,12 +127,15 @@ func (s *Shell) historyDetailHeader(c *ui.Context, key string) {
 		})
 		if meta != nil {
 			snapshot := *meta
-			more := ui.ButtonBase(c).Size(28, 28).Radius(Radius().Control).Shrink(0).Center().
-				Label("More actions for " + title)
+			more := ui.ButtonBase(c).Height(28).Padding(0, 8).Gap(3).Radius(Radius().Control).Shrink(0).Center().
+				Label("Actions for " + title).Tooltip("Session actions")
 			if more.Hovered() {
 				more.Background(tokens.SidebarHover)
 			}
-			more.Children(func() { ui.Icon(c, iconEllipsis).Size(14, 14).TextColor(t.TextMuted) })
+			more.Children(func() {
+				ui.Icon(c, iconActions).Size(15, 15).TextColor(t.TextMuted)
+				ui.Icon(c, iconChevronDown).Size(9, 9).TextColor(t.TextMuted)
+			})
 			more.Menu(func(m *ui.Menu) { s.sessionMenu(m, snapshot, false) })
 		}
 	})

@@ -503,7 +503,7 @@ func (s *Shell) paneCard(c *ui.Context, k *gorexColors, surface *terminalSurface
 			// selects locally (⌘C copies), and plain input forwards exactly
 			// like any terminal hosting Herdr. Right click is a program
 			// event; the pane menu lives on the card header, the sidebar
-			// rows and the title-bar ⋯ menu.
+			// rows and the title-bar Actions menu.
 			view := terminal.View(c, surface.term).Fill()
 			if surface.focused {
 				view.AutoFocus()
@@ -630,7 +630,7 @@ func (s *Shell) paneCardHeader(c *ui.Context, k *gorexColors, surface *terminalS
 	// The pane menu lives here since the F144 real-terminal round: the
 	// terminal surface's right click is a program event now, so the card
 	// header is the pointer-owned pane-menu affordance (with the sidebar
-	// rows and the title-bar ⋯ menu; one paneOverflowItems builder).
+	// rows and the title-bar Actions menu; one paneOverflowItems builder).
 	h.ContextMenu(func(m *ui.Menu) {
 		s.terminalPaneMenu(c, m, surface)
 	})
@@ -672,10 +672,11 @@ func (s *Shell) paneCardHeader(c *ui.Context, k *gorexColors, surface *terminalS
 			// user request): the terminal surface's right click is a program
 			// event now, so the pane menu needs a visible, always-there home
 			// on the pane itself — same paneOverflowItems builder as the
-			// sidebar rows and the title-bar ⋯ menu, never a second menu.
+			// sidebar rows and the title-bar Actions menu, never a second menu. A
+			// chevron after the title, as a native title pop-up reads.
 			// Always rendered (not hover-gated): a menu anchor that vanishes
 			// when the pointer enters the dropdown would be a trap.
-			more := gorexIconButton(c, k, iconEllipsis, "Pane menu", "Pane menu", false, gorexPaneBtn, gorexPaneGlyph)
+			more := gorexIconButton(c, k, iconChevronDown, "Pane menu", "Pane menu", false, gorexPaneBtn, 12)
 			more.Menu(func(m *ui.Menu) {
 				s.terminalPaneMenu(c, m, surface)
 			})

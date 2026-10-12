@@ -2,7 +2,6 @@ package nativeui
 
 import (
 	"strings"
-	"time"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/wh-studio/herdr-client/internal/gitworkbench"
@@ -97,7 +96,7 @@ func (s *Shell) gdChangedTreeList(c *ui.Context, pal *gdPalette, rows []gitworkb
 			return
 		}
 		s.renderChangesRow(c, pal, rows[i], state, pane, choice, onClick)
-	}).Grow(1).MinHeight(0).Padding(3, 8).Gap(3)
+	}).Grow(1).MinHeight(0).Padding(3, sidebarGutter)
 	// A plain click opens the file: the list replaced the choice with that
 	// one row. Choice-growing clicks (Cmd, Shift) stay preview-free.
 	if changed := list.Changed(); changed && *selected >= 0 && *selected < len(rows) {
@@ -137,8 +136,10 @@ func (s *Shell) currentChangesTree(snap *gitworkbench.ChangesSnapshot) *gitworkb
 	return s.changesTree
 }
 
-// renderChangesRow draws one compact Godiff tree row:
-// chevron · icon · name · +N -N · status letter (GWB-141..143).
+// renderChangesRow draws one compact tree row on the shared sidebar grid:
+// chevron slot · icon · name · hover action · +N -N · status letter
+// (GWB-141..143). Folders and files of one level share their icon and name
+// columns, and guides run through the ancestors' chevron slots.
 // state is the owning list, for the focused-selection tint. choice is the
 // pane's multi-selection, whose rows tint like an extended selection.
 func (s *Shell) renderChangesRow(c *ui.Context, pal *gdPalette, row gitworkbench.FlatRow, state *ui.ListState, pane gdViewSide, choice *ui.Selection[string], onClick func(gitworkbench.FlatRow)) {
@@ -155,7 +156,7 @@ func (s *Shell) renderChangesRow(c *ui.Context, pal *gdPalette, row gitworkbench
 	}
 	focused := state.FocusWithin(c)
 
-	r := ui.Row(c).Height(28).Padding(0, 8, 0, 6+float32(row.Depth)*TreeIndentWidth).Gap(5).Radius(6).MinWidth(0)
+	r := ui.Row(c).Height(s.treeRowHeight()).Padding(0, treeRowPad, 0, treeRowPad).AlignItems(ui.Center).Radius(4).MinWidth(0)
 	textColor := t.Text
 	muted := t.TextMuted
 	switch {
@@ -174,32 +175,33 @@ func (s *Shell) renderChangesRow(c *ui.Context, pal *gdPalette, row gitworkbench
 	case r.Hovered():
 		r.Background(ui.RGBA(127, 127, 127, 0.08))
 	}
+	treeGuides(r, row.Depth, designTokens(t.Dark).TreeLine)
 	r.TextColor(textColor).Children(func() {
-		arrow := ui.Box(c).Size(14, 14).Center().Shrink(0)
+		if row.Depth > 0 {
+			ui.Box(c).Width(float32(row.Depth) * TreeIndentWidth).Shrink(0).PassThrough()
+		}
+		treeChevron(c, node.Dir, !s.git.collapsedDirs[node.Path], muted)
+		ui.Box(c).Width(treeGlyphGap).Shrink(0).PassThrough()
 		if node.Dir {
-			arrow.Children(func() {
-				ic := ui.Icon(c, iconChevronDown).FontSize(12).TextColor(muted)
-				target := float32(0)
-				if s.git.collapsedDirs[node.Path] {
-					target = -90
-				}
-				ic.Rotate(ic.Animate("rot", target, 150*time.Millisecond))
-			})
-			ui.Icon(c, iconFolder).FontSize(14).TextColor(muted)
-			ui.Text(c, node.Name).FontSize(Typography().Section).SingleLine().Grow(1).Shrink(1).MinWidth(0).Tooltip(node.Path)
+			ui.Icon(c, iconFolder).FontSize(treeGlyphW).TextColor(muted).Shrink(0)
+			ui.Box(c).Width(treeTitleGap).Shrink(0).PassThrough()
+			ui.Text(c, node.Name).FontSize(Typography().Body).SingleLine().Grow(1).Shrink(1).MinWidth(0).Tooltip(node.Path)
 			if !s.gdReviewingCommit() && (pane == gdViewUnstaged || pane == gdViewStaged) {
 				paths := gitDirectoryPaths(s.gitSnapshot(), node.Path, pane)
 				if len(paths) > 0 {
-					label, action := "+", s.stageFiles
+					glyph, verb, action := iconPlus, "Stage", s.stageFiles
 					if pane == gdViewStaged {
-						label, action = "−", s.unstageFiles
+						glyph, verb, action = iconMinus, "Unstage", s.unstageFiles
 					}
-					button := ui.ButtonBase(c).Size(20, 20).Radius(4).Center().Shrink(0).
-						Label("Stage/Unstage directory " + node.Path).Tooltip(label + " " + node.Path + " (" + itoa(len(paths)) + " files)")
+					button := ui.ButtonBase(c).Size(18, 18).Radius(4).Center().Shrink(0).TextColor(muted).
+						Label(verb + " folder " + node.Path).Tooltip(verb + " " + node.Path + " (" + itoa(len(paths)) + " files)")
 					if button.Hovered() {
-						button.Background(pal.hover)
+						button.Background(pal.hover).TextColor(t.Text)
 					}
-					button.Children(func() { ui.Text(c, label).FontSize(Typography().Section).FontWeight(WeightSemibold) })
+					if !r.Hovered() && !button.Hovered() {
+						button.Opacity(0)
+					}
+					button.Children(func() { ui.Icon(c, glyph).FontSize(12) })
 					button.Disabled(s.git.opBusy)
 					if button.Clicked() {
 						action(paths)
@@ -210,43 +212,46 @@ func (s *Shell) renderChangesRow(c *ui.Context, pal *gdPalette, row gitworkbench
 		}
 		cf := *node.File
 		viewed := s.git.gdViewed[cf.Path] != "" && s.git.gdViewed[cf.Path] == cf.Fingerprint
-		ui.Icon(c, iconFile).FontSize(14).TextColor(muted)
+		ui.Icon(c, iconFile).FontSize(treeGlyphW).TextColor(muted).Shrink(0)
+		ui.Box(c).Width(treeTitleGap).Shrink(0).PassThrough()
 		// Full path on hover (F113): the 250px pane truncates names so
 		// service_index.go and service_index_test.go read as the same row.
-		name := ui.Text(c, node.Name).FontSize(Typography().Section).SingleLine().Grow(1).Shrink(1).MinWidth(0).Tooltip(node.Path)
+		name := ui.Text(c, node.Name).FontSize(Typography().Body).SingleLine().Grow(1).Shrink(1).MinWidth(0).Tooltip(node.Path)
 		if viewed && !(selected && focused) {
 			name.TextColor(t.TextMuted)
 		}
-		// The per-file Stage/Unstage button shows while the row is hovered,
-		// as Fork's +/- does; which one depends on the pane.
-		if action, tip := s.gdRowAction(&cf, pane); action != nil {
-			b := ui.ButtonBase(c).Size(16, 16).Radius(4).Center().Shrink(0).
-				Label(tip).Tooltip(tip).TextColor(muted)
-			if b.Hovered() {
-				b.Background(pal.hover).TextColor(t.Text)
+		ui.Row(c).Gap(5).AlignItems(ui.Center).Shrink(0).Children(func() {
+			// The per-file Stage/Unstage button shows while the row is hovered,
+			// as Fork's +/- does; which one depends on the pane.
+			if action, glyph, verb := s.gdRowAction(&cf, pane); action != nil {
+				b := ui.ButtonBase(c).Size(18, 18).Radius(4).Center().Shrink(0).
+					Label(verb + " " + cf.Path).Tooltip(verb).TextColor(muted)
+				if b.Hovered() {
+					b.Background(pal.hover).TextColor(t.Text)
+				}
+				if !r.Hovered() && !b.Hovered() {
+					b.Opacity(0)
+				}
+				b.Children(func() { ui.Icon(c, glyph).FontSize(12) })
+				if b.Clicked() {
+					action([]string{cf.Path})
+				}
 			}
-			if !r.Hovered() && !b.Hovered() {
-				b.Opacity(0)
+			if gdCountable(&cf) && (cf.Additions > 0 || cf.Deletions > 0) {
+				ui.Textf(c, "+%s -%s", gdCompact(cf.Additions), gdCompact(cf.Deletions)).
+					Font(gdCodeFont()).FontSize(Typography().Micro).FontWeight(WeightSemibold).TextColor(muted).Shrink(0).
+					Tooltip(gdLines(cf.Additions, "added") + ", " + gdLines(cf.Deletions, "removed"))
 			}
-			b.Children(func() { ui.Text(c, tip).FontSize(Typography().Body) })
-			if b.Clicked() {
-				action([]string{cf.Path})
+			letter := gdStatusLetterColor(cf.Status, pal, t)
+			switch {
+			case selected && focused:
+				letter = t.AccentText
+			case viewed:
+				letter = t.TextMuted
 			}
-		}
-		if gdCountable(&cf) && (cf.Additions > 0 || cf.Deletions > 0) {
-			ui.Textf(c, "+%s -%s", gdCompact(cf.Additions), gdCompact(cf.Deletions)).
-				Font(gdCodeFont()).FontSize(Typography().Micro).FontWeight(WeightSemibold).TextColor(muted).Shrink(0).
-				Tooltip(gdLines(cf.Additions, "added") + ", " + gdLines(cf.Deletions, "removed"))
-		}
-		letter := gdStatusLetterColor(cf.Status, pal, t)
-		switch {
-		case selected && focused:
-			letter = t.AccentText
-		case viewed:
-			letter = t.TextMuted
-		}
-		ui.Text(c, gdStatusLetter(&cf)).Font(gdCodeFont()).FontSize(Typography().BodySmall).FontWeight(WeightSemibold).TextColor(letter).
-			Width(12).TextAlign(ui.Center).Shrink(0)
+			ui.Text(c, gdStatusLetter(&cf)).Font(gdCodeFont()).FontSize(Typography().BodySmall).FontWeight(WeightSemibold).TextColor(letter).
+				Width(12).TextAlign(ui.Center).Shrink(0)
+		})
 	})
 	// Directory disclosure is independent of List.Changed: selecting the
 	// same directory twice does not change selection, so the old handler
@@ -280,23 +285,23 @@ func (s *Shell) renderChangesRow(c *ui.Context, pal *gdPalette, row gitworkbench
 
 // gdRowAction returns the hover action of a pane's file row: Stage in the
 // unstaged pane, Unstage in the staged pane; nil in the combined tree.
-func (s *Shell) gdRowAction(cf *gitworkbench.ChangeFile, pane gdViewSide) (func([]string), string) {
+func (s *Shell) gdRowAction(cf *gitworkbench.ChangeFile, pane gdViewSide) (func([]string), *ui.SVG, string) {
 	if s.gdReviewingCommit() {
-		return nil, ""
+		return nil, nil, ""
 	}
 	switch pane {
 	case gdViewUnstaged:
-		return s.stageFiles, "+"
+		return s.stageFiles, iconPlus, "Stage"
 	case gdViewStaged:
-		return s.unstageFiles, "\u2212"
+		return s.unstageFiles, iconMinus, "Unstage"
 	default:
 		if cf.Unstaged {
-			return s.stageFiles, "+"
+			return s.stageFiles, iconPlus, "Stage"
 		}
 		if cf.Staged {
-			return s.unstageFiles, "\u2212"
+			return s.unstageFiles, iconMinus, "Unstage"
 		}
-		return nil, ""
+		return nil, nil, ""
 	}
 }
 

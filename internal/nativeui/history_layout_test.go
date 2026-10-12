@@ -121,7 +121,7 @@ func TestHistoryRowShowsTokenTotalAndFacts(t *testing.T) {
 }
 
 // TestHistoryRowHoverKeepsColumnsInPlace pins the stable trailing slot: the
-// "…" menu button that replaces the date under the pointer fills the date's
+// pull-down that replaces the date under the pointer fills the date's
 // footprint, so the token column (and the title column) do not shift when
 // the pointer enters the row.
 func TestHistoryRowHoverKeepsColumnsInPlace(t *testing.T) {
@@ -144,7 +144,7 @@ func TestHistoryRowHoverKeepsColumnsInPlace(t *testing.T) {
 	}
 	tester.Move(title.X+title.W/2, title.Y+title.H/2)
 	tester.Frame()
-	more, ok := tester.Find("More actions for Tighten sidebar spacing")
+	more, ok := tester.Find("Actions for Tighten sidebar spacing")
 	if !ok {
 		t.Fatalf("hovered row has no menu button; texts=%q", tester.Texts())
 	}
@@ -158,6 +158,39 @@ func TestHistoryRowHoverKeepsColumnsInPlace(t *testing.T) {
 	if after.X < tokens.X-0.5 || after.X > tokens.X+0.5 {
 		t.Fatalf("hover moved the token column from x=%.1f to x=%.1f", tokens.X, after.X)
 	}
+}
+
+// TestSessionDetailHeaderActionsAreAPulldown pins the detail header's menu
+// trigger: a labeled icon + chevron pull-down (never a bare "…") whose menu
+// is the session's action list without the list-only "Open".
+func TestSessionDetailHeaderActionsAreAPulldown(t *testing.T) {
+	shell := newMultiAgentHistoryShell(t)
+	shell.router.Replace(routeHistory)
+	tester := ui.NewTester(shell.View, 1200, 800)
+	tester.Frame() // loads the list the detail header reads its meta from
+	tester.Frame()
+	shell.router.Replace(routeHistory + "/pi:p2")
+	for i := 0; i < 12; i++ { // let the page transition settle
+		tester.Frame()
+		time.Sleep(30 * time.Millisecond)
+	}
+	if tester.HasText("…") {
+		t.Fatalf("detail header still shows a bare ellipsis: %q", tester.Texts())
+	}
+	if err := tester.Click("Actions for Rename the settings groups"); err != nil {
+		t.Fatalf("detail header has no actions pull-down: %v; texts=%q", err, tester.Texts())
+	}
+	tester.Frame()
+	menu := tester.Menu()
+	for _, want := range []string{"Copy Resume Command", "Copy Session ID", "Export as Markdown…", "Hide"} {
+		if !containsText(menu, want) {
+			t.Fatalf("detail actions %q missing %q", menu, want)
+		}
+	}
+	if containsText(menu, "Open") {
+		t.Fatalf("\"Open\" is a list-only action: %q", menu)
+	}
+	tester.CloseMenu()
 }
 
 // TestHistoryCountCaptionIsHonestWhenBounded pins that a list cut at the

@@ -27,9 +27,7 @@ func (s *Shell) sidebar(c *ui.Context) {
 	ui.Column(c).Width(sidebarWidth).Grow(1).MinHeight(0).Shrink(0).Children(func() {
 		if s.sidebarInDiffMode() {
 			// Git references are full-height navigation, not compressed toolbar chips.
-			ui.Row(c).FillWidth().Padding(8, 9, 6).Children(func() {
-				s.gitSidebarHeader(c)
-			})
+			s.sidebarProjectHeader(c, s.git.root, "Refresh repository", s.refreshGitChanges)
 			ui.Divider(c)
 		}
 		// No divider on the plain workspace sidebar: with no row above it
@@ -44,6 +42,8 @@ func (s *Shell) sidebar(c *ui.Context) {
 			s.gitRepositorySidebar(c)
 		} else if s.router.Path() == routeFiles {
 			s.syncRightPanelRoot()
+			s.sidebarProjectHeader(c, s.rightPanel.currentRoot, "Refresh files", s.refreshFiles)
+			ui.Divider(c)
 			s.filesToolView(c)
 		} else if s.sidebarInnerPage() {
 			s.sidebarInnerNav(c)
@@ -68,14 +68,14 @@ func (s *Shell) sidebar(c *ui.Context) {
 			s.handleSidebarSelection(s.selected)
 		}
 
-		// The sidebar foot. Inner pages put their one way back here — the same
-		// spot on every page — in place of the Workspace switch. On the
-		// workspace sidebar the Workspace is the bound Herdr instance, so
-		// switching belongs in the footer rather than nesting Projects under
-		// a Workspace tree.
+		// The sidebar foot. Inner pages and the Git views (Diff/Commit) put
+		// their one way back here — the same spot everywhere — in place of the
+		// Workspace switch. On the workspace sidebar the Workspace is the
+		// bound Herdr instance, so switching belongs in the footer rather
+		// than nesting Projects under a Workspace tree.
 		ui.Row(c).Height(42).Padding(5, 8).Gap(6).AlignItems(ui.Center).
 			BorderWidth(1, 0, 0, 0).BorderColor(tokens.BorderSubtle).Children(func() {
-			if s.sidebarInnerPage() {
+			if s.sidebarInnerPage() || s.sidebarInDiffMode() {
 				s.sidebarBackRow(c)
 				return
 			}

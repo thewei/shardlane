@@ -1,13 +1,12 @@
 // [INPUT]: Cached local branches and existing safe branch mutation/confirmation flows.
-// [OUTPUT]: Searchable local-branch management popover used by the Git sidebar tree.
-// [POS]: Git branch actions only; the sidebar owns reference navigation and grouping.
+// [OUTPUT]: Current-first branch search plus the guarded switch/create entry points the sidebar switchers call.
+// [POS]: Git branch actions only; the sidebar owns reference navigation and grouping, sidebar_switchers the popover.
 // [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 package nativeui
 
 import (
 	"strings"
 
-	"github.com/egoist/mygo/ui"
 	"github.com/wh-studio/herdr-client/internal/gitworkbench"
 )
 
@@ -29,92 +28,6 @@ func matchingLocalBranches(branches []gitworkbench.Branch, filter string) []gitw
 	return result
 }
 
-// branchMenuPanel offers searchable, bounded local branch navigation.
-// Switching stays visible; merge/delete are in each branch's More menu.
-func (s *Shell) branchMenuPanel(c *ui.Context) {
-	t := c.Theme()
-	sp := Spacing()
-	// Only the background here: ui.Popover already draws the rounded,
-	// bordered panel, and nesting a second rounded container inside it
-	// read as a double frame (2026-10-06 annotation A1).
-	ui.Column(c).Width(340).Padding(sp.M).Gap(sp.S).
-		Background(designTokens(t.Dark).Panel).Children(func() {
-		matches := matchingLocalBranches(s.git.branches, s.branchFilter)
-		ui.Row(c).FillWidth().Gap(sp.S).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, "Branches").FontSize(Typography().Section).FontWeight(WeightSemibold).Grow(1)
-			ui.Textf(c, "%d local", len(s.git.branches)).FontSize(Typography().Caption).TextColor(t.TextMuted)
-		})
-		ui.TextInput(c, &s.branchFilter).FillWidth().Height(30).
-			Placeholder("Filter local branches").Label("Filter branches")
-		ui.Scroll(c).FillWidth().Height(240).Children(func() {
-			ui.Column(c).FillWidth().Gap(sp.XXS).Children(func() {
-				if s.git.branchesLoading {
-					ui.Row(c).FillWidth().Padding(sp.XS, 0).Gap(sp.XS).AlignItems(ui.Center).Children(func() {
-						ui.Spinner(c).Size(12, 12)
-						ui.Text(c, "Loading branches…").FontSize(Typography().Caption).TextColor(t.TextMuted)
-					})
-					return
-				}
-				if len(matches) == 0 {
-					label := "No local branches"
-					if strings.TrimSpace(s.branchFilter) != "" {
-						label = "No matching branches"
-					}
-					ui.Text(c, label).FontSize(Typography().Caption).TextColor(t.TextMuted).Padding(sp.S)
-				}
-				for _, branch := range matches {
-					b := branch
-					current := b.Current
-					ui.Row(c).FillWidth().Padding(sp.XS, sp.S).Radius(Radius().Control).
-						Background(branchRowBackground(c, current)).Children(func() {
-						label := b.Name
-						if current {
-							label = "✓ " + label
-						}
-						ui.Text(c, label).FontSize(Typography().BodySmall).Grow(1).MinWidth(0).SingleLine().Tooltip(b.Name)
-						if !current {
-							if compactButton(c, "Switch").Clicked() {
-								s.branchMenuOpen = false
-								s.confirmSwitchBranch(b.Name)
-							}
-							more := compactButton(c, "More…")
-							more.Menu(func(m *ui.Menu) {
-								if m.Item("Merge into current branch…").Chosen() {
-									s.branchMenuOpen = false
-									s.openMergeDialog(b.Name)
-								}
-								if m.Item("Delete branch…").Chosen() {
-									s.branchMenuOpen = false
-									s.deleteBranch(b.Name)
-								}
-							})
-						}
-					})
-				}
-			})
-		})
-		ui.Divider(c)
-		ui.Row(c).FillWidth().Gap(sp.XS).AlignItems(ui.Center).Children(func() {
-			ui.TextInput(c, &s.branchDraft).Grow(1).MinWidth(0).
-				Placeholder("New branch name").Label("New branch name")
-			create := compactButton(c, "Create branch…")
-			create.Disabled(strings.TrimSpace(s.branchDraft) == "" || s.git.branchBusy)
-			if create.Clicked() {
-				draft := s.branchDraft
-				s.branchMenuOpen = false
-				s.confirmCreateBranch(draft)
-			}
-		})
-	})
-}
-
-func branchRowBackground(c *ui.Context, current bool) ui.Color {
-	if current {
-		return c.Theme().Accent.Alpha(0.12)
-	}
-	return ui.Transparent
-}
-
 // confirmSwitchBranch asks for explicit confirmation when the worktree is
 // dirty (plan §23.2 preflight), then switches.
 func (s *Shell) confirmSwitchBranch(name string) {
@@ -123,8 +36,7 @@ func (s *Shell) confirmSwitchBranch(name string) {
 		return
 	}
 	s.openConfirm("git-switch-branch", name, "Switch branch with local changes?",
-		"Switching may carry your uncommitted changes to "+name+
-			". Git will refuse if they conflict; running processes keep running.")
+		"Your uncommitted changes come along to "+name+". Git refuses if they conflict.")
 }
 
 // confirmCreateBranch validates the name then creates.

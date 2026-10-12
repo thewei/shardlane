@@ -151,6 +151,30 @@ func gorexIconButton(c *ui.Context, k *gorexColors, svg *ui.SVG, label, tooltip 
 	return b
 }
 
+// gorexPulldown is gorexIconButton's pull-down sibling: an icon with a small
+// chevron, as a native toolbar pop-up button reads, in the same faces. The
+// caller attaches the Menu.
+func gorexPulldown(c *ui.Context, k *gorexColors, svg *ui.SVG, label string, height, iconSize float32) ui.Element {
+	b := ui.Row(c).Height(height).Padding(0, 6).Gap(3).AlignItems(ui.Center).Justify(ui.Center).
+		Radius(height / 2.6).Cursor(ui.CursorPointer).Role(ui.RoleButton).Label(label).Tooltip(label)
+	switch {
+	case b.Pressed():
+		b.Background(k.pressed)
+	case b.Hovered():
+		b.Background(k.hover)
+	}
+	b.Transition(ui.ElementTransition{Colors: true, Duration: 120 * time.Millisecond})
+	col := k.iconMuted
+	if b.Hovered() {
+		col = k.text
+	}
+	b.Children(func() {
+		ui.Icon(c, svg).Size(iconSize, iconSize).TextColor(col)
+		ui.Icon(c, iconChevronDown).Size(9, 9).TextColor(col)
+	})
+	return b
+}
+
 // gorexActivityDot is the dot of something running: a solid dot in a soft
 // halo. It does not animate, as drawing frames all along would cost more
 // than it tells.

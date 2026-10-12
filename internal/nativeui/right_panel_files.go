@@ -1,17 +1,14 @@
 package nativeui
 
 import (
-	"path/filepath"
-	"time"
-
 	"github.com/egoist/mygo/ui"
 	"github.com/wh-studio/herdr-client/internal/filesview"
 )
 
 // filesToolView renders the Files tool from background directory snapshots
-// only — ListDirect never runs during render (GWB-003).
+// only — ListDirect never runs during render (GWB-003). The sidebar head
+// above it (project, branch, refresh) is shared with the Git sidebar.
 func (s *Shell) filesToolView(c *ui.Context) {
-	sp := Spacing()
 	root := s.rightPanel.currentRoot
 
 	if root == "" {
@@ -19,23 +16,19 @@ func (s *Shell) filesToolView(c *ui.Context) {
 		return
 	}
 
-	ui.Column(c).Grow(1).MinHeight(0).Children(func() {
-		ui.Row(c).FillWidth().Padding(sp.XS, sp.M).Gap(sp.S).AlignItems(ui.Center).Children(func() {
-			rel := filepath.Base(root)
-			ui.Text(c, rel).FontSize(Typography().Caption).FontWeight(WeightSemibold).Grow(1).SingleLine()
-
-			if compactButton(c, "Refresh").Clicked() {
-				s.rightPanel.cachedDirEntries = make(map[string][]filesview.Entry)
-				s.requestDirectory(root)
-			}
-		})
-
-		ui.Scroll(c).Grow(1).Children(func() {
-			ui.Column(c).FillWidth().Padding(sp.XS, sp.S).Gap(4).Children(func() {
-				s.renderDirectoryLevel(c, root, 0)
-			})
+	ui.Scroll(c).Grow(1).MinHeight(0).Children(func() {
+		ui.Column(c).FillWidth().Padding(4, sidebarGutter, 12).Children(func() {
+			s.renderDirectoryLevel(c, root, 0)
 		})
 	})
+}
+
+// refreshFiles drops the cached directory snapshots and rereads the root.
+func (s *Shell) refreshFiles() {
+	s.rightPanel.cachedDirEntries = make(map[string][]filesview.Entry)
+	if root := s.rightPanel.currentRoot; root != "" {
+		s.requestDirectory(root)
+	}
 }
 
 // requestDirectory schedules a background directory read (GWB-003): the
@@ -88,14 +81,15 @@ func (s *Shell) beginDirectoryLoad(dir, root string, gen uint64) {
 	}()
 }
 
-// renderDirectoryLevel renders cached entries; a cache miss schedules the
-// background read and shows a loading marker instead of blocking (GWB-003).
-func (s *Shell) renderDirectoryLevel(c *ui.Context, dir string, depth int) {
+// renderDirectoryLevel renders cached entries on the shared tree grid; a
+// cache miss schedules the background read and shows a loading marker
+// instead of blocking (GWB-003).
+func (s *Shell) renderDirectoryLevel(c *ui.Context, dir string, level int) {
 	entries, ok := s.rightPanel.cachedDirEntries[dir]
 	if !ok {
 		s.requestDirectory(dir)
 		if s.rightPanel.loadingDirs[dir] {
-			ui.Row(c).FillWidth().Padding(2, sp_x(depth)).Children(func() {
+			ui.Row(c).FillWidth().Padding(2, 0, 2, treeGlyphX(level)).Children(func() {
 				ui.Spinner(c).Size(10, 10)
 			})
 		}
@@ -115,53 +109,23 @@ func (s *Shell) renderDirectoryLevel(c *ui.Context, dir string, depth int) {
 		isDir := e.IsDir && !e.IsSymlink
 		isExpanded := s.rightPanel.expandedDirs[e.Path]
 
-		// The rows speak the Godiff files-list language (2026-10-06 A3):
-		// 28 DIP rows, rotating chevrons, muted folder/file glyphs, the
-		// size right-aligned where the changes list puts its counts.
-		paddingLeft := float32(6 + depth*TreeIndentWidth)
-
-		var row ui.Element
-		ui.Box(c).Children(func() {
-			r := ui.Row(c).Height(28).FillWidth().Padding(0, 8, 0, paddingLeft).Gap(5).
-				Radius(6).MinWidth(0).AlignItems(ui.Center).Tooltip(e.Path)
-			if !isDir && s.rightPanel.selectedFilePath == e.Path {
-				r.Background(t.Accent.Alpha(0.15))
-			}
-			if r.Hovered() {
-				r.Background(ui.RGBA(127, 127, 127, 0.08))
-			}
-			r.Children(func() {
-				arrow := ui.Box(c).Size(14, 14).Center().Shrink(0)
-				if isDir {
-					arrow.Children(func() {
-						ic := ui.Icon(c, iconChevronDown).FontSize(12).TextColor(t.TextMuted)
-						target := float32(0)
-						if !isExpanded {
-							target = -90
-						}
-						ic.Rotate(ic.Animate("rot", target, 150*time.Millisecond))
-					})
-					ui.Icon(c, iconFolder).FontSize(14).TextColor(t.TextMuted)
-				} else {
-					arrow.Children(func() {
-						ui.Icon(c, iconFile).FontSize(14).TextColor(t.TextMuted)
-					})
-				}
-
-				name := ui.Text(c, e.Name).FontSize(Typography().Section).Grow(1).SingleLine().Shrink(1).MinWidth(0)
-				if e.IsSymlink {
-					name.TextColor(t.TextMuted)
-				}
-
+		glyph, kind := iconFile, "File"
+		if isDir {
+			glyph, kind = iconFolder, "Folder"
+		}
+		row := s.sidebarTreeRow(c, sidebarTreeSpec{
+			Key: "file:" + e.Path, Title: e.Name, Label: kind + " " + e.Name, Tooltip: e.Path, Level: level,
+			Folder: isDir, Expanded: isExpanded, Glyph: glyph,
+			Current: !isDir && s.rightPanel.selectedFilePath == e.Path, Dim: e.IsSymlink,
+			Trailing: func() {
+				// The size right-aligned, as the changes list puts its counts.
 				if !isDir && e.SizeBytes > 0 {
 					ui.Text(c, filesview.FormatFileSize(e.SizeBytes)).
-						Font(gdCodeFont()).FontSize(Typography().Micro).TextColor(t.TextMuted).Shrink(0).
-						Tooltip(e.Path)
+						Font(gdCodeFont()).FontSize(Typography().Micro).TextColor(t.TextMuted).Shrink(0)
 				} else if e.IsSymlink {
 					ui.Text(c, "→").Font(gdCodeFont()).FontSize(Typography().BodySmall).TextColor(t.TextMuted).Shrink(0)
 				}
-			})
-			row = r
+			},
 		})
 
 		if isDir {
@@ -172,7 +136,7 @@ func (s *Shell) renderDirectoryLevel(c *ui.Context, dir string, depth int) {
 				}
 			}
 			if isExpanded {
-				s.renderDirectoryLevel(c, e.Path, depth+1)
+				s.renderDirectoryLevel(c, e.Path, level+1)
 			}
 		} else {
 			if row.Clicked() {
@@ -181,8 +145,6 @@ func (s *Shell) renderDirectoryLevel(c *ui.Context, dir string, depth int) {
 		}
 	}
 }
-
-func sp_x(depth int) float32 { return float32(depth*TreeIndentWidth) + 4 }
 
 // openFilePreview loads file content up to 1 MiB and presents the preview
 // modal. Click-driven IO stays in the interaction handler (not render).

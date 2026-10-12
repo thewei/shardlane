@@ -322,7 +322,6 @@ func (s *Shell) resetGitContextState() {
 	s.git.commitSnap = nil
 	s.git.commitMeta = nil
 	s.branchFilter = ""
-	s.branchDraft = ""
 	s.branchMenuOpen = false
 	s.gitConflictFilesExpanded = false
 	s.git.sequencer = gitworkbench.SequencerStatus{}

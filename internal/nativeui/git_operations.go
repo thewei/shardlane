@@ -109,12 +109,12 @@ func (s *Shell) discardChanges(paths []string) {
 	if len(tracked) > 0 {
 		s.openConfirm("git-discard", joinPathsTarget(tracked),
 			"Discard changes in "+pluralFiles(len(tracked))+"?",
-			"The reviewed changes to these files are thrown away and cannot be recovered.")
+			"This can't be undone.")
 	}
 	if len(untracked) > 0 {
 		s.openConfirm("git-delete-untracked", joinPathsTarget(untracked),
 			"Delete "+pluralFiles(len(untracked))+"?",
-			"These untracked files are deleted from disk and cannot be recovered.")
+			"Untracked files can't be recovered.")
 	}
 }
 
@@ -186,7 +186,7 @@ func (s *Shell) dropStash(ref string) {
 
 func (s *Shell) deleteBranch(name string) {
 	s.openConfirm("git-delete-branch", name, "Delete branch "+name+"?",
-		"Git's safe delete: an unmerged branch is refused, not forced away.")
+		"Git refuses if it has unmerged commits.")
 }
 
 // confirmMergeBranch only offers a non-rewriting, fast-forward-only merge.
@@ -196,8 +196,7 @@ func (s *Shell) confirmMergeBranch(target string) {
 		return
 	}
 	s.openConfirm("git-merge-ff", target, "Fast-forward merge "+target+"?",
-		"Move the current branch forward to "+target+" only if Git can fast-forward. "+
-			"A dirty working tree or divergent branches will be refused; no merge commit is created.")
+		"Moves the current branch forward to "+target+". Refused if the branches have diverged or the working tree is dirty.")
 }
 
 // openMergeDialog lets one branch-menu action explain both strategies
@@ -213,14 +212,13 @@ func (s *Shell) openMergeDialog(target string) {
 }
 
 // confirmMergeNoFFBranch is separate from the original safe FF-only path.
-// This operation may leave conflicts; the Git Inspector exposes resolution.
+// This operation may leave conflicts; Local Changes exposes resolution.
 func (s *Shell) confirmMergeNoFFBranch(target string) {
 	if s.git == nil || s.git.root == "" || target == "" || target == s.currentBranchName() {
 		return
 	}
 	s.openConfirm("git-merge-no-ff", target, "Create merge commit with "+target+"?",
-		"This merges "+target+" into the currently checked-out branch and can create a merge commit. "+
-			"If files conflict, resolve and stage them, then Continue or Abort in the Git Review Inspector.")
+		"Merges "+target+" into the current branch. If files conflict, resolve them in Local Changes, then continue or abort.")
 }
 
 func (s *Shell) confirmCherryPickCommit(hash, subject string) {
@@ -228,8 +226,7 @@ func (s *Shell) confirmCherryPickCommit(hash, subject string) {
 		return
 	}
 	s.openConfirm("git-cherry-pick", hash, "Cherry-pick commit?",
-		"Apply "+subject+" as a new commit on the current branch. "+
-			"A clean working tree is required. Conflicts may need resolution before Continue or Abort.")
+		"Applies "+subject+" to the current branch. Requires a clean working tree.")
 }
 
 func (s *Shell) continueSequencer() {
@@ -257,7 +254,7 @@ func (s *Shell) confirmAbortSequencer() {
 		return
 	}
 	s.openConfirm("git-sequencer-abort", string(kind), "Abort "+string(kind)+"?",
-		"Return to the state before this Git operation. Resolution edits made during the conflict may be lost.")
+		"Returns to the state before the operation. Edits made while resolving conflicts are lost.")
 }
 
 func (s *Shell) confirmRevertCommit(hash, subject string) {
@@ -265,8 +262,7 @@ func (s *Shell) confirmRevertCommit(hash, subject string) {
 		return
 	}
 	s.openConfirm("git-revert-commit", hash, "Revert commit?",
-		"Create a new commit reversing: "+subject+
-			". Published history stays intact. A clean working tree is required; conflicts may need manual resolution in Terminal.")
+		"Creates a commit that reverses: "+subject+". Requires a clean working tree.")
 }
 
 // gitworkbenchFullHash keeps the UI's command identity exact, not the
@@ -286,7 +282,7 @@ func gitworkbenchFullHash(hash string) bool {
 
 func (s *Shell) undoLastCommit() {
 	s.openConfirm("git-undo-commit", "", "Undo last commit?",
-		"The commit is undone with a soft reset: its changes return to the index, nothing is discarded.")
+		"Its changes stay staged. Nothing is discarded.")
 }
 
 // createTag creates a lightweight tag at HEAD.
@@ -305,7 +301,7 @@ func (s *Shell) createTag(name string) {
 // deleteTagConfirm removes a tag after confirmation.
 func (s *Shell) deleteTagConfirm(name string) {
 	s.openConfirm("git-delete-tag", name, "Delete tag "+name+"?",
-		"The tag is removed from the repository. Commits are not touched.")
+		"Commits are not affected.")
 }
 
 // addWorktree checks out a new work tree at an absolute path.

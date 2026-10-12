@@ -110,6 +110,13 @@ func panelCard(c *ui.Context, children func()) ui.Element {
 		Children(children)
 }
 
+// treeRowAction is a row's hover icon button.
+type treeRowAction struct {
+	Label string
+	Glyph *ui.SVG
+	Run   func()
+}
+
 type treeRowSpec struct {
 	Key               string
 	Depth             int
@@ -128,10 +135,10 @@ type treeRowSpec struct {
 	// ancestor rows: a service (green) or agents running below this row
 	// (2026-10-06 sidebar service rollup), with a tooltip naming what runs.
 	Activity sidebarActivity
-	// Overflow builds the row's "..." menu, shown at the trailing edge
-	// under the pointer (2026-10-05 sidebar review round two). It shares
-	// the builders behind the title-bar overflow menu.
-	Overflow func(m *ui.Menu)
+	// Action is the row's one primary action, an icon button at the
+	// trailing edge under the pointer (a project's "+"). Everything else
+	// lives in the row's right-click menu — no row of dots.
+	Action *treeRowAction
 	// Count is the number of panes beneath a collapsed nesting row
 	// (2026-10-07 user request): more than one shows as tiny muted digits
 	// at the trailing edge, yielding to the hover controls. Callers pass
@@ -152,16 +159,17 @@ func designRowHeight(override float32) float32 {
 	return 28
 }
 
-// sidebarRowHeight returns the density-token row height for the canonical
-// sidebar (GWB-063): compact 26 / default 28 / comfortable 32 DIP.
+// sidebarRowHeight is the density-token row height of the sidebar's rows
+// (GWB-063): compact 24 / default 26 / comfortable 30 DIP. The Git and Files
+// trees take treeRowHeight, two tighter.
 func (s *Shell) sidebarRowHeight() float32 {
 	switch s.sidebarDensity() {
 	case DensityCompact:
-		return 26
+		return 24
 	case DensityComfortable:
-		return 32
+		return 30
 	default:
-		return 28
+		return 26
 	}
 }
 
@@ -295,7 +303,7 @@ func treeRow(c *ui.Context, spec treeRowSpec) ui.Element {
 			hovered := row.Hovered()
 			// The collapsed pane tally (2026-10-07): tiny muted digits at
 			// the trailing edge; under the pointer it steps aside for the
-			// chevron and the "..." menu.
+			// chevron and the row's action.
 			if spec.Count > 1 && !hovered {
 				ui.Text(c, itoa(spec.Count)).Label(itoa(spec.Count) + " panes").
 					FontSize(Typography().Micro).TextColor(t.TextMuted).
@@ -308,20 +316,11 @@ func treeRow(c *ui.Context, spec treeRowSpec) ui.Element {
 				}
 				ui.Icon(c, glyph).Size(11, 11).TextColor(t.TextMuted).Shrink(0).PassThrough()
 			}
-			if spec.Overflow != nil && hovered {
-				// The row's "..." — same builders as the title-bar overflow.
-				more := ui.ButtonBase(c).
-					Size(18, 18).
-					Radius(4).
-					Label("More actions for " + spec.Label).
-					Shrink(0)
-				if more.Hovered() {
-					more.Background(t.SurfaceHover)
+			if spec.Action != nil && hovered {
+				action := gorexIconButton(c, gorexColorsOf(t.Dark), spec.Action.Glyph, spec.Action.Label, spec.Action.Label, false, 20, 12)
+				if action.Clicked() {
+					spec.Action.Run()
 				}
-				more.Children(func() {
-					ui.Icon(c, iconEllipsis).Size(11, 11).TextColor(t.TextMuted)
-				})
-				more.Menu(spec.Overflow)
 			}
 		})
 		if drag := spec.Drag; drag != nil {

@@ -16,6 +16,25 @@ func appPage(c *ui.Context, title, subtitle string, body func()) {
 	})
 }
 
+// Readable column widths. A page's content never stretches past its cap: a
+// wide window grows equal margins on both sides instead of long lines or a
+// one-sided gap. The caps live here, once.
+const (
+	// formColumnWidth bounds Settings pages, inspectors and the commit form.
+	formColumnWidth = settingsContentMaxWidth
+	// listColumnWidth bounds list pages (Sessions): rows need more room than
+	// a form to carry their metrics column.
+	listColumnWidth float32 = 1040
+)
+
+// contentColumn lays body out in a column at most maxWidth wide, centered in
+// whatever width the page has. A narrower page simply fills it.
+func contentColumn(c *ui.Context, maxWidth float32, body func()) {
+	ui.Column(c).FillWidth().AlignItems(ui.Center).Children(func() {
+		ui.Column(c).FillWidth().MaxWidth(maxWidth).Children(body)
+	})
+}
+
 // sectionHeader labels one card/section.
 func sectionHeader(c *ui.Context, label string) {
 	typ := Typography()

@@ -33,7 +33,7 @@ func (s *Shell) inspectorPage(c *ui.Context, paneID string) {
 		if ok {
 			title = card.Title
 		}
-		pageHeader(c, title, "")
+		contentColumn(c, formColumnWidth, func() { pageHeader(c, title, "") })
 		if s.inspector.errText != "" {
 			inlineNotice(c, ToneError, s.inspector.errText, nil)
 		}
@@ -42,35 +42,37 @@ func (s *Shell) inspectorPage(c *ui.Context, paneID string) {
 			return
 		}
 		ui.Scroll(c).Grow(1).Children(func() {
-			ui.Column(c).FillWidth().MaxWidth(settingsContentMaxWidth).Padding(0, sp.XL, sp.XL).Gap(sp.XL).Children(func() {
-				if ok {
-					settingsGroup(c, "Status",
-						row("Runtime", "", func() { valueText(c, string(card.RuntimePhase)) }),
-						row("Can receive input", "", func() { valueText(c, string(card.Sendability)) }),
-						row("Attention", "", func() { valueText(c, agent.OperationalLabel(card.Attention)) }),
-						row("Markers", "", func() { valueText(c, markerText(card.Unread, card.ReviewPending)) }),
-					)
-					settingsGroup(c, "Location",
-						row("Project", "", func() { valueText(c, card.ProjectName) }),
-						row("Pane", "", func() { valueText(c, card.PaneID) }),
-						row("Tab", "", func() { valueText(c, card.TabID) }),
-					)
-					s.inspectorUsageCard(c, card)
-				}
-				if s.inspector.window != nil && len(s.inspector.window.Messages) > 0 {
-					settingsCard(c, "Conversation", func() {
-						for _, message := range s.inspector.window.Messages {
-							if message.Text == "" {
-								continue
+			contentColumn(c, formColumnWidth, func() {
+				ui.Column(c).FillWidth().Padding(0, sp.XL, sp.XL).Gap(sp.XL).Children(func() {
+					if ok {
+						settingsGroup(c, "Status",
+							row("Runtime", "", func() { valueText(c, string(card.RuntimePhase)) }),
+							row("Can receive input", "", func() { valueText(c, string(card.Sendability)) }),
+							row("Attention", "", func() { valueText(c, agent.OperationalLabel(card.Attention)) }),
+							row("Markers", "", func() { valueText(c, markerText(card.Unread, card.ReviewPending)) }),
+						)
+						settingsGroup(c, "Location",
+							row("Project", "", func() { valueText(c, card.ProjectName) }),
+							row("Pane", "", func() { valueText(c, card.PaneID) }),
+							row("Tab", "", func() { valueText(c, card.TabID) }),
+						)
+						s.inspectorUsageCard(c, card)
+					}
+					if s.inspector.window != nil && len(s.inspector.window.Messages) > 0 {
+						settingsCard(c, "Conversation", func() {
+							for _, message := range s.inspector.window.Messages {
+								if message.Text == "" {
+									continue
+								}
+								ui.Row(c).FillWidth().Gap(sp.S).Children(func() {
+									ui.Text(c, strings.ToUpper(string(message.Role))).FontSize(Typography().Micro).FontWeight(WeightSemibold).TextColor(t.TextMuted)
+									preview := clipPreview(message.Text, 200, 4)
+									ui.Text(c, preview).FontSize(Typography().BodySmall).Grow(1)
+								})
 							}
-							ui.Row(c).FillWidth().Gap(sp.S).Children(func() {
-								ui.Text(c, strings.ToUpper(string(message.Role))).FontSize(Typography().Micro).FontWeight(WeightSemibold).TextColor(t.TextMuted)
-								preview := clipPreview(message.Text, 200, 4)
-								ui.Text(c, preview).FontSize(Typography().BodySmall).Grow(1)
-							})
-						}
-					})
-				}
+						})
+					}
+				})
 			})
 		})
 	})

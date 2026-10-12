@@ -87,7 +87,7 @@ func (s *Shell) breadcrumbSegmentsWithTheme(dark bool) []crumbSegment {
 	return path
 }
 
-// breadcrumbRow renders the switcher path plus the ⋯ overflow button.
+// breadcrumbRow renders the switcher path plus the Actions pull-down.
 func (s *Shell) breadcrumbRow(c *ui.Context) {
 	t := c.Theme()
 	sp := Spacing()

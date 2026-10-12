@@ -42,6 +42,7 @@ func (s *Shell) projectItems(c *ui.Context) {
 			glyph = iconFolderOpen
 		}
 		row := treeRow(c, treeRowSpec{
+			Height:     s.sidebarRowHeight(),
 			Key:        "project:" + project.ID,
 			Depth:      0,
 			Selected:   selectedProject && s.selectedTabID == "",
@@ -52,10 +53,8 @@ func (s *Shell) projectItems(c *ui.Context) {
 			Status:     project.AgentStatus,
 			Activity:   activity[project.ID],
 			Count:      projectCount,
-			Overflow: func(m *ui.Menu) {
-				s.projectMenuItems(m, project)
-			},
-			Drag: s.treeDragFor(treeNodeDrag{s.activeInstance, "project", "", project.ID}),
+			Action:     &treeRowAction{Label: "New tab in " + project.Label, Glyph: iconPlus, Run: func() { s.newProjectTab(project) }},
+			Drag:       s.treeDragFor(treeNodeDrag{s.activeInstance, "project", "", project.ID}),
 		})
 		if row.Clicked() {
 			s.router.Push(routeWorkspace)
@@ -85,6 +84,7 @@ func (s *Shell) projectItems(c *ui.Context) {
 				tabCount = len(panes)
 			}
 			row := treeRow(c, treeRowSpec{
+				Height:     s.sidebarRowHeight(),
 				Key:        "tab:" + tab.ID,
 				Depth:      1,
 				Last:       lastTab,
@@ -96,10 +96,7 @@ func (s *Shell) projectItems(c *ui.Context) {
 				Status:     tab.AgentStatus,
 				Activity:   activity[tab.ID],
 				Count:      tabCount,
-				Overflow: func(m *ui.Menu) {
-					s.tabMenuItems(m, tab)
-				},
-				Drag: s.treeDragFor(treeNodeDrag{s.activeInstance, "tab", project.ID, tab.ID}),
+				Drag:       s.treeDragFor(treeNodeDrag{s.activeInstance, "tab", project.ID, tab.ID}),
 			})
 			if row.Clicked() {
 				s.router.Push(routeWorkspace)
@@ -134,6 +131,7 @@ func (s *Shell) projectItems(c *ui.Context) {
 					}
 				}
 				row := treeRow(c, treeRowSpec{
+					Height:            s.sidebarRowHeight(),
 					Key:               "pane:" + pane.ID,
 					Depth:             2,
 					AncestorContinues: []bool{!lastTab},
@@ -144,10 +142,7 @@ func (s *Shell) projectItems(c *ui.Context) {
 					Label:             label,
 					Status:            pane.AgentStatus,
 					Activity:          activity[pane.ID],
-					Overflow: func(m *ui.Menu) {
-						s.paneOverflowItems(m, pane.ID, label)
-					},
-					Drag: s.treeDragFor(treeNodeDrag{s.activeInstance, "pane", tab.ID, pane.ID}),
+					Drag:              s.treeDragFor(treeNodeDrag{s.activeInstance, "pane", tab.ID, pane.ID}),
 				})
 				if row.Clicked() {
 					s.router.Push(routeWorkspace)
@@ -176,13 +171,19 @@ func (s *Shell) tabRowMark(panes []herdr.Pane) visualMark {
 	return visualMark{svg: iconTab}
 }
 
-// projectMenuItems is the shared New Tab / Rename / Close builder — the
-// row's context menu and its hover "..." overflow are the same actions.
+// newProjectTab opens a Tab in project: the project row's hover "+" and its
+// context menu's New Tab share it.
+func (s *Shell) newProjectTab(project herdr.Project) {
+	s.mutateSelecting(func() (herdr.Projection, error) {
+		return s.runtime.CreateTab(s.activeInstance, project.ID, project.CWD)
+	})
+}
+
+// projectMenuItems is the shared New Tab / Rename / Close builder behind the
+// project row's right-click menu.
 func (s *Shell) projectMenuItems(m *ui.Menu, project herdr.Project) {
 	if m.Item("New Tab").Chosen() {
-		s.mutateSelecting(func() (herdr.Projection, error) {
-			return s.runtime.CreateTab(s.activeInstance, project.ID, project.CWD)
-		})
+		s.newProjectTab(project)
 	}
 	if m.Item("Rename Project…").Chosen() {
 		s.openTextDialog("rename-project", project.ID, "Rename Project", "Name", project.Label)

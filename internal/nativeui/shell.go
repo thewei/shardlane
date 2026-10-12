@@ -90,6 +90,7 @@ type Shell struct {
 	dialogTitle     string
 	dialogLabel     string
 	dialogValue     string
+	dialogAction    string // the primary button's title; "Save" when empty
 	confirmOpen     bool
 	confirmKind     string
 	confirmTarget   string
@@ -273,15 +274,11 @@ type Shell struct {
 	commitsMode              bool
 	commitsList              ui.ListState
 	commitsSelected          int
-	// repo bar menus (diff-mode top bar).
-	tagsMenuOpen      bool
-	stashesMenuOpen   bool
-	worktreesMenuOpen bool
-	// branch menu state.
-	branchMenuOpen bool
-	branchDraft    string
-	branchFilter   string
-	tagDraft       string
+	// Sidebar head switchers: the project and branch pull-down popovers.
+	projectMenuOpen bool
+	projectFilter   string
+	branchMenuOpen  bool
+	branchFilter    string
 	// pendingToast is flushed as a toast on the next frame (background
 	// lanes cannot toast).
 	pendingToast string

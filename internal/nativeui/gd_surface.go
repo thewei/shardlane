@@ -179,9 +179,9 @@ func (s *Shell) gdSyncButtons(c *ui.Context, pal *gdPalette) {
 			action()
 		}
 	}
-	button(iconRefresh, "Fetch", s.fetchRepo)
-	button(iconArrowDown, "Pull (ff-only)", s.pullRepo)
-	button(iconArrowUp, "Push", s.pushRepo)
+	button(iconFetch, "Fetch", s.fetchRepo)
+	button(iconPull, "Pull (fast-forward only)", s.pullRepo)
+	button(iconPush, "Push", s.pushRepo)
 }
 
 // gdDiffRow draws one row of the surface.
@@ -340,11 +340,16 @@ func (s *Shell) gdFileHeader(c *ui.Context, pal *gdPalette, idx int, f *gdFile) 
 				pathColor = t.TextMuted
 			}
 			ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Gap(1).Children(func() {
+				// The folder gives way first: a narrow card keeps the file name.
 				dir, name := gdDirName(cf.Path)
-				ui.RichText(c,
-					ui.Span{Text: dir, Color: t.TextMuted},
-					ui.Span{Text: name, Color: pathColor, Weight: 600},
-				).Font(gdCodeFont()).FontSize(Typography().Section).SingleLine()
+				ui.Row(c).MinWidth(0).Children(func() {
+					if dir != "" {
+						ui.Text(c, dir).Font(gdCodeFont()).FontSize(Typography().Section).TextColor(t.TextMuted).
+							SingleLine().Ellipsis("…").Shrink(4).MinWidth(0)
+					}
+					ui.Text(c, name).Font(gdCodeFont()).FontSize(Typography().Section).FontWeight(WeightSemibold).TextColor(pathColor).
+						SingleLine().Ellipsis("…").Shrink(1).MinWidth(0)
+				})
 				if cf.OldPath != "" && cf.OldPath != cf.Path {
 					ui.Text(c, "from "+cf.OldPath).Font(gdCodeFont()).FontSize(Typography().BodySmall).TextColor(t.TextMuted).SingleLine()
 				}
@@ -781,6 +786,24 @@ func gdIconButton(c *ui.Context, svg *ui.SVG, tip string) ui.Element {
 		b.Background(ui.RGBA(127, 127, 127, 0.13))
 	}
 	b.Children(func() { ui.Icon(c, svg).FontSize(16) })
+	return b
+}
+
+// gdPulldown is gdIconButton's pull-down sibling: an icon with a small
+// chevron, as a native toolbar pop-up button reads. The caller attaches the
+// Menu.
+func gdPulldown(c *ui.Context, svg *ui.SVG, tip string) ui.Element {
+	t := c.Theme()
+	b := ui.ButtonBase(c).Height(28).Padding(0, 6).Gap(3).Radius(7).Center().Label(tip).Tooltip(tip).TextColor(t.TextMuted)
+	if b.Pressed() {
+		b.Background(ui.RGBA(127, 127, 127, 0.22))
+	} else if b.Hovered() {
+		b.Background(ui.RGBA(127, 127, 127, 0.13))
+	}
+	b.Children(func() {
+		ui.Icon(c, svg).FontSize(16)
+		ui.Icon(c, iconChevronDown).FontSize(9)
+	})
 	return b
 }
 

@@ -7,7 +7,7 @@ import (
 // The content header bar was removed in the 2026-10-05 round-two review:
 // identity moved into the title bar (breadcrumb + muted path line), the
 // Terminal/Changes switch became icon tabs in the title bar, and the
-// surface actions moved into the title-bar ⋯ menu (header_overflow.go).
+// surface actions moved into the title-bar Actions menu (header_overflow.go).
 
 // workspaceTitle remains for callers that need the display name.
 func (s *Shell) workspaceTitle() string {

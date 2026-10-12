@@ -7,7 +7,7 @@ import (
 
 /**
  * [INPUT]: 依赖 gitService 的已缓存 ChangesSnapshot、现有 stage/unstage/commit/undo/stash 方法
- * [OUTPUT]: Diff Git Workbench 的主操作条和二级菜单
+ * [OUTPUT]: Diff Git Workbench 的主操作条（Stage/Unstage All、Fetch/Pull/Push 图标）和 Git actions 下拉菜单
  * [POS]: nativeui 统一 Git 行为入口；Diff 拥有文件审阅，弹层拥有轻量操作，Terminal 不重复 Git toolbar
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -69,13 +69,14 @@ func (s *Shell) gitWorkbenchActionBar(c *ui.Context) {
 			}
 		}
 		ui.Box(c).Grow(1)
+		// Fetch/Pull/Push are one tap away as icons; the rest of the
+		// less-common actions live in the Git actions pull-down.
+		s.gdSyncButtons(c, gdPaletteFor(t))
 		// Split/Unified must remain reachable even when actions compact.
 		s.gdLayoutControl(c, gdPaletteFor(t))
 		// The local worktree's bottom composer is the single Commit entry.
-		// This toolbar only carries review/batch actions and overflow.
-		more := ui.ButtonBase(c).Size(28, 26).Center().Radius(5).
-			Label("More Git actions").Tooltip("More Git actions")
-		more.Children(func() { ui.Icon(c, iconEllipsis).FontSize(17) })
+		// This toolbar only carries review/batch actions and the pull-down.
+		more := gdPulldown(c, iconActions, "Git actions")
 		more.Menu(func(m *ui.Menu) {
 			if compact {
 				if m.Item("Stage All").Disabled(!canStage).Chosen() {
@@ -86,16 +87,6 @@ func (s *Shell) gitWorkbenchActionBar(c *ui.Context) {
 				}
 				m.Separator()
 			}
-			if m.Item("Fetch").Disabled(s.git.opBusy || busySequencer).Chosen() {
-				s.fetchRepo()
-			}
-			if m.Item("Pull (fast-forward only)").Disabled(s.git.opBusy || busySequencer).Chosen() {
-				s.pullRepo()
-			}
-			if m.Item("Push").Disabled(s.git.opBusy || busySequencer).Chosen() {
-				s.pushRepo()
-			}
-			m.Separator()
 			if m.Item("Stash All Changes").Disabled(s.git.opBusy || busySequencer || len(snap.Files) == 0).Chosen() {
 				s.stashChanges()
 			}

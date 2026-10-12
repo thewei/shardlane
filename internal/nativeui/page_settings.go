@@ -73,10 +73,11 @@ const settingsContentMaxWidth float32 = 760
 
 func settingsPage(c *ui.Context, title string, body func()) {
 	ui.Column(c).Grow(1).MinWidth(0).Children(func() {
-		pageHeader(c, title, "")
+		contentColumn(c, formColumnWidth, func() { pageHeader(c, title, "") })
 		ui.Scroll(c).Grow(1).MinHeight(0).Children(func() {
-			ui.Column(c).FillWidth().MaxWidth(settingsContentMaxWidth).
-				Padding(Spacing().S, Spacing().XL, Spacing().XL).Gap(Spacing().XL).Children(body)
+			contentColumn(c, formColumnWidth, func() {
+				ui.Column(c).FillWidth().Padding(Spacing().S, Spacing().XL, Spacing().XL).Gap(Spacing().XL).Children(body)
+			})
 		})
 	})
 }

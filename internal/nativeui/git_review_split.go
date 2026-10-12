@@ -101,8 +101,19 @@ func (s *Shell) gitQuickCommitComposer(c *ui.Context) {
 	if snap == nil || s.gdReviewingCommit() {
 		return
 	}
-	ui.Column(c).FillWidth().Shrink(0).Padding(8, 12).Gap(5).
+	ui.Column(c).FillWidth().Shrink(0).Padding(8, 12).
 		BorderWidth(1, 0, 0, 0).BorderColor(t.Border).Children(func() {
+		contentColumn(c, formColumnWidth, func() {
+			s.gitQuickCommitForm(c, snap)
+		})
+	})
+}
+
+// gitQuickCommitForm is the composer's fields and actions; the caller bounds
+// its width so the inputs never run across a wide diff.
+func (s *Shell) gitQuickCommitForm(c *ui.Context, snap *gitworkbench.ChangesSnapshot) {
+	t := c.Theme()
+	ui.Column(c).FillWidth().Gap(5).Children(func() {
 		ui.TextInput(c, &s.gitQuickSubject).FillWidth().Height(28).
 			Placeholder("Commit subject").Label("Commit subject draft")
 		ui.TextInput(c, &s.gitQuickBody).FillWidth().Height(26).

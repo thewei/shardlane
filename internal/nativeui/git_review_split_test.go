@@ -145,7 +145,7 @@ func TestGitHistoryEmptyCannotMutateWorktree(t *testing.T) {
 	}
 	s.reviewLocalChanges()
 	tt.Frame()
-	if s.commitsMode || !tt.HasText("More Git actions") || !tt.HasText("Commit subject draft") {
+	if s.commitsMode || !tt.HasText("Git actions") || !tt.HasText("Commit subject draft") {
 		t.Fatalf("return to worktree must restore navigator and controls: %q", tt.Texts())
 	}
 }
