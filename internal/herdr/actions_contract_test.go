@@ -11,6 +11,109 @@ import (
 	"testing"
 )
 
+func TestZoomPaneExplicitModesContract(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix socket fixture")
+	}
+	home, err := os.MkdirTemp("/tmp", "shardlane-zoom-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(home) })
+	t.Setenv("HOME", home)
+	path := filepath.Join(home, ".config", "herdr", "herdr.sock")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	listener, err := net.Listen("unix", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+
+	type seenRequest struct {
+		Method string         `json:"method"`
+		Params map[string]any `json:"params"`
+	}
+	var mu sync.Mutex
+	seen := make([]seenRequest, 0, 12)
+	go func() {
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				return
+			}
+			go func(conn net.Conn) {
+				defer conn.Close()
+				line, err := bufio.NewReader(conn).ReadBytes('\n')
+				if err != nil {
+					return
+				}
+				var request seenRequest
+				if json.Unmarshal(line, &request) != nil {
+					return
+				}
+				mu.Lock()
+				seen = append(seen, request)
+				mu.Unlock()
+				var result any
+				switch request.Method {
+				case "ping":
+					result = map[string]any{"type": "pong", "version": "0.9.3", "protocol": 22}
+				case "session.snapshot":
+					result = map[string]any{
+						"type": "session_snapshot",
+						"snapshot": map[string]any{
+							"version": "0.9.3", "protocol": 22,
+							"workspaces": []any{}, "tabs": []any{}, "panes": []any{}, "layouts": []any{}, "agents": []any{},
+						},
+					}
+				default:
+					result = map[string]any{"type": "ok"}
+				}
+				_ = json.NewEncoder(conn).Encode(map[string]any{"result": result})
+			}(conn)
+		}
+	}()
+
+	manager := NewManager()
+	for _, mode := range []string{"on", "off", "toggle"} {
+		if _, err := manager.ZoomPane("default", "p1", mode); err != nil {
+			t.Fatalf("ZoomPane(%q): %v", mode, err)
+		}
+	}
+
+	// Invalid modes are rejected locally before any socket traffic.
+	mu.Lock()
+	before := len(seen)
+	mu.Unlock()
+	if _, err := manager.ZoomPane("default", "p1", "bogus"); err == nil {
+		t.Fatal("bogus zoom mode must be rejected")
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(seen) != before {
+		t.Fatalf("bogus mode reached the socket: %d new requests", len(seen)-before)
+	}
+	// Three calls × (ping, pane.zoom, session.snapshot); the pane.zoom
+	// requests must carry the exact explicit modes.
+	zooms := make([]seenRequest, 0, 3)
+	for _, request := range seen {
+		if request.Method == "pane.zoom" {
+			zooms = append(zooms, request)
+		}
+	}
+	if len(zooms) != 3 {
+		t.Fatalf("pane.zoom requests = %d, want 3 (all: %#v)", len(zooms), seen)
+	}
+	for index, mode := range []string{"on", "off", "toggle"} {
+		if zooms[index].Params["pane_id"] != "p1" || zooms[index].Params["mode"] != mode {
+			t.Fatalf("pane.zoom[%d] params = %#v, want pane_id=p1 mode=%s", index, zooms[index].Params, mode)
+		}
+	}
+}
+
 func TestSplitPaneUsesVerifiedMutationThenSnapshot(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("Unix socket fixture")

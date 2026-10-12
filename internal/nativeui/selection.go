@@ -1,6 +1,10 @@
 package nativeui
 
-import "github.com/wh-studio/herdr-client/internal/herdr"
+import (
+	"log/slog"
+
+	"github.com/wh-studio/herdr-client/internal/herdr"
+)
 
 // reconcileLocalSelection preserves this window's semantic selection across
 // runtime snapshots. Herdr focused_* fields are bootstrap/fallback facts only.
@@ -58,6 +62,11 @@ func (s *Shell) selectTab(tabID string) {
 	if tab == nil {
 		return
 	}
+	// Parent selection shows the whole split: when the Tab is maximized,
+	// its maximized Pane steps down (zoom seam; unzoomed Tabs owe nothing).
+	if target, mode, ok := navigationZoomMutation(s.projection, tab.ID, ""); ok {
+		s.runNavigationZoom(target, mode)
+	}
 	s.selectedProjectID = tab.ProjectID
 	s.selectedTabID = tab.ID
 	s.selectedPaneID = ""
@@ -72,12 +81,53 @@ func (s *Shell) selectPane(paneID string) {
 		s.selectedPaneID = paneID
 		return
 	}
+	// Zoom-follow (2026-10-13 decision): a jump into an already maximized
+	// Tab moves the maximization to the clicked Pane — Herdr's zoomed layout
+	// shows exactly one Pane, so without this the target stays invisible
+	// beneath the old maximized Pane and the next snapshot snaps the
+	// selection back. Unzoomed Tabs are never zoomed by navigation.
+	if target, mode, ok := navigationZoomMutation(s.projection, pane.TabID, pane.ID); ok {
+		s.runNavigationZoom(target, mode)
+	}
 	s.selectedProjectID = pane.ProjectID
 	s.selectedTabID = pane.TabID
 	s.selectedPaneID = pane.ID
 	s.setProjectExpanded(pane.ProjectID, true)
 	s.setTabExpanded(pane.TabID, true)
 	s.syncSelectionPresentation()
+}
+
+// navigationZoomMutation resolves the pane.zoom a navigation click owes.
+// Child jump (paneID != ""): a zoomed Tab keeps maximizing exactly one Pane,
+// so the maximization moves to the clicked target (mode "on"). Parent Tab
+// selection (paneID == ""): the maximized Pane steps down so the whole split
+// shows (mode "off"). Non-zoomed Tabs and no-op jumps owe nothing. Modes are
+// the live PaneZoomMode enum (toggle|on|off).
+func navigationZoomMutation(projection herdr.Projection, tabID, paneID string) (target string, mode string, ok bool) {
+	layout, exists := layoutForTab(projection, tabID)
+	if !exists || !layout.Zoomed {
+		return "", "", false
+	}
+	if paneID != "" {
+		if layout.FocusedPaneID == paneID {
+			return "", "", false
+		}
+		return paneID, "on", true
+	}
+	if layout.FocusedPaneID == "" {
+		return "", "", false
+	}
+	return layout.FocusedPaneID, "off", true
+}
+
+// runNavigationZoom submits the navigation seam's zoom mutation. mutate
+// drops it headlessly (no window / instance), keeping selection tests
+// presentation-local.
+func (s *Shell) runNavigationZoom(target, mode string) {
+	slog.Info("pane action", "action", "zoom-follow", "pane_id", target, "mode", mode)
+	s.mutate(func() (herdr.Projection, error) {
+		return s.runtime.ZoomPane(s.activeInstance, target, mode)
+	})
 }
 
 func (s *Shell) syncSelectionPresentation() {

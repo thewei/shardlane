@@ -4,7 +4,7 @@ import "github.com/egoist/mygo/ui"
 
 /**
  * [INPUT]: 依赖 github.com/egoist/mygo/ui 的 MustParseSVG
- * [OUTPUT]: 对外提供 iconWorkspace/iconFolder/iconTerminal/iconTerminalStacked2/iconTerminalStacked3/iconAgent/iconMinus/iconSquare/iconCopy 等 UI 矢量图标
+ * [OUTPUT]: 对外提供 iconWorkspace/iconFolder/iconTerminal/iconAgent/iconMinus/iconSquare/iconCopy 等 UI 矢量图标
  * [POS]: nativeui 的图标字典，被 titlebar/sidebar/terminal/breadcrumb 等呈现组件消费
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -22,8 +22,6 @@ var (
 	iconFolderOpen       = icon(`<path d="M3 7h7l2 2h9"/><path d="M3 7V5a2 2 0 0 1 2-2h5l2 2"/><path d="M3 10h18l-2 9H5z"/>`)
 	iconTab              = icon(`<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 9h10"/>`)
 	iconTerminal         = icon(`<rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3 3-3 3"/><path d="M13 15h4"/>`)
-	iconTerminalStacked2 = icon(`<path d="M7 6.5V5a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-1" opacity="0.45"/><rect x="3" y="6.5" width="15" height="14.5" rx="2"/><path d="m6 11.5 2.5 2.5L6 16.5"/><path d="M11 16.5h4"/>`)
-	iconTerminalStacked3 = icon(`<path d="M8.5 5V3a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-1.5" opacity="0.32"/><path d="M5.5 8V5.5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2" opacity="0.62"/><rect x="2.5" y="8" width="14" height="13.5" rx="2"/><path d="m5.5 12.5 2.5 2.5-2.5 2.5"/><path d="M10.5 17.5h3.5"/>`)
 	iconChat        = icon(`<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>`)
 	iconAgent       = icon(`<circle cx="12" cy="8" r="4"/><path d="M5 21a7 7 0 0 1 14 0"/>`)
 	iconAgentBot    = icon(`<path d="M12 8V4H8"/><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/>`)

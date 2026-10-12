@@ -215,13 +215,6 @@ func TestShellAndFriendlyNames(t *testing.T) {
 }
 
 func TestPaneStackInfoAndStackedVisuals(t *testing.T) {
-	if iconTerminalStacked2 == nil {
-		t.Fatalf("iconTerminalStacked2 must not be nil")
-	}
-	if iconTerminalStacked3 == nil {
-		t.Fatalf("iconTerminalStacked3 must not be nil")
-	}
-
 	s := NewShell()
 	s.projection = herdr.Projection{
 		FocusedProjectID: "prj", FocusedTabID: "tab", FocusedPaneID: "p1",

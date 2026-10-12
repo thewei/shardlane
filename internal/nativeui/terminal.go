@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"strconv"
 	"time"
 
 	"github.com/egoist/mygo/plugins/terminal"
@@ -15,7 +16,7 @@ import (
 /**
  * [INPUT]: 依赖 mygo/plugins/terminal, mygo/ui, herdr, settings, gorex_style, brands 的 agentProvider/agentMark
  * [OUTPUT]: 对外提供 terminalCanvas, paneCard, paneCardHeader, paneStackInfo, paneLogoView, syncTerminals, closeAllTerminals, paneHeaderVisuals；画布内另渲染可拖拽的 split 分隔条（renderSplitDividers → splitGrowTarget/splitResizeAmount → resizePane），把拖拽解析成 Herdr pane.resize
- * [POS]: nativeui 的终端画布与 Gorex 窗格卡片主渲染器，管理活动的终端连接、堆叠多窗格状态、卡片拖拽放置（移动/拆分/交换）与窗格分栏拖拽调宽高（布局权威始终在 Herdr）
+ * [POS]: nativeui 的终端画布与 Gorex 窗格卡片主渲染器，管理活动的终端连接、最大化 Tab 的窗格数量角标、卡片拖拽放置（移动/拆分/交换）与窗格分栏拖拽调宽高（布局权威始终在 Herdr）
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 
@@ -585,11 +586,11 @@ func (s *Shell) paneStackInfo(paneID string) (bool, int) {
 	return layout.Zoomed, len(layout.Panes)
 }
 
-// paneLogoView renders the pane card's visual identity mark. When a split-panel
-// tab is maximized (stacking other panes beneath it), it renders an overlapping
-// stacked visual representation (iconTerminalStacked2 for 2 panes,
-// iconTerminalStacked3 for 3+ panes, or cascading backdrop sheets for custom brand
-// marks) along with an informative tooltip and double-click unzoom support.
+// paneLogoView renders the pane card's visual identity mark. When a split
+// tab is maximized (zoomed, stacking the other panes beneath it), the mark
+// carries a count badge with the number of Panes in the Tab (2026-10-13
+// badge round: no overlapping stacked art — the number is the indicator),
+// plus an informative tooltip, click-to-select and double-click unzoom.
 func (s *Shell) paneLogoView(c *ui.Context, k *gorexColors, surface *terminalSurface, mark visualMark, isStacked bool, stackCount int) {
 	if !isStacked {
 		ui.Box(c).Size(15, 15).Shrink(0).Children(func() {
@@ -598,26 +599,8 @@ func (s *Shell) paneLogoView(c *ui.Context, k *gorexColors, surface *terminalSur
 		return
 	}
 
-	tooltip := fmt.Sprintf("%d terminals stacked • Double-click title to restore", stackCount)
-	if mark.svg == iconTerminal {
-		stackedIcon := iconTerminalStacked2
-		if stackCount >= 3 {
-			stackedIcon = iconTerminalStacked3
-		}
-		box := ui.Box(c).Size(16, 16).Shrink(0).Cursor(ui.CursorPointer).Tooltip(tooltip)
-		if box.DoubleClicked() {
-			s.selectPane(surface.paneID)
-			s.zoomPaneAction(surface.paneID)
-		} else if box.Clicked() {
-			s.selectPane(surface.paneID)
-		}
-		box.Children(func() {
-			markView(c, visualMark{svg: stackedIcon}, 15.5, k.text)
-		})
-		return
-	}
-
-	box := ui.Box(c).Size(18, 16).Shrink(0).Cursor(ui.CursorPointer).Tooltip(tooltip)
+	tooltip := fmt.Sprintf("%d panes in this tab • Double-click title to restore", stackCount)
+	box := ui.Box(c).Size(15, 15).Shrink(0).Cursor(ui.CursorPointer).Tooltip(tooltip)
 	if box.DoubleClicked() {
 		s.selectPane(surface.paneID)
 		s.zoomPaneAction(surface.paneID)
@@ -625,14 +608,20 @@ func (s *Shell) paneLogoView(c *ui.Context, k *gorexColors, surface *terminalSur
 		s.selectPane(surface.paneID)
 	}
 	box.Children(func() {
-		if stackCount >= 3 {
-			ui.Box(c).Absolute().Left(4).Top(-2).Size(13, 13).Radius(3).
-				Border(1, k.text.Alpha(0.2)).Background(k.cardBorder.Alpha(0.35))
+		markView(c, mark, 14.5, k.text)
+		// The count badge floats at the mark's top-right corner (titlebar
+		// activity badge idiom): theme status color, inverted numeral.
+		dark := c.Theme().Dark
+		textColor := ui.RGBA(255, 255, 255, 1)
+		if dark {
+			textColor = ui.Hex("#1d1d1f")
 		}
-		ui.Box(c).Absolute().Left(2).Top(-1).Size(14, 14).Radius(3).
-			Border(1, k.text.Alpha(0.38)).Background(k.cardBorder.Alpha(0.55))
-		ui.Box(c).Absolute().Left(0).Top(0).Size(15, 15).Children(func() {
-			markView(c, mark, 14.5, k.text)
+		badge := ui.Box(c).Absolute().Left(6).Top(-2).
+			MinWidth(11).Height(11).Padding(0, 2.5).Center().
+			Radius(Radius().Row).
+			Background(designTokens(dark).StatusColor(ToneInfo, dark))
+		badge.Children(func() {
+			ui.Text(c, strconv.Itoa(stackCount)).FontSize(8).FontWeight(700).TextColor(textColor)
 		})
 	})
 }

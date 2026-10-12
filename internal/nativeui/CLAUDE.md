@@ -2,13 +2,13 @@
 > L2 | 父级: /CLAUDE.md
 
 成员清单
-icons.go: 矢量图标字典，inline SVG 定义，提供常用及跨平台窗格/窗口控制图标与堆叠多终端图标（iconTerminalStacked2/3）
+icons.go: 矢量图标字典，inline SVG 定义，提供常用及跨平台窗格/窗口控制图标
 proc_brands.go: 进程与工具/服务品牌标识解析器，将前台进程、Agent CLI 与各类微服务/数据库/工具映射为矢量图标与友好名称
 brands.go: Agent 品牌位图资产与视觉标识解析器，将 live Agent 映射为全彩品牌 Logo 与 agentMarkForPane 窗格标识
 agent_visual.go: Agent 品牌矢量回退图标字典、窗格 Agent 绑定与状态指示点（statusDot）
 brands_test.go: Agent 品牌位图资产检索、Antigravity 及其它 Provider 标识与 agentProvider 回退回归
 gorex_style.go: Gorex 风格视觉设计系统，提供渐变背景/卡片配色/shortDir/samePath 等跨平台路径处理
-terminal.go: 终端画布与 Gorex 窗格卡片渲染器，Pane 标题双击最大化/恢复、多终端堆叠 Logo 视觉指示、标题原生拖动放置（跨窗格/跨 Tab 移动、拆分与交换）与 split 分隔条拖拽调宽高（解析为 Herdr pane.resize，双击回到 50/50；布局权威在 Herdr）
+terminal.go: 终端画布与 Gorex 窗格卡片渲染器，Pane 标题双击最大化/恢复、最大化 Tab 的窗格 Logo 数量角标（Tab 内面板数，无重叠堆叠画）、标题原生拖动放置（跨窗格/跨 Tab 移动、拆分与交换）与 split 分隔条拖拽调宽高（解析为 Herdr pane.resize，双击回到 50/50；布局权威在 Herdr）
 breadcrumb_switcher.go: 标题栏面包屑与快速切换弹层所有者，Pane 顺序与 Herdr 实际布局对齐并展示品牌图标
 titlebar.go: 窗口标题栏组件，红绿灯与工具区对齐、视图切换（History 内页先返回根）与 Windows 平台窗口控件支持
 router.go: 单一 Router 的页面归属、精确 History 路径分类与窗口标题路由语义
@@ -79,7 +79,7 @@ branch_menu.go: 本地分支 Popover 可搜索/独立滚动/当前分支优先�
 git_workbench_actions_test.go: Git 本地操作条、Modal、Draft Guard、Merge/Revert Confirm 的 headless 回归
 ds_components.go: 通用卡片、Field、工作区 Chat/Diff 轻量空状态组件
 unified_page_test.go: UI-007/UI-008 Settings/Git/Chat 跨页面基础回归与尺寸矩阵（headless）
-pane_header_visuals_test.go: 窗格头部视觉解析、Agent 图标与名称解析、路径格式化及多终端堆叠状态单元测试
+pane_header_visuals_test.go: 窗格头部视觉解析、Agent 图标与名称解析、路径格式化及最大化 Tab 窗格计数单元测试
 chat_hooks.go: Shell 钩子层：挂载原生 apphook 进程内 IPC 服务与 spool 兼容层，直接接收并更新 Agent 状态与会话绑定，驱动 blocked 交互检测
 chat_hooks_test.go: 钩子事件解析、提示词检测、投影等价去重与原生 apphook 状态/会话更新回归
 

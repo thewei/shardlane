@@ -1,7 +1,7 @@
 package herdr
 
 /**
- * [INPUT]: 依赖 Herdr protocol 22 的 workspace.move/tab.move/pane.swap/pane.move/pane.resize 与既有 mutateAndProject RPC
+ * [INPUT]: 依赖 Herdr protocol 22 的 workspace.move/tab.move/pane.swap/pane.move/pane.resize/pane.zoom（显式 mode：toggle|on|off，live schema PaneZoomParams）与既有 mutateAndProject RPC
  * [OUTPUT]: 提供结构排序、Pane 移动、交换、分栏尺寸调整以及已有 Workspace/Tab/Pane 操作
  * [POS]: Herdr 运行时 mutation 适配器；提交后只从 session.snapshot 获取权威布局
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
@@ -236,14 +236,27 @@ func (m *Manager) ClosePane(session, paneID string) (Projection, error) {
 	return m.mutateAndProject(session, "pane.close", map[string]any{"pane_id": paneID})
 }
 
-func (m *Manager) TogglePaneZoom(session, paneID string) (Projection, error) {
+// ZoomPane sets one Pane's zoom state explicitly: "on" maximizes the Pane in
+// its Tab's layout, "off" restores the split, "toggle" flips the state.
+// Verified against the live protocol 22 schema (PaneZoomParams: pane_id +
+// PaneZoomMode enum toggle|on|off) and the CLI (--toggle/--on/--off).
+func (m *Manager) ZoomPane(session, paneID, mode string) (Projection, error) {
 	if strings.TrimSpace(paneID) == "" {
 		return Projection{}, fmt.Errorf("pane id is required")
 	}
+	switch mode {
+	case "on", "off", "toggle":
+	default:
+		return Projection{}, fmt.Errorf("unsupported pane zoom mode %q", mode)
+	}
 	return m.mutateAndProject(session, "pane.zoom", map[string]any{
-		"pane_id": paneID,
-		"mode":    "toggle",
+		"pane_id": strings.TrimSpace(paneID),
+		"mode":    mode,
 	})
+}
+
+func (m *Manager) TogglePaneZoom(session, paneID string) (Projection, error) {
+	return m.ZoomPane(session, paneID, "toggle")
 }
 
 // ScrollPane moves Herdr's authoritative scroll viewport for one Pane to an
