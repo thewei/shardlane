@@ -18,6 +18,7 @@ import (
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 	"github.com/wh-studio/herdr-client/internal/agent"
+	"github.com/wh-studio/herdr-client/internal/agenthooks"
 	"github.com/wh-studio/herdr-client/internal/app"
 	"github.com/wh-studio/herdr-client/internal/apphook"
 	"github.com/wh-studio/herdr-client/internal/commandcenter"
@@ -153,6 +154,10 @@ type Shell struct {
 
 	// integrations owns the Providers/Integrations health presentation state.
 	integrations integrationUIState
+
+	// hookDoctor owns the direct-connect Agent Hook audit/install state on
+	// the same Providers page (audit on entry/refresh/after-action only).
+	hookDoctor hookDoctorUIState
 
 	// launch drives the Agent launch transaction over the verified Herdr
 	// transport (history continuation, live handoff, follow-up queue).
@@ -450,6 +455,7 @@ func NewShell(opts ...ShellOption) *Shell {
 	s.settingsGitPromptDraft = commitPromptPreference(s.settings.Workbench.CommitPrompt)
 	s.settingsPiBinaryDraft = s.settings.Workbench.PiExecutable
 	s.integrations.service = agent.NewIntegrationHealthService()
+	s.hookDoctor.service = agenthooks.NewManager()
 	s.launch = app.NewLaunchService(s.runtime)
 	s.interactionBroker = conversation.NewInteractionBroker(nil)
 	s.portProbe = services.NewPortProbe()
