@@ -50,7 +50,7 @@ CUA 绑定：`cua.getApp("Shardlane")`（bundle `com.whstudio.shardlane.next`）
 
 1. Workspace：Terminal/Changes 双表面切换、面包屑、pane 头按钮、⌘B 侧栏、右面板三标签（Changes/Files/Services）；
 2. History：列表 → 详情（键盘 Down 可开）→ By Project；注意标题/描述重复、截断无 tooltip、空卡片；
-3. Status Center（badge）/ New Task（⇧⌘N）/ Chat / Settings 五个 section / Providers / Runtime / Diagnostics；
+3. Status Center（badge）/ New Task（⇧⌘N）/ Chat / Settings 五个 section（General / Terminal / Agents / Git / Diagnostics）；
 4. ⌘K 与 ⌘⇧P（同一弹层）：空查询、过滤、结果行 AX 角色；
 5. Go 菜单逐项（AX 点 menu bar）；
 6. 终端查找条 ⌘F：空查询计数、流式窗格搜索；
