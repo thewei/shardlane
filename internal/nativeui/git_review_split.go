@@ -2,7 +2,7 @@ package nativeui
 
 /**
  * [INPUT]: Git commit/file selections, staged/unstaged tree, existing Godiff and Commit modal
- * [OUTPUT]: Fork-style Local Changes dual columns and All Commits history-over-review
+ * [OUTPUT]: Fork-style Local Changes dual columns and All Commits history-over-review; the file navigator closes by itself in a narrow center, and a toolbar toggle brings it back
  * [POS]: Single native Git workspace surface; Herdr/runtime and Git mutations keep their owners
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -21,6 +21,10 @@ const (
 	gitFilePaneDefaultWidth float32 = 292
 	gitFilePaneMinWidth     float32 = 205
 	gitFileSplitterWidth    float32 = 6
+	// gitFilePaneCollapseBelow is the width of the center (the window less
+	// the sidebar) under which the file navigator closes by itself: open at
+	// its default width, it would leave the diff under ~450 px.
+	gitFilePaneCollapseBelow float32 = 750
 )
 
 // gitSplitReviewSurface intentionally has two different spatial hierarchies:
@@ -84,11 +88,57 @@ func (s *Shell) gitFilePaneLimits(windowW float32) (width, maxWidth float32) {
 	return clampF(width, gitFilePaneMinWidth, maxWidth), maxWidth
 }
 
+// gitCenterWidth is the room the Git surface shares between its file
+// navigator and its diff: the window less the sidebar, when it shows.
+func (s *Shell) gitCenterWidth(windowW float32) float32 {
+	if s.sidebarCollapsed {
+		return windowW
+	}
+	return windowW - sidebarWidth
+}
+
+// gitFilePaneOpen tells whether the file navigator shows in a window this
+// wide. A narrow center closes it by itself, to give the diff its width. The
+// user's say is kept per width class: they open it in a narrow window, and
+// close it in a wide one.
+func (s *Shell) gitFilePaneOpen(windowW float32) bool {
+	if s.gitCenterWidth(windowW) < gitFilePaneCollapseBelow {
+		return s.gitFilePaneOpenNarrow
+	}
+	return !s.gitFilePaneClosedWide
+}
+
+// toggleGitFilePane opens or closes the navigator in the width class the
+// window is in.
+func (s *Shell) toggleGitFilePane(windowW float32) {
+	if s.gitCenterWidth(windowW) < gitFilePaneCollapseBelow {
+		s.gitFilePaneOpenNarrow = !s.gitFilePaneOpenNarrow
+	} else {
+		s.gitFilePaneClosedWide = !s.gitFilePaneClosedWide
+	}
+}
+
+// gitFilePaneToggle is the toolbar button that shows or hides the navigator.
+func (s *Shell) gitFilePaneToggle(c *ui.Context) {
+	windowW, _ := c.Size()
+	label := "Show file list"
+	if s.gitFilePaneOpen(windowW) {
+		label = "Hide file list"
+	}
+	if gdIconButton(c, iconPanel, label).Clicked() {
+		s.toggleGitFilePane(windowW)
+	}
+}
+
 // gitFileNavigationColumn is the reusable resize seam for the middle-left
 // file tree. It does not reuse (or compete with) the app's Git reference rail.
+// Closed, it leaves the whole width to the diff beside it.
 func (s *Shell) gitFileNavigationColumn(c *ui.Context, body func()) {
 	t := c.Theme()
 	windowW, _ := c.Size()
+	if !s.gitFilePaneOpen(windowW) {
+		return
+	}
 	width, maxWidth := s.gitFilePaneLimits(windowW)
 	ui.Column(c).Width(width).FillHeight().Shrink(0).MinHeight(0).Children(body)
 	handle := ui.Box(c).Width(gitFileSplitterWidth).Shrink(0).Cursor(ui.CursorResizeEW).
@@ -207,6 +257,10 @@ func (s *Shell) gitCommitReview(c *ui.Context) {
 				if btn.Clicked() {
 					s.gitLowerTab = i
 				}
+			}
+			if s.gitLowerTab == 1 {
+				ui.Spacer(c)
+				s.gitFilePaneToggle(c)
 			}
 		})
 		if cm := s.git.commitMeta; cm != nil {

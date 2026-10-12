@@ -24,10 +24,12 @@ func gdHeaderShell(t *testing.T) *Shell {
 	return shell
 }
 
-// At ~900 px with the sidebar and the file navigator open, the card is about
+// At ~900 px with the sidebar and the file navigator open (a window this
+// narrow closes the navigator until the user opens it), the card is about
 // 330 px wide: the header must spend it on the name, not on tools.
 func TestDiffHeaderKeepsItsFileNameWhenNarrow(t *testing.T) {
 	shell := gdHeaderShell(t)
+	shell.gitFilePaneOpenNarrow = true
 	tester := ui.NewTester(shell.View, 900, 800)
 	tester.Frame()
 
@@ -79,7 +81,8 @@ func TestDiffHeaderKeepsEveryControlWhenWide(t *testing.T) {
 }
 
 // The card's width follows the window, the sidebar and the navigator, and the
-// navigator can be dragged wider.
+// navigator can be dragged wider. A narrow center has no navigator to
+// subtract until the user opens it.
 func TestGdCardWidth(t *testing.T) {
 	shell := gdHeaderShell(t)
 	var ctxWidth float32
@@ -105,5 +108,17 @@ func TestGdCardWidth(t *testing.T) {
 	ui.NewTester(probe, 1340, 800).Frame()
 	if ctxWidth != want-(400-gitFilePaneDefaultWidth) {
 		t.Fatalf("with a wider navigator the card width = %v, want %v", ctxWidth, want-(400-gitFilePaneDefaultWidth))
+	}
+
+	shell.gitFilePaneWidth = gitFilePaneDefaultWidth
+	ui.NewTester(probe, 900, 800).Frame()
+	if want := float32(900 - sidebarWidth - 2*gdListMargin); ctxWidth != want {
+		t.Fatalf("a narrow window closes the navigator: card width = %v, want %v", ctxWidth, want)
+	}
+
+	shell.gitFilePaneOpenNarrow = true
+	ui.NewTester(probe, 900, 800).Frame()
+	if want := float32(900 - sidebarWidth - gitFilePaneDefaultWidth - gitFileSplitterWidth - 2*gdListMargin); ctxWidth != want {
+		t.Fatalf("a narrow window with the navigator opened: card width = %v, want %v", ctxWidth, want)
 	}
 }

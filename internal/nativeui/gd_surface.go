@@ -284,14 +284,15 @@ const gdListMargin float32 = 12
 const gdHeaderRoomy float32 = 560
 
 // gdColumnWidth is the width of the diff column: the window less the sidebar
-// and the file navigator beside it, with its splitter.
+// and, when it is open, the file navigator beside it with its splitter.
 func (s *Shell) gdColumnWidth(c *ui.Context) float32 {
-	width, _ := c.Size()
-	pane, _ := s.gitFilePaneLimits(width)
-	if !s.sidebarCollapsed {
-		width -= sidebarWidth
+	windowW, _ := c.Size()
+	width := s.gitCenterWidth(windowW)
+	if s.gitFilePaneOpen(windowW) {
+		pane, _ := s.gitFilePaneLimits(windowW)
+		width -= pane + gitFileSplitterWidth
 	}
-	return width - pane - gitFileSplitterWidth
+	return width
 }
 
 // gdCardWidth is the width of a file card: the column less the list's margins.

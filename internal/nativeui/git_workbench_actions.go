@@ -45,6 +45,9 @@ func (s *Shell) gitWorkbenchActionBar(c *ui.Context) {
 	// room the toolbar really has, wherever the navigator was dragged to.
 	compact := s.gdColumnWidth(c) < gitActionBarMinExpandedCenterWidth
 	ui.Row(c).FillWidth().MinWidth(0).Gap(sp.S).AlignItems(ui.Center).Children(func() {
+		// The navigator closes by itself in a narrow window; the button at
+		// the diff's edge is how it comes back.
+		s.gitFilePaneToggle(c)
 		// The branch selector already lives in the repo bar. Don't render
 		// the same branch label a second time in the Diff toolbar.
 		stage, unstage := gitActionPaths(snap)

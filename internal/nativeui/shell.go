@@ -263,6 +263,10 @@ type Shell struct {
 	gitQuickBody         string
 	gitQuickAmend        bool
 	gitCommitFilesFilter string
+	// The file navigator closes by itself in a narrow center; the user's
+	// say over it is kept per width class (see gitFilePaneOpen).
+	gitFilePaneOpenNarrow bool
+	gitFilePaneClosedWide bool
 	// The Git reference tree is a presentation projection, scoped to the bound repo.
 	gitTreeClosed   map[string]bool
 	gitRefsFilter   string

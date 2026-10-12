@@ -77,11 +77,13 @@ func TestGitFilterEmptyStateCanRecover(t *testing.T) {
 	}
 }
 
-// With both rails open at ~900 px the clean surface's column is ~350 px: the
+// With both rails open at ~900 px (a window this narrow closes the navigator
+// until the user opens it) the clean surface's column is ~350 px: the
 // message must keep reading as words and the actions drop below it, instead of
 // the text being squeezed into a column of single letters beside the buttons.
 func TestCleanGitSurfaceKeepsItsMessageReadableWhenNarrow(t *testing.T) {
 	s := gitSurfaceTestShell(t, t.TempDir())
+	s.gitFilePaneOpenNarrow = true
 	s.git.rootOf[s.git.root] = s.git.root
 	s.git.snapshot = &gitworkbench.ChangesSnapshot{
 		Root: s.git.root, Branch: "main", Signature: "clean", Files: nil,

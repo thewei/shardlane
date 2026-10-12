@@ -2,7 +2,7 @@ package nativeui
 
 /**
  * [INPUT]: Headless MyGo Git page, repository ref fixtures and native pointer events
- * [OUTPUT]: Git tree grouping, center split geometry and commit review regression tests
+ * [OUTPUT]: Git tree grouping, center split geometry, file navigator auto-close and commit review regression tests
  * [POS]: Presentation contract tests for screenshot-inspired Changes layout
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -93,11 +93,13 @@ func TestGitSidebarTreeAndCenterSplitGeometry(t *testing.T) {
 }
 
 // TestGitSplitSmallWindow checks the local horizontal layout and the
-// historical vertical layout at the minimum supported size.
+// historical vertical layout at the minimum supported size, with the file
+// navigator open (a narrow window closes it until the user opens it).
 func TestGitSplitSmallWindow(t *testing.T) {
 	s := gitSurfaceTestShell(t, t.TempDir())
 	s.git.rootOf[s.git.root] = s.git.root
 	s.git.refreshing = true
+	s.gitFilePaneOpenNarrow = true
 	s.showSurface(WorkspaceSurfaceDiff)
 	s.rebuildDiffRows()
 	tester := ui.NewTester(s.View, 960, 640)
@@ -127,6 +129,118 @@ func TestGitSplitSmallWindow(t *testing.T) {
 	handle, ok = tester.Find("Resize Git history and diff panes")
 	if !ok || handle.Y+gitSplitMinBottom > 640 {
 		t.Fatalf("history swallowed diff region: %+v", handle)
+	}
+}
+
+// Beside a 252 px sidebar, a 292 px navigator leaves a 900 px window's diff
+// 350 px: the navigator closes by itself there, and a toolbar button brings
+// it back. The user's choice is kept per width class, so opening it in a
+// narrow window does not undo hiding it in a wide one.
+func TestGitFileNavigatorClosesByItselfInANarrowWindow(t *testing.T) {
+	s := gitSurfaceTestShell(t, t.TempDir())
+	s.git.rootOf[s.git.root] = s.git.root
+	s.git.refreshing = true
+	s.showSurface(WorkspaceSurfaceDiff)
+	s.rebuildDiffRows()
+
+	const navigator = "Resize Git file navigator"
+	open := func(w int) bool {
+		tt := ui.NewTester(s.View, w, 700)
+		tt.Frame()
+		_, ok := tt.Find(navigator)
+		return ok
+	}
+	press := func(w int, label string) {
+		t.Helper()
+		tt := ui.NewTester(s.View, w, 700)
+		tt.Frame()
+		if err := tt.Click(label); err != nil {
+			t.Fatalf("%dpx: %v (texts %q)", w, err, tt.Texts())
+		}
+	}
+
+	if open(900) {
+		t.Fatal("the file navigator stays open in a 900 px window")
+	}
+	if !open(1340) {
+		t.Fatal("the file navigator is closed in a 1340 px window")
+	}
+
+	press(900, "Show file list")
+	if !open(900) {
+		t.Fatal("Show file list did not open the navigator in a narrow window")
+	}
+	press(900, "Hide file list")
+	if open(900) {
+		t.Fatal("Hide file list did not close the navigator again")
+	}
+
+	press(1340, "Hide file list")
+	if open(1340) {
+		t.Fatal("Hide file list did not close the navigator in a wide window")
+	}
+	press(900, "Show file list")
+	if open(1340) {
+		t.Fatal("opening the navigator in a narrow window reopened it in a wide one")
+	}
+	press(1340, "Show file list")
+	if !open(1340) || !open(900) {
+		t.Fatalf("each width class keeps its own choice: wide=%v narrow=%v", open(1340), open(900))
+	}
+}
+
+// The sidebar's width is not the diff's to use when it is hidden: the same
+// 900 px window keeps the navigator once the sidebar is out of the way.
+func TestGitFileNavigatorJudgesTheCenterNotTheWindow(t *testing.T) {
+	s := gitSurfaceTestShell(t, t.TempDir())
+	s.git.rootOf[s.git.root] = s.git.root
+	s.git.refreshing = true
+	s.showSurface(WorkspaceSurfaceDiff)
+	s.rebuildDiffRows()
+
+	s.sidebarCollapsed = true
+	tt := ui.NewTester(s.View, 900, 700)
+	tt.Frame()
+	if _, ok := tt.Find("Resize Git file navigator"); !ok {
+		t.Fatalf("a 900 px center closed the navigator: %q", tt.Texts())
+	}
+}
+
+// A commit review has the same navigator beside its diff, and the same rule.
+func TestGitCommitReviewNavigatorClosesInANarrowWindow(t *testing.T) {
+	root := t.TempDir()
+	s := gitSurfaceTestShell(t, root)
+	s.git.rootOf[root] = root
+	s.git.refreshing = true
+	cm := gitworkbench.CommitInfo{Hash: "0123456789abcdef0123456789abcdef01234567", Short: "0123456", Subject: "Add split review", Author: "Example", Time: time.Now()}
+	s.git.commits = []gitworkbench.CommitInfo{cm}
+	s.showSurface(WorkspaceSurfaceDiff)
+	s.commitsMode = true
+	s.git.source = gdSourceCommit
+	s.git.commitHash = cm.Hash
+	commitSnap := *s.git.snapshot
+	s.git.commitSnap = &commitSnap
+	s.git.commitMeta = &cm
+	s.git.gdFilesFor = nil
+	s.rebuildDiffRows()
+
+	narrow := ui.NewTester(s.View, 900, 800)
+	narrow.Frame()
+	if _, ok := narrow.Find("Resize Git file navigator"); ok {
+		t.Fatal("the commit review's navigator stays open in a 900 px window")
+	}
+	if err := narrow.Click("Show file list"); err != nil {
+		t.Fatalf("a closed commit navigator offers no way back: %v (texts %q)", err, narrow.Texts())
+	}
+	narrow.Frame()
+	if _, ok := narrow.Find("Resize Git file navigator"); !ok {
+		t.Fatal("Show file list did not open the commit review's navigator")
+	}
+
+	wide := ui.NewTester(s.View, 1340, 800)
+	wide.Frame()
+	if _, ok := wide.Find("Resize Git file navigator"); !ok {
+		t.Fatal("the commit review's navigator is closed in a 1340 px window")
 	}
 }
 
