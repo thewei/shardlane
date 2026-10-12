@@ -1,3 +1,5 @@
+//go:build !js
+
 package e2e
 
 import (
@@ -169,7 +171,9 @@ func TestPopoverFlyout(t *testing.T) {
 
 // TestFlyoutToggle opens a focusable flyout from a button of its parent,
 // and closes it with a second click on the button, which the closing
-// does not turn into opening it again.
+// does not turn into opening it again: quick, or held as a user clicks,
+// whose press closes the flyout before the release would click the button
+// where the press goes on (macOS) but for the flyout's anchor.
 func TestFlyoutToggle(t *testing.T) {
 	var parent, fl *mygo.Window // main thread only
 	opened := make(chan struct{}, 4)
@@ -208,18 +212,26 @@ func TestFlyoutToggle(t *testing.T) {
 	parent.Focus()
 	eventually(t, "the parent focused", parent.IsFocused)
 	// The button lays out at the top-left of the window.
-	if !appClick(parent, 60, 15) {
-		t.Skip("clicks not available on this platform")
-	}
-	wait(opened, "the flyout opened")
-	time.Sleep(300 * time.Millisecond)
-	appClick(parent, 60, 15)
-	wait(closed, "the flyout closed")
-	time.Sleep(500 * time.Millisecond)
-	select {
-	case <-opened:
-		t.Error("the click that closed the flyout opened it again")
-	default:
+	for i, closing := range []func(*mygo.Window, float64, float64) bool{heldAppClick, appClick} {
+		if !appClick(parent, 60, 15) {
+			t.Skip("clicks not available on this platform")
+		}
+		wait(opened, "the flyout opened")
+		time.Sleep(300 * time.Millisecond)
+		select {
+		case <-closed:
+			// It closes as another app takes the keyboard.
+			t.Fatal("the flyout closed before the click that closes it: was the app deactivated?")
+		default:
+		}
+		closing(parent, 60, 15)
+		wait(closed, "the flyout closed")
+		time.Sleep(500 * time.Millisecond)
+		select {
+		case <-opened:
+			t.Fatalf("the click that closed the flyout opened it again (held %v)", i == 0)
+		default:
+		}
 	}
 }
 

@@ -1,5 +1,7 @@
 # Progress bar
 
+<!-- preview progress 180 -->
+
 `ui.Progress` creates a progress bar filled to a value between 0 and 1; a
 negative value shows activity of unknown length, a segment sliding across.
 

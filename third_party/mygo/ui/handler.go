@@ -38,10 +38,14 @@ const (
 
 // InputEvent is input an element takes as it comes (HandleInput).
 type InputEvent struct {
-	Kind   InputKind
-	Key    Key
-	Mods   Modifiers
-	Repeat bool
+	Kind InputKind
+	Key  Key
+	// PhysicalKey is Key by position on an ANSI US keyboard, whatever the
+	// layout types: the S key is KeyS on a Cyrillic layout too, where Key
+	// is KeyUnknown. KeyUnknown where the platform does not report it.
+	PhysicalKey Key
+	Mods        Modifiers
+	Repeat      bool
 	// Text of InputText, InputCompose and InputCommand, and Caret the
 	// rune of an InputCompose's caret.
 	Text  string
@@ -52,7 +56,7 @@ type InputEvent struct {
 	// middle.
 	Button int
 	Clicks int
-	// DX and DY are what InputScroll scrolls by; positive DY moves the view
+	// DX and DY are what InputScroll scrolls by, in local axes; positive DY moves the view
 	// down the content.
 	DX, DY  float32
 	Precise bool
@@ -101,7 +105,10 @@ func (rt *engine) deliver(s *state, ev InputEvent) bool {
 	if s == nil || s.input == nil {
 		return false
 	}
-	ev.X, ev.Y = rt.pointerX-s.x, rt.pointerY-s.y
+	ev.X, ev.Y = s.local(rt.pointerX, rt.pointerY)
+	if ev.Kind == InputScroll {
+		ev.DX, ev.DY = s.vector(rt.pointerX, rt.pointerY, ev.DX, ev.DY)
+	}
 	if !s.input(ev) {
 		return false
 	}

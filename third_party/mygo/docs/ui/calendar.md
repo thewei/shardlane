@@ -1,5 +1,7 @@
 # Calendar
 
+<!-- preview calendar 340 -->
+
 `ui.Calendar` creates a month's calendar choosing the day of a
 `*time.Time`, as SwiftUI's graphical date picker: a click chooses a day, as
 the arrows do while the calendar has the keyboard focus; Page Up and Page

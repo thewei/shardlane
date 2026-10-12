@@ -1,13 +1,15 @@
-//go:build linux && (amd64 || arm64)
+//go:build (linux && (amd64 || arm64)) || js
 
-// Package gl draws scenes with OpenGL 3.3 or OpenGL ES 3.0 into the
-// framebuffer bound when Render is called: the one GTK's GtkGLArea binds
-// while it emits its render signal. Every op of a scene is an instanced
+// Package gl draws scenes with OpenGL 3.3, OpenGL ES 3.0 or WebGL 2 into
+// the framebuffer bound when Render is called: the one GTK's GtkGLArea
+// binds while it emits its render signal, or a canvas's (package web). Every op of a scene is an instanced
 // quad drawn by one shader (shader.glsl, compiled when the renderer
 // starts), from the instances package gpu builds; clips are scissor
 // rectangles, with the innermost rounded clip computed in the shader, as
-// in packages d3d11 and metal. GL functions come from libepoxy, which GTK
-// resolves its own through, called with purego (no cgo).
+// in packages d3d11 and metal. GL functions come from libepoxy on Linux,
+// which GTK resolves its own through, called with purego (no cgo), and
+// from the current WebGL 2 context in browsers (load_js.go), through
+// syscall/js.
 package gl
 
 import (
@@ -16,10 +18,7 @@ import (
 	"image"
 	"os"
 	"strings"
-	"sync"
 	"unsafe"
-
-	"github.com/ebitengine/purego"
 
 	"github.com/egoist/mygo/internal/gpu"
 	"github.com/egoist/mygo/internal/scene"
@@ -90,193 +89,6 @@ const (
 	glNearest            = 0x2600
 	glNoError            = 0
 )
-
-// The functions of libepoxy and GL this package calls.
-var (
-	loadOnce sync.Once
-	errLoad  error
-
-	epoxyGLVersion    func() int32
-	epoxyIsDesktopGL  func() bool
-	epoxyHasExtension func(name string) bool
-	currentGDKContext func() uintptr // gdk_gl_context_get_current, when GDK is loaded
-
-	glGetString             func(name uint32) uintptr
-	glGetError              func() uint32
-	glGetIntegerv           func(name uint32, data *int32)
-	glCreateShader          func(typ uint32) uint32
-	glShaderSource          func(shader uint32, count int32, sources **byte, lengths *int32)
-	glCompileShader         func(shader uint32)
-	glGetShaderiv           func(shader, name uint32, out *int32)
-	glGetShaderInfoLog      func(shader uint32, size int32, length *int32, log *byte)
-	glDeleteShader          func(shader uint32)
-	glCreateProgram         func() uint32
-	glAttachShader          func(program, shader uint32)
-	glLinkProgram           func(program uint32)
-	glGetProgramiv          func(program, name uint32, out *int32)
-	glGetProgramInfoLog     func(program uint32, size int32, length *int32, log *byte)
-	glUseProgram            func(program uint32)
-	glDeleteProgram         func(program uint32)
-	glGetUniformLocation    func(program uint32, name string) int32
-	glUniform1i             func(location, v int32)
-	glUniform2f             func(location int32, x, y float32)
-	glUniform1f             func(location int32, v float32)
-	glUniform2i             func(location, x, y int32)
-	glCopyTexSubImage2D     func(target uint32, level, xoff, yoff, x, y, w, h int32)
-	glGenVertexArrays       func(n int32, out *uint32)
-	glBindVertexArray       func(array uint32)
-	glDeleteVertexArrays    func(n int32, arrays *uint32)
-	glGenBuffers            func(n int32, out *uint32)
-	glBindBuffer            func(target, buffer uint32)
-	glBufferData            func(target uint32, size int, data unsafe.Pointer, usage uint32)
-	glDeleteBuffers         func(n int32, buffers *uint32)
-	glEnableVertexAttrib    func(index uint32)
-	glVertexAttribPointer   func(index uint32, size int32, typ uint32, normalized bool, stride int32, offset uintptr)
-	glVertexAttribDivisor   func(index, divisor uint32)
-	glGenTextures           func(n int32, out *uint32)
-	glBindTexture           func(target, texture uint32)
-	glActiveTexture         func(unit uint32)
-	glTexImage2D            func(target uint32, level, internalFormat, w, h, border int32, format, typ uint32, pix unsafe.Pointer)
-	glTexSubImage2D         func(target uint32, level, x, y, w, h int32, format, typ uint32, pix unsafe.Pointer)
-	glTexParameteri         func(target, name uint32, v int32)
-	glDeleteTextures        func(n int32, textures *uint32)
-	glPixelStorei           func(name uint32, v int32)
-	glViewport              func(x, y, w, h int32)
-	glScissor               func(x, y, w, h int32)
-	glEnable                func(cap uint32)
-	glDisable               func(cap uint32)
-	glBlendFunc             func(src, dst uint32)
-	glBlendFuncSeparate     func(srcRGB, dstRGB, srcAlpha, dstAlpha uint32)
-	glClearColor            func(r, g, b, a float32)
-	glClear                 func(mask uint32)
-	glDrawArraysInstanced   func(mode uint32, first, count, instances int32)
-	glReadPixels            func(x, y, w, h int32, format, typ uint32, pix unsafe.Pointer)
-	glGenFramebuffers       func(n int32, out *uint32)
-	glBindFramebuffer       func(target, fb uint32)
-	glFramebufferTexture2D  func(target, attachment, texTarget, texture uint32, level int32)
-	glCheckFramebufferState func(target uint32) uint32
-	glDeleteFramebuffers    func(n int32, fbs *uint32)
-	glBlitFramebuffer       func(sx0, sy0, sx1, sy1, dx0, dy0, dx1, dy1 int32, mask, filter uint32)
-)
-
-func load() error {
-	loadOnce.Do(func() {
-		lib, err := purego.Dlopen("libepoxy.so.0", purego.RTLD_NOW|purego.RTLD_GLOBAL)
-		if err != nil {
-			errLoad = fmt.Errorf("gl: cannot load libepoxy: %w", err)
-			return
-		}
-		var missing []string
-		fn := func(f any, name string) {
-			sym, err := purego.Dlsym(lib, name)
-			if err != nil || sym == 0 {
-				missing = append(missing, name)
-				return
-			}
-			purego.RegisterFunc(f, sym)
-		}
-		// libepoxy exports a pointer for each GL function, to a stub that
-		// finds the function of the current context when first called.
-		gl := func(f any, name string) {
-			sym, err := purego.Dlsym(lib, "epoxy_"+name)
-			if err != nil || sym == 0 {
-				missing = append(missing, name)
-				return
-			}
-			purego.RegisterFunc(f, **(**uintptr)(unsafe.Pointer(&sym)))
-		}
-		fn(&epoxyGLVersion, "epoxy_gl_version")
-		fn(&epoxyIsDesktopGL, "epoxy_is_desktop_gl")
-		fn(&epoxyHasExtension, "epoxy_has_gl_extension")
-		gl(&glGetString, "glGetString")
-		gl(&glGetError, "glGetError")
-		gl(&glGetIntegerv, "glGetIntegerv")
-		gl(&glCreateShader, "glCreateShader")
-		gl(&glShaderSource, "glShaderSource")
-		gl(&glCompileShader, "glCompileShader")
-		gl(&glGetShaderiv, "glGetShaderiv")
-		gl(&glGetShaderInfoLog, "glGetShaderInfoLog")
-		gl(&glDeleteShader, "glDeleteShader")
-		gl(&glCreateProgram, "glCreateProgram")
-		gl(&glAttachShader, "glAttachShader")
-		gl(&glLinkProgram, "glLinkProgram")
-		gl(&glGetProgramiv, "glGetProgramiv")
-		gl(&glGetProgramInfoLog, "glGetProgramInfoLog")
-		gl(&glUseProgram, "glUseProgram")
-		gl(&glDeleteProgram, "glDeleteProgram")
-		gl(&glGetUniformLocation, "glGetUniformLocation")
-		gl(&glUniform1i, "glUniform1i")
-		gl(&glUniform2f, "glUniform2f")
-		gl(&glUniform1f, "glUniform1f")
-		gl(&glUniform2i, "glUniform2i")
-		gl(&glCopyTexSubImage2D, "glCopyTexSubImage2D")
-		gl(&glGenVertexArrays, "glGenVertexArrays")
-		gl(&glBindVertexArray, "glBindVertexArray")
-		gl(&glDeleteVertexArrays, "glDeleteVertexArrays")
-		gl(&glGenBuffers, "glGenBuffers")
-		gl(&glBindBuffer, "glBindBuffer")
-		gl(&glBufferData, "glBufferData")
-		gl(&glDeleteBuffers, "glDeleteBuffers")
-		gl(&glEnableVertexAttrib, "glEnableVertexAttribArray")
-		gl(&glVertexAttribPointer, "glVertexAttribPointer")
-		gl(&glVertexAttribDivisor, "glVertexAttribDivisor")
-		gl(&glGenTextures, "glGenTextures")
-		gl(&glBindTexture, "glBindTexture")
-		gl(&glActiveTexture, "glActiveTexture")
-		gl(&glTexImage2D, "glTexImage2D")
-		gl(&glTexSubImage2D, "glTexSubImage2D")
-		gl(&glTexParameteri, "glTexParameteri")
-		gl(&glDeleteTextures, "glDeleteTextures")
-		gl(&glPixelStorei, "glPixelStorei")
-		gl(&glViewport, "glViewport")
-		gl(&glScissor, "glScissor")
-		gl(&glEnable, "glEnable")
-		gl(&glDisable, "glDisable")
-		gl(&glBlendFunc, "glBlendFunc")
-		gl(&glBlendFuncSeparate, "glBlendFuncSeparate")
-		gl(&glClearColor, "glClearColor")
-		gl(&glClear, "glClear")
-		gl(&glDrawArraysInstanced, "glDrawArraysInstanced")
-		gl(&glReadPixels, "glReadPixels")
-		gl(&glGenFramebuffers, "glGenFramebuffers")
-		gl(&glBindFramebuffer, "glBindFramebuffer")
-		gl(&glFramebufferTexture2D, "glFramebufferTexture2D")
-		gl(&glCheckFramebufferState, "glCheckFramebufferStatus")
-		gl(&glDeleteFramebuffers, "glDeleteFramebuffers")
-		gl(&glBlitFramebuffer, "glBlitFramebuffer")
-		if len(missing) > 0 {
-			errLoad = fmt.Errorf("gl: libepoxy lacks %s", strings.Join(missing, ", "))
-			return
-		}
-		// GDK is loaded in apps, where its context tells when GTK
-		// realized the area again; tests make contexts of their own.
-		if sym, err := purego.Dlsym(purego.RTLD_DEFAULT, "gdk_gl_context_get_current"); err == nil && sym != 0 {
-			purego.RegisterFunc(&currentGDKContext, sym)
-		}
-	})
-	return errLoad
-}
-
-func currentContext() uintptr {
-	if currentGDKContext == nil {
-		return 0
-	}
-	return currentGDKContext()
-}
-
-func goString(p uintptr) string {
-	if p == 0 {
-		return ""
-	}
-	var b []byte
-	for i := uintptr(0); ; i++ {
-		c := *(*byte)(unsafe.Add(*(*unsafe.Pointer)(unsafe.Pointer(&p)), i))
-		if c == 0 {
-			return string(b)
-		}
-		b = append(b, c)
-	}
-}
 
 type texture struct {
 	tex       uint32
@@ -351,15 +163,15 @@ func New() (*Renderer, error) {
 
 // init creates the program, buffers and textures in the current context.
 func (r *Renderer) init() error {
-	version := epoxyGLVersion()
-	r.es = !epoxyIsDesktopGL()
+	version, es := contextVersion()
+	r.es = es
 	if r.es && version < 30 || !r.es && version < 33 {
-		return fmt.Errorf("gl: OpenGL %d.%d is too old (%s)", version/10, version%10, goString(glGetString(glVersion)))
+		return fmt.Errorf("gl: OpenGL %d.%d is too old (%s)", version/10, version%10, versionString())
 	}
 	var size int32
 	glGetIntegerv(glMaxTextureSize, &size)
 	r.maxSize = int(size)
-	r.dual = !r.es || epoxyHasExtension("GL_EXT_blend_func_extended")
+	r.dual = !r.es || hasExtension("GL_EXT_blend_func_extended")
 	header := "#version 330 core\n#define DUAL\n"
 	if r.es {
 		header = "#version 300 es\n"
@@ -385,13 +197,14 @@ func (r *Renderer) init() error {
 	glLinkProgram(r.program)
 	var ok int32
 	if glGetProgramiv(r.program, glLinkStatus, &ok); ok == 0 {
-		return fmt.Errorf("gl: cannot link the shader: %s", infoLog(r.program, glGetProgramiv, glGetProgramInfoLog))
+		return fmt.Errorf("gl: cannot link the shader: %s", programLog(r.program))
 	}
 	glUseProgram(r.program)
 	r.uSize = glGetUniformLocation(r.program, "uSize")
 	glUniform1i(glGetUniformLocation(r.program, "uMask"), 0)
 	glUniform1i(glGetUniformLocation(r.program, "uColor"), 1)
 	glUniform1i(glGetUniformLocation(r.program, "uImage"), 2)
+	glUniform1i(glGetUniformLocation(r.program, "uClipMask"), 4)
 	glUseProgram(0)
 	if r.down, err = passLink(header, "DOWN"); err != nil {
 		return err
@@ -401,7 +214,7 @@ func (r *Renderer) init() error {
 	}
 	glGenVertexArrays(1, &r.passVAO)
 
-	// The instance buffer feeds eleven float4 attributes per instance;
+	// The instance buffer feeds fourteen float4 attributes per instance;
 	// draws point them at their batch's instances.
 	glGenVertexArrays(1, &r.vao)
 	glGenBuffers(1, &r.buf)
@@ -442,6 +255,7 @@ func (r *Renderer) effectProgram(e *scene.Effect) *effectProgram {
 	glUseProgram(p.program)
 	p.uSize = glGetUniformLocation(p.program, "uSize")
 	glUniform1i(glGetUniformLocation(p.program, "uBackdrop"), 3)
+	glUniform1i(glGetUniformLocation(p.program, "uClipMask"), 4)
 	return p
 }
 
@@ -463,7 +277,7 @@ func link(vertex, fragment string) (uint32, error) {
 	glLinkProgram(program)
 	var ok int32
 	if glGetProgramiv(program, glLinkStatus, &ok); ok == 0 {
-		err := fmt.Errorf("gl: cannot link the shader: %s", infoLog(program, glGetProgramiv, glGetProgramInfoLog))
+		err := fmt.Errorf("gl: cannot link the shader: %s", programLog(program))
 		glDeleteProgram(program)
 		return 0, err
 	}
@@ -489,7 +303,7 @@ func passLink(header, name string) (passProgram, error) {
 	glLinkProgram(p.program)
 	var ok int32
 	if glGetProgramiv(p.program, glLinkStatus, &ok); ok == 0 {
-		err := fmt.Errorf("gl: cannot link the %s pass: %s", name, infoLog(p.program, glGetProgramiv, glGetProgramInfoLog))
+		err := fmt.Errorf("gl: cannot link the %s pass: %s", name, programLog(p.program))
 		glDeleteProgram(p.program)
 		return passProgram{}, err
 	}
@@ -511,28 +325,15 @@ const attributes = gpu.InstanceSize / 16
 
 func compile(kind uint32, src string) (uint32, error) {
 	s := glCreateShader(kind)
-	b := append([]byte(src), 0)
-	p := &b[0]
-	glShaderSource(s, 1, &p, nil)
+	setShaderSource(s, src)
 	glCompileShader(s)
 	var ok int32
 	if glGetShaderiv(s, glCompileStatus, &ok); ok == 0 {
-		log := infoLog(s, glGetShaderiv, glGetShaderInfoLog)
+		log := shaderLog(s)
 		glDeleteShader(s)
 		return 0, fmt.Errorf("gl: cannot compile the shader: %s", log)
 	}
 	return s, nil
-}
-
-func infoLog(obj uint32, get func(uint32, uint32, *int32), read func(uint32, int32, *int32, *byte)) string {
-	var n int32
-	get(obj, glInfoLogLength, &n)
-	if n <= 1 {
-		return "no log"
-	}
-	buf := make([]byte, n)
-	read(obj, n, nil, &buf[0])
-	return strings.TrimSpace(string(buf[:n-1]))
 }
 
 func newTexture(internal int32, format uint32, w, h int, pix []byte, stride int) uint32 {
@@ -608,6 +409,10 @@ func (r *Renderer) imageTexture(img *scene.Image) uintptr {
 	if t == nil {
 		t = &texture{tex: newTexture(glRGBA8, glRGBA, img.W, img.H, img.Pix, img.W*4), w: img.W, h: img.H, ver: img.Version()}
 		r.images[img.ID()] = t
+	} else if t.w != img.W || t.h != img.H {
+		glDeleteTextures(1, &t.tex)
+		t.tex = newTexture(glRGBA8, glRGBA, img.W, img.H, img.Pix, img.W*4)
+		t.w, t.h, t.ver = img.W, img.H, img.Version()
 	} else if t.ver != img.Version() {
 		glBindTexture(glTexture2D, t.tex)
 		unpack(img.W*4, glRGBA8)
@@ -652,7 +457,7 @@ func (r *Renderer) draw(s *scene.Scene) error {
 	if err := r.syncAtlas(&r.color, s.ColorAtlas, glRGBA8, glRGBA); err != nil {
 		return err
 	}
-	r.b.Build(s, r.imageTexture)
+	s = r.b.Build(s, r.imageTexture)
 	if err := r.fitBackdrop(); err != nil {
 		return err
 	}
@@ -714,6 +519,9 @@ func (r *Renderer) draw(s *scene.Scene) error {
 			bound = b.Image
 			glBindTexture(glTexture2D, uint32(bound)) // unit 2 is active
 		}
+		glActiveTexture(glTexture0 + 4)
+		glBindTexture(glTexture2D, or(uint32(b.ClipMask), r.empty))
+		glActiveTexture(glTexture0 + 2)
 		// Instances draw from the batch's first: without base instances in
 		// OpenGL ES 3.0, the attributes start there.
 		offset := uintptr(b.Start * gpu.InstanceSize)
@@ -728,7 +536,7 @@ func (r *Renderer) draw(s *scene.Scene) error {
 	// expects it.
 	glDisable(glScissorTest)
 	glDisable(glBlend)
-	for unit := range 4 {
+	for unit := range 5 {
 		glActiveTexture(glTexture0 + uint32(unit))
 		glBindTexture(glTexture2D, 0)
 	}
@@ -754,7 +562,7 @@ func (r *Renderer) bindState(s *scene.Scene) {
 	glUniform2f(r.uSize, float32(s.Width), float32(s.Height))
 	glBindVertexArray(r.vao)
 	glBindBuffer(glArrayBuffer, r.buf)
-	for unit, tex := range [4]uint32{or(r.mask.tex, r.empty), or(r.color.tex, r.empty), r.empty, r.empty} {
+	for unit, tex := range [5]uint32{or(r.mask.tex, r.empty), or(r.color.tex, r.empty), r.empty, r.empty, r.empty} {
 		glActiveTexture(glTexture0 + uint32(unit))
 		glBindTexture(glTexture2D, tex)
 	}
@@ -886,6 +694,7 @@ func (r *Renderer) forget() {
 // Release deletes the renderer's objects when its context is current, and
 // otherwise leaves them to the context, which deletes them with itself.
 func (r *Renderer) Release() {
+	r.b.Release()
 	if errLoad != nil || currentContext() != r.context {
 		r.forget()
 		return

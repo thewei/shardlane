@@ -82,8 +82,10 @@ type FlyoutOptions struct {
 	// hear it, and may keep it open, except on Wayland, whose compositor
 	// dismisses it. On Linux and Windows the press only closes it, as it
 	// closes their menus; on macOS it goes on to what is under the
-	// pointer. Menus, lists to choose from and popovers are focusable,
-	// and handle their own keys.
+	// pointer, but on Anchor, as AppKit's popovers: so a click on the
+	// button that opened it closes it, and does not open it again.
+	// Menus, lists to choose from and popovers are focusable, and handle
+	// their own keys.
 	//
 	// Without it, the flyout never takes the keyboard, which stays in
 	// the parent, and stays until it is closed: tooltips, hover cards,

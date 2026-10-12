@@ -54,6 +54,11 @@ jobs:
             GOOS=$os go vet -tags mygo_noinspector ./...
           done
           GOOS=freebsd go build ./...
+          # Browsers run native UI; the CLI is for desktops.
+          export GOOS=js GOARCH=wasm
+          go build $(go list -f '{{if .GoFiles}}{{.ImportPath}}{{end}}' ./... | grep -v /cmd/mygo)
+          go vet $(go list ./... | grep -v /cmd/mygo)
+          go test -exec "$(go env GOROOT)/lib/wasm/go_js_wasm_exec" ./internal/web ./internal/gpu/gl
       # The installer tests download NSIS on Windows; keeping it in the cache
       # spares them the download, and the hosts it comes from.
       - name: Restore NSIS

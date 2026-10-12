@@ -203,6 +203,9 @@ func coreToastViewportBase(c *context, fn func(viewport *node, toasts []Toast)) 
 	return toastViewport(c, true, fn)
 }
 
+// toastViewportKey keys the toasts' viewport among what the overlay holds.
+const toastViewportKey = "mygo.toasts"
+
 // toastViewport is ToastViewportBase, which builds no viewport while no
 // toast shows unless keep.
 func toastViewport(c *context, keep bool, fn func(viewport *node, toasts []Toast)) *node {
@@ -242,7 +245,12 @@ func toastViewport(c *context, keep bool, fn func(viewport *node, toasts []Toast
 	rt.toastList = list
 	var viewport *node
 	coreOverlay(c, func() {
-		viewport = coreColumn(c).Absolute().Left(0).Top(0).Right(0).Bottom(0).Justify(End).PassThrough()
+		// Keyed, as an element of the engine's own: in the place of the
+		// overlay's first child, it would take the identity, and so the
+		// hover and the focus, of what a dialog that just closed built
+		// there, and stop the toasts' time as if the pointer rested on
+		// them, until the pointer moved.
+		viewport = coreColumn(c).Key(toastViewportKey).Absolute().Left(0).Top(0).Right(0).Bottom(0).Justify(End).PassThrough()
 		rt.pauseToasts(viewport.Hovered() || viewport.FocusWithin() || !rt.windowFocused, now)
 		viewport.Children(func() { fn(viewport, list) })
 	})

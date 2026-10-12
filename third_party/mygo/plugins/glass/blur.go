@@ -261,6 +261,7 @@ func (px *blurPixels) weight(x, y float32) float32 {
 // sampleRGBA returns the backdrop at (x, y) with its alpha, premultiplied,
 // as BackdropImage.Sample does its color, and the shaders' blurSample.
 func sampleRGBA(b *scene.BackdropImage, x, y float32) [4]float32 {
+	x, y = b.Transform.Point(x, y)
 	k := float32(b.Down)
 	u := (x-float32(b.Area.Min.X))/k - 0.5
 	v := (y-float32(b.Area.Min.Y))/k - 0.5

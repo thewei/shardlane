@@ -61,26 +61,26 @@ func TestCommitAIPromptRequiresPreviewAndExplicitOptIn(t *testing.T) {
 	s.openCommitSurface()
 	tester := ui.NewTester(s.View, 1200, 800)
 	tester.Frame()
-	if tester.HasText("Copy Reviewed AI Prompt") || s.commitPromptIncludeExcerpt {
+	if tester.HasText("Copy Prompt") || s.commitPromptIncludeExcerpt {
 		t.Fatal("AI handoff must not start with a ready-to-copy source prompt")
 	}
-	if err := tester.Click("AI Commit Message…"); err != nil {
+	if err := tester.Click("Draft Commit Message…"); err != nil {
 		t.Fatal(err)
 	}
 	tester.Frame()
-	for _, want := range []string{"AI commit message", "Include code excerpts (explicit opt-in)", "Generate with Pi", "Review prompt"} {
+	for _, want := range []string{"Commit message draft", "Include code excerpts (explicit opt-in)", "Generate with Pi", "Review prompt"} {
 		if !tester.HasText(want) {
 			t.Fatalf("preview lacks %q: %q", want, tester.Texts())
 		}
 	}
-	if s.commitPromptIncludeExcerpt || tester.HasText("Copy Reviewed AI Prompt") {
+	if s.commitPromptIncludeExcerpt || tester.HasText("Copy Prompt") {
 		t.Fatal("AI preview must default to metadata-only and hide raw prompt")
 	}
 	if err := tester.Click("Review prompt"); err != nil {
 		t.Fatal(err)
 	}
 	tester.Frame()
-	if !tester.HasText("Copy Reviewed AI Prompt") {
+	if !tester.HasText("Copy Prompt") {
 		t.Fatal("review disclosure must reveal a copyable, user-inspected prompt")
 	}
 	meta := gitworkbench.PrepareCommitPrompt(s.git.snapshot, s.selectedCommitPaths(), s.commitPromptIncludeExcerpt)
@@ -136,7 +136,7 @@ func TestCommitIsNativeModalWithDraftGuard(t *testing.T) {
 	if !s.commitDialogOpen || s.surface.current() != WorkspaceSurfaceCommit {
 		t.Fatal("Commit editor was not opened as a modal task")
 	}
-	for _, label := range []string{"Commit changes", "Commit subject", "AI Commit Message…", "Cancel Commit"} {
+	for _, label := range []string{"Commit changes", "Commit subject", "Draft Commit Message…", "Cancel Commit"} {
 		if !tester.HasText(label) {
 			t.Fatalf("Commit modal missing %q: %q", label, tester.Texts())
 		}

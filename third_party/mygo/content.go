@@ -46,7 +46,7 @@ func (w *Window) attachContent() {
 				w.native.TitleBarDoubleClicked()
 			}
 		},
-		Escape: w.escape,
+		Escape:        w.escape,
 		IsDark:        func() bool { return backend().Theme().IsDark() },
 		Preferences:   func() platform.Preferences { return backend().Theme().Preferences() },
 		UIFont:        func() string { return backend().Theme().UIFont() },

@@ -1,5 +1,7 @@
 # Find bar
 
+<!-- preview find-bar 200 -->
+
 `ui.FindBar` creates a bar for finding text while a `*bool` is true, as
 Safari's and Xcode's: a field of the query, which takes the focus as the
 bar opens with the last query selected, how many matches there are,

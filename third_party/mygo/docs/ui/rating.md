@@ -1,5 +1,7 @@
 # Rating
 
+<!-- preview rating 110 -->
+
 `ui.Rating` creates a row of stars, as AppKit's rating level indicator, of
 which an `*int` are filled: a click on a star sets the rating, a click on
 the star set clears it, and the arrows, Home and End change it while the

@@ -1,5 +1,7 @@
 # Menu button
 
+<!-- preview menu-button 120 -->
+
 `ui.MenuButton` creates a button showing a label and an arrow, which opens
 a menu of the system's below it, as the system's pop-up buttons do: as the
 pointer goes down on it, or for Enter, Space or Down while it has the

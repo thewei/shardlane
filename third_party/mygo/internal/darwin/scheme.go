@@ -65,7 +65,8 @@ func registerSchemeHandler() {
 }
 
 func readRequest(task id) *platform.SchemeRequest {
-	req := &platform.SchemeRequest{Header: http.Header{}}
+	header := http.Header{}
+	req := &platform.SchemeRequest{Header: header}
 	withPool(func() {
 		r := send(task, "request")
 		req.URL = goString(send(send(r, "URL"), "absoluteString"))
@@ -75,7 +76,7 @@ func readRequest(task id) *platform.SchemeRequest {
 		}
 		fields := send(r, "allHTTPHeaderFields")
 		for _, k := range arrayItems(send(fields, "allKeys")) {
-			req.Header.Add(goString(k), goString(send(fields, "objectForKey:", uintptr(k))))
+			header.Add(goString(k), goString(send(fields, "objectForKey:", uintptr(k))))
 		}
 		if data := send(r, "HTTPBody"); data != 0 {
 			req.Body = io.NopCloser(bytes.NewReader(goBytes(data)))
@@ -115,7 +116,8 @@ func (st *schemeTask) release() {
 // attachments.
 var schemeDispositions = map[string]string{}
 
-func (st *schemeTask) Respond(status int, header http.Header) {
+func (st *schemeTask) Respond(status int, h map[string][]string) {
+	header := http.Header(h)
 	if st.stopped || st.done || st.responded {
 		return
 	}

@@ -50,7 +50,7 @@ func (s *Shell) breadcrumbSegmentsWithTheme(dark bool) []crumbSegment {
 						}
 					}
 				}
-			} else if brand, ok := s.procMarkForPane(panes[0].ID); ok {
+			} else if brand, ok := s.procMarkForPaneWithTheme(panes[0].ID, dark); ok {
 				tabMark = brand
 				if tabLabel == "" || tabLabel == "Tab" {
 					if act, ok := s.serviceIndex.Panes[panes[0].ID]; ok && act.Proc != "" {
@@ -74,7 +74,7 @@ func (s *Shell) breadcrumbSegmentsWithTheme(dark bool) []crumbSegment {
 					}
 				}
 			}
-		} else if brand, ok := s.procMarkForPane(p.ID); ok {
+		} else if brand, ok := s.procMarkForPaneWithTheme(p.ID, dark); ok {
 			paneMark = brand
 			if paneLabel == "" || paneLabel == "Pane" || paneLabel == "Terminal" {
 				if act, ok := s.serviceIndex.Panes[p.ID]; ok && act.Proc != "" {
@@ -197,7 +197,7 @@ func (s *Shell) crumbTabRows(c *ui.Context, projectID string) {
 						}
 					}
 				}
-			} else if brand, ok := s.procMarkForPane(panes[0].ID); ok {
+			} else if brand, ok := s.procMarkForPaneWithTheme(panes[0].ID, dark); ok {
 				mark = brand
 			}
 		}

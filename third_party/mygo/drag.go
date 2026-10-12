@@ -1,7 +1,6 @@
 package mygo
 
 import (
-	"crypto/rand"
 	"errors"
 	"image"
 	"image/draw"
@@ -71,7 +70,7 @@ func (w *Window) startDataDragPrepared(data transfer.Data, local any, options Dr
 	if operations == transfer.None {
 		return errors.New("mygo: no supported drag operation")
 	}
-	src := &dataSource{w: w, token: rand.Text(), data: data.Snapshot(), local: local, done: options.Done, operations: operations}
+	src := &dataSource{w: w, token: randomText(), data: data.Snapshot(), local: local, done: options.Done, operations: operations}
 	activeDataDrag = src
 	req := platform.DragRequest{Data: src.data, Session: src.token, Operations: operations,
 		X: x, Y: y, Preview: pix, Width: width, Height: height,

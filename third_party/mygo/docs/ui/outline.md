@@ -1,5 +1,7 @@
 # Outline
 
+<!-- preview outline 320 -->
+
 `ui.Outline` shows a tree of items, as AppKit's outline view and Finder's
 list view: items at the top, and below each item open its children,
 indented, with an arrow that opens and closes it. The app gives the items at

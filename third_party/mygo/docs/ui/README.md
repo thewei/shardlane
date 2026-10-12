@@ -88,6 +88,10 @@ UI as they read other apps (see [Accessibility](accessibility.md)).
   and values that ease to their targets.
 - [Transitions](transitions.md): elements that move, resize and recolor
   smoothly as the layout changes, and come and go.
+- [Motion](motion.md): springs that keep their velocity, curves, delays,
+  values thrown by the pointer, keyframes, and knowing when they are done.
+- [Transforms](transforms.md): visual translation, scaling and rotation of
+  any element, which the pointer, text input and accessibility follow.
 - [Custom widgets](custom-widgets.md): the widgets without a look that every
   widget is built on, and widgets of your own.
 - [Windows with native UI](windows.md): window options, title bars drawn by
@@ -97,6 +101,8 @@ UI as they read other apps (see [Accessibility](accessibility.md)).
 - [Inspector](inspector.md): the elements of a window, their boxes and
   styles, and the time frames take, beside the content.
 - [Rendering](rendering.md): how MyGo draws, on the GPU or the CPU.
+- [Browsers](browsers.md): the same app in a page, compiled to
+  WebAssembly and drawn with WebGL 2.
 - [Migration](migration.md): element values, persistent handles, focus
   bindings and source migration.
 - [Performance](performance.md): measured frame costs and retained memory.
@@ -203,6 +209,12 @@ UI as they read other apps (see [Accessibility](accessibility.md)).
   on.
 - [Meter](meter.md): a value in a range, colored by its level.
 - [Badge](badge.md): a short text in a pill, as a count.
+
+## Charts
+
+- [Charts](chart.md): scales, axes and marks without a look, for bars,
+  lines, areas, stacks and donuts, and a selection the pointer and the
+  keyboard move.
 
 ## Images
 

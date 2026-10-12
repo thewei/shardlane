@@ -1,5 +1,7 @@
 # Split view
 
+<!-- preview split 270 -->
+
 `ui.Split` lays out two panes side by side, with a divider between them that
 the user drags to resize them, or moves with the arrows once it has the
 keyboard focus: a `*float32` is the width of the first, which the divider

@@ -67,9 +67,14 @@ func TestPaneHeaderVisualsProcess(t *testing.T) {
 	s := NewShell()
 	s.serviceIndex = sidebarServiceIndex{
 		Panes: map[string]paneServiceActivity{
-			"p-node": {Proc: "node"},
-			"p-git":  {Proc: "git"},
-			"p-zsh":  {Proc: "zsh"},
+			"p-node":        {Proc: "node"},
+			"p-git":         {Proc: "git"},
+			"p-zsh":         {Proc: "zsh"},
+			"p-antigravity": {Proc: "antigravity"},
+			"p-mongo":       {Proc: "mongod"},
+			"p-nginx":       {Proc: "nginx"},
+			"p-ollama":      {Proc: "ollama"},
+			"p-uv":          {Proc: "uv"},
 		},
 	}
 
@@ -98,6 +103,51 @@ func TestPaneHeaderVisualsProcess(t *testing.T) {
 	}
 	if titleZsh != "My Shell" {
 		t.Fatalf("titleZsh = %q, want 'My Shell'", titleZsh)
+	}
+
+	surfaceAG := &terminalSurface{paneID: "p-antigravity", cwd: "/Users/test"}
+	markAG, titleAG, _ := s.paneHeaderVisuals(surfaceAG, false)
+	if markAG.bmp == nil {
+		t.Fatalf("antigravity process mark should be brand bitmap, got %+v", markAG)
+	}
+	if titleAG != "Antigravity CLI" {
+		t.Fatalf("titleAG = %q, want 'Antigravity CLI'", titleAG)
+	}
+
+	surfaceMongo := &terminalSurface{paneID: "p-mongo", cwd: "/Users/test"}
+	markMongo, titleMongo, _ := s.paneHeaderVisuals(surfaceMongo, false)
+	if markMongo.svg == nil || markMongo.svg == iconTerminal {
+		t.Fatalf("mongo mark should be mongodb SVG, got %+v", markMongo)
+	}
+	if titleMongo != "MongoDB" {
+		t.Fatalf("titleMongo = %q, want 'MongoDB'", titleMongo)
+	}
+
+	surfaceNginx := &terminalSurface{paneID: "p-nginx", cwd: "/Users/test"}
+	markNginx, titleNginx, _ := s.paneHeaderVisuals(surfaceNginx, false)
+	if markNginx.svg == nil || markNginx.svg == iconTerminal {
+		t.Fatalf("nginx mark should be nginx SVG, got %+v", markNginx)
+	}
+	if titleNginx != "Nginx" {
+		t.Fatalf("titleNginx = %q, want 'Nginx'", titleNginx)
+	}
+
+	surfaceOllama := &terminalSurface{paneID: "p-ollama", cwd: "/Users/test"}
+	markOllama, titleOllama, _ := s.paneHeaderVisuals(surfaceOllama, false)
+	if markOllama.svg == nil || markOllama.svg == iconTerminal {
+		t.Fatalf("ollama mark should be ollama SVG, got %+v", markOllama)
+	}
+	if titleOllama != "Ollama" {
+		t.Fatalf("titleOllama = %q, want 'Ollama'", titleOllama)
+	}
+
+	surfaceUv := &terminalSurface{paneID: "p-uv", cwd: "/Users/test"}
+	markUv, titleUv, _ := s.paneHeaderVisuals(surfaceUv, false)
+	if markUv.svg == nil || markUv.svg == iconTerminal {
+		t.Fatalf("uv mark should be python SVG, got %+v", markUv)
+	}
+	if titleUv != "uv" {
+		t.Fatalf("titleUv = %q, want 'uv'", titleUv)
 	}
 }
 
@@ -140,6 +190,27 @@ func TestShellAndFriendlyNames(t *testing.T) {
 	}
 	if got := procFriendlyName("docker-compose.exe"); got != "Docker Compose" {
 		t.Fatalf("procFriendlyName(docker-compose.exe) = %q, want 'Docker Compose'", got)
+	}
+	if got := procFriendlyName("antigravity"); got != "Antigravity CLI" {
+		t.Fatalf("procFriendlyName(antigravity) = %q, want 'Antigravity CLI'", got)
+	}
+	if got := procFriendlyName("nginx"); got != "Nginx" {
+		t.Fatalf("procFriendlyName(nginx) = %q, want 'Nginx'", got)
+	}
+	if got := procFriendlyName("caddy"); got != "Caddy" {
+		t.Fatalf("procFriendlyName(caddy) = %q, want 'Caddy'", got)
+	}
+	if got := procFriendlyName("mongod"); got != "MongoDB" {
+		t.Fatalf("procFriendlyName(mongod) = %q, want 'MongoDB'", got)
+	}
+	if got := procFriendlyName("sqlite3"); got != "SQLite" {
+		t.Fatalf("procFriendlyName(sqlite3) = %q, want 'SQLite'", got)
+	}
+	if got := procFriendlyName("ollama"); got != "Ollama" {
+		t.Fatalf("procFriendlyName(ollama) = %q, want 'Ollama'", got)
+	}
+	if got := procFriendlyName("kubectl"); got != "Kubectl" {
+		t.Fatalf("procFriendlyName(kubectl) = %q, want 'Kubectl'", got)
 	}
 }
 

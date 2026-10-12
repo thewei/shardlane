@@ -155,6 +155,11 @@ func (l *Layout) SelectionVisual(start, end int, on bool) []Rect {
 	var out []Rect
 	for li := range l.Lines {
 		line := &l.Lines[li]
+		// A range can include the newline at End, so keep that boundary's
+		// line even when none of its glyphs are selected.
+		if line.End < start || line.Start >= end {
+			continue
+		}
 		var pieces []Rect
 		for i := 0; i < len(line.Glyphs); {
 			first := line.Glyphs[i]

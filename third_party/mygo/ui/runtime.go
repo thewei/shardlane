@@ -64,6 +64,9 @@ type host interface {
 // the view function, lays them out, paints them and routes input to the
 // elements of the last frame. Main thread only, except where noted.
 type engine struct {
+	// byPosition holds the keys whose press stood for its physical key
+	// (keyDownPhysical), until their release does the same.
+	byPosition      map[Key]bool
 	owner           weak.Pointer[engine]
 	epoch           uint64
 	parts           []any
@@ -148,7 +151,17 @@ type engine struct {
 	// with an Exit, whose arena the next frame keeps to copy those that
 	// go, laidW and laidH are the size the last frame was laid out at, and
 	// byID maps a frame's elements, for the copies going.
-	trans        map[uint64]*transition
+	trans map[uint64]*transition
+	// matched is where the elements of a Transition's Match showed.
+	matched map[any]*matchRec
+	// instantFrame is the frame that DisableAnimations shows at once.
+	instantFrame uint64
+	// paints counts the frames painted, those painting the last frame's
+	// elements again included.
+	paints uint64
+	// posed are the elements of the last frame built with a pose
+	// (AnimatePose), parents first.
+	posed        []*node
 	exitsBuilt   bool
 	laidW, laidH float32
 	byID         map[uint64]*node
@@ -561,6 +574,7 @@ func (rt *engine) repaintFrame(w, h, scale float32) {
 	rt.text.BeginFrame()
 	rt.repainting, rt.repaintAt = false, time.Time{}
 	root := rt.c.root
+	rt.repose()
 	rt.paint(root, w, h, scale)
 	for try := 0; try < 2 && rt.text.Full(); try++ {
 		rt.text.MakeRoom()
@@ -607,6 +621,7 @@ func (rt *engine) forgetInput() {
 		s.clicks, s.rightClicks, s.doubleClicks = 0, 0, 0
 		s.pressPending = false
 		s.dragX, s.dragY = 0, 0
+		s.released = false
 		s.dropped = nil
 		s.droppedValue, s.hasDropped = nil, false
 		s.dataDropped = nil
@@ -789,6 +804,8 @@ func (rt *engine) endFrame() {
 // boxes, the hit list in paint order, the focus order.
 func (rt *engine) commit(root *node, w, h float32) {
 	rt.hits = rt.hits[:0]
+	clear(rt.posed)
+	rt.posed = rt.posed[:0]
 	clear(rt.webPlaces)
 	rt.webPlaces = rt.webPlaces[:0]
 	rt.focusOrder, rt.focusScopes = rt.focusOrder[:0], rt.focusScopes[:0]
@@ -816,6 +833,18 @@ func (rt *engine) commitElement(e *node, clip Rect, hidden bool) {
 	s.page = rt.commitPage
 	if e.flags&flagPage != 0 {
 		rt.commitPage = e.id
+	}
+	if e.poseSet {
+		rt.samplePose(e)
+	}
+	e.world = e.transformAt(e.x, e.y)
+	if e.parent != nil && e != e.c.overlay {
+		e.world = e.parent.world.Mul(e.world)
+	}
+	s.world = e.world
+	s.clips = e.flags&(flagClipX|flagClipY|flagScrollX|flagScrollY) != 0
+	if s.clips {
+		s.clipRect, s.clipRadii = e.clipRect()
 	}
 	s.x, s.y, s.w, s.h = e.x, e.y, e.w, e.h
 	if e.parent != nil {
@@ -849,7 +878,7 @@ func (rt *engine) commitElement(e *node, clip Rect, hidden bool) {
 	if (e.flags&flagEditable != 0 || e.flags&flagSelectable != 0 && s.editor != nil) && s.cursor == 0 {
 		s.cursor = CursorText + 1
 	}
-	v := intersect(Rect{e.x, e.y, e.w, e.h}, clip)
+	v := intersect(e.visualRect(Rect{e.x, e.y, e.w, e.h}), clip)
 	s.vx, s.vy, s.vw, s.vh = v.X, v.Y, v.W, v.H
 	s.cx, s.cy = e.x+e.contentX(), e.y+e.contentY()
 	s.cw, s.ch = max(e.w-e.padX(), 0), max(e.h-e.padY(), 0)
@@ -860,7 +889,7 @@ func (rt *engine) commitElement(e *node, clip Rect, hidden bool) {
 	// What is invisible keeps its box but takes neither the pointer nor
 	// the focus, and has no text to find; so does what is inert, which
 	// shows.
-	invisible := e.flags&(flagInvisible|flagInert) != 0 || hidden
+	invisible := e.flags&(flagInvisible|flagInert) != 0 || hidden || e.backface && e.transform.facesAway()
 	if invisible {
 		s.vw, s.vh = 0, 0
 		if rt.focused == e.id {
@@ -875,10 +904,10 @@ func (rt *engine) commitElement(e *node, clip Rect, hidden bool) {
 	case inline:
 		// Inline elements take the pointer over their words.
 		for _, r := range e.frags {
-			rt.hits = append(rt.hits, hit{s, intersect(r, clip), e.flags})
+			rt.hits = append(rt.hits, hit{s, r, e.flags})
 		}
 	default:
-		rt.hits = append(rt.hits, hit{s, v, e.flags})
+		rt.hits = append(rt.hits, hit{s, Rect{e.x, e.y, e.w, e.h}, e.flags})
 	}
 	label := e.label
 	if f := e.nameFrom; label == "" && f != nil {
@@ -893,7 +922,7 @@ func (rt *engine) commitElement(e *node, clip Rect, hidden bool) {
 			rt.labels = append(rt.labels, labelNode{e.id, label, v})
 		case len(e.frags) > 0 && (e.label != "" || e.flags&interactive != 0):
 			// Their paragraph shows the text of the others.
-			rt.labels = append(rt.labels, labelNode{e.id, label, intersect(e.frags[0], clip)})
+			rt.labels = append(rt.labels, labelNode{e.id, label, intersect(e.visualRect(e.frags[0]), clip)})
 		}
 	}
 	if e.flags&flagFocusable != 0 && !e.IsDisabled() && !invisible {
@@ -910,7 +939,7 @@ func (rt *engine) commitElement(e *node, clip Rect, hidden bool) {
 	}
 	if e.flags&(flagClipX|flagClipY|flagScrollX|flagScrollY) != 0 {
 		r, _ := e.clipRect()
-		clip = intersect(clip, r)
+		clip = intersect(clip, e.visualRect(r))
 	}
 	// Children in flow first, absolute ones above them: the paint order.
 	for ch := e.first; ch != nil; ch = ch.next {

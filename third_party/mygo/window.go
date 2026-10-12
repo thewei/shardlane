@@ -2,9 +2,6 @@ package mygo
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/json/jsontext"
-	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"log"
@@ -18,7 +15,6 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/egoist/mygo/internal/bridge"
 	"github.com/egoist/mygo/internal/platform"
 	"github.com/egoist/mygo/internal/surface"
 )
@@ -365,7 +361,7 @@ func newWindow(opts WindowOptions, bg *background, native uintptr, flyout *flyou
 	id := windows.nextID
 	windows.Unlock()
 
-	w := &Window{id: id, parent: opts.Parent, trustedOrigins: opts.Page.TrustedOrigins, secret: rand.Text(), stateKey: opts.StateKey, background: bg, content: opts.Content}
+	w := &Window{id: id, parent: opts.Parent, trustedOrigins: opts.Page.TrustedOrigins, secret: randomText(), stateKey: opts.StateKey, background: bg, content: opts.Content}
 	w.pg = &Page{w}
 	w.hiddenTitleBar = !opts.Frameless && (opts.TitleBarStyle == TitleBarHidden || opts.TitleBarStyle == TitleBarHiddenInset)
 	w.resetPage()
@@ -477,12 +473,7 @@ func (w *Window) platformOptions(o *WindowOptions) *platform.WindowOptions {
 	if o.Parent != nil && o.Parent.native != nil {
 		p.Parent = o.Parent.native
 	}
-	p.UserScripts = []platform.UserScript{{Source: bridge.Script(bridge.Config{
-		Platform: jsPlatform(),
-		WindowID: w.top().id, // the window a web view is in
-		Version:  Version,
-		Secret:   w.secret,
-	})}}
+	p.UserScripts = []platform.UserScript{{Source: w.bridgeScript()}}
 	if po.PreloadScript != "" {
 		p.UserScripts = append(p.UserScripts, platform.UserScript{Source: po.PreloadScript})
 	}
@@ -1205,7 +1196,7 @@ func (p *Page) EvalContext(ctx context.Context, code string) (any, error) {
 		return nil, err
 	}
 	var v any
-	if err := json.Unmarshal(raw, &v); err != nil {
+	if err := decodeResult(raw, &v); err != nil {
 		return nil, err
 	}
 	return v, nil
@@ -1226,7 +1217,7 @@ func EvalAs[T any](p *Page, code string) (T, error) {
 	if err != nil || len(raw) == 0 {
 		return v, err
 	}
-	err = json.Unmarshal(raw, &v)
+	err = decodeResult(raw, &v)
 	return v, err
 }
 
@@ -1236,78 +1227,6 @@ type EvalError struct {
 }
 
 func (e *EvalError) Error() string { return "mygo: javascript error: " + e.Message }
-
-const (
-	// The expression form: compile errors mean code is not an expression.
-	evalExpr = "try{return JSON.stringify({ok:true,v:await(\n%s\n)})}catch(e){return JSON.stringify({ok:false,e:String(e&&e.message||e)})}"
-	// The statement form runs code as a function body.
-	evalBody = "try{return JSON.stringify({ok:true,v:await(async()=>{\n%s\n})()})}catch(e){return JSON.stringify({ok:false,e:String(e&&e.message||e)})}"
-)
-
-// eval returns the JSON result of code, which shares the memory of the
-// page's answer.
-func (w *Window) eval(ctx context.Context, code string) (jsontext.Value, error) {
-	if w.content != nil {
-		return nil, errNoPage
-	}
-	type result struct {
-		raw string
-		err error
-	}
-	// Both the cancellation and the page may answer; the first one counts
-	// and the other must not block.
-	ch := make(chan result, 2)
-	stop := context.AfterFunc(ctx, func() { deliver(ch, result{err: ctx.Err()}) })
-	defer stop()
-
-	ran := false
-	w.do(func(n platform.Window) {
-		ran = true
-		expr := strings.TrimRight(code, " \t\r\n;")
-		n.CallAsyncFunction(fmt.Sprintf(evalExpr, expr), func(res string, err error) {
-			if err == nil {
-				deliver(ch, result{raw: res})
-				return
-			}
-			if !strings.HasPrefix(err.Error(), "SyntaxError") {
-				// It may have run (and then the page navigated or
-				// crashed): running it again could run it twice.
-				deliver(ch, result{err: err})
-				return
-			}
-			// Not an expression: run it as a function body instead. The
-			// first attempt failed to compile, so nothing ran twice.
-			onMain(func() {
-				if w.native == nil {
-					deliver(ch, result{err: errDestroyed})
-					return
-				}
-				w.native.CallAsyncFunction(fmt.Sprintf(evalBody, code), func(res string, err error) {
-					deliver(ch, result{raw: res, err: err})
-				})
-			})
-		})
-	})
-	if !ran {
-		return nil, errDestroyed
-	}
-	r := await(ch)
-	if r.err != nil {
-		return nil, r.err
-	}
-	var out struct {
-		OK bool     `json:"ok"`
-		V  rawValue `json:"v"`
-		E  string   `json:"e"`
-	}
-	if err := json.Unmarshal(stringBytes(r.raw), &out); err != nil {
-		return nil, fmt.Errorf("mygo: unexpected eval result %q: %w", r.raw, err)
-	}
-	if !out.OK {
-		return nil, &EvalError{Message: out.E}
-	}
-	return jsontext.Value(out.V), nil
-}
 
 // SetWindowOpenHandler decides what happens on window.open() and clicks on
 // target="_blank" links. The handler returns the options of the window to
@@ -1344,6 +1263,19 @@ func (w *Window) pageContext() context.Context {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	return w.pageCtx
+}
+
+// message is a message for the page: a JSON object, in parts that are
+// joined when it is sent, so that an encoded value, which can be large, is
+// not copied into it.
+type message struct {
+	head, value, tail []byte
+}
+
+func (m message) len() int { return len(m.head) + len(m.value) + len(m.tail) }
+
+func (m message) appendTo(b []byte) []byte {
+	return append(append(append(b, m.head...), m.value...), m.tail...)
 }
 
 // maxHeldEvents bounds the events kept for a page that never becomes ready
@@ -1617,19 +1549,6 @@ func (h *windowHandler) TitleBarChanged() {
 	}
 }
 
-// sendTitleBar tells the page of a window with a hidden title bar the room
-// its controls take. The backend's script tells the first page at document
-// start; this keeps the current page, and later ones, up to date. Main
-// thread only.
-func (w *Window) sendTitleBar() {
-	if w.content != nil || !w.hiddenTitleBar || w.native == nil {
-		return
-	}
-	if msg, err := encodeEvent(bridge.TitleBarEvent, bridge.NewTitleBar(w.native.TitleBar(), w.native.Zoom())); err == nil {
-		w.enqueue(msg, true)
-	}
-}
-
 func (h *windowHandler) Message(msg string) { h.w.handleMessage(msg) }
 
 func (h *windowHandler) WillNavigate(nav platform.Navigation) bool {
@@ -1726,70 +1645,6 @@ func (h *windowHandler) ClosedByPage() {
 }
 
 func (h *windowHandler) RenderProcessGone(reason string) { fire1(&h.w.onRenderGone, reason) }
-
-func (h *windowHandler) SchemeRequest(req *platform.SchemeRequest) {
-	Protocol.serve(h.w, req)
-}
-
-// handleMessage routes a message posted by the page bridge. It runs on the
-// main thread.
-func (w *Window) handleMessage(msg string) {
-	msg, ok := strings.CutPrefix(msg, w.secret)
-	if !ok {
-		return // not from the bridge
-	}
-	// Calls are decoded and executed off the main thread. The page context
-	// is captured here so a navigation cannot slip in between.
-	if len(msg) > 12 && msg[:12] == `{"t":"call",` {
-		go handleCall(w, w.pageContext(), msg, w.trusted)
-		return
-	}
-	var m struct {
-		T string  `json:"t"`
-		X float64 `json:"x"` // drop
-		Y float64 `json:"y"`
-		C int64   `json:"c"` // channels
-		K string  `json:"k"`
-		N int64   `json:"n"`
-	}
-	if err := json.Unmarshal(stringBytes(msg), &m); err != nil {
-		return
-	}
-	switch m.T {
-	case "dom-ready":
-		w.outMu.Lock()
-		w.domReady = true
-		w.outbox = append(w.outbox, w.held...)
-		w.held = nil
-		w.outMu.Unlock()
-		// The script at document start may tell a later page the room of
-		// the controls before a change.
-		w.sendTitleBar()
-		w.flush()
-		fire(&w.onDOMReady)
-		w.readyToShow()
-	case "drag":
-		if w.native != nil {
-			w.native.StartDrag()
-		}
-	case "dblclick":
-		if w.native != nil {
-			w.native.TitleBarDoubleClicked()
-		}
-	case "escape":
-		w.escape()
-	case "drop":
-		if w.native != nil {
-			w.filesDropped(w.native.DroppedFiles(), int(m.X), int(m.Y))
-		}
-	case "chan-ack":
-		if c := w.channel(m.C, m.K); c != nil {
-			c.ack(m.N)
-		}
-	case "chan-close":
-		w.pageClosedChannel(m.C, m.K)
-	}
-}
 
 // filesDropped tells OnFileDrop listeners, and the app's own pages, about
 // dropped files.

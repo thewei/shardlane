@@ -1,5 +1,7 @@
 # Collapsible
 
+<!-- preview collapsible 220 -->
+
 `ui.Collapsible` creates a disclosure, as SwiftUI's `DisclosureGroup`: a
 label beside an arrow, which a click opens and closes, as do Enter and
 Space, showing below it what its function builds while a `*bool` is true.

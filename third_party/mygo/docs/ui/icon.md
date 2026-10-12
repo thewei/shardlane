@@ -1,5 +1,7 @@
 # Icon
 
+<!-- preview icon 180 -->
+
 `ui.Icon` shows an SVG as an icon: in the color of the text, which it takes
 from its ancestors as text does, whatever colors the file has, and as high
 as the font size, keeping the SVG's aspect ratio. Icon sets such as Lucide,

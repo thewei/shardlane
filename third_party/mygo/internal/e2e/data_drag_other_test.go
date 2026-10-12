@@ -1,4 +1,4 @@
-//go:build !darwin && !(windows && (amd64 || arm64))
+//go:build !darwin && !(windows && (amd64 || arm64)) && !js
 
 package e2e
 

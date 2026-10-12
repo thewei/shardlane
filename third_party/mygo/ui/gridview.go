@@ -193,6 +193,9 @@ func (s *GridState) reorder(e *node, n int, gap float32) {
 	if d == nil || d.s != s {
 		return
 	}
+	x, y = e.st.local(x, y)
+	x += e.st.x
+	y += e.st.y
 	to, at, after := s.dropAt(x, y, n)
 	if dropped {
 		if !(len(d.items) == 1 && (to == d.items[0] || to == d.items[0]+1)) {

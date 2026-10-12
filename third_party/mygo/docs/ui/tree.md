@@ -1,5 +1,7 @@
 # Tree
 
+<!-- preview tree 280 -->
+
 `ui.Tree` creates a tree whose items `ui.TreeItem` builds, each inside the
 item it belongs to. An item's children show while its `*bool` is true; a
 click on its arrow opens or closes it, and `Clicked` reports a click

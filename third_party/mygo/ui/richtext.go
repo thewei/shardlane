@@ -311,7 +311,10 @@ func (sp *spanPaint) runs(line *text.Line, fn func(k, i, j int, x0, x1 float32))
 // backgrounds fills behind the spans of a line that have a background,
 // from the top-left of the text at (x, y), in DIPs.
 func (sp *spanPaint) backgrounds(p *Painter, line *text.Line, x, y float32) {
-	sp.runs(line, func(k, _, _ int, x0, x1 float32) {
+	sp.runs(line, func(k, i, _ int, x0, x1 float32) {
+		saved := p.transform
+		p.transform = saved.Mul(p.inlineTransform(line.Glyphs[i].Cluster))
+		defer func() { p.transform = saved }()
 		if k >= 0 && sp.spans[k].Background.A > 0 {
 			p.Fill(Rect{x + x0, y + line.Y, x1 - x0, line.Height}, sp.spans[k].Background, 0)
 		}
@@ -337,6 +340,9 @@ func (sp *spanPaint) lines(p *Painter, l *text.Layout, li int, x, y float32, col
 		if span.DecorationThickness > 0 {
 			d.thick = span.DecorationThickness
 		}
-		p.decorations(l, li, i, j, x, y, d, sp.color(k, color))
+		saved := p.transform
+		p.transform = saved.Mul(p.inlineTransform(l.Lines[li].Glyphs[i].Cluster))
+		p.decorationRun(l, li, i, j, x, y, d, sp.color(k, color))
+		p.transform = saved
 	})
 }

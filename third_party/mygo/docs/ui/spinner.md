@@ -1,5 +1,7 @@
 # Spinner
 
+<!-- preview spinner 120 -->
+
 `ui.Spinner` creates an indicator of work of unknown length, as AppKit's
 spinning progress indicator: spokes turning, in the theme's muted text
 color, a little higher than the theme's font size.

@@ -189,6 +189,7 @@ func (ed *editor) process(c *context, e *node) {
 	}
 	if ed.dragging && st.pressed {
 		rt := c.rt
-		ed.drag(rt.pointerX-st.x, rt.pointerY-st.y)
+		x, y := st.local(rt.pointerX, rt.pointerY)
+		ed.drag(x, y)
 	}
 }

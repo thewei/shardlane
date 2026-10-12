@@ -4,6 +4,7 @@ import (
 	"math"
 	"strings"
 
+	"github.com/egoist/mygo/internal/scene"
 	"github.com/egoist/mygo/internal/text"
 )
 
@@ -238,6 +239,27 @@ type node struct {
 	justifyItems           Align   // of a grid
 	cell                   gridCell
 	justifySelf            Align
+
+	// Visual geometry, composed after layout.
+	transform        Transform
+	originX, originY float32
+	originSet        bool
+	world            scene.Affine
+	// content is how its content changes (ContentTransition), when set.
+	content    ContentTransition
+	contentSet bool
+	// pose is where AnimatePose moves it, as poseAnim says, when poseSet;
+	// poseM and poseFade are where it shows now. reposed tells, in a frame
+	// that only paints, that its pose moved.
+	pose     Pose
+	poseAnim Animation
+	poseSet  bool
+	poseM    scene.Affine
+	poseFade float32
+	reposed  bool
+	// backface hides it while its 3D transform turns its back to the
+	// viewer (BackfaceHidden).
+	backface bool
 
 	// Painting.
 	bg           Color
@@ -1104,14 +1126,15 @@ func (e *node) DrawOver(fn func(p *Painter, r Rect)) *node { e.paintAfterFn = fn
 // ID returns the element's identity, stable from frame to frame.
 func (e *node) ID() uint64 { return e.id }
 
-// Bounds returns the element's box in the previous frame, in DIPs relative
-// to the window; it is empty for an element the previous frame lacked.
+// Bounds returns the previous frame's transformed bounding rectangle in
+// window DIPs; it is empty for an element the previous frame lacked.
+// LayoutBounds returns its box before visual transforms.
 func (e *node) Bounds() Rect {
 	if !e.hasState() {
 		return Rect{}
 	}
 	s := e.st
-	return Rect{s.x, s.y, s.w, s.h}
+	return transformRect(s.world, Rect{s.x, s.y, s.w, s.h})
 }
 
 // add appends a child.

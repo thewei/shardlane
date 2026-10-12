@@ -22,6 +22,9 @@ own on them, as headless component libraries do on the web.
 | `ToastViewportBase`, `ToastBase` | the window's toasts in a viewport of your own, each a status with an `ActionButton` and a `CloseButton`, their time stopping while the pointer or the focus is on them ([Toast](toast.md#without-a-look)) |
 | `TextInputBase`, `TextAreaBase` | text inputs without padding, background, border or corners, `ReadOnly` or not |
 
+Charts have bases of their own: [package `ui/chart`](chart.md) has scales,
+axes, marks and a selection without a look.
+
 Base constructors return value parts with the same build lifetime as other
 elements. Give stateful bases a key with `Context.Key` before construction.
 

@@ -659,6 +659,12 @@ func (f *listFrame) reorder() {
 	if d == nil || d.s != s {
 		return
 	}
+	x := rt.pointerX
+	if dropped {
+		x = e.st.dropX
+	}
+	_, y = e.st.local(x, y)
+	y += e.st.y
 	to := f.dropAt(y)
 	if dropped {
 		// Rows already there stay.

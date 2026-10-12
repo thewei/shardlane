@@ -215,6 +215,10 @@ func (h *windowHost) present(s *scene.Scene) {
 		if h.degraded {
 			h.path = "drawn by the GPU renderer in software"
 		}
+		if behind(h.gpu) {
+			h.path = "skipped to catch up with the display"
+			h.conn.Surface.RequestFrame()
+		}
 		return
 	}
 	h.path = "drawn in memory"
@@ -366,6 +370,14 @@ func (h *windowHost) makeGPU() {
 func software(r gpuRenderer) bool {
 	s, ok := r.(interface{ Software() bool })
 	return ok && s.Software()
+}
+
+// behind reports whether r drew nothing of the last frame, to catch up
+// with the display (Metal's): the window draws another at the next
+// refresh.
+func behind(r gpuRenderer) bool {
+	b, ok := r.(interface{ Behind() bool })
+	return ok && b.Behind()
 }
 
 // retryLater has a frame make a GPU renderer again after a wait, which

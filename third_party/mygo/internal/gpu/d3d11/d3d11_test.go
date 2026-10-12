@@ -57,6 +57,23 @@ func TestDrawsAsTheCPURenderer(t *testing.T) {
 				t.Fatalf("frame %d: %v", frame, err)
 			}
 		}
+
+		s = gputest.TransformedScene()
+		for range 2 {
+			if err := r.draw(s); err != nil {
+				t.Fatal(err)
+			}
+			pix, stride := r.readBack(t)
+			gputest.Compare(t, "d3d11-affine", pix, stride, s)
+		}
+		s = gputest.PerspectiveScene()
+		for range 2 {
+			if err := r.draw(s); err != nil {
+				t.Fatal(err)
+			}
+			pix, stride := r.readBack(t)
+			gputest.Compare(t, "d3d11-perspective", pix, stride, s)
+		}
 		r.Release()
 	}
 }

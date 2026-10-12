@@ -1,5 +1,7 @@
 # Time input
 
+<!-- preview time-input 120 -->
+
 `ui.TimeInput` creates a field of the time of day of a `*time.Time`, as
 15:04, whose hours and minutes each take the keyboard focus, as the
 segments of AppKit's date picker: Up and Down step the one with the focus

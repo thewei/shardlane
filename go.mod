@@ -16,7 +16,7 @@ replace github.com/egoist/mygo => ./third_party/mygo
 
 require (
 	github.com/alecthomas/chroma/v2 v2.27.0
-	github.com/egoist/mygo v0.4.1
+	github.com/egoist/mygo v0.4.5
 	modernc.org/sqlite v1.60.1
 )
 

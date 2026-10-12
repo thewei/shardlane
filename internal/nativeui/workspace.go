@@ -162,7 +162,7 @@ func (s *Shell) rebindWorkspaceChat() {
 		s.chatWindowStart = 0
 		s.chatHasOlder = false
 		s.chatSourcelessPaneID = card.PaneID
-		s.pendingToast = "No chat source for this agent yet — use its Terminal."
+		s.pendingToast = "No chat stream available for this session; use Terminal."
 		s.publishChatBridge()
 		return
 	} else if s.selectedPaneID != "" && s.selectedPaneID != s.chatPaneID {

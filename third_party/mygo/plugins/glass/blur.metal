@@ -7,13 +7,12 @@
 
 // blurAt returns the backdrop's texel p, with its alpha, clamped to its
 // edges.
-float4 blurAt(texture2d<float> t, int2 p, int2 size) {
-	return t.read(uint2(clamp(p, int2(0), size - 1)));
-}
+float4 blurAt(texture2d<float> t, int2 p, int2 size) { return t.read(uint2(clamp(p, int2(0), size - 1))); }
 
 // blurSample returns the backdrop at q with its alpha, as sampleBackdrop
 // does its color (sampleRGBA).
 float4 blurSample(texture2d<float> t, Effect e, float2 q) {
+	q = framePoint(e, q);
 	float2 u = (q - e.area.xy) / e.down - 0.5f;
 	float2 f = floor(u);
 	float2 w = u - f;

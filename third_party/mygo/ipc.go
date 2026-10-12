@@ -1,3 +1,5 @@
+//go:build !js
+
 package mygo
 
 import (
@@ -353,19 +355,6 @@ func handleCall(w *Window, ctx context.Context, raw string, trusted bool) {
 		result, err = mi.call(w, ctx, m.K, m.A)
 	}
 	w.enqueue(encodeReply(m.ID, m.K, result, err), false)
-}
-
-// message is a message for the page: a JSON object, in parts that are
-// joined when it is sent, so that an encoded value, which can be large, is
-// not copied into it.
-type message struct {
-	head, value, tail []byte
-}
-
-func (m message) len() int { return len(m.head) + len(m.value) + len(m.tail) }
-
-func (m message) appendTo(b []byte) []byte {
-	return append(append(append(b, m.head...), m.value...), m.tail...)
 }
 
 var closeBrace = []byte("}")

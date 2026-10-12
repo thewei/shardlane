@@ -59,8 +59,11 @@ func TestReorderOnlyWithinAuthoritativeParentAndSession(t *testing.T) {
 		{tree("tab", "w1", "t1"), tree("tab", "w1", "t2"), true},
 		{tree("tab", "w1", "t1"), tree("tab", "w2", "t3"), false},
 		{tree("pane", "t1", "p1"), tree("pane", "t1", "p2"), true},
-		{tree("pane", "t1", "p1"), tree("pane", "t2", "p3"), false},
-		{tree("pane", "t1", "p1"), tree("pane", "t1", "p1"), false},
+		{tree("pane", "t1", "p1"), tree("pane", "t2", "p3"), true},  // moving pane to another tab's pane
+		{tree("pane", "t1", "p1"), tree("tab", "w1", "t2"), true},   // moving pane to another tab
+		{tree("pane", "t1", "p1"), tree("tab", "w1", "t1"), false},  // pane already in t1
+		{tree("pane", "t1", "p1"), tree("project", "", "w2"), true}, // moving pane to project as new tab
+		{tree("pane", "t1", "p1"), tree("pane", "t1", "p1"), false}, // self drop
 		{treeNodeDrag{"other", "project", "", "w1"}, tree("project", "", "w2"), false},
 		{tree("tab", "w1", "t1"), tree("project", "", "w2"), false},
 	} {
@@ -71,13 +74,42 @@ func TestReorderOnlyWithinAuthoritativeParentAndSession(t *testing.T) {
 	if !s.canSwapCard(paneCardDrag{"local-1", "t1", "p1"}, "p2", "t1") {
 		t.Fatal("same-tab canvas card swap rejected")
 	}
-	if s.canSwapCard(paneCardDrag{"local-1", "t1", "p1"}, "p3", "t2") {
-		t.Fatal("cross-tab canvas card swap accepted")
+	if !s.canDropOnPaneCard(treeNodeDrag{"local-1", "pane", "t1", "p1"}, "p3", "t2") {
+		t.Fatal("cross-tab canvas card drop rejected")
 	}
 	s.projection.Layouts[0].Zoomed = true
 	if s.canReorderTree(tree("pane", "t1", "p1"), tree("pane", "t1", "p2")) ||
 		s.canSwapCard(paneCardDrag{"local-1", "t1", "p1"}, "p2", "t1") {
 		t.Fatal("zoomed layout must not accept swaps")
+	}
+}
+
+func TestResolvePaneCardDropAction(t *testing.T) {
+	sameTab := treeNodeDrag{"local-1", "pane", "t1", "p1"}
+	diffTab := treeNodeDrag{"local-1", "pane", "t2", "p9"}
+
+	// Same tab always swaps positions regardless of coordinates
+	act, label := resolvePaneCardDropAction(sameTab, "p2", "t1", 100, 100, 300, 200)
+	if act != paneCardDropSwap || label != "Swap positions" {
+		t.Fatalf("same tab action = %v, %q; want swap", act, label)
+	}
+
+	// Different tab: center moves to tab
+	act, label = resolvePaneCardDropAction(diffTab, "p1", "t1", 100, 50, 300, 200)
+	if act != paneCardDropMoveTab || label != "Move to tab" {
+		t.Fatalf("diff tab center action = %v, %q; want move", act, label)
+	}
+
+	// Different tab: right edge splits right
+	act, label = resolvePaneCardDropAction(diffTab, "p1", "t1", 250, 50, 300, 200)
+	if act != paneCardDropSplitRight || label != "Split right" {
+		t.Fatalf("diff tab right action = %v, %q; want split right", act, label)
+	}
+
+	// Different tab: bottom edge splits down
+	act, label = resolvePaneCardDropAction(diffTab, "p1", "t1", 50, 180, 300, 200)
+	if act != paneCardDropSplitDown || label != "Split down" {
+		t.Fatalf("diff tab bottom action = %v, %q; want split down", act, label)
 	}
 }
 

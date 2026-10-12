@@ -112,7 +112,7 @@ func (s *Shell) gitQuickCommitComposer(c *ui.Context) {
 			if s.piQuickRunning {
 				ui.Spinner(c).Size(13, 13)
 				ui.Text(c, "Generating subject…").FontSize(10).TextColor(t.TextMuted)
-				if ui.Button(c, "Cancel AI").FontSize(10).Clicked() {
+				if ui.Button(c, "Cancel").FontSize(10).Clicked() {
 					s.cancelQuickAICommit()
 				}
 			}
@@ -134,10 +134,10 @@ func (s *Shell) gitQuickCommitComposer(c *ui.Context) {
 			// The dropdown is independent of Commit: it only requests a Pi
 			// candidate and fills Subject after root/snapshot/draft checks.
 			dropdown := ui.ButtonBase(c).Size(24, 26).Radius(5).Center().
-				Label("Commit options").Tooltip("Commit options: AI Commit")
+				Label("Commit options").Tooltip("Commit options")
 			dropdown.Children(func() { ui.Icon(c, iconChevronDown).FontSize(13) })
 			dropdown.Menu(func(m *ui.Menu) {
-				if m.Item("AI Commit (Pi) — fill subject").Disabled(blocked || s.piQuickRunning).Chosen() {
+				if m.Item("Draft subject with Pi").Disabled(blocked || s.piQuickRunning).Chosen() {
 					s.startQuickAICommit()
 				}
 			})

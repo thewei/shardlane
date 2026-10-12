@@ -153,6 +153,11 @@ keyboards that have them, which a [router](navigation.md) takes. Shortcuts
 of [menus](../menus.md) still work, and the Edit menu's roles (cut, copy,
 paste, select all, undo, redo) act on the focused text input.
 
+Shortcuts work on layouts that type no Latin letters too: with Cmd, Ctrl,
+Alt or Super held, a key typing a letter of no US key, as ы on a Russian
+layout, stands for the key at its place on a US keyboard, so Cmd+ы is
+`ui.KeyS`. Typed without those modifiers, it stays text.
+
 A focused text input takes the editing keys of the platform first: on
 macOS, Option and Command with the arrows and Backspace, and Control with
 A, E, B, F, N, P, D, H and K, as in other Mac apps; elsewhere, it leaves Alt
@@ -209,6 +214,8 @@ Widgets that take every key themselves, as the
 `HandleInput`, before the next frame: keys pressed and released, text typed
 and composed while they have the focus, the edit commands of the menus,
 and the pointer pressed on them, moving over them or scrolling over them.
+`InputEvent.PhysicalKey` is the key by its place on a US keyboard,
+whatever the layout types, for keys that go by position, as a game's WASD.
 The function reports whether it took the event; one it leaves goes on to
 shortcuts, Tab, context menus and scroll containers as usual, and keys that
 the window or an element around the focus handles with `Shortcut` go there

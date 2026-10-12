@@ -1,5 +1,7 @@
 # Breadcrumbs
 
+<!-- preview breadcrumbs 180 -->
+
 `ui.Breadcrumbs` creates a path of items, as Finder's path bar and AppKit's
 path control, separated by chevrons: the items but the last are links,
 which a click chooses, as Enter does, setting an `*int` to its index, which

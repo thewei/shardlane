@@ -690,3 +690,46 @@ func TestRouterLayouts(t *testing.T) {
 	rt := &Route{router: r, entry: r.current(), rest: -1}
 	rt.coreView(&tt.rt.c, func(*Route) {})
 }
+
+func TestRouterAnimation(t *testing.T) {
+	r := NewRouter("/notes")
+	r.Animation = &Animation{Duration: 100 * time.Millisecond, Ease: Linear}
+	tt, now := clockTester(func(c *context) {
+		r.coreView(c, func(rt *Route) { coreText(c, "Page "+rt.Path()) })
+	}, 400, 300)
+	at := func(s string) float32 {
+		for _, n := range tt.rt.labels {
+			if n.text == s {
+				return tt.rt.states[n.id].x
+			}
+		}
+		t.Fatalf("no %q among %q", s, tt.Texts())
+		return 0
+	}
+	r.Push("/notes/1")
+	tt.Frame()
+	*now = now.Add(50 * time.Millisecond)
+	tt.Frame()
+	if x := at("Page /notes/1"); x < 195 || x > 205 {
+		t.Errorf("halfway along its curve, the page is at %v", x)
+	}
+	*now = now.Add(60 * time.Millisecond)
+	tt.Frame()
+	if x := at("Page /notes/1"); x != 0 || len(tt.rt.c.root.first.children()) != 1 {
+		t.Errorf("once in, the page is at %v", x)
+	}
+	// A spring slides the page as long as it takes to settle.
+	r.Animation = &Snappy
+	r.Push("/notes/1/2")
+	tt.Frame()
+	*now = now.Add(150 * time.Millisecond)
+	tt.Frame()
+	if x := at("Page /notes/1/2"); x <= 0 || x >= 200 {
+		t.Errorf("sprung partway, the page is at %v", x)
+	}
+	*now = now.Add(2 * time.Second)
+	tt.Frame()
+	if x := at("Page /notes/1/2"); x != 0 || tt.rt.animating {
+		t.Errorf("sprung in, the page is at %v", x)
+	}
+}

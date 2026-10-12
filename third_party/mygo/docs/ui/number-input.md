@@ -1,5 +1,7 @@
 # Number input
 
+<!-- preview number-input 160 -->
+
 `ui.NumberInput` creates a text input editing a `*float64` as a number
 between two bounds, which Up and Down, and the buttons beside it, change by
 a step. What is typed applies as soon as it is a number in range, and shows

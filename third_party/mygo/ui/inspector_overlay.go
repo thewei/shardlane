@@ -36,11 +36,14 @@ func (in *inspector) paintHighlight(rt *engine, p *Painter, h float32) {
 	margin := Rect{border.X - e.m(3), border.Y - e.m(0), border.W + e.marginX(), border.H + e.marginY()}
 	padding := Rect{border.X + e.border[3], border.Y + e.border[0], border.W - e.border[1] - e.border[3], border.H - e.border[0] - e.border[2]}
 	content := e.contentBox()
+	savedTransform := p.transform
+	p.transform = e.world
 	ring(p, margin, border, inspHiMargin)
 	ring(p, border, padding, inspHiBorder)
 	ring(p, padding, content, inspHiPadding)
 	p.Fill(content, inspHiContent, 0)
-	in.paintTooltip(rt, p, e, margin, h)
+	p.transform = savedTransform
+	in.paintTooltip(rt, p, e, e.visualRect(margin), h)
 }
 
 // ring fills the room between outer and inner, which it holds.

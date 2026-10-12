@@ -608,7 +608,7 @@ export function App() {
           <textarea
             ref={composerRef}
             value={draft}
-            placeholder="Follow up on this conversation…"
+            placeholder="Send a message… (@ to mention file)"
             aria-label="Chat prompt"
             onChange={(event) => setDraft(event.target.value)}
             onKeyDown={onKeyDown}
@@ -619,11 +619,11 @@ export function App() {
             <button
               type="button"
               className="interrupt"
-              title="Interrupt the agent and send this now"
+              title="Interrupt current turn and send message"
               disabled={sending || interrupting}
               onClick={() => void interruptSend()}
             >
-              {interrupting ? "Interrupting…" : "⚡ Interrupt & send"}
+              {interrupting ? "Interrupting…" : "Interrupt & send"}
             </button>
           ) : null}
           {showStop ? (
@@ -644,15 +644,15 @@ export function App() {
         <div className="composer-status">
           <span className="composer-note-text">
             {voiceError || (state?.interactions?.length
-              ? "Waiting for your answer above — no need to touch the terminal."
+              ? "Waiting for your input above."
               : disposition === "terminal"
-                ? "Blocked — use the terminal."
+                ? "Blocked — input required in terminal."
                 : working
-                  ? "Working — Queue adds a follow-up; ⚡ Interrupt & send cuts in."
+                  ? "Working • Queue appends follow-up; Interrupt sends immediately."
                   : transcribing
                     ? "Transcribing…"
                     : recording
-                      ? "Listening… click ■ to transcribe."
+                      ? "Listening… click ■ to finish."
                       : "")}
           </span>
           <span className="composer-facts">
@@ -766,7 +766,7 @@ function TurnRow({ turn }: { turn: ChatBridgeState["turns"][number] }) {
   return (
     <div className={`turn assistant${turn.live ? " live" : ""}`}>
       <div className="meta">
-        <span className="who">ASSISTANT</span>
+        <span className="who">AGENT</span>
         {turn.failed ? <span className="pill error">Stopped</span> : null}
         {turn.tsMs ? (
           <span className="ts">{formatTime(turn.tsMs)}</span>

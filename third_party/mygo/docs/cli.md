@@ -122,8 +122,20 @@ version information that `mygo build` embeds.
 
 | Flag | |
 |---|---|
+With `-web`, mygo dev develops an app of [native UI in browsers](ui/browsers.md)
+instead: it compiles the app to WebAssembly, serves it at
+`http://localhost:5174` (or the next free port), opens it, and rebuilds it as
+its Go code changes, which reloads the page. A build that fails to compile
+leaves the page running the last one, and shows why over it until a fix
+compiles. `o` opens the page again.
+
+| Flag | |
+|---|---|
 | `-skip-dev-command` | does not run `devCommand`, e.g. when the dev server already runs |
 | `-sign` | the identity that signs the development app on macOS (default: `-`, ad hoc) |
+| `-web` | develops the app in browsers |
+| `-port` | with `-web`, the port to serve the app at, or the next free one (default: 5174) |
+| `-open` | with `-web`, opens the app in the browser (default: true) |
 
 ## mygo build
 
@@ -135,9 +147,15 @@ Builds production apps: runs `buildCommand`, compiles the app with
 `frontendDist` embedded, and packages it for each platform in
 `<out>/<os>-<arch>`. See [Building and distributing](distribution.md).
 
+The platform `web` (or `js/wasm`) builds an app of native UI for browsers
+into `<out>/web`, a static site to serve from anywhere: `index.html`, which
+loads the app, Go's `wasm_exec.js`, the app's WebAssembly, named by its
+content so that it can be cached for good, and the icon. See
+[Browsers](ui/browsers.md).
+
 | Flag | |
 |---|---|
-| `-platform` | comma separated `GOOS/GOARCH` targets, e.g. `darwin/universal,windows/amd64,linux/amd64` (default: this machine's) |
+| `-platform` | comma separated `GOOS/GOARCH` targets, e.g. `darwin/universal,windows/amd64,linux/amd64`, or `web` (default: this machine's) |
 | `-debug` | keeps development features, such as the web inspector and the [inspector of native UI](ui/inspector.md) |
 | `-o` | the output directory (default: `out` of the configuration) |
 | `-sign` | the macOS signing identity (default: `macos.signingIdentity`) |

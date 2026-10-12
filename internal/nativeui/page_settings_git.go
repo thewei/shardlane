@@ -1,16 +1,17 @@
 package nativeui
 
 /**
- * [INPUT]: persisted Workbench Settings and user-edited Pi executable/commit rules
- * [OUTPUT]: Git & AI settings using shared page/header/card primitives
- * [POS]: Native Settings only; never invokes AI or Git while drawing
- * [PROTOCOL]: update this header when changing the file and check CLAUDE.md
+ * [INPUT]: 依赖 persisted Workbench Settings 与用户配置的 Pi executable/commit rules
+ * [OUTPUT]: 对外提供 Shell.settingsGit 渲染 Git 提交规范与 Pi 工具偏好
+ * [POS]: nativeui Settings 中的 Git 偏好配置子面板
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 
 import (
+	"strings"
+
 	"github.com/egoist/mygo/ui"
 	"github.com/wh-studio/herdr-client/internal/settings"
-	"strings"
 )
 
 func commitPromptPreference(value string) string {
@@ -24,7 +25,7 @@ func (s *Shell) settingsGit(c *ui.Context) {
 	sp := Spacing()
 	ui.Column(c).FillWidth().Gap(sp.L).Children(func() {
 		settingsCard(c, "Commit Message", func() {
-			ui.Text(c, "Applied to Pi suggestions for selected files. Pi generates only a candidate; Shardlane commits after you approve the message.").FontSize(Typography().Caption).TextColor(c.Theme().TextMuted)
+			ui.Text(c, "Rules applied when generating commit message candidates for selected files.").FontSize(Typography().Caption).TextColor(c.Theme().TextMuted)
 			ui.TextArea(c, &s.settingsGitPromptDraft).FillWidth().Height(250).Label("Git commit rules")
 			ui.Row(c).Gap(sp.S).Children(func() {
 				if ui.PrimaryButton(c, "Save Commit Rules").Clicked() {
@@ -43,8 +44,8 @@ func (s *Shell) settingsGit(c *ui.Context) {
 				}
 			})
 		})
-		settingsCard(c, "Pi Agent", func() {
-			ui.Text(c, "Uses a one-shot, tool-free Pi CLI request. No Herdr pane or Agent session is created, and Pi cannot stage, modify files or commit. Your existing Pi login and model configuration are reused.").FontSize(Typography().Caption).TextColor(c.Theme().TextMuted)
+		settingsCard(c, "Pi CLI", func() {
+			ui.Text(c, "One-shot invocation of the local Pi CLI to draft commit subjects without altering repository files or state.").FontSize(Typography().Caption).TextColor(c.Theme().TextMuted)
 			ui.Form(c, func() {
 				ui.Field(c, "Pi executable", func() {
 					ui.TextInput(c, &s.settingsPiBinaryDraft).FillWidth().Label("Pi executable path").

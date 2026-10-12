@@ -1,5 +1,7 @@
 # Autocomplete
 
+<!-- preview autocomplete 260 -->
+
 `ui.Autocomplete` creates a text input editing a `*string` that suggests,
 below it, those of a list of strings containing what was typed, those
 starting with it first: Up and Down move among them and Enter takes one, as

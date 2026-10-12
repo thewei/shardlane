@@ -2,8 +2,6 @@ package mygo
 
 import (
 	"os"
-	"os/exec"
-	"runtime"
 	"slices"
 )
 
@@ -83,22 +81,4 @@ func (a *Application) Relaunch() {
 			a.relaunch = false
 		}
 	})
-}
-
-// relaunchNow starts the app again; it runs after the quit sequence.
-func relaunchNow() {
-	if launchedByDev() {
-		os.Exit(devRelaunchCode)
-	}
-	// The executable the app started from, which an update may have
-	// replaced.
-	cmd := exec.Command(startExe, os.Args[1:]...)
-	cmd.Dir = startDir
-	if runtime.GOOS != "windows" {
-		// GUI executables on Windows have no standard streams to pass on.
-		cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
-	}
-	if cmd.Start() == nil {
-		_ = cmd.Process.Release()
-	}
 }

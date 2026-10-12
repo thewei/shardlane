@@ -1,5 +1,7 @@
 # Color picker
 
+<!-- preview color-picker 430 -->
+
 `ui.ColorWell` creates a swatch of a `*ui.Color` that opens a color picker
 below it, as AppKit's color well: a click, Enter or Space opens it, and
 Escape or a click outside closes it. `Changed` reports a new color.

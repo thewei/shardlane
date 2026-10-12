@@ -331,7 +331,8 @@ func (rt *engine) menuPress(chain []uint64, x, y float32) bool {
 		}
 		rt.blinkStart = time.Now()
 		if ed := s.editor; ed.laidOut() {
-			i := ed.hit(x-s.x, y-s.y)
+			lx, ly := s.local(x, y)
+			i := ed.hit(lx, ly)
 			if a, b := ed.selection(); a == b || i < a || i > b {
 				ed.commitCompose()
 				ed.move(i, false)
@@ -381,7 +382,7 @@ func (rt *engine) menuKey() bool {
 	x, y := s.vx, s.vy+min(s.vh, 32)
 	text := uint64(0)
 	if s.flags&(flagEditable|flagSelectable) != 0 && s.editor != nil {
-		r := s.editor.caretRect(s)
+		r := transformRect(s.world, s.editor.caretRect(s))
 		x, y = r.X, r.Y+r.H
 		text = s.id
 		s = rt.textMenu(s)

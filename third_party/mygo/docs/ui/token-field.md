@@ -1,5 +1,7 @@
 # Token field
 
+<!-- preview token-field 260 -->
+
 `ui.TokenField` creates a field of tokens, as of tags or the recipients of
 a mail, editing a `*[]string`: the tokens show as chips, each with a button
 taking it out, before an input where Enter or a comma adds what was typed,

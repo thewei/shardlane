@@ -1,4 +1,4 @@
-//go:build !darwin && !(linux && (amd64 || arm64)) && !(windows && (amd64 || arm64))
+//go:build !darwin && !(linux && (amd64 || arm64)) && !(windows && (amd64 || arm64)) && !js
 
 package e2e
 
@@ -19,6 +19,8 @@ func endSheet(*mygo.Window) (bool, bool) { return false, false }
 func click(*mygo.Window, float64, float64) bool { return false }
 
 func appClick(*mygo.Window, float64, float64) bool { return false }
+
+func heldAppClick(*mygo.Window, float64, float64) bool { return false }
 
 func drag(*mygo.Window, [][2]float64) bool { return false }
 

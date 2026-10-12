@@ -1,8 +1,8 @@
 package herdr
 
 /**
- * [INPUT]: 依赖 Herdr protocol 22 的 workspace.move/tab.move/pane.swap 与既有 mutateAndProject RPC
- * [OUTPUT]: 提供结构排序、Pane 交换以及已有 Workspace/Tab/Pane 操作
+ * [INPUT]: 依赖 Herdr protocol 22 的 workspace.move/tab.move/pane.swap/pane.move 与既有 mutateAndProject RPC
+ * [OUTPUT]: 提供结构排序、Pane 移动与交换以及已有 Workspace/Tab/Pane 操作
  * [POS]: Herdr 运行时 mutation 适配器；提交后只从 session.snapshot 获取权威布局
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -11,6 +11,76 @@ import (
 	"fmt"
 	"strings"
 )
+
+// PaneMoveDestination models the destination payload for the Protocol 22
+// pane.move wire method.
+type PaneMoveDestination struct {
+	Type         string   `json:"type"`                    // "tab", "new_tab", "new_workspace"
+	TabID        string   `json:"tab_id,omitempty"`        // required when Type == "tab"
+	Split        string   `json:"split,omitempty"`         // "right" | "down" (required when Type == "tab")
+	TargetPaneID string   `json:"target_pane_id,omitempty"` // optional target pane within tab
+	Ratio        *float64 `json:"ratio,omitempty"`         // optional split ratio
+	WorkspaceID  string   `json:"workspace_id,omitempty"`  // optional when Type == "new_tab"
+	Label        string   `json:"label,omitempty"`         // optional
+	TabLabel     string   `json:"tab_label,omitempty"`     // optional when Type == "new_workspace"
+}
+
+// MovePane relocates one Pane to a destination: another Tab (split right/down against an optional target pane),
+// a new Tab, or a new Workspace. Backend method is pane.move (Protocol 22).
+func (m *Manager) MovePane(session, paneID string, dest PaneMoveDestination, focus bool) (Projection, error) {
+	if strings.TrimSpace(paneID) == "" {
+		return Projection{}, fmt.Errorf("pane id is required")
+	}
+	destType := strings.TrimSpace(dest.Type)
+	if destType == "" {
+		return Projection{}, fmt.Errorf("destination type is required")
+	}
+	destMap := map[string]any{"type": destType}
+	switch destType {
+	case "tab":
+		if strings.TrimSpace(dest.TabID) == "" {
+			return Projection{}, fmt.Errorf("tab_id is required for tab destination")
+		}
+		destMap["tab_id"] = strings.TrimSpace(dest.TabID)
+		split := strings.TrimSpace(dest.Split)
+		if split == "" {
+			split = "right"
+		}
+		if split != "right" && split != "down" {
+			return Projection{}, fmt.Errorf("unsupported pane split direction %q", split)
+		}
+		destMap["split"] = split
+		if target := strings.TrimSpace(dest.TargetPaneID); target != "" {
+			destMap["target_pane_id"] = target
+		}
+		if dest.Ratio != nil {
+			destMap["ratio"] = *dest.Ratio
+		}
+	case "new_tab":
+		if ws := strings.TrimSpace(dest.WorkspaceID); ws != "" {
+			destMap["workspace_id"] = ws
+		}
+		if lbl := strings.TrimSpace(dest.Label); lbl != "" {
+			destMap["label"] = lbl
+		}
+	case "new_workspace":
+		if lbl := strings.TrimSpace(dest.Label); lbl != "" {
+			destMap["label"] = lbl
+		}
+		if tabLbl := strings.TrimSpace(dest.TabLabel); tabLbl != "" {
+			destMap["tab_label"] = tabLbl
+		}
+	default:
+		return Projection{}, fmt.Errorf("unsupported destination type %q", destType)
+	}
+
+	params := map[string]any{
+		"pane_id":     strings.TrimSpace(paneID),
+		"destination": destMap,
+		"focus":       focus,
+	}
+	return m.mutateAndProject(session, "pane.move", params)
+}
 
 // CreateProject creates one Herdr runtime workspace inside the selected
 // top-level Herdr instance. Product UI calls this a Project; the wire method

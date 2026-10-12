@@ -33,6 +33,10 @@ func appClick(w *mygo.Window, x, y float64) (ok bool) {
 	return ok
 }
 
+// heldAppClick is appClick: the owner of a focusable flyout eats the
+// click that closes it, however long it is held.
+func heldAppClick(w *mygo.Window, x, y float64) bool { return appClick(w, x, y) }
+
 func sideButton(w *mygo.Window, back bool) (ok bool) {
 	mygo.RunOnMain(func() { ok = win.TestSideButton(w.NativeHandle(), back) })
 	return ok

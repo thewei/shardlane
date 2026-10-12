@@ -1,5 +1,7 @@
 # Grid view
 
+<!-- preview grid-view 310 -->
+
 `ui.GridView` shows items in a grid, as Photos' library and Finder's icon
 view: as many columns as fit items at least as wide as asked, sharing the
 width left, in rows of a height, built only as they show, so grids of

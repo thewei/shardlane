@@ -101,7 +101,7 @@ func TestQuickPanelViewRendersAgentsWithStatusTabGroup(t *testing.T) {
 			t.Fatalf("panel row still shows %q; texts=%q", gone, tester.Texts())
 		}
 	}
-	if tester.HasText("No agents here") {
+	if tester.HasText("No active agents") {
 		t.Fatalf("panel shows the empty state despite live agents; texts=%q", tester.Texts())
 	}
 }
@@ -137,7 +137,7 @@ func TestQuickPanelViewEmptyWithoutAgents(t *testing.T) {
 	shell.activeInstance = "inst-1"
 	shell.reconcileWorkbench()
 	tester := ui.NewTester(shell.QuickPanelView, QuickPanelWidth, QuickPanelHeight)
-	if !tester.HasText("No agents here") {
+	if !tester.HasText("No active agents") {
 		t.Fatalf("empty panel missing the empty state; texts=%q", tester.Texts())
 	}
 }

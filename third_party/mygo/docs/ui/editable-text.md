@@ -1,5 +1,7 @@
 # Editable text
 
+<!-- preview editable-text 120 -->
+
 `ui.EditableText` shows a `*string` as a text that the user edits in place,
 as a file's name in Finder: a double click on it, or Enter while it has the
 focus, shows a text input of it, with the text before its extension

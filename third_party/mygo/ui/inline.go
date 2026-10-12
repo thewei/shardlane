@@ -195,7 +195,7 @@ func (p *Painter) paintInline(e *node) {
 	}
 	for ch := e.first; ch != nil; ch = ch.next {
 		if ch.flags&flagInvisible == 0 {
-			p.paintInline(ch)
+			p.element(ch)
 		}
 	}
 }
@@ -222,7 +222,7 @@ func (rt *engine) accessInline(t *platform.AccessTree, e *node, parent int) {
 		}
 		n := platform.AccessNode{
 			ID: ch.id, Parent: parent, Role: role, Label: ch.label,
-			Bounds: platform.RectF{X: float64(ch.x), Y: float64(ch.y), W: float64(ch.w), H: float64(ch.h)},
+			Bounds: accessBounds(ch),
 		}
 		rt.accessDetails(ch, &n)
 		t.Nodes = append(t.Nodes, n)

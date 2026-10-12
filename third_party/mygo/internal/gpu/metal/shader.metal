@@ -23,7 +23,9 @@ struct Inst {
 	float4 uv;        // texture rectangle, normalized, border widths, the box casting a shadow, or an inner shadow's hole
 	float4 clip;      // the innermost clip rectangle
 	float4 clipRadii;
-	float4 params;    // kind, dashed or grayscale, sigma or paint, opacity
+	float4 params;				   // kind, dashed or grayscale, sigma or paint, opacity
+	float4 transform0, transform1; // local-to-frame rows, AA and clip-mask flags
+	float4 transform2;             // the projective row's g and h
 };
 
 // The color and, for dual-source blending, the source's alpha of each
@@ -36,15 +38,23 @@ struct PSOut {
 struct VSOut {
 	float4 pos [[position]];
 	float2 p;
+	// The frame point times its projective divisor, and the divisor: they
+	// interpolate in perspective to what divides into the frame point.
+	float3 world;
 	float2 tex;
 	uint inst [[flat]];
 };
 
+// frameH returns the frame point of local p, in homogeneous coordinates.
+float3 frameH(Inst i, float2 p) {
+	return float3(dot(i.transform0.xyz, float3(p, 1.0f)), dot(i.transform1.xyz, float3(p, 1.0f)),
+				  dot(float3(i.transform2.xy, 1.0f), float3(p, 1.0f)));
+}
+
 // globals holds the frame's width and height in pixels, and 1 in z when
 // its target keeps colors outside the sRGB gamut (extended sRGB, float16).
-vertex VSOut vs(uint vid [[vertex_id]], uint iid [[instance_id]],
-                const device Inst *insts [[buffer(0)]],
-                constant float4 &globals [[buffer(1)]]) {
+vertex VSOut vs(uint vid [[vertex_id]], uint iid [[instance_id]], const device Inst *insts [[buffer(0)]],
+				constant float4 &globals [[buffer(1)]]) {
 	Inst i = insts[iid];
 	float2 corner = float2(float(vid & 1u), float(vid >> 1u));
 	float4 r = i.rect;
@@ -55,11 +65,22 @@ vertex VSOut vs(uint vid [[vertex_id]], uint iid [[instance_id]],
 		float e = 3.0f * i.params.z + 1.0f;
 		r = float4(r.xy - e, r.zw + 2.0f * e);
 	}
+	float3 h = frameH(i, r.xy + corner * r.zw);
+	if (i.transform0.w > 0.5f && h.z > 0.0f) {
+		// A pixel's reach at this corner, by the map's Jacobian there.
+		float2 s = h.xy / h.z;
+		float a = (i.transform0.x - s.x * i.transform2.x) / h.z, c = (i.transform0.y - s.x * i.transform2.y) / h.z;
+		float b = (i.transform1.x - s.y * i.transform2.x) / h.z, d = (i.transform1.y - s.y * i.transform2.y) / h.z;
+		float2 e = float2(abs(d) + abs(c), abs(b) + abs(a)) / abs(a * d - b * c);
+		r = float4(r.xy - e, r.zw + 2.0f * e);
+	}
 	float2 p = r.xy + corner * r.zw;
+	h = frameH(i, p);
 	VSOut o;
-	o.pos = float4(p / globals.xy * float2(2.0f, -2.0f) + float2(-1.0f, 1.0f), 0.0f, 1.0f);
+	o.pos = float4(h.xy / globals.xy * float2(2.0f, -2.0f) + h.z * float2(-1.0f, 1.0f), 0.0f, h.z);
 	o.p = p;
-	o.tex = mix(i.uv.xy, i.uv.zw, corner);
+	o.world = h;
+	o.tex = i.uv.xy + (p - i.rect.xy) / i.rect.zw * (i.uv.zw - i.uv.xy);
 	o.inst = iid;
 	return o;
 }
@@ -135,13 +156,15 @@ float contInset(ContCorner c, float v) {
 		float m = (lo * dhi - hi * dlo) / (dhi - dlo);
 		float dm = contDist(c, m, v);
 		if (dm > 0.0f) {
-			lo = m; dlo = dm;
+			lo = m;
+			dlo = dm;
 			if (side == 1) {
 				dhi *= 0.5f;
 			}
 			side = 1;
 		} else {
-			hi = m; dhi = dm;
+			hi = m;
+			dhi = dm;
 			if (side == -1) {
 				dlo *= 0.5f;
 			}
@@ -181,8 +204,10 @@ float contValue(float2 p, float4 rect, thread const ContCorner *c, thread bool &
 // antialiases.
 float contCoverage(float2 p, float4 rect, float4 r) {
 	ContCorner c[4] = {
-		contCorner(r.x, r.y, r.w, rect.z, rect.w), contCorner(r.y, r.x, r.z, rect.z, rect.w),
-		contCorner(r.z, r.w, r.y, rect.z, rect.w), contCorner(r.w, r.z, r.x, rect.z, rect.w),
+		contCorner(r.x, r.y, r.w, rect.z, rect.w),
+		contCorner(r.y, r.x, r.z, rect.z, rect.w),
+		contCorner(r.z, r.w, r.y, rect.z, rect.w),
+		contCorner(r.w, r.z, r.x, rect.z, rect.w),
 	};
 	bool curved, ignored;
 	float d = contValue(p, rect, c, curved);
@@ -212,6 +237,95 @@ float rectCoverage(float2 p, float4 rect, float4 radii) {
 		return coverage(sdRoundRect(p, rect, radii));
 	}
 	return areaCoverage(p, rect);
+}
+
+// Coverage is integrated in device space, matching the CPU compositor.
+float localValue(float2 p, float4 rect, float4 r) {
+	if (!any(r < 0.0f))
+		return sdRoundRect(p, rect, r);
+	r = abs(r);
+	ContCorner c[4] = {contCorner(r.x, r.y, r.w, rect.z, rect.w), contCorner(r.y, r.x, r.z, rect.z, rect.w),
+					   contCorner(r.z, r.w, r.y, rect.z, rect.w), contCorner(r.w, r.z, r.x, rect.z, rect.w)};
+	bool curved;
+	return contValue(p, rect, c, curved);
+}
+// Frame is where a fragment is in the frame, s, and, when its instance's
+// map is projective (persp), the columns of the map back, up to a factor.
+struct Frame {
+	float2 s;
+	float3 c0, c1, c2;
+	bool persp;
+};
+Frame frameOf(VSOut v, Inst i) {
+	Frame f;
+	f.persp = any(i.transform2.xy != 0.0f);
+	// In perspective, the pixel's center, as interpolating drifts.
+	f.s = f.persp ? v.pos.xy : v.world.xy / v.world.z;
+	float3 r0 = i.transform0.xyz, r1 = i.transform1.xyz, r2 = float3(i.transform2.xy, 1.0f);
+	f.c0 = cross(r1, r2);
+	f.c1 = cross(r2, r0);
+	f.c2 = cross(r0, r1);
+	return f;
+}
+// localOf returns the point of the instance that shows at the frame's s.
+float2 localOf(Frame f, float2 s) {
+	float3 q = f.c0 * s.x + f.c1 * s.y + f.c2;
+	return q.xy / q.z;
+}
+float localCoverage(float2 p, float4 rect, float4 radii, float affine, Frame fr) {
+	if (affine < 0.5f)
+		return rectCoverage(p, rect, radii);
+	float2 dx = dfdx(p), dy = dfdy(p);
+	if (fr.persp) {
+		// In perspective, each sample where the CPU renderer takes it.
+		p = localOf(fr, fr.s);
+		dx = localOf(fr, fr.s + float2(0.5f, 0.5f)) - p;
+		dy = localOf(fr, fr.s + float2(0.5f, -0.5f)) - p;
+		float reach = max(abs(dx.x) + abs(dx.y), abs(dy.x) + abs(dy.y)) * 2.0f;
+		float d = localValue(p, rect, radii);
+		if (d < -reach)
+			return 1.0f;
+		if (d > reach)
+			return 0.0f;
+		float n = 0.0f;
+		for (int y = 0; y < 4; y++)
+			for (int x = 0; x < 4; x++) {
+				float2 q = localOf(fr, fr.s + float2((float(x) + 0.5f) / 4.0f - 0.5f, (float(y) + 0.5f) / 4.0f - 0.5f));
+				n += localValue(q, rect, radii) <= 0.0f ? 1.0f : 0.0f;
+			}
+		return n / 16.0f;
+	}
+	float2 a = (dx + dy) * 0.5f, b = (dx - dy) * 0.5f;
+	float reach = max(abs(a.x) + abs(a.y), abs(b.x) + abs(b.y)) * 2.0f;
+	float d = localValue(p, rect, radii);
+	if (d < -reach)
+		return 1.0f;
+	if (d > reach)
+		return 0.0f;
+	float n = 0.0f;
+	for (int y = 0; y < 4; y++)
+		for (int x = 0; x < 4; x++) {
+			float2 q = p + dx * ((float(x) + 0.5f) / 4.0f - 0.5f) + dy * ((float(y) + 0.5f) / 4.0f - 0.5f);
+			n += localValue(q, rect, radii) <= 0.0f ? 1.0f : 0.0f;
+		}
+	return n / 16.0f;
+}
+float clipCoverage(VSOut v, Inst i, texture2d<float> mask, sampler samp) {
+	Frame fr = frameOf(v, i);
+	float2 world = fr.s;
+	if (i.transform1.w < 0.5f)
+		return rectCoverage(world, i.clip, i.clipRadii);
+	if (i.transform1.w > 1.5f)
+		return localCoverage(v.p, i.clip, float4(0.0f), i.transform0.w, fr) *
+			   mask.sample(samp, (world - i.clipRadii.xy) / i.clipRadii.zw).a;
+	return mask.sample(samp, (world - i.clip.xy) / i.clip.zw).a;
+}
+float4 sampleLocal(texture2d<float> t, sampler samp, float2 uv, float4 src, float affine) {
+	if (affine > 0.5f) {
+		float2 halfPixel = 0.5f / float2(t.get_width(), t.get_height());
+		uv = clamp(uv, src.xy + halfPixel, src.zw - halfPixel);
+	}
+	return t.sample(samp, uv);
 }
 
 float4 premul(float4 c) { return float4(c.rgb * c.a, c.a); }
@@ -304,26 +418,22 @@ float3 cbrt3(float3 v) { return sign(v) * pow(abs(v), float3(1.0f / 3.0f)); }
 
 float3 oklab(float3 srgb) {
 	float3 c = toLinear(srgb);
-	float3 lms = cbrt3(float3(
-		0.4122214708f * c.r + 0.5363325363f * c.g + 0.0514459929f * c.b,
-		0.2119034982f * c.r + 0.6806995451f * c.g + 0.1073969566f * c.b,
-		0.0883024619f * c.r + 0.2817188376f * c.g + 0.6299787005f * c.b));
-	return float3(
-		0.2104542553f * lms.x + 0.7936177850f * lms.y - 0.0040720468f * lms.z,
-		1.9779984951f * lms.x - 2.4285922050f * lms.y + 0.4505937099f * lms.z,
-		0.0259040371f * lms.x + 0.7827717662f * lms.y - 0.8086757660f * lms.z);
+	float3 lms = cbrt3(float3(0.4122214708f * c.r + 0.5363325363f * c.g + 0.0514459929f * c.b,
+							  0.2119034982f * c.r + 0.6806995451f * c.g + 0.1073969566f * c.b,
+							  0.0883024619f * c.r + 0.2817188376f * c.g + 0.6299787005f * c.b));
+	return float3(0.2104542553f * lms.x + 0.7936177850f * lms.y - 0.0040720468f * lms.z,
+				  1.9779984951f * lms.x - 2.4285922050f * lms.y + 0.4505937099f * lms.z,
+				  0.0259040371f * lms.x + 0.7827717662f * lms.y - 0.8086757660f * lms.z);
 }
 
 float3 fromOklab(float3 lab) {
-	float3 lms = float3(
-		lab.x + 0.3963377774f * lab.y + 0.2158037573f * lab.z,
-		lab.x - 0.1055613458f * lab.y - 0.0638541728f * lab.z,
-		lab.x - 0.0894841775f * lab.y - 1.2914855480f * lab.z);
+	float3 lms = float3(lab.x + 0.3963377774f * lab.y + 0.2158037573f * lab.z,
+						lab.x - 0.1055613458f * lab.y - 0.0638541728f * lab.z,
+						lab.x - 0.0894841775f * lab.y - 1.2914855480f * lab.z);
 	lms = lms * lms * lms;
-	return toSRGB(float3(
-		4.0767416621f * lms.x - 3.3077115913f * lms.y + 0.2309699292f * lms.z,
-		-1.2684380046f * lms.x + 2.6097574011f * lms.y - 0.3413193965f * lms.z,
-		-0.0041960863f * lms.x - 0.7034186147f * lms.y + 1.7076147010f * lms.z));
+	return toSRGB(float3(4.0767416621f * lms.x - 3.3077115913f * lms.y + 0.2309699292f * lms.z,
+						 -1.2684380046f * lms.x + 2.6097574011f * lms.y - 0.3413193965f * lms.z,
+						 -0.0041960863f * lms.x - 0.7034186147f * lms.y + 1.7076147010f * lms.z));
 }
 
 // paint returns the premultiplied color at p of plain color, a gradient
@@ -366,13 +476,21 @@ float dash(float2 p, float4 rect, float4 w) {
 	float dl = w.w > 0.0f ? q.x / w.w : 1e9f;
 	float s, len, bw;
 	if (dt <= dr && dt <= db && dt <= dl) {
-		s = q.x; len = rect.z; bw = w.x;
+		s = q.x;
+		len = rect.z;
+		bw = w.x;
 	} else if (dr <= db && dr <= dl) {
-		s = q.y; len = rect.w; bw = w.y;
+		s = q.y;
+		len = rect.w;
+		bw = w.y;
 	} else if (db <= dl) {
-		s = rect.z - q.x; len = rect.z; bw = w.z;
+		s = rect.z - q.x;
+		len = rect.z;
+		bw = w.z;
 	} else {
-		s = rect.w - q.y; len = rect.w; bw = w.w;
+		s = rect.w - q.y;
+		len = rect.w;
+		bw = w.w;
 	}
 	// n - 1 is how many periods of a dash and a gap, six widths, fit in
 	// len: GPUs divide less exactly than CPUs, and may count one too few
@@ -389,24 +507,24 @@ float dash(float2 p, float4 rect, float4 w) {
 	return coverage(k - 2.0f * floor(k * 0.5f) < 0.5f ? -edge : edge);
 }
 
-fragment PSOut ps(VSOut v [[stage_in]],
-                   const device Inst *insts [[buffer(0)]],
-                   constant float4 &globals [[buffer(1)]],
-                   texture2d<float> maskTex [[texture(0)]],
-                   texture2d<float> colorTex [[texture(1)]],
-                   texture2d<float> imageTex [[texture(2)]],
-                   sampler samp [[sampler(0)]]) {
+fragment PSOut ps(VSOut v [[stage_in]], const device Inst *insts [[buffer(0)]],
+				  constant float4 &globals [[buffer(1)]], texture2d<float> maskTex [[texture(0)]],
+				  texture2d<float> colorTex [[texture(1)]], texture2d<float> imageTex [[texture(2)]],
+				  texture2d<float> clipTex [[texture(4)]], sampler samp [[sampler(0)]]) {
 	Inst i = insts[v.inst];
+	Frame fr = frameOf(v, i);
 	float kind = i.params.x;
 	bool wide = globals.z > 0.5f;
 	float4 res;
+	float glyphCov = i.transform0.w > 0.5f ? localCoverage(v.p, i.rect, float4(0.0f), 1.0f, fr) : 1.0f;
 	if (kind < 0.5f) {
-		float outer = rectCoverage(v.p, i.rect, i.radii);
+		float outer = localCoverage(v.p, i.rect, i.radii, i.transform0.w, fr);
 		res = paint(v.p, i.params.z, i.rect, i.color, i.color2, i.grad, wide) * outer;
 		float4 bw = i.uv; // top, right, bottom, left
 		if (any(bw > 0.0f)) {
 			float4 ir = float4(i.rect.xy + bw.wx, i.rect.zw - bw.yz - bw.wx);
-			float innerCov = (ir.z > 0.0f && ir.w > 0.0f) ? rectCoverage(v.p, ir, i.inner) : 0.0f;
+			float innerCov =
+				(ir.z > 0.0f && ir.w > 0.0f) ? localCoverage(v.p, ir, i.inner, i.transform0.w, fr) : 0.0f;
 			float bc = saturate(outer - innerCov);
 			if (i.params.y > 0.5f) {
 				bc *= dash(v.p, i.rect, bw);
@@ -419,35 +537,49 @@ fragment PSOut ps(VSOut v [[stage_in]],
 		float sigma = i.params.z;
 		float hole = 0.0f;
 		if (i.uv.z > 0.0f && i.uv.w > 0.0f) {
-			hole = sigma > 0.0f ? boxShadow(v.p, i.uv, sigma, i.inner) : rectCoverage(v.p, i.uv, i.inner);
+			hole = sigma > 0.0f ? boxShadow(v.p, i.uv, sigma, i.inner)
+							   : localCoverage(v.p, i.uv, i.inner, i.transform0.w, fr);
 		}
-		res = premul(i.color) * (rectCoverage(v.p, i.rect, i.radii) * (1.0f - hole));
+		res = premul(i.color) * (localCoverage(v.p, i.rect, i.radii, i.transform0.w, fr) * (1.0f - hole));
 	} else if (kind < 1.5f) {
 		float sigma = i.params.z;
-		float s = sigma > 0.0f ? boxShadow(v.p, i.rect, sigma, i.radii) : rectCoverage(v.p, i.rect, i.radii);
+		float s = sigma > 0.0f ? boxShadow(v.p, i.rect, sigma, i.radii)
+							   : localCoverage(v.p, i.rect, i.radii, i.transform0.w, fr);
 		if (i.uv.z > 0.0f && i.uv.w > 0.0f) {
-			s *= 1.0f - rectCoverage(v.p, i.uv, i.inner); // outside the box casting it
+			s *= 1.0f - localCoverage(v.p, i.uv, i.inner, i.transform0.w, fr); // outside the box casting it
 		}
 		res = premul(i.color) * s;
 	} else if (kind < 2.5f) {
 		float4 c = paint(v.p, i.params.z, i.rect, i.color, i.color2, i.grad, wide);
-		res = c * textCoverage(maskTex.sample(samp, v.tex).r, unpremul(c), i.inner.x, i.inner.y, i.radii);
+		res = c *
+			  textCoverage(sampleLocal(maskTex, samp, v.tex, i.uv, i.transform0.w).r, unpremul(c), i.inner.x,
+						   i.inner.y, i.radii) *
+			  glyphCov;
 	} else if (kind < 3.5f) {
-		res = colorTex.sample(samp, v.tex) * i.color.a;
+		res = sampleLocal(colorTex, samp, v.tex, i.uv, i.transform0.w) * i.color.a * glyphCov;
 	} else if (kind < 4.5f) {
-		res = imageTex.sample(samp, v.tex) * rectCoverage(v.p, i.rect, i.radii);
+		res = sampleLocal(imageTex, samp, v.tex, i.uv, i.transform0.w) *
+			  localCoverage(v.p, i.rect, i.radii, i.transform0.w, fr);
 		if (i.params.y > 0.5f) {
 			res.rgb = float3(dot(res.rgb, float3(0.2126f, 0.7152f, 0.0722f)));
 		}
 	} else {
 		float4 c = paint(v.p, i.params.z, i.rect, i.color, i.color2, i.grad, wide);
 		float3 straight = unpremul(c);
-		float3 a = subpixelCoverage(colorTex.sample(samp, v.tex).rgb, straight, i.inner.x, i.inner.y, i.radii);
-		float3 w = a * c.a * rectCoverage(v.p, i.clip, i.clipRadii) * i.params.w;
+		if (i.transform0.w > 0.5f) {
+			float3 rgb = sampleLocal(colorTex, samp, v.tex, i.uv, 1.0f).rgb;
+			res = c * textCoverage((rgb.r + rgb.g + rgb.b) / 3.0f, straight, i.inner.x, i.inner.y, i.radii) *
+				  glyphCov;
+			res *= clipCoverage(v, i, clipTex, samp) * i.params.w;
+			return PSOut{res, res.aaaa};
+		}
+		float3 a = subpixelCoverage(sampleLocal(colorTex, samp, v.tex, i.uv, i.transform0.w).rgb, straight,
+									i.inner.x, i.inner.y, i.radii);
+		float3 w = a * c.a * clipCoverage(v, i, clipTex, samp) * i.params.w;
 		float wa = (w.r + w.g + w.b) / 3.0f;
 		return PSOut{float4(straight * w, wa), float4(w, wa)};
 	}
-	float clip = rectCoverage(v.p, i.clip, i.clipRadii);
+	float clip = clipCoverage(v, i, clipTex, samp);
 	res *= clip * i.params.w;
 	return PSOut{res, res.aaaa};
 }
@@ -457,11 +589,11 @@ fragment PSOut ps(VSOut v [[stage_in]],
 // A pass computing the backdrop of an effect (see package gpu).
 struct Pass {
 	int2 origin; // down: the first pixel of the area read, in the frame
-	int2 limit;  // the last texel that may be read: in the frame for down
-	int2 shift;  // down: subtracted from frame pixels to read the source
-	int2 dir;    // blur: along rows (1, 0) or columns (0, 1)
-	int down;    // down: the size of the squares averaged
-	int radius;  // blur: how far it reaches each way
+	int2 limit;	 // the last texel that may be read: in the frame for down
+	int2 shift;	 // down: subtracted from frame pixels to read the source
+	int2 dir;	 // blur: along rows (1, 0) or columns (0, 1)
+	int down;	 // down: the size of the squares averaged
+	int radius;	 // blur: how far it reaches each way
 	float sigma; // blur: its standard deviation, 0 for none
 	float pad;
 };
@@ -479,7 +611,8 @@ vertex PassVSOut passVS(uint vid [[vertex_id]]) {
 
 // down averages the square of the area that texel stands for, repeating
 // the area's last pixels past its far edges.
-fragment float4 down(PassVSOut v [[stage_in]], texture2d<float> src [[texture(0)]], constant Pass &p [[buffer(0)]]) {
+fragment float4 down(PassVSOut v [[stage_in]], texture2d<float> src [[texture(0)]],
+					 constant Pass &p [[buffer(0)]]) {
 	int2 o = p.origin + int2(v.pos.xy) * p.down;
 	float4 c = float4(0.0f);
 	for (int y = 0; y < p.down; y++) {
@@ -491,7 +624,8 @@ fragment float4 down(PassVSOut v [[stage_in]], texture2d<float> src [[texture(0)
 }
 
 // blur blurs along a row or a column, clamping at its ends.
-fragment float4 blur(PassVSOut v [[stage_in]], texture2d<float> src [[texture(0)]], constant Pass &p [[buffer(0)]]) {
+fragment float4 blur(PassVSOut v [[stage_in]], texture2d<float> src [[texture(0)]],
+					 constant Pass &p [[buffer(0)]]) {
 	int2 at = int2(v.pos.xy);
 	float4 c = float4(0.0f);
 	float sum = 0.0f;

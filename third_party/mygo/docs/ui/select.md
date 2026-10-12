@@ -1,5 +1,7 @@
 # Select
 
+<!-- preview select 230 -->
+
 `ui.Select` creates a drop-down choosing one of a list of strings into a
 `*string`: a click on it, or Enter, Space, Up or Down while it has the
 keyboard focus, opens its options below it, where the arrows, Home and End

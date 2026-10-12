@@ -185,7 +185,7 @@ func (r *Renderer) addBackdrops(s *scene.Scene) {
 			if fx.Effect == nil || !fx.Effect.Backdrop {
 				continue
 			}
-			need := scene.BackdropOf(op.Rect, fx.Blur, s.Width, s.Height).Area.Union(r.next[i])
+			need := scene.BackdropOf(op.Transform.Bounds(op.Rect), fx.Blur, s.Width, s.Height).Area.Union(r.next[i])
 			for _, d := range r.damage {
 				if d.Overlaps(need) && !need.In(d) {
 					r.damage = addRect(r.damage, need)
@@ -294,20 +294,22 @@ func (r *Renderer) opBounds(s *scene.Scene, out []image.Rectangle) []image.Recta
 		var b image.Rectangle
 		switch op.Kind {
 		case scene.OpFill, scene.OpImage, scene.OpEffect, scene.OpHole:
-			b = outset(op.Rect, 1)
+			b = outset(op.Transform.Bounds(op.Rect), 1)
 		case scene.OpShadow:
 			if op.Inset {
-				b = outset(op.Cast, 1)
+				b = outset(op.Transform.Bounds(op.Cast), 1)
 			} else {
-				b = outset(op.Rect, 1.5*op.Blur+1)
+				e := 1.5*op.Blur + 1
+				box := scene.Rect{X: op.Rect.X - e, Y: op.Rect.Y - e, W: op.Rect.W + 2*e, H: op.Rect.H + 2*e}
+				b = outset(op.Transform.Bounds(box), 1)
 			}
 		case scene.OpGlyphs:
 			for _, g := range s.Glyphs[op.Start:op.End] {
-				b = b.Union(outset(scene.Rect{X: g.X, Y: g.Y, W: g.W, H: g.H}, 1))
+				b = b.Union(outset(op.Transform.Mul(g.Transform).Bounds(scene.Rect{X: g.X, Y: g.Y, W: g.W, H: g.H}), 1))
 			}
 		case scene.OpPushClip:
 			// A clip that changes changes everything it cuts.
-			b = outset(op.Rect, 1)
+			b = outset(op.Transform.Bounds(op.Rect), 1)
 			r.clips = append(r.clips, clip)
 			clip = clip.Intersect(b)
 		case scene.OpPopClip:

@@ -1,5 +1,7 @@
 # Segmented control
 
+<!-- preview segmented 200 -->
+
 `ui.Segmented` creates a segmented control showing labels, of which an
 `*int` is the index of the one chosen, as a switch between views: a click
 chooses a segment, as do the arrows while it has the keyboard focus, and

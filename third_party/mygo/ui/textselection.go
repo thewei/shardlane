@@ -202,7 +202,7 @@ func (rt *engine) textSelectionAt(scope uint64, x, y float32) textPoint {
 			continue
 		}
 		for _, line := range s.editor.layout.Lines {
-			r := intersect(Rect{s.x + s.editor.originX + line.X, s.y + s.editor.originY + line.Y, line.Width, line.Height}, Rect{s.vx, s.vy, s.vw, s.vh})
+			r := intersect(transformRect(s.world, Rect{s.x + s.editor.originX + line.X, s.y + s.editor.originY + line.Y, line.Width, line.Height}), Rect{s.vx, s.vy, s.vw, s.vh})
 			if r.W <= 0 || r.H <= 0 {
 				continue
 			}
@@ -220,10 +220,11 @@ func (rt *engine) textSelectionAt(scope uint64, x, y float32) textPoint {
 
 func textHit(s *state, x, y float32) textPoint {
 	ed := s.editor
-	at := ed.hit(x-s.x, y-s.y)
-	if y < s.y+ed.originY {
+	lx, ly := s.local(x, y)
+	at := ed.hit(lx, ly)
+	if ly < ed.originY {
 		at = 0
-	} else if y >= s.y+ed.originY+ed.layout.Height {
+	} else if ly >= ed.originY+ed.layout.Height {
 		at = ed.buf.n
 	}
 	return textPoint{s.id, at}
@@ -242,7 +243,8 @@ func (rt *engine) scrollTextSelection() {
 			continue
 		}
 		var dy float32
-		switch top, bottom := rt.pointerY-s.vy, s.vy+s.vh-rt.pointerY; {
+		_, y := s.local(rt.pointerX, rt.pointerY)
+		switch top, bottom := y, s.h-y; {
 		case top < edge:
 			dy = -min(edge-top, edge) / 2
 		case bottom < edge:

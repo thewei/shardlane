@@ -1,10 +1,15 @@
+//go:build !js
+
 package mygo
 
 import (
 	"fmt"
 	"io/fs"
 	"log"
+	"mime"
 	"net/http"
+	"net/url"
+	"os"
 	"path"
 	"runtime/debug"
 	"strconv"
@@ -100,6 +105,10 @@ func validScheme(s string) bool {
 		}
 	}
 	return true
+}
+
+func (h *windowHandler) SchemeRequest(req *platform.SchemeRequest) {
+	Protocol.serve(h.w, req)
 }
 
 // serve runs on the main thread when the webview requests a custom scheme.
@@ -295,4 +304,125 @@ func FileServer(fsys fs.FS) http.Handler {
 		}
 		files.ServeHTTP(w, r)
 	})
+}
+
+// frontendHandler serves mygo:// when the app has no handler of its own.
+func frontendHandler() http.Handler {
+	frontend.Lock()
+	fsys := frontend.fsys
+	frontend.Unlock()
+	if fsys == nil && IsDev() {
+		// `mygo dev` without a dev server: the files on disk.
+		if dir := os.Getenv("MYGO_FRONTEND_DIST"); dir != "" {
+			fsys = os.DirFS(dir)
+		}
+	}
+	if fsys == nil {
+		return http.HandlerFunc(noFrontend)
+	}
+	return FileServer(fsys)
+}
+
+func noFrontend(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusNotFound)
+	_, _ = w.Write([]byte(`<!doctype html>
+<meta charset="utf-8">
+<title>No frontend</title>
+<style>body{font:15px/1.5 system-ui,sans-serif;margin:3em;color:#444}code{font-size:90%}</style>
+<h1>No frontend</h1>
+<p>Run the app with <code>mygo dev</code>, which loads <code>devUrl</code> from mygo.config.ts,
+or build it with <code>mygo build</code>, which embeds <code>frontendDist</code>.</p>
+`))
+}
+
+func (h *windowHandler) SchemeDownload(rawURL string) { go downloadScheme(h, rawURL) }
+
+// downloadScheme serves a URL of a custom scheme into a download.
+func downloadScheme(h *windowHandler, rawURL string) {
+	scheme, _, _ := strings.Cut(rawURL, ":")
+	scheme = strings.ToLower(scheme)
+	Protocol.mu.RLock()
+	handler := Protocol.handlers[scheme]
+	Protocol.mu.RUnlock()
+	if handler == nil && scheme == frontendScheme {
+		handler = frontendHandler()
+	}
+	finish := func(path string, err error) {
+		postMain(func() { h.DownloadFinished(rawURL, path, err) })
+	}
+	req, err := http.NewRequest(http.MethodGet, rawURL, nil)
+	if err != nil || handler == nil {
+		finish("", fmt.Errorf("mygo: cannot download %s", rawURL))
+		return
+	}
+	rw := &downloadWriter{h: h, url: rawURL, header: http.Header{}}
+	handler.ServeHTTP(rw, req)
+	rw.WriteHeader(http.StatusOK) // nothing written
+	if rw.file == nil {
+		if rw.err != nil {
+			finish("", rw.err)
+		}
+		return // canceled
+	}
+	if err := rw.file.Close(); rw.err == nil {
+		rw.err = err
+	}
+	if rw.err != nil {
+		os.Remove(rw.path)
+	}
+	finish(rw.path, rw.err)
+}
+
+// downloadWriter writes a response into the file OnWillDownload chose.
+type downloadWriter struct {
+	h      *windowHandler
+	url    string
+	header http.Header
+	wrote  bool
+	path   string
+	file   *os.File
+	err    error
+}
+
+func (d *downloadWriter) Header() http.Header { return d.header }
+
+func (d *downloadWriter) WriteHeader(status int) {
+	if d.wrote {
+		return
+	}
+	d.wrote = true
+	if status >= 400 {
+		d.err = fmt.Errorf("mygo: downloading %s: %d %s", d.url, status, http.StatusText(status))
+		return
+	}
+	name := ""
+	if _, params, err := mime.ParseMediaType(d.header.Get("Content-Disposition")); err == nil {
+		name = params["filename"]
+	}
+	if name == "" {
+		if u, err := url.Parse(d.url); err == nil {
+			name = path.Base(u.Path)
+		}
+	}
+	d.path = onMainValue(func() string { return d.h.DownloadStarted(d.url, name) })
+	if d.path == "" {
+		return
+	}
+	d.file, d.err = os.Create(d.path)
+	if d.err != nil {
+		d.file = nil
+	}
+}
+
+func (d *downloadWriter) Write(b []byte) (int, error) {
+	d.WriteHeader(http.StatusOK)
+	if d.file == nil || d.err != nil {
+		return len(b), nil // canceled: drain
+	}
+	n, err := d.file.Write(b)
+	if err != nil {
+		d.err = err
+	}
+	return n, err
 }

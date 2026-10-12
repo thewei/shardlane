@@ -1,5 +1,7 @@
 # Dialog
 
+<!-- preview dialog 260 -->
+
 `ui.Modal` shows a dialog its function builds over the dimmed window while
 a `*bool` is true; clicking outside it or pressing Escape sets it to false.
 

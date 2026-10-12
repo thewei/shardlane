@@ -1,5 +1,7 @@
 # Tabs
 
+<!-- preview tabs 160 -->
+
 `ui.Tabs` creates a row of tabs showing labels, of which an `*int` is the
 index of the one chosen. A click chooses a tab, as do the arrows, Home and
 End while one has the keyboard focus, which follows the choice; `Changed`

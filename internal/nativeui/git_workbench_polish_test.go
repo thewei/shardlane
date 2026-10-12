@@ -132,7 +132,7 @@ func TestGitQuickAICommitFillsSubjectButNeverCommits(t *testing.T) {
 		t.Fatal(err)
 	}
 	tt.Frame()
-	if err := tt.ChooseMenuItem("AI Commit (Pi) — fill subject"); err != nil {
+	if err := tt.ChooseMenuItem("Draft subject with Pi"); err != nil {
 		t.Fatal(err)
 	}
 	if !s.piQuickRunning {

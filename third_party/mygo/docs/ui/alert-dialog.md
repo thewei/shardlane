@@ -1,5 +1,7 @@
 # Alert dialog
 
+<!-- preview alert-dialog 240 -->
+
 `ui.AlertDialog` asks about something important over the window while a
 `*bool` is true, as AppKit's alerts: a title, a message, and buttons, the
 last of which is the default, in the accent color, with the focus, which

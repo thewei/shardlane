@@ -150,7 +150,8 @@ func TestGlyphShades(t *testing.T) {
 		t.Skip("font smoothing is off")
 	}
 	for i := 1; i < Shades; i++ {
-		if ink[i] <= ink[i-1] {
+		// Browsers' canvases embolden in fewer steps than Core Text.
+		if ink[i] < ink[i-1] || ink[i] == ink[i-1] && runtime.GOOS != "js" {
 			t.Errorf("ink of the shades %v", ink)
 		}
 	}
@@ -215,7 +216,9 @@ func TestFlat(t *testing.T) {
 	if plain := ink(&unsmoothed, 0); flat != plain {
 		t.Errorf("flat text has ink %d, unsmoothed text %d", flat, plain)
 	}
-	if g.Font.shaded && flat >= dark {
+	// Browsers' canvases smooth text as they do, and draw Flat text as the
+	// darkest shade.
+	if g.Font.shaded && flat >= dark && runtime.GOOS != "js" {
 		t.Errorf("flat text has ink %d, the darkest shade %d", flat, dark)
 	}
 }
@@ -599,6 +602,11 @@ func TestDigitFeatures(t *testing.T) {
 // the next family that has it, before the system's choice.
 func TestFontListFallback(t *testing.T) {
 	second := map[string]string{"windows": "MS Gothic", "darwin": "Hiragino Mincho ProN", "linux": "Noto Serif CJK JP"}[runtime.GOOS]
+	if second == "" {
+		// Browsers fall back within a list themselves (package text's
+		// canvas engine), and their fonts vary.
+		t.Skip("no font of another family to fall back to on " + runtime.GOOS)
+	}
 	s := newSystem()
 	if err := s.RegisterFont(goregular.TTF, "MyGo Latin"); err != nil {
 		t.Fatal(err)

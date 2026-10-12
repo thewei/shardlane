@@ -28,9 +28,11 @@ func main() {
 		name, _ := syscall.BytePtrFromString("shader.hlsl")
 		e, _ := syscall.BytePtrFromString(entry)
 		t, _ := syscall.BytePtrFromString(target)
-		const optimize3 = 1 << 15
+		// IEEE strictness avoids the native optimizer's stack overflow on
+		// transformed coverage sampling while retaining level 3 optimization.
+		const optimize3IEEE = 1<<15 | 1<<13
 		hr, _, _ := compiler.Call(uintptr(unsafe.Pointer(&src[0])), uintptr(len(src)), uintptr(unsafe.Pointer(name)),
-			0, 0, uintptr(unsafe.Pointer(e)), uintptr(unsafe.Pointer(t)), optimize3, 0,
+			0, 0, uintptr(unsafe.Pointer(e)), uintptr(unsafe.Pointer(t)), optimize3IEEE, 0,
 			uintptr(unsafe.Pointer(&blob)), uintptr(unsafe.Pointer(&errs)))
 		if int32(hr) < 0 {
 			msg := "unknown error"

@@ -101,3 +101,123 @@ func TestVisualCaretHitBeforeTrimmedWrapSpace(t *testing.T) {
 		t.Fatalf("hit before trimmed space selected %+v", p)
 	}
 }
+
+// Compare the line filter with the original glyph-by-glyph scan. Fixed geometry
+// covers every boundary without depending on platform fonts or shaping engines.
+func TestSelectionVisualLineSkipMatchesFullScan(t *testing.T) {
+	wrapped := &Layout{Runes: []rune("aaaa bbbb\ncccc dddd")}
+	for _, span := range [][2]int{{0, 5}, {5, 9}, {10, 19}} {
+		line := Line{Start: span[0], End: span[1], Width: float32((span[1] - span[0]) * 10), Height: 20, Y: float32(len(wrapped.Lines) * 20)}
+		for i := span[0]; i < span[1]; i++ {
+			line.Glyphs = append(line.Glyphs, Glyph{X: float32((i - span[0]) * 10), Advance: 10, Cluster: i, Runes: 1})
+		}
+		wrapped.Lines = append(wrapped.Lines, line)
+	}
+	// The initial and final empty lines and the consecutive newlines all have
+	// selectable newline boxes, even though they contain no glyphs.
+	emptyLines := &Layout{Runes: []rune("\nx\n\n"), Lines: []Line{
+		{Start: 0, End: 0, Height: 20},
+		{Start: 1, End: 2, Y: 20, Width: 10, Height: 20, Glyphs: []Glyph{{Advance: 10, Cluster: 1, Runes: 1}}},
+		{Start: 3, End: 3, Y: 40, Height: 20, RTL: true},
+		{Start: 4, End: 4, Y: 60, Height: 20},
+	}}
+	// A bidi line between two wrapped lines also has a cluster with multiple
+	// glyphs and runes, plus an ellipsis (zero runes) on the final line.
+	bidi := mixedLayout()
+	bidi.Runes = append([]rune("fi"), append(bidi.Runes, 'x')...)
+	bidi.Lines[0].Start, bidi.Lines[0].End = 2, len(bidi.Runes)-1
+	bidi.Lines[0].Y = 20
+	for i := range bidi.Lines[0].Glyphs {
+		bidi.Lines[0].Glyphs[i].Cluster += 2
+	}
+	bidi.Lines = append([]Line{{Start: 0, End: 2, Width: 20, Height: 20, Glyphs: []Glyph{
+		{Advance: 12, Cluster: 0, Runes: 2}, {X: 10, Advance: 10, Cluster: 0, Runes: 2},
+	}}}, bidi.Lines...)
+	bidi.Lines = append(bidi.Lines, Line{Start: len(bidi.Runes) - 1, End: len(bidi.Runes), Y: 40, Width: 20, Height: 20, Glyphs: []Glyph{
+		{Advance: 10, Cluster: len(bidi.Runes) - 1, Runes: 1}, {X: 10, Advance: 10, Cluster: len(bidi.Runes), Runes: 0},
+	}})
+	for _, tc := range []struct {
+		name   string
+		layout *Layout
+	}{
+		{"wrapped", wrapped}, {"empty_lines", emptyLines}, {"bidi_ligature", bidi},
+		{"empty", &Layout{Lines: []Line{{Height: 20}}}},
+		{"no_lines", &Layout{}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for start := -1; start <= len(tc.layout.Runes)+1; start++ {
+				for end := -1; end <= len(tc.layout.Runes)+1; end++ {
+					for _, on := range []bool{false, true} {
+						got := tc.layout.SelectionVisual(start, end, on)
+						want := selectionVisualFullScan(tc.layout, start, end, on)
+						if !slices.Equal(got, want) {
+							t.Fatalf("range %d..%d on=%v: got %v, full scan %v", start, end, on, got, want)
+						}
+					}
+				}
+			}
+		})
+	}
+}
+
+// selectionVisualFullScan preserves the pre-filter implementation as an oracle:
+// changes to which lines are visited must preserve its rectangles exactly.
+func selectionVisualFullScan(l *Layout, start, end int, on bool) []Rect {
+	if start > end {
+		start, end = end, start
+	}
+	if on {
+		end = len(l.Runes) + 1
+	}
+	var out []Rect
+	for li := range l.Lines {
+		line := &l.Lines[li]
+		var pieces []Rect
+		for i := 0; i < len(line.Glyphs); {
+			first := line.Glyphs[i]
+			x0, x1 := first.X, first.X+first.Advance
+			i++
+			for i < len(line.Glyphs) && line.Glyphs[i].Cluster == first.Cluster && line.Glyphs[i].Runes == first.Runes {
+				x0, x1 = min(x0, line.Glyphs[i].X), max(x1, line.Glyphs[i].X+line.Glyphs[i].Advance)
+				i++
+			}
+			a, z := max(start, first.Cluster), min(end, first.Cluster+first.Runes)
+			if a >= z || first.Runes <= 0 {
+				continue
+			}
+			width := x1 - x0
+			left, right := float32(a-first.Cluster)/float32(first.Runes), float32(z-first.Cluster)/float32(first.Runes)
+			if first.RTL {
+				left, right = 1-right, 1-left
+			}
+			pieces = append(pieces, Rect{x0 + left*width, line.Y, (right - left) * width, line.Height})
+		}
+		if start <= line.End && end > line.End && (li < len(l.Lines)-1 && l.Lines[li+1].Start > line.End || li == len(l.Lines)-1 && on) {
+			x, width := line.X+line.Width, l.Params.Style.FontSize()/3
+			if line.RTL {
+				x = line.X - width
+			}
+			pieces = append(pieces, Rect{x, line.Y, width, line.Height})
+		}
+		slices.SortFunc(pieces, func(a, b Rect) int {
+			if a.X < b.X {
+				return -1
+			}
+			if a.X > b.X {
+				return 1
+			}
+			return 0
+		})
+		for _, r := range pieces {
+			if r.W <= 0 {
+				continue
+			}
+			if n := len(out); n > 0 && out[n-1].Y == r.Y && out[n-1].X+out[n-1].W >= r.X-0.01 {
+				out[n-1].W = max(out[n-1].X+out[n-1].W, r.X+r.W) - out[n-1].X
+			} else {
+				out = append(out, r)
+			}
+		}
+	}
+	return out
+}

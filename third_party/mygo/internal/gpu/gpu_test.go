@@ -1,10 +1,98 @@
 package gpu
 
 import (
+	"bytes"
 	"testing"
 
 	"github.com/egoist/mygo/internal/scene"
 )
+
+func TestAffineInstancesPreserveGeometryAndWideColors(t *testing.T) {
+	m := scene.Translation(30, 10).Mul(scene.Rotation(20))
+	s := &scene.Scene{Width: 80, Height: 60, Clear: scene.Color{B: 120, A: 80}, Ops: []scene.Op{{Kind: scene.OpFill, Rect: scene.Rect{W: 25, H: 15}, Color: scene.Color{R: 255, A: 150}, Transform: m, Wide: 1}}, Wide: []scene.WideColors{{Set: scene.WideColor, Color: [4]float32{1.2, -0.1, 0.2, 0.8}}}}
+	var b Builder
+	b.Wide = true
+	defer b.Release()
+	uploads := 0
+	shown := b.Build(s, func(*scene.Image) uintptr { uploads++; return 1 })
+	if shown != s || uploads != 0 || len(b.Instances) != 1 {
+		t.Fatal("transformed fill was rasterized or uploaded as an image")
+	}
+	in := b.Instances[0]
+	if in.Params[0] != 0 || in.Rect != [4]float32{0, 0, 25, 15} || in.Color != s.Wide[0].Color {
+		t.Fatal("local geometry or wide color was lost")
+	}
+	if in.Transform0 != [4]float32{m.A, m.C, m.X, 1} || in.Transform1 != [4]float32{m.B, m.D, m.Y, 0} {
+		t.Fatal("vertex transform does not match scene geometry")
+	}
+	s.Ops[0].Transform = scene.Scaling(0, 1)
+	b.Build(s, func(*scene.Image) uintptr { return 1 })
+	if len(b.Instances) != 0 {
+		t.Fatal("singular transform emitted GPU geometry")
+	}
+}
+
+func TestAffineClipMaskCacheFollowsClipInsteadOfContent(t *testing.T) {
+	s := &scene.Scene{Width: 100, Height: 80, Ops: []scene.Op{
+		{Kind: scene.OpPushClip, Rect: scene.Rect{X: 10, Y: 10, W: 70, H: 50}, Radii: [4]float32{8, 8, 8, 8}},
+		{Kind: scene.OpFill, Rect: scene.Rect{W: 25, H: 15}, Color: scene.Color{R: 255, A: 255}, Transform: scene.Translation(20, 15)},
+		{Kind: scene.OpPopClip},
+	}}
+	var b Builder
+	defer b.Release()
+	var mask *scene.Image
+	build := func() { b.Build(s, func(m *scene.Image) uintptr { mask = m; return 1 }) }
+	build()
+	if mask == nil || b.Batches[0].ClipMask != 1 || b.Instances[0].Transform1[3] != 1 {
+		t.Fatal("nested clip was not bound as a mask")
+	}
+	id, version := mask.ID(), mask.Version()
+	pixels := append([]byte(nil), mask.Pix...)
+	s.Ops[1].Transform = scene.Translation(35, 25)
+	build()
+	if mask.ID() != id || mask.Version() != version || !bytes.Equal(mask.Pix, pixels) {
+		t.Fatal("moving content rerasterized its stationary clip")
+	}
+	s.Ops[0].Radii = [4]float32{12, 12, 12, 12}
+	build()
+	if mask.ID() != id || mask.Version() == version {
+		t.Fatal("changing clip did not update the retained mask")
+	}
+	s.Ops[0].Rect.W = 60
+	build()
+	if mask.ID() != id || mask.W != 60 {
+		t.Fatal("resizing clip accumulated a new cached image")
+	}
+	s.Ops = s.Ops[1:2]
+	build()
+	if len(b.maskSlots) != 0 {
+		t.Fatal("removed clips retained masks")
+	}
+}
+
+func TestMovingHardClipReusesStationaryAncestorMask(t *testing.T) {
+	m := scene.Translation(15, 15).Mul(scene.Rotation(10))
+	s := &scene.Scene{Width: 160, Height: 120, Ops: []scene.Op{
+		{Kind: scene.OpPushClip, Rect: scene.Rect{W: 150, H: 100}, Radii: [4]float32{10, 10, 10, 10}},
+		{Kind: scene.OpPushClip, Rect: scene.Rect{W: 60, H: 25}, Transform: m},
+		{Kind: scene.OpFill, Rect: scene.Rect{W: 90, H: 40}, Transform: m, Color: scene.Color{A: 255}},
+		{Kind: scene.OpPopClip}, {Kind: scene.OpPopClip},
+	}}
+	var b Builder
+	defer b.Release()
+	var image *scene.Image
+	build := func() { b.Build(s, func(m *scene.Image) uintptr { image = m; return 1 }) }
+	build()
+	version, id := image.Version(), image.ID()
+	for i := range 30 {
+		m = scene.Translation(float32(i), 15).Mul(scene.Rotation(float32(i)))
+		s.Ops[1].Transform, s.Ops[2].Transform = m, m
+		build()
+		if b.Instances[0].Transform1[3] != 2 || image.ID() != id || image.Version() != version {
+			t.Fatal("moving hard clip rasterized content instead of reusing its ancestor")
+		}
+	}
+}
 
 func TestBuild(t *testing.T) {
 	red := scene.Color{R: 255, A: 255}
@@ -142,15 +230,5 @@ func TestBuildWide(t *testing.T) {
 				t.Errorf("wide %v, instance %d: %v, want %v", c.wide, i, got[i], c.want[i])
 			}
 		}
-	}
-}
-
-func TestSourceSum(t *testing.T) {
-	lf, crlf := "float4 ps() {\n\treturn 1;\n}\n", "float4 ps() {\r\n\treturn 1;\r\n}\r\n"
-	if SourceSum(lf) != SourceSum(crlf) {
-		t.Error("a checkout with CRLF line endings has another sum")
-	}
-	if SourceSum(lf) == SourceSum(lf+" ") || len(SourceSum(lf)) != 64 {
-		t.Error("the sum does not tell sources apart")
 	}
 }

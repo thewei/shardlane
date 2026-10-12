@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"math"
 	"slices"
 	"time"
 )
@@ -19,6 +20,11 @@ type ElementTransition struct {
 	Duration time.Duration
 	// Ease is how the element goes, as for AnimateWith: EaseOut when nil.
 	Ease Easing
+	// Animation, if set, is how changes go instead of Duration and Ease:
+	// with a spring (Snappy, …), a change on the way keeps the element
+	// going as it went; with a Delay, changes wait, as the rows of a list
+	// entering one after another.
+	Animation *Animation
 	// Position, Size and Colors choose what animates: where the element is
 	// in its parent, its width and height (its content laid out at each
 	// size on the way), and its background and border colors. None set
@@ -33,6 +39,13 @@ type ElementTransition struct {
 	// it, goes there under its siblings, taking neither room, the pointer
 	// nor the focus, and is then gone.
 	Exit *Motion
+	// Match, if set, is an identity the element shares with one that the
+	// frame before showed elsewhere, even in another parent, as a photo's
+	// thumbnail in a grid and the photo in a detail view: the element
+	// appearing comes from where that one was, at its size and in its
+	// colors, as SwiftUI's matchedGeometryEffect and Motion's layoutId.
+	// Use a value of a type of your own, as a struct of the photo's ID.
+	Match any
 }
 
 // Motion is where an element appearing comes from, or where one going
@@ -46,6 +59,10 @@ type Motion struct {
 	// Collapse makes it nothing along its parent's direction: no height in
 	// a column, no width in a row. Its content keeps its layout, clipped.
 	Collapse bool
+	// Scale is how large it is there, around its TransformOrigin: 0.9 a
+	// tenth smaller; 0, as by default, keeps it at its size, as 1 does.
+	// Rotate turns it by as many degrees clockwise.
+	Scale, Rotate float32
 }
 
 // defaultDuration is the Duration of a Transition without one.
@@ -63,11 +80,31 @@ const defaultDuration = 200 * time.Millisecond
 //		})
 //	}
 //
-// Changes made by resizing the window do not animate, and nothing does
-// while the desktop asks for less motion (Preferences.ReduceMotion).
+// Changes made by resizing the window do not animate. While the desktop
+// asks for less motion (Preferences.ReduceMotion), nothing moves: colors
+// still change smoothly, and an Enter or Exit that fades without
+// collapsing fades in place.
 func (e *node) Transition(t ElementTransition) *node {
 	e.c.transitions = append(e.c.transitions, transitionUse{e: e, t: t})
 	return e
+}
+
+// Transitioning reports whether the element's Transition was moving it,
+// or changing its colors, or its pose (AnimatePose) or Draggable was
+// moving it, in the frame before: false once it is where it goes.
+func (e *node) Transitioning() bool {
+	if !e.hasState() {
+		return false
+	}
+	frame := e.c.rt.frame
+	if p := e.st.pose; p != nil && p.frame+1 >= frame && p.moving() {
+		return true
+	}
+	if d := e.st.dragRec; d != nil && d.frame+1 >= frame && d.moving() {
+		return true
+	}
+	r := e.st.trec
+	return r != nil && r.built+1 >= frame && (r.moving != 0 || r.colorMoving || r.matching)
 }
 
 // transitionUse is a call of Transition in the frame being built.
@@ -78,15 +115,25 @@ type transitionUse struct {
 }
 
 // tbox is what a transition moves: an element's place in its parent's
-// box, its size, and its opacity.
-type tbox struct{ x, y, w, h, alpha float32 }
+// box, its size, its opacity, and the scale and rotation of a Motion.
+type tbox struct{ x, y, w, h, alpha, scale, rot float32 }
+
+// vals returns the components of b, in the order of the channels.
+func (b tbox) vals() [7]float32 { return [7]float32{b.x, b.y, b.w, b.h, b.alpha, b.scale, b.rot} }
+
+func boxOf(v [7]float32) tbox { return tbox{v[0], v[1], v[2], v[3], v[4], v[5], v[6]} }
 
 // What a transition moves now.
 const (
 	movePos uint8 = 1 << iota
 	moveSize
 	moveAlpha
+	moveTurn
+	moveAll = movePos | moveSize | moveAlpha | moveTurn
 )
+
+// groupOf is what moves each channel of a transition.
+var groupOf = [7]uint8{movePos, movePos, moveSize, moveSize, moveAlpha, moveTurn, moveTurn}
 
 // The axes a Motion collapses an element along.
 const (
@@ -106,46 +153,129 @@ type transition struct {
 	parent      uint64
 	// target is where the layout put the element in frame laid, next
 	// where it puts it in the frame being laid out, and shown where it
-	// shows: moving (movePos, …) from from since start.
-	target, next, shown, from tbox
-	start                     time.Time
-	moving                    uint8
-	fresh                     bool
+	// shows: ch move the components of moving (movePos, …) there.
+	target, next, shown tbox
+	ch                  [7]channel
+	moving              uint8
+	fresh               bool
 	// collapse is the axis a Motion collapses the element along, while it
 	// does.
 	collapse uint8
 	// The background and border colors, which move as the element
-	// paints, after its styleFn set them.
+	// paints, after its styleFn set them, k of the way from colorFrom.
 	colorTarget, colorFrom, colorShown [2]Color
-	colorStart                         time.Time
+	colorK                             channel
 	colorMoving, colorSet              bool
 	colorFrame                         uint64
 	// ghost is the copy of the element going, which moves from gone,
-	// where it showed as it went; opacity is its own.
+	// where it showed as it went; opacity is its own, and turn its
+	// transform then.
 	ghost   *node
 	gone    tbox
 	opacity float32
+	turn    Transform
+	// match moves an element appearing where the one it Matches showed:
+	// its box in the window, from the box that one had.
+	match    [4]channel
+	matching bool
 }
 
+// animation returns how the transition's changes go.
+func (r *transition) animation() Animation {
+	if a := r.t.Animation; a != nil {
+		return *a
+	}
+	ease := r.t.Ease
+	if ease == nil {
+		ease = EaseOut
+	}
+	return Animation{Duration: r.duration(), Ease: ease}
+}
+
+// duration returns how long the transition's changes take, about as long
+// for a spring.
 func (r *transition) duration() time.Duration {
+	if a := r.t.Animation; a != nil {
+		if a.Duration > 0 {
+			return a.Duration
+		}
+		if a.Spring.Duration > 0 {
+			return a.Spring.Duration
+		}
+		if a.Spring.Stiffness == 0 && a.Spring.Damping == 0 {
+			return defaultSpringDuration
+		}
+		m, k, _, _ := a.Spring.physics()
+		return time.Duration(2 * math.Pi * math.Sqrt(m/k) * float64(time.Second))
+	}
 	if r.t.Duration > 0 {
 		return r.t.Duration
 	}
 	return defaultDuration
 }
 
-// progress returns how far a move started at start has gone at now along
-// the easing, and whether it is over.
-func (r *transition) progress(start, now time.Time) (float32, bool) {
-	t := float32(now.Sub(start)) / float32(r.duration())
-	if t >= 1 {
-		return 1, true
+// head sends the channels of move from where they are to target, as the
+// transition's animation says, from now.
+func (r *transition) head(target tbox, move uint8, now time.Time) {
+	a := r.animation()
+	to := target.vals()
+	for i := range r.ch {
+		if move&groupOf[i] != 0 {
+			headFor(&r.ch[i], float64(to[i]), a, now)
+		}
 	}
-	ease := r.t.Ease
-	if ease == nil {
-		ease = EaseOut
+	r.moving |= move
+}
+
+// headFor sends ch from where it is now to to, as a says.
+func headFor(ch *channel, to float64, a Animation, now time.Time) {
+	ch.advance(now)
+	if to == ch.goal() && (ch.moving || ch.pending || ch.value == to) {
+		return
 	}
-	return ease(max(t, 0)), false
+	switch {
+	case a.Delay > 0:
+		ch.pending, ch.pendingTo, ch.pendingAt, ch.pendingAnim = true, to, now.Add(a.Delay), a
+		ch.pendingAnim.Delay = 0
+	default:
+		ch.pending = false
+		ch.retarget(to, a)
+	}
+}
+
+// rest puts every channel at rest at b.
+func (r *transition) rest(b tbox, now time.Time) {
+	for i, v := range b.vals() {
+		r.ch[i] = channel{value: float64(v), target: float64(v), at: now}
+	}
+	r.moving, r.collapse = 0, 0
+}
+
+// sample moves the channels to now, and returns where they show the
+// element going to target: the components not moving there at once.
+// The moves over, the transition no longer moves.
+func (r *transition) sample(target tbox, now time.Time) tbox {
+	to := target.vals()
+	var v [7]float32
+	var still uint8 = moveAll
+	for i := range r.ch {
+		ch := &r.ch[i]
+		if r.moving&groupOf[i] == 0 {
+			*ch = channel{value: float64(to[i]), target: float64(to[i]), at: now}
+		} else {
+			ch.advance(now)
+			if ch.moving || ch.pending {
+				still &^= groupOf[i]
+			}
+		}
+		v[i] = float32(ch.value)
+	}
+	r.moving &^= still
+	if r.moving == 0 {
+		r.collapse = 0
+		return target
+	}
+	return boxOf(v)
 }
 
 // What a transition animates.
@@ -175,31 +305,19 @@ func (r *transition) properties() uint8 {
 
 func lerp(a, b, k float32) float32 { return a + (b-a)*k }
 
-// at returns the box k of the way from b to o, in the properties of move.
-func (b tbox) at(o tbox, k float32, move uint8) tbox {
-	if move&movePos != 0 {
-		b.x, b.y = lerp(b.x, o.x, k), lerp(b.y, o.y, k)
-	} else {
-		b.x, b.y = o.x, o.y
+// moved returns b moved as m says, collapsed along axis, or, without
+// motion (still), only faded.
+func (b tbox) moved(m *Motion, axis uint8, still bool) tbox {
+	b.alpha = max(0, min(m.Opacity, 1))
+	if still {
+		return b
 	}
-	if move&moveSize != 0 {
-		b.w, b.h = lerp(b.w, o.w, k), lerp(b.h, o.h, k)
-	} else {
-		b.w, b.h = o.w, o.h
-	}
-	if move&moveAlpha != 0 {
-		b.alpha = lerp(b.alpha, o.alpha, k)
-	} else {
-		b.alpha = o.alpha
-	}
-	return b
-}
-
-// moved returns b moved as m says, collapsed along axis.
-func (b tbox) moved(m *Motion, axis uint8) tbox {
 	b.x += m.X
 	b.y += m.Y
-	b.alpha = max(0, min(m.Opacity, 1))
+	if m.Scale != 0 {
+		b.scale = m.Scale
+	}
+	b.rot = m.Rotate
 	switch axis {
 	case collapseWidth:
 		b.w = 0
@@ -208,6 +326,10 @@ func (b tbox) moved(m *Motion, axis uint8) tbox {
 	}
 	return b
 }
+
+// fades reports whether m makes an element appear or go even without
+// motion: it fades, and collapses nothing, which would move its siblings.
+func (m *Motion) fades() bool { return m.Opacity < 1 && !m.Collapse }
 
 // collapseAxis returns the axis a Motion collapses a child of parent along.
 func collapseAxis(m *Motion, parent *node) uint8 {
@@ -227,7 +349,7 @@ func collapseAxis(m *Motion, parent *node) uint8 {
 func (rt *engine) animateLayout(root *node, w, h float32) {
 	c := root.c
 	// Changes that resizing the window makes do not animate.
-	resized := w != rt.laidW || h != rt.laidH
+	resized := w != rt.laidW || h != rt.laidH || rt.instant()
 	rt.laidW, rt.laidH = w, h
 	uses := c.transitions
 	rt.exitsBuilt = false
@@ -259,14 +381,14 @@ func (rt *engine) animateLayout(root *node, w, h float32) {
 			continue
 		}
 		r.fresh = r.laid+1 != rt.frame
+		r.t, r.elem, r.parent, r.built = u.t, e, e.parent.id, rt.frame
+		r.next = tbox{e.x, e.y, e.w, e.h, 1, 1, 0}
 		if g := r.ghost; g != nil {
 			// Built again as a copy of it was going: it comes back from
-			// where the copy shows.
-			r.ghost, r.fresh = nil, false
-			r.from, r.start, r.moving, r.collapse = r.shown, now, movePos|moveSize|moveAlpha, 0
+			// where the copy shows, as fast as it went.
+			r.ghost, r.fresh, r.collapse = nil, false, 0
+			r.head(r.next, moveAll, now)
 		}
-		r.t, r.elem, r.parent, r.built = u.t, e, e.parent.id, rt.frame
-		r.next = tbox{e.x, e.y, e.w, e.h, 1}
 		e.st.trec = r
 		if u.t.Exit != nil {
 			rt.exitsBuilt = true
@@ -280,16 +402,20 @@ func (rt *engine) animateLayout(root *node, w, h float32) {
 		next := r.next
 		switch {
 		case r.fresh:
-			r.moving, r.collapse = 0, 0
+			r.rest(next, now)
 			// An element appearing in a parent that was there comes in;
 			// whole new parts of the interface, as a page, appear at once.
-			if m := r.t.Enter; m != nil && !still && !resized && e.st.born == rt.frame && e.parent.st.born != rt.frame {
-				r.collapse = collapseAxis(m, e.parent)
-				r.from = next.moved(m, r.collapse)
-				r.start, r.moving = now, movePos|moveSize|moveAlpha
+			if m := r.t.Enter; m != nil && (!still || m.fades()) && !resized && e.st.born == rt.frame && e.parent.st.born != rt.frame {
+				var axis uint8
+				if !still {
+					axis = collapseAxis(m, e.parent)
+				}
+				r.rest(next.moved(m, axis, still), now)
+				r.collapse = axis
+				r.head(next, moveAll, now)
 			}
-		case still || resized:
-			r.moving, r.collapse = 0, 0
+		case resized || still && r.moving&^moveAlpha != 0:
+			r.rest(next, now)
 		default:
 			props := r.properties()
 			var changed uint8
@@ -299,26 +425,116 @@ func (rt *engine) animateLayout(root *node, w, h float32) {
 			if props&propSize != 0 && (next.w != r.target.w || next.h != r.target.h) {
 				changed |= moveSize
 			}
+			if still {
+				changed = 0
+			}
 			if changed != 0 {
-				r.from, r.start = r.shown, now
-				r.moving |= changed
+				r.head(next, changed, now)
 			}
 		}
 		r.target, r.laid = next, rt.frame
 		shown := next
 		if r.moving != 0 {
-			k, done := r.progress(r.start, now)
-			if done {
-				r.moving, r.collapse = 0, 0
-			} else {
-				shown = r.from.at(next, k, r.moving)
-				rt.animating = true
-			}
+			shown = r.sample(next, now)
+		}
+		if r.moving != 0 {
+			rt.animating = true
+		} else {
+			r.rest(next, now)
 		}
 		r.shown = shown
 		r.apply(e, shown)
 	}
-	rt.animateExits(root, now, still)
+	rt.animateExits(root, now, still, resized)
+}
+
+// matchRec is where the element of a Match showed in a frame, in the
+// window, and its colors.
+type matchRec struct {
+	frame, id uint64
+	box       Rect
+	colors    [2]Color
+}
+
+// animateMatches moves the elements of a Transition's Match appearing
+// from where the element of their Match showed in the frame before, by a
+// transform: once the frame's boxes are in the window.
+func (rt *engine) animateMatches() {
+	for m, rec := range rt.matched {
+		if rec.frame+1 < rt.frame {
+			delete(rt.matched, m)
+		}
+	}
+	now := rt.c.now
+	still := rt.preferences().ReduceMotion
+	for _, u := range rt.c.transitions {
+		m, e := u.t.Match, u.e
+		r := e.st.trec
+		if m == nil || r == nil || r.elem != e || r.built != rt.frame {
+			continue
+		}
+		box := Rect{e.x, e.y, e.w, e.h}
+		rec := rt.matched[m]
+		switch {
+		case still || rt.instant():
+			r.matching = false
+		case r.fresh && rec != nil && rec.id != e.id && rec.frame+1 == rt.frame:
+			from := [4]float32{rec.box.X, rec.box.Y, rec.box.W, rec.box.H}
+			for i := range r.match {
+				r.match[i] = channel{value: float64(from[i]), target: float64(from[i]), at: now}
+			}
+			r.matching = true
+			if rec.colors != ([2]Color{}) {
+				// Its colors come from the other's too.
+				r.colorSet, r.colorTarget, r.colorShown, r.colorFrame = true, rec.colors, rec.colors, rt.frame-1
+			}
+		}
+		shown := box
+		if r.matching {
+			a := r.animation()
+			to := [4]float32{box.X, box.Y, box.W, box.H}
+			var v [4]float32
+			moving := false
+			for i := range r.match {
+				ch := &r.match[i]
+				headFor(ch, float64(to[i]), a, now)
+				ch.advance(now)
+				moving = moving || ch.moving || ch.pending
+				v[i] = float32(ch.value)
+			}
+			if !moving {
+				r.matching = false
+			} else {
+				shown = Rect{v[0], v[1], max(v[2], 0), max(v[3], 0)}
+				e.showAt(shown)
+				rt.animating = true
+			}
+		}
+		if rec == nil {
+			if rt.matched == nil {
+				rt.matched = map[any]*matchRec{}
+			}
+			rec = &matchRec{}
+			rt.matched[m] = rec
+		}
+		if rec.id != e.id {
+			rec.colors = [2]Color{}
+		}
+		rec.frame, rec.id, rec.box = rt.frame, e.id, shown
+	}
+}
+
+// showAt shows e in the window's box r, its content laid out at r's size
+// as a Transition's Size lays it out on the way: once the frame's boxes are
+// in the window.
+func (e *node) showAt(r Rect) {
+	if r.W == e.w && r.H == e.h {
+		shift(e, r.X-e.x, r.Y-e.y)
+		return
+	}
+	layoutBox(e, r.W, r.H)
+	e.x, e.y = r.X, r.Y
+	place(e, 0, 0)
 }
 
 // byDepth returns the transitions asked for in the order of their
@@ -370,18 +586,30 @@ func (r *transition) apply(e *node, s tbox) {
 		}
 		e.opacity, e.opacitySet = o*max(s.alpha, 0), true
 	}
+	if t, ok := s.turn(); ok {
+		e.transform = e.transform.Then(t)
+	}
+}
+
+// turn returns the transform of s's scale and rotation, unless it has
+// none.
+func (s tbox) turn() (Transform, bool) {
+	if s.scale == 1 && s.rot == 0 {
+		return Transform{}, false
+	}
+	return Scaling(s.scale, s.scale).Then(Rotation(s.rot)), true
 }
 
 // animateExits moves the copies of the elements gone with an Exit, under
 // their parents, and copies those that just went, from the frame before,
 // which the engine kept for them.
-func (rt *engine) animateExits(root *node, now time.Time, still bool) {
+func (rt *engine) animateExits(root *node, now time.Time, still, instant bool) {
 	var byID map[uint64]*node
 	for id, r := range rt.trans {
 		if r.built == rt.frame {
 			continue
 		}
-		if r.ghost == nil && (r.t.Exit == nil || still || r.laid+1 != rt.frame) {
+		if r.ghost == nil && (r.t.Exit == nil || still && !r.t.Exit.fades() || instant && rt.instant() || r.laid+1 != rt.frame) {
 			delete(rt.trans, id)
 			continue
 		}
@@ -407,15 +635,19 @@ func (rt *engine) animateExits(root *node, now time.Time, still bool) {
 			if e.opacitySet {
 				r.opacity = e.opacity / max(r.shown.alpha, 0.001)
 			}
-			r.gone, r.start = r.shown, now
-			r.collapse = collapseAxis(r.t.Exit, p)
+			r.turn = r.ghost.transform
+			r.gone, r.collapse = r.shown, 0
+			if !still {
+				r.collapse = collapseAxis(r.t.Exit, p)
+			}
+			// From where it showed, as fast as it went.
+			r.head(r.gone.moved(r.t.Exit, r.collapse, still), moveAll, now)
 		}
-		k, done := r.progress(r.start, now)
-		if done {
+		s := r.sample(r.gone.moved(r.t.Exit, r.collapse, still), now)
+		if r.moving == 0 {
 			delete(rt.trans, id)
 			continue
 		}
-		s := r.gone.at(r.gone.moved(r.t.Exit, r.collapse), k, movePos|moveSize|moveAlpha)
 		g := r.ghost
 		g.next = nil
 		p.add(g)
@@ -427,6 +659,10 @@ func (rt *engine) animateExits(root *node, now time.Time, still bool) {
 		}
 		g.x, g.y = s.x, s.y
 		g.opacity, g.opacitySet = r.opacity*max(s.alpha, 0), true
+		g.transform = r.turn
+		if t, ok := s.turn(); ok {
+			g.transform = g.transform.Then(t)
+		}
 		r.shown = s
 		rt.animating = true
 	}
@@ -465,6 +701,7 @@ func ghostOf(e *node) *node {
 	g.activeDescendant, g.nameFrom, g.field, g.form = nil, nil, nil, nil
 	g.followX, g.colFit, g.gridFit = nil, nil, nil
 	g.inputFn, g.ghosts = nil, false
+	g.poseSet = false // it keeps the pose it had
 	g.tl, g.nmeasure, g.leafOK = nil, 0, false
 	g.flags = g.flags&^(flagModal|flagPage|flagFocusTarget) | flagInert
 	for c := e.first; c != nil; c = c.next {
@@ -476,32 +713,41 @@ func ghostOf(e *node) *node {
 }
 
 // animateColors moves e's background and border colors, once its styleFn
-// set them, as its Transition asks.
+// set them, as its Transition asks: even while the desktop asks for less
+// motion, as changing colors moves nothing.
 func (rt *engine) animateColors(e *node, r *transition) {
 	if r.properties()&propColors == 0 {
 		return
 	}
+	now := rt.c.now
 	if r.colorFrame != rt.frame {
 		target := [2]Color{e.bg, e.borderC}
 		switch {
 		case !r.colorSet || r.colorFrame+1 != rt.frame:
 			// Not painted in the frame before: its colors show at once.
 			r.colorMoving = false
+		case target != r.colorTarget && rt.instant():
+			r.colorMoving = false
 		case target != r.colorTarget:
-			if rt.preferences().ReduceMotion {
-				r.colorMoving = false
-			} else {
-				r.colorFrom, r.colorStart, r.colorMoving = r.colorShown, rt.c.now, true
-			}
+			r.colorFrom, r.colorMoving = r.colorShown, true
+			r.colorK = channel{at: now}
+			headFor(&r.colorK, 1, r.animation(), now)
 		}
 		r.colorSet, r.colorTarget, r.colorFrame = true, target, rt.frame
 		r.colorShown = target
 		if r.colorMoving {
-			if k, done := r.progress(r.colorStart, rt.c.now); done {
+			r.colorK.advance(now)
+			if !r.colorK.moving && !r.colorK.pending {
 				r.colorMoving = false
 			} else {
+				k := max(0, min(float32(r.colorK.value), 1))
 				r.colorShown = [2]Color{mixPremultiplied(r.colorFrom[0], target[0], k), mixPremultiplied(r.colorFrom[1], target[1], k)}
 				rt.animating = true
+			}
+		}
+		if m := r.t.Match; m != nil {
+			if rec := rt.matched[m]; rec != nil && rec.id == e.id {
+				rec.colors = r.colorShown
 			}
 		}
 	}

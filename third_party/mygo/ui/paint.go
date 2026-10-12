@@ -13,11 +13,13 @@ import (
 // Painter draws an element's own content in Element.Draw and DrawOver
 // callbacks, in DIPs relative to the window.
 type Painter struct {
-	rt      *engine
-	s       *scene.Scene
-	scale   float32
-	opacity float32
-	clip    Rect
+	rt        *engine
+	s         *scene.Scene
+	scale     float32
+	opacity   float32
+	clip      Rect
+	transform scene.Affine
+	inline    *node
 	// opaque tells that the glyphs painted now land on an opaque
 	// background, which subpixel glyphs need: the root's, covering the
 	// window, or that of an element around them, as a pane beside a
@@ -43,6 +45,7 @@ type opaqueBox struct {
 const continuousCorners = runtime.GOOS == "darwin"
 
 func (rt *engine) paint(root *node, w, h, scale float32) {
+	rt.paints++
 	s := &rt.scene
 	// The root paints the theme's background: frames start transparent, so
 	// that a transparent root shows what is behind the content, such as a
@@ -109,18 +112,23 @@ func (p *Painter) radii(r [4]float32) [4]float32 {
 }
 
 func (p *Painter) visible(r Rect, margin float32) bool {
+	r = transformRect(p.transform, r)
 	return r.X-margin < p.clip.X+p.clip.W && r.Y-margin < p.clip.Y+p.clip.H &&
 		r.X+r.W+margin > p.clip.X && r.Y+r.H+margin > p.clip.Y
 }
 
 func (p *Painter) element(e *node) {
+	savedTransform, savedInline := p.transform, p.inline
+	p.transform, p.inline = e.world, nil
+	defer func() { p.transform, p.inline = savedTransform, savedInline }()
+
 	if e.styleFn != nil {
 		e.styleFn(e)
 	}
 	if r := e.st.trec; r != nil && r.built == p.rt.frame && r.elem == e {
 		p.rt.animateColors(e, r)
 	}
-	if e.flags&flagInvisible != 0 {
+	if e.flags&flagInvisible != 0 || e.backface && e.transform.facesAway() {
 		return
 	}
 	if e.isInline() {
@@ -134,6 +142,9 @@ func (p *Painter) element(e *node) {
 	if e.opacitySet {
 		p.opacity *= e.opacity
 	}
+	if e.poseFade > 0 {
+		p.opacity *= 1 - e.poseFade
+	}
 	if p.opacity <= 0.001 {
 		p.opacity = saved
 		return
@@ -146,6 +157,10 @@ func (p *Painter) element(e *node) {
 	// What the element paints lands on an opaque background when all of
 	// it that shows does.
 	p.opaque = p.covered(intersect(box, p.clip))
+	if e.world.Set {
+		// Transformed glyphs are drawn with grayscale coverage.
+		p.opaque = false
+	}
 	margin := float32(0)
 	for _, sh := range e.shadows {
 		if !sh.inset {
@@ -158,6 +173,9 @@ func (p *Painter) element(e *node) {
 	// border goes over them instead.
 	borderOver := clips && e.first != nil && scene.HasBorder(e.border) && e.borderC.A > 0
 	own := p.visible(box, margin+4)
+	if !own && e.kind == kindText && e.first != nil {
+		own = p.inlineVisible(e)
+	}
 	if own {
 		for _, sh := range e.shadows {
 			if !sh.inset {
@@ -181,23 +199,24 @@ func (p *Painter) element(e *node) {
 		case kindText:
 			ts := e.resolvedText()
 			ox, oy := e.x+e.contentX(), e.y+e.contentY()
-			if ed := e.st.editor; ed != nil && e.flags&flagSelectable != 0 && p.rt.textSelectionVisible(e.st) {
-				if a, b := ed.selection(); a != b {
-					for _, r := range e.tl.Selection(a, b) {
-						p.Fill(Rect{ox + r.X, oy + r.Y, r.W, r.H}, ts.selectionColor(e.c.theme), 0)
-					}
-				}
-			}
 			var sp spanPaint
-			p.textLayout(e.tl, ox, oy, ts.color, ts, e.paintSpans(&sp))
+			p.inline = e
+			if spans := e.paintSpans(&sp); !e.contentSet || !p.contentText(e, ox, oy, ts, spans) {
+				p.textLayout(e.tl, ox, oy, ts.color, ts, spans)
+			}
+			p.inline = nil
 		case kindImage:
-			p.image(e)
+			if !e.contentSet || !p.contentImage(e) {
+				p.image(e)
+			}
 		case kindIcon:
 			c := e.resolvedText().color
 			if e.gray {
 				c = c.gray()
 			}
-			p.drawIcon(e.svg, e.contentBox(), c, e.rotate)
+			if !e.contentSet || !p.contentIcon(e, e.contentBox(), c) {
+				p.drawIcon(e.svg, e.contentBox(), c, e.rotate)
+			}
 		case kindInput:
 			e.paintInput(p)
 		}
@@ -316,7 +335,7 @@ func (p *Painter) fill(r Rect, radius [4]float32, bg Color, bw float32, bc Color
 		drawn = bc
 	}
 	op.Wide = p.wide(bg, Color{}, drawn)
-	p.s.Ops = append(p.s.Ops, op)
+	p.add(op)
 }
 
 // background paints the background of an element, and its border with it
@@ -362,12 +381,12 @@ func (p *Painter) background(e *node, box Rect, withBorder bool) {
 		op.Gradient = [4]float32{float32(math.Cos(a)), float32(math.Sin(a)), w, w + max(st.gap*p.scale, 0)}
 	}
 	op.Wide = p.wide(c, c2, bc)
-	p.s.Ops = append(p.s.Ops, op)
+	p.add(op)
 }
 
 // border paints e's border alone.
 func (p *Painter) border(e *node, box Rect) {
-	p.s.Ops = append(p.s.Ops, scene.Op{Kind: scene.OpFill, Rect: p.snap(box), Radii: p.radii(e.radius), Continuous: continuousCorners, Opacity: p.opacity,
+	p.add(scene.Op{Kind: scene.OpFill, Rect: p.snap(box), Radii: p.radii(e.radius), Continuous: continuousCorners, Opacity: p.opacity,
 		Border: p.borders(e.border), BorderColor: e.borderC.scene(), Dashed: e.borderStyle == BorderDashed, Wide: p.wide(Color{}, Color{}, e.borderC)})
 }
 
@@ -470,7 +489,7 @@ func (p *Painter) divider(row bool, at, lo, hi, width float32, c Color) {
 	if !p.visible(box, 0) {
 		return
 	}
-	p.s.Ops = append(p.s.Ops, scene.Op{Kind: scene.OpFill, Rect: r, Color: c.scene(), Wide: p.wide(c, Color{}, Color{}), Opacity: p.opacity})
+	p.add(scene.Op{Kind: scene.OpFill, Rect: r, Color: c.scene(), Wide: p.wide(c, Color{}, Color{}), Opacity: p.opacity})
 }
 
 // debug outlines an element and the elements inside it: their margins in
@@ -500,18 +519,55 @@ func (p *Painter) debug(e *node) {
 }
 
 func (p *Painter) pushClip(r Rect, radius [4]float32) {
-	p.clip = intersect(p.clip, r)
-	p.s.Ops = append(p.s.Ops, scene.Op{Kind: scene.OpPushClip, Rect: p.snap(r), Radii: p.radii(radius), Continuous: continuousCorners})
+	p.clip = intersect(p.clip, transformRect(p.transform, r))
+	p.add(scene.Op{Kind: scene.OpPushClip, Rect: p.snap(r), Radii: p.radii(radius), Continuous: continuousCorners})
 }
 
 func (p *Painter) popClip() {
-	p.s.Ops = append(p.s.Ops, scene.Op{Kind: scene.OpPopClip})
+	p.add(scene.Op{Kind: scene.OpPopClip})
 }
 
 // textLayout paints a laid out text from (x, y), in color, with the
 // background, underline or strikethrough of ts, and the colors, backgrounds
 // and lines of the spans of sp, if any.
 func (p *Painter) textLayout(l *text.Layout, x, y float32, color Color, ts textStyle, sp *spanPaint) {
+	p.textBackgrounds(l, x, y, ts, sp)
+	// Content transitions also paint the old layout; only the current text
+	// carries its selection, in the same position, clip and opacity as its glyphs.
+	if e := p.inline; e != nil && e.tl == l {
+		if ed := e.st.editor; ed != nil && e.flags&flagSelectable != 0 && p.rt.textSelectionVisible(e.st) {
+			if a, b := ed.selection(); a != b {
+				for _, r := range l.Selection(a, b) {
+					p.Fill(Rect{x + r.X, y + r.Y, r.W, r.H}, ts.selectionColor(e.c.theme), 0)
+				}
+			}
+		}
+	}
+	p.textForeground(l, x, y, color, ts, sp)
+}
+
+// textBackgrounds paints all backgrounds before the foreground, so a
+// selection can sit above them and below the glyphs and decorations.
+func (p *Painter) textBackgrounds(l *text.Layout, x, y float32, ts textStyle, sp *spanPaint) {
+	if l == nil || ts.background.A == 0 && sp == nil {
+		return
+	}
+	for li := range l.Lines {
+		line := &l.Lines[li]
+		if !p.transform.Set && !p.inlineTransforms() && (y+line.Y > p.clip.Y+p.clip.H || y+line.Y+line.Height < p.clip.Y) {
+			continue
+		}
+		if ts.background.A > 0 && line.Width > 0 {
+			p.Fill(Rect{x + line.X, y + line.Y, line.Width, line.Height}, ts.background, 0)
+		}
+		if sp != nil {
+			sp.backgrounds(p, line, x, y)
+		}
+	}
+}
+
+// textForeground paints glyphs and decorations over backgrounds and selection.
+func (p *Painter) textForeground(l *text.Layout, x, y float32, color Color, ts textStyle, sp *spanPaint) {
 	if l == nil {
 		return
 	}
@@ -521,26 +577,20 @@ func (p *Painter) textLayout(l *text.Layout, x, y float32, color Color, ts textS
 	shade := text.ShadeOf(color.R, color.G, color.B)
 	start := int32(len(p.s.Glyphs))
 	var run *glyphRun
-	if sys.JoinsGlyphs() {
+	if sys.JoinsGlyphs() && !p.inlineTransforms() {
 		// The engine's, whose buffers each text reuses.
 		run = &p.rt.glyphRun
 		run.ids, run.pens, run.glyphs = run.ids[:0], run.pens[:0], run.glyphs[:0]
 	}
 	for li := range l.Lines {
 		line := &l.Lines[li]
-		if y+line.Y > p.clip.Y+p.clip.H || y+line.Y+line.Height < p.clip.Y {
+		if !p.transform.Set && !p.inlineTransforms() && (y+line.Y > p.clip.Y+p.clip.H || y+line.Y+line.Height < p.clip.Y) {
 			continue
-		}
-		if ts.background.A > 0 && line.Width > 0 {
-			p.Fill(Rect{x + line.X, y + line.Y, line.Width, line.Height}, ts.background, 0)
-		}
-		if sp != nil {
-			sp.backgrounds(p, line, x, y)
 		}
 		baseline := sys.Baseline((y + line.Baseline) * s)
 		for _, g := range line.Glyphs {
 			pen := (x + g.X) * s
-			if pen > (p.clip.X+p.clip.W)*s || pen+(g.Advance+g.Size)*s < p.clip.X*s {
+			if !p.transform.Set && !p.inlineTransforms() && (pen > (p.clip.X+p.clip.W)*s || pen+(g.Advance+g.Size)*s < p.clip.X*s) {
 				continue
 			}
 			ix := float32(math.Floor(float64(pen)))
@@ -550,7 +600,7 @@ func (p *Painter) textLayout(l *text.Layout, x, y float32, color Color, ts textS
 					glyphShade = text.ShadeOf(glyphColor.R, glyphColor.G, glyphColor.B)
 				}
 			}
-			gi := sys.Glyph(g.Font, g.ID, s, pen, glyphShade, p.opaque)
+			gi := sys.Glyph(g.Font, g.ID, s, pen, glyphShade, p.opaque && !p.inlineTransforms())
 			if !gi.OK {
 				continue
 			}
@@ -558,7 +608,8 @@ func (p *Painter) textLayout(l *text.Layout, x, y float32, color Color, ts textS
 			sg := scene.Glyph{
 				X: ix + gi.Left, Y: baseline + gi.Top, W: float32(gi.W), H: float32(gi.H),
 				U: gi.X, V: gi.Y, UW: gi.W, VH: gi.H,
-				Color: glyphColor.scene(), Wide: p.glyphWide(glyphColor), Colored: gi.Colored, Subpixel: gi.Subpixel, Thin: gi.Thin,
+				Transform: p.inlineTransform(g.Cluster).Pixels(s),
+				Color:     glyphColor.scene(), Wide: p.glyphWide(glyphColor), Colored: gi.Colored, Subpixel: gi.Subpixel, Thin: gi.Thin,
 			}
 			if run != nil {
 				run.add(p, g, gi, pen, sg, glyphShade, baseline)
@@ -577,7 +628,7 @@ func (p *Painter) textLayout(l *text.Layout, x, y float32, color Color, ts textS
 		}
 	}
 	if end := int32(len(p.s.Glyphs)); end > start {
-		p.s.Ops = append(p.s.Ops, scene.Op{Kind: scene.OpGlyphs, Start: start, End: end})
+		p.add(scene.Op{Kind: scene.OpGlyphs, Start: start, End: end})
 	}
 }
 
@@ -641,6 +692,26 @@ type decoration struct {
 // underlines and strikethroughs, in the color of d or c. Wavy underlines
 // follow the underline, at least a pixel thick.
 func (p *Painter) decorations(l *text.Layout, li, i, j int, x, y float32, d decoration, c Color) {
+	if !p.inlineTransforms() {
+		p.decorationRun(l, li, i, j, x, y, d, c)
+		return
+	}
+	gs := l.Lines[li].Glyphs
+	saved := p.transform
+	for i < j {
+		m := p.inlineTransform(gs[i].Cluster)
+		end := i + 1
+		for end < j && p.inlineTransform(gs[end].Cluster) == m {
+			end++
+		}
+		p.transform = saved.Mul(m)
+		p.decorationRun(l, li, i, end, x, y, d, c)
+		i = end
+	}
+	p.transform = saved
+}
+
+func (p *Painter) decorationRun(l *text.Layout, li, i, j int, x, y float32, d decoration, c Color) {
 	if d.color.A > 0 {
 		c = d.color
 	}
@@ -656,7 +727,7 @@ func (p *Painter) decorations(l *text.Layout, li, i, j int, x, y float32, d deco
 				p.wave(st.X0, st.X1, (st.Top+st.Bottom)/2, max(st.Bottom-st.Top, 1), c)
 				continue
 			}
-			p.s.Ops = append(p.s.Ops, scene.Op{Kind: scene.OpFill, Rect: scene.Rect{X: st.X0, Y: st.Top, W: st.X1 - st.X0, H: st.Bottom - st.Top}, Color: c.scene(), Wide: p.wide(c, Color{}, Color{}), Opacity: p.opacity})
+			p.add(scene.Op{Kind: scene.OpFill, Rect: scene.Rect{X: st.X0, Y: st.Top, W: st.X1 - st.X0, H: st.Bottom - st.Top}, Color: c.scene(), Wide: p.wide(c, Color{}, Color{}), Opacity: p.opacity})
 		}
 	}
 }
@@ -731,7 +802,7 @@ func (p *Painter) drawBitmap(img *Bitmap, box Rect, fit Fit, radius [4]float32, 
 	shown := img.smaller(min(frac.W*iw/(dst.W*p.scale), frac.H*ih/(dst.H*p.scale)))
 	sw, sh := float32(shown.W), float32(shown.H)
 	src := scene.Rect{X: frac.X * sw, Y: frac.Y * sh, W: frac.W * sw, H: frac.H * sh}
-	p.s.Ops = append(p.s.Ops, scene.Op{Kind: scene.OpImage, Rect: p.snap(dst), Radii: p.radii(radius), Continuous: continuousCorners, Image: shown, Src: src, Opacity: p.opacity, Grayscale: gray})
+	p.add(scene.Op{Kind: scene.OpImage, Rect: p.snap(dst), Radii: p.radii(radius), Continuous: continuousCorners, Image: shown, Src: src, Opacity: p.opacity, Grayscale: gray})
 }
 
 // scrollbars draws the thumbs of a scroll container whose content
@@ -848,7 +919,7 @@ func (p *Painter) FillGradient(r Rect, g LinearGradient, radius float32) {
 	op := scene.Op{Kind: scene.OpFill, Rect: p.snap(r), Radii: p.radii([4]float32{radius, radius, radius, radius}), Continuous: continuousCorners, Opacity: p.opacity}
 	p.gradient(&op, g)
 	op.Wide = p.wide(g.From, g.To, Color{})
-	p.s.Ops = append(p.s.Ops, op)
+	p.add(op)
 }
 
 // Stroke paints the outline of a rounded rectangle, width DIPs wide inside
@@ -862,7 +933,7 @@ func (p *Painter) Stroke(r Rect, c Color, radius, width float32) {
 func (p *Painter) StrokeDashed(r Rect, c Color, radius, width float32) {
 	op := scene.Op{Kind: scene.OpFill, Rect: p.snap(r), Radii: p.radii([4]float32{radius, radius, radius, radius}), Continuous: continuousCorners,
 		Border: p.borders([4]float32{width, width, width, width}), BorderColor: c.scene(), Dashed: true, Opacity: p.opacity, Wide: p.wide(Color{}, Color{}, c)}
-	p.s.Ops = append(p.s.Ops, op)
+	p.add(op)
 }
 
 // Shadow paints the box shadow of a rounded rectangle as Element.Shadow
@@ -883,7 +954,7 @@ func (p *Painter) shadow(box Rect, rad [4]float32, sh shadow) {
 			grown[i] = max(grown[i]+sh.spread, 0)
 		}
 	}
-	p.s.Ops = append(p.s.Ops, scene.Op{Kind: scene.OpShadow, Rect: p.snap(r), Radii: p.radii(grown), Continuous: continuousCorners, Color: sh.color.scene(),
+	p.add(scene.Op{Kind: scene.OpShadow, Rect: p.snap(r), Radii: p.radii(grown), Continuous: continuousCorners, Color: sh.color.scene(),
 		Wide: p.wide(sh.color, Color{}, Color{}), Blur: sh.blur * p.scale, Cast: p.snap(box), CastRadii: p.radii(rad), Opacity: p.opacity})
 }
 
@@ -910,7 +981,7 @@ func (p *Painter) insetShadow(box Rect, rad, bw [4]float32, sh shadow) {
 			holeRadii[i] = max(holeRadii[i]-spread, 0)
 		}
 	}
-	p.s.Ops = append(p.s.Ops, scene.Op{Kind: scene.OpShadow, Inset: true, Rect: hole, Radii: holeRadii, Continuous: continuousCorners, Color: sh.color.scene(),
+	p.add(scene.Op{Kind: scene.OpShadow, Inset: true, Rect: hole, Radii: holeRadii, Continuous: continuousCorners, Color: sh.color.scene(),
 		Wide: p.wide(sh.color, Color{}, Color{}), Blur: sh.blur * s, Cast: pad, CastRadii: padRadii, Opacity: p.opacity})
 }
 

@@ -1,7 +1,6 @@
 package mygo
 
 import (
-	jsonv1 "encoding/json"
 	"fmt"
 
 	"github.com/egoist/mygo/internal/platform"
@@ -35,9 +34,7 @@ type FindResult struct {
 //
 // Text split by markup, such as "my<b>go</b>", is not found.
 func (p *Page) FindInPage(text string, opts FindOptions) (FindResult, error) {
-	t, _ := jsonv1.Marshal(text)
-	o, _ := jsonv1.Marshal(map[string]bool{"matchCase": opts.MatchCase, "backward": opts.Backward, "next": opts.FindNext})
-	res, err := EvalAs[FindResult](p, fmt.Sprintf("window.__mygo.find(%s, %s)", t, o))
+	res, err := EvalAs[FindResult](p, findScript(text, opts))
 	if err != nil {
 		return FindResult{}, fmt.Errorf("mygo: finding in the page: %w", err)
 	}

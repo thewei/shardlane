@@ -164,6 +164,46 @@ func TestToastManager(t *testing.T) {
 	}
 }
 
+// TestToastAfterDialog shows a toast as an alert dialog the pointer
+// clicked closes, at once and frames later: its time runs out, though the
+// pointer rests where the dialog was, on none of the toast.
+func TestToastAfterDialog(t *testing.T) {
+	for _, later := range []bool{false, true} {
+		open, toast := true, false
+		tt, now := clockTester(func(c *context) {
+			if coreAlertDialog(c, &open, "Remove “python”?", "", "Cancel", "Remove") == 1 {
+				toast = !later
+			}
+			if toast {
+				c.Toast("Removed python")
+				toast = false
+			}
+		}, 400, 300)
+		tick := ticker(tt, now)
+		if err := tt.Click("Remove"); err != nil {
+			t.Fatal(err)
+		}
+		tick(100 * time.Millisecond)
+		if later {
+			tick(time.Second)
+			toast = true
+			tick(100 * time.Millisecond)
+		}
+		if !tt.HasText("Removed python") {
+			t.Fatalf("later %v: no toast: %q", later, tt.Texts())
+		}
+		r, _ := tt.Find("Removed python")
+		if r.Contains(tt.rt.pointerX, tt.rt.pointerY) {
+			t.Fatalf("later %v: the pointer is on the toast", later)
+		}
+		tick(toastTime)
+		tick(time.Second)
+		if tt.HasText("Removed python") {
+			t.Errorf("later %v: the toast stays after its time, its time stopped as if the pointer rested on it", later)
+		}
+	}
+}
+
 func TestToastDescription(t *testing.T) {
 	var c *context
 	tt := coreNewTester(func(ctx *context) { c = ctx }, 400, 300)

@@ -89,6 +89,14 @@ whose right click lists the pages to go back or forward to, by their
 titles. The keys go to the router holding the keyboard focus, else to the
 first of the window.
 
+In a [browser](browsers.md), the first router a window shows follows the
+tab's history, in the URL's fragment (`#/notes/42`): going to a page adds
+an entry to the browser's history, its back and forward buttons go through
+the router's pages, and a URL with a fragment, opened or reloaded, shows
+its page. After a reload, the router learns the pages before and after
+the one shown as the browser goes to them. An app in a frame of another
+page leaves the tab's history alone.
+
 ## Layouts
 
 Anything built around `View`, as a sidebar or a toolbar, stays as pages
@@ -143,3 +151,11 @@ the right over the page it leaves, and back up from the left; others fade
 in. With less motion asked of the desktop, all fade, and
 `router.Transition = ui.TransitionNone` shows them at once. The page going
 away takes neither the pointer nor the keyboard as it slides.
+
+`router.Animation` sets how pages move, as a spring or a curve (see
+[Motion](motion.md)), in place of easing out over 250 ms as they slide and
+150 ms as they fade:
+
+```go
+router.Animation = &ui.Snappy
+```

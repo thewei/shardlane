@@ -1,5 +1,7 @@
 # Text input
 
+<!-- preview text-input 250 -->
+
 `ui.TextInput` creates a single-line text input editing a `*string`, and
 `ui.TextArea` a multi-line one. They change the string as the user types:
 read it, or ask `Changed` for work that follows, and `Submitted` for Enter

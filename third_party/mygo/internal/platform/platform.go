@@ -11,7 +11,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"net/http"
 	"time"
 
 	"github.com/egoist/mygo/transfer"
@@ -534,7 +533,10 @@ type SchemeRequest struct {
 	Context context.Context
 	Method  string
 	URL     string
-	Header  http.Header
+	// Header is an http.Header, of an unnamed type so that platform does
+	// not import net/http, which builds for browsers leave out: values of
+	// either type assign to the other.
+	Header map[string][]string
 	// Body is nil for requests without a body.
 	Body io.ReadCloser
 	// Responder methods must be called on the main thread, Respond first.
@@ -543,7 +545,7 @@ type SchemeRequest struct {
 
 // SchemeResponder delivers a custom protocol response to the webview.
 type SchemeResponder interface {
-	Respond(status int, header http.Header)
+	Respond(status int, header map[string][]string) // an http.Header
 	Write(p []byte)
 	Finish()
 	Fail(err error)

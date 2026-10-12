@@ -1,5 +1,7 @@
 # Context menu
 
+<!-- preview context-menu 180 -->
+
 `ContextMenu` gives an element a menu of the system's, which opens where
 the element is right-clicked (Control-clicked on macOS), and below it when
 the menu key or Shift+F10 is pressed while it or one inside it has the

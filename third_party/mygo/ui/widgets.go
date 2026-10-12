@@ -49,6 +49,7 @@ func coreDivider(c *context) *node {
 // keeps frames coming while it moves; key tells apart the animations of
 // the element. The value starts at the first target. When the desktop asks
 // for less motion (Preferences.ReduceMotion), it goes to target at once.
+// AnimateTo takes springs and delays too.
 func (e *node) Animate(key any, target float32, d time.Duration) float32 {
 	return e.AnimateWith(key, target, d, EaseOut)
 }
@@ -56,33 +57,7 @@ func (e *node) Animate(key any, target float32, d time.Duration) float32 {
 // AnimateWith returns a value that moves to target over d as Animate does,
 // along ease.
 func (e *node) AnimateWith(key any, target float32, d time.Duration, ease Easing) float32 {
-	st := e.st
-	if st.anims == nil {
-		st.anims = map[any]*anim{}
-	}
-	a := st.anims[key]
-	now := e.c.now
-	if a == nil {
-		st.anims[key] = &anim{from: target, to: target, value: target}
-		return target
-	}
-	if a.to != target && e.c.rt.preferences().ReduceMotion {
-		// Without the motion.
-		a.from, a.to, a.value = target, target, target
-	}
-	if a.to != target {
-		a.from, a.to, a.start, a.dur = a.value, target, now, d
-	}
-	if a.value != a.to {
-		t := float32(now.Sub(a.start)) / float32(max(a.dur, time.Millisecond))
-		if t >= 1 {
-			a.value = a.to
-		} else {
-			a.value = a.from + (a.to-a.from)*ease(max(t, 0))
-			e.c.AnimationFrame()
-		}
-	}
-	return a.value
+	return e.AnimateTo(key, target, Animation{Duration: max(d, time.Millisecond), Ease: ease})
 }
 
 // Loop returns the progress of an animation that starts over every
@@ -145,11 +120,8 @@ func Bounce(ease Easing) Easing {
 	}
 }
 
-type anim struct {
-	from, to, value float32
-	start           time.Time
-	dur             time.Duration
-}
+// anim is a Loop's: when it started.
+type anim struct{ start time.Time }
 
 func b2f(b bool) float32 {
 	if b {

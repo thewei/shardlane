@@ -1,5 +1,7 @@
 # Slider
 
+<!-- preview slider 180 -->
+
 `ui.Slider` creates a slider setting a `*float64` between a low and a high
 value: dragging the knob, or a press on the track, sets it, as do the
 arrows, Page Up and Page Down (a tenth of the range), Home and End while

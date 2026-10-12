@@ -394,6 +394,8 @@ func (a *area) paint(e *node, p *Painter, ox, oy float32) {
 		l := a.paraLayout(ed, i)
 		y := oy + float32(a.hs.top(i)-a.scroll)
 		start, end := b.start(i), b.end(i)
+		_, sp := ed.rangeSpans(start, end)
+		p.textBackgrounds(l, ox, y, ts, sp)
 		if focused {
 			for _, selected := range ed.selectedRanges() {
 				sa, sz := selected.Start, selected.End
@@ -406,8 +408,7 @@ func (a *area) paint(e *node, p *Painter, ox, oy float32) {
 				}
 			}
 		}
-		_, sp := ed.rangeSpans(start, end)
-		p.textLayout(l, ox, y, ts.color, ts, sp)
+		p.textForeground(l, ox, y, ts.color, ts, sp)
 		if ed.compose != "" && b.para(ed.caret) == i {
 			c := ed.caret - start
 			for _, r := range l.Selection(c, c+utf8.RuneCountInString(ed.compose)) {
@@ -421,7 +422,7 @@ func (a *area) paint(e *node, p *Painter, ox, oy float32) {
 		const blink = 530 * time.Millisecond
 		if (phase/blink)%2 == 0 {
 			x, y, h := a.caretAt(ed, ed.caret, ed.composeCaret)
-			p.s.Ops = append(p.s.Ops, scene.Op{Kind: scene.OpFill, Rect: p.snap(Rect{ox + x, oy + float32(y-a.scroll), 0, h}), Color: t.Accent.scene(), Wide: p.wide(t.Accent, Color{}, Color{}), Opacity: p.opacity})
+			p.add(scene.Op{Kind: scene.OpFill, Rect: p.snap(Rect{ox + x, oy + float32(y-a.scroll), 0, h}), Color: t.Accent.scene(), Wide: p.wide(t.Accent, Color{}, Color{}), Opacity: p.opacity})
 			op := &p.s.Ops[len(p.s.Ops)-1]
 			op.Rect.W = max(round(p.scale), 1)
 		}

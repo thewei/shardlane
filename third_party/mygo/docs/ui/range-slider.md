@@ -1,5 +1,7 @@
 # Range slider
 
+<!-- preview range-slider 120 -->
+
 `ui.RangeSlider` creates a slider of two knobs setting a low and a high
 `*float64` between two bounds, as a price range: each knob takes the
 keyboard focus, which Tab moves between, and the arrows, Home and End move

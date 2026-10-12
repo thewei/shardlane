@@ -279,6 +279,69 @@
   }
 }
 
+/* A frame of website/docs-demo, a component of native UI in WebAssembly,
+   in a window of macOS: prefers-color-scheme in the frame follows its
+   color-scheme. */
+.ui-preview {
+  @apply my-6 overflow-hidden rounded-[10px];
+  --preview-bar: #fafafa;
+  --preview-bar-border: #ebebeb;
+  --preview-title: #4d4d4d;
+  background: #fff;
+  box-shadow:
+    0 0 0 0.5px rgb(0 0 0 / 0.18),
+    0 4px 12px -4px rgb(0 0 0 / 0.1);
+
+  .dark & {
+    --preview-bar: #2a2a2b;
+    --preview-bar-border: #161617;
+    --preview-title: #b9b9bb;
+    background: #1e1e1e;
+    box-shadow:
+      0 0 0 0.5px rgb(255 255 255 / 0.14),
+      0 0 0 1px rgb(0 0 0 / 0.4),
+      0 4px 12px -4px rgb(0 0 0 / 0.35);
+  }
+}
+
+.ui-preview-titlebar {
+  @apply relative flex h-7 items-center justify-center select-none;
+  background: var(--preview-bar);
+  border-bottom: 1px solid var(--preview-bar-border);
+}
+
+.ui-preview-lights {
+  @apply absolute top-1/2 left-3 flex -translate-y-1/2 gap-2;
+
+  & i {
+    @apply block size-3 rounded-full;
+    box-shadow: inset 0 0 0 0.5px rgb(0 0 0 / 0.12);
+  }
+  & .close {
+    background: #ff5f57;
+  }
+  & .minimize {
+    background: #febc2e;
+  }
+  & .zoom {
+    background: #28c840;
+  }
+}
+
+.ui-preview-title {
+  @apply text-[13px] font-semibold;
+  color: var(--preview-title);
+}
+
+.ui-preview-frame {
+  @apply block w-full border-0;
+  color-scheme: light;
+
+  .dark & {
+    color-scheme: dark;
+  }
+}
+
 .copy-button {
   @apply absolute top-2 right-2 flex size-7 items-center justify-center rounded-md border bg-card text-muted-foreground opacity-0 transition-all hover:text-foreground focus-visible:opacity-100;
 

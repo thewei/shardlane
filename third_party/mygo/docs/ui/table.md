@@ -1,5 +1,7 @@
 # Table
 
+<!-- preview table 310 -->
+
 `ui.Table` puts a [list](list.md)'s rows in columns, under a header of
 `ui.TableColumn`s, each with a title, a width (or 0 to share the room the
 others leave) and an alignment; `cell` builds the content of a row's

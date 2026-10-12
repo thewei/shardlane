@@ -4,6 +4,7 @@ package e2e
 
 import (
 	"testing"
+	"time"
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/internal/darwin"
@@ -32,6 +33,15 @@ func click(w *mygo.Window, x, y float64) bool {
 // appClick clicks through the application, whose event monitors see it.
 func appClick(w *mygo.Window, x, y float64) bool {
 	mygo.RunOnMain(func() { darwin.TestAppClick(w.NativeHandle(), x, y) })
+	return true
+}
+
+// heldAppClick is appClick with the button held down a while, as a user
+// clicks: what the press did runs before the release.
+func heldAppClick(w *mygo.Window, x, y float64) bool {
+	mygo.RunOnMain(func() { darwin.TestAppPress(w.NativeHandle(), x, y, true) })
+	time.Sleep(150 * time.Millisecond)
+	mygo.RunOnMain(func() { darwin.TestAppPress(w.NativeHandle(), x, y, false) })
 	return true
 }
 

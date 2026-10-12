@@ -384,6 +384,9 @@ const (
 	vkLWin    = 0x5B
 	vkRWin    = 0x5C
 
+	vkProcessKey = 0xE5
+	vkPacket     = 0xE7
+
 	cfUnicodeText = 13
 	cfDIB         = 8
 	cfDIBV5       = 17

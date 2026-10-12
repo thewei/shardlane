@@ -1,5 +1,7 @@
 # Toast
 
+<!-- preview toast 300 -->
+
 `c.Toast` shows a message near the bottom of the window for a few seconds,
 as the outcome of what the user just did:
 

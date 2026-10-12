@@ -1,5 +1,7 @@
 # Text-input primitives
 
+<!-- preview text-input-client 200 -->
+
 `TextInputBase` and `TextAreaBase` provide ordinary editable string controls
 without a look. For a control with its own storage, selections, rendering or
 editing policy, attach a `TextInputClient` to an element:

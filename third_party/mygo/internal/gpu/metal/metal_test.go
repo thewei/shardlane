@@ -28,6 +28,26 @@ func TestDrawsAsTheCPURenderer(t *testing.T) {
 		}
 		gputest.Compare(t, "metal", pix, s.Width*4, s)
 	}
+
+	for frame := range 3 {
+		transformed := gputest.TransformedScene()
+		if frame == 2 {
+			transformed.Ops[0].Transform = scene.Translation(40, 40)
+		}
+		pix, err := r.renderOffscreen(transformed)
+		if err != nil {
+			t.Fatal(err)
+		}
+		gputest.Compare(t, "metal-affine", pix, transformed.Width*4, transformed)
+	}
+	for range 2 {
+		s = gputest.PerspectiveScene()
+		pix, err := r.renderOffscreen(s)
+		if err != nil {
+			t.Fatal(err)
+		}
+		gputest.Compare(t, "metal-perspective", pix, s.Width*4, s)
+	}
 	s = gputest.ContinuousScene()
 	pix, err := r.renderOffscreen(s)
 	if err != nil {
@@ -100,6 +120,10 @@ func TestWideColors(t *testing.T) {
 		scene.Op{Kind: scene.OpFill, Rect: scene.Rect{W: 32, H: 8}, Color: srgbGreen, Wide: 1},
 		scene.Op{Kind: scene.OpFill, Rect: scene.Rect{Y: 8, W: 32, H: 8}, Paint: scene.PaintOklab, Gradient: [4]float32{0, 0, 32, 0},
 			Color: srgbGreen, Color2: srgbRed, Wide: 2})
+	// General transforms must preserve the float16 wide-gamut path.
+	for i := range s.Ops {
+		s.Ops[i].Transform = scene.Scaling(1.1, 1)
+	}
 	var px [2][4]float32
 	pool(func() {
 		r.waitLast()

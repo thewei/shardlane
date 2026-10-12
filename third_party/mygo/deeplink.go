@@ -5,7 +5,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"regexp"
 	"runtime"
 	"slices"
 	"strings"
@@ -54,7 +53,18 @@ var registeredSchemes struct {
 	set map[string]bool
 }
 
-var schemeRe = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9+.-]*$`)
+// isURLScheme reports whether s is a URL scheme: a letter, then letters,
+// digits, "+", "-" and ".". (Package regexp would make builds for browsers
+// larger.)
+func isURLScheme(s string) bool {
+	for i, c := range []byte(s) {
+		letter := c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z'
+		if !letter && (i == 0 || (c < '0' || c > '9') && c != '+' && c != '-' && c != '.') {
+			return false
+		}
+	}
+	return s != ""
+}
 
 // handlesScheme reports whether URLs of scheme reach OnOpenURL.
 func handlesScheme(scheme string) bool {
@@ -75,7 +85,7 @@ func urlArgs(args []string) []string {
 	var urls []string
 	for _, a := range args {
 		// A single letter is a Windows drive, as in C:\.
-		if scheme, _, ok := strings.Cut(a, ":"); ok && len(scheme) > 1 && schemeRe.MatchString(scheme) && handlesScheme(scheme) {
+		if scheme, _, ok := strings.Cut(a, ":"); ok && len(scheme) > 1 && isURLScheme(scheme) && handlesScheme(scheme) {
 			urls = append(urls, a)
 		}
 	}
@@ -135,7 +145,7 @@ func deliverArgs(args []string, wd string) {
 // handler when others claim it too. Unregister it when the app is
 // uninstalled, for example with UnregisterURLScheme.
 func (a *Application) RegisterURLScheme(scheme string) error {
-	if !schemeRe.MatchString(scheme) {
+	if !isURLScheme(scheme) {
 		return fmt.Errorf("mygo: invalid URL scheme %q", scheme)
 	}
 	scheme = strings.ToLower(scheme)
@@ -152,7 +162,7 @@ func (a *Application) RegisterURLScheme(scheme string) error {
 // UnregisterURLScheme undoes RegisterURLScheme (Linux, Windows); URLs of
 // the scheme no longer reach the app unless mygo.config.ts declares it.
 func (a *Application) UnregisterURLScheme(scheme string) error {
-	if !schemeRe.MatchString(scheme) {
+	if !isURLScheme(scheme) {
 		return fmt.Errorf("mygo: invalid URL scheme %q", scheme)
 	}
 	scheme = strings.ToLower(scheme)
@@ -166,7 +176,7 @@ func (a *Application) UnregisterURLScheme(scheme string) error {
 // IsURLSchemeRegistered reports whether the system opens URLs of scheme
 // with this app.
 func (a *Application) IsURLSchemeRegistered(scheme string) bool {
-	if !schemeRe.MatchString(scheme) {
+	if !isURLScheme(scheme) {
 		return false
 	}
 	scheme = strings.ToLower(scheme)

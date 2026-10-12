@@ -2,7 +2,6 @@ package mygo
 
 import (
 	"io/fs"
-	"net/http"
 	"net/url"
 	"os"
 	"strings"
@@ -75,34 +74,4 @@ func isDevOrigin(origin string) bool {
 	}
 	u, err := url.Parse(d)
 	return err == nil && strings.EqualFold(u.Scheme+"://"+u.Host, origin)
-}
-
-// frontendHandler serves mygo:// when the app has no handler of its own.
-func frontendHandler() http.Handler {
-	frontend.Lock()
-	fsys := frontend.fsys
-	frontend.Unlock()
-	if fsys == nil && IsDev() {
-		// `mygo dev` without a dev server: the files on disk.
-		if dir := os.Getenv("MYGO_FRONTEND_DIST"); dir != "" {
-			fsys = os.DirFS(dir)
-		}
-	}
-	if fsys == nil {
-		return http.HandlerFunc(noFrontend)
-	}
-	return FileServer(fsys)
-}
-
-func noFrontend(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.WriteHeader(http.StatusNotFound)
-	_, _ = w.Write([]byte(`<!doctype html>
-<meta charset="utf-8">
-<title>No frontend</title>
-<style>body{font:15px/1.5 system-ui,sans-serif;margin:3em;color:#444}code{font-size:90%}</style>
-<h1>No frontend</h1>
-<p>Run the app with <code>mygo dev</code>, which loads <code>devUrl</code> from mygo.config.ts,
-or build it with <code>mygo build</code>, which embeds <code>frontendDist</code>.</p>
-`))
 }

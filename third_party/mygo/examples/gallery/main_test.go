@@ -56,7 +56,7 @@ func TestSidebarNavigation(t *testing.T) {
 	g.router.Push("/list/42")
 	tt.Frame()
 	tt.Key(0, ui.KeyDown)
-	check("/styling")
+	check("/charts")
 }
 
 func TestRowStarAndBreadcrumb(t *testing.T) {
@@ -116,5 +116,18 @@ func TestListDerivedSelection(t *testing.T) {
 	tt.Key(0, ui.KeyEnter)
 	if got := g.router.Path(); got != "/list/99" {
 		t.Fatalf("Enter went to %q", got)
+	}
+}
+
+func TestOverviewCounter(t *testing.T) {
+	g := &gallery{router: ui.NewRouter("/overview")}
+	tt := ui.NewTester(g.overview, 980, 720)
+	for _, step := range []struct{ click, want string }{{"Increment", "1"}, {"Increment", "2"}, {"−", "1"}} {
+		if err := tt.Click(step.click); err != nil {
+			t.Fatal(err)
+		}
+		if !tt.HasText(step.want) {
+			t.Fatalf("after %s, want %s, texts %q", step.click, step.want, tt.Texts())
+		}
 	}
 }

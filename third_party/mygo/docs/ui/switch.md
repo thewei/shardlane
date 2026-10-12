@@ -1,5 +1,7 @@
 # Switch
 
+<!-- preview switch 130 -->
+
 `ui.Switch` creates a switch turning a `*bool` on and off, for a setting
 that applies at once: a click turns it over, as does Space while it has the
 keyboard focus, and its knob slides across. `Changed` reports a click.

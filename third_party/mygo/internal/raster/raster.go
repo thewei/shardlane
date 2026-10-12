@@ -51,7 +51,9 @@ func (m *Image) RGBA() []byte {
 
 type clip struct {
 	shape
-	round bool
+	transform, inverse scene.Affine
+	valid              bool
+	round              bool
 	// spans is where in spanBuf the clip, with continuous corners, keeps
 	// the spans clipSolid found for the rows of the area, lo and hi a row
 	// (noSpan until found), or -1.
@@ -123,7 +125,8 @@ func (d *drawer) draw(dst *Image, s *scene.Scene, area image.Rectangle, bounds [
 		d.drawOps(dst, s, area, bounds, from, i, px, b)
 		b = nil
 		if fx.Effect.Backdrop {
-			d.bd.read(dst, scene.BackdropOf(op.Rect, fx.Blur, dst.W, dst.H))
+			d.bd.read(dst, scene.BackdropOf(op.Transform.Bounds(op.Rect), fx.Blur, dst.W, dst.H))
+			d.bd.img.Transform = op.Transform
 			b = &d.bd.img
 		}
 		next.Begin(fx, op.Rect, scene.FitRadii(op.Rect, op.Radii))
@@ -204,27 +207,55 @@ func (r *renderer) render(dst *Image, s *scene.Scene, area image.Rectangle, boun
 		}
 		switch op.Kind {
 		case scene.OpFill:
-			r.fill(op)
+			if op.Transform.Set {
+				r.transformed(op, nil, nil)
+			} else {
+				r.fill(op)
+			}
 		case scene.OpShadow:
-			if op.Inset {
+			if op.Transform.Set {
+				r.transformed(op, nil, nil)
+			} else if op.Inset {
 				r.insetShadow(op)
 			} else {
 				r.shadow(op)
 			}
 		case scene.OpGlyphs:
-			r.glyphs(op)
+			transformed := op.Transform.Set
+			for _, g := range s.Glyphs[op.Start:op.End] {
+				transformed = transformed || g.Transform.Set
+			}
+			if transformed {
+				r.transformedGlyphs(op)
+			} else {
+				r.glyphs(op)
+			}
 		case scene.OpImage:
-			r.image(op)
+			if op.Transform.Set {
+				r.transformed(op, nil, nil)
+			} else {
+				r.image(op)
+			}
 		case scene.OpHole:
-			r.hole(op)
+			if op.Transform.Set {
+				r.transformed(op, nil, nil)
+			} else {
+				r.hole(op)
+			}
 		case scene.OpEffect:
 			if i == from && px != nil {
-				r.effect(op, px, b)
+				if op.Transform.Set {
+					r.transformed(op, px, b)
+				} else {
+					r.effect(op, px, b)
+				}
 			}
 		case scene.OpPushClip:
 			radii := scene.Corners(op.Rect, op.Radii, op.Continuous)
 			c := clip{shape: newShape(op.Rect, radii), round: hasRadii(radii), spans: -1}
-			if c.continuous {
+			c.transform = op.Transform
+			c.inverse, c.valid = op.Transform.Inverse()
+			if c.continuous && !c.transform.Set {
 				// Continuous corners take long to find the spans of, which
 				// every operation within the clip needs.
 				c.spans = len(r.spanBuf)
@@ -264,10 +295,15 @@ func (r *renderer) clear(c scene.Color) {
 func (r *renderer) updateBounds() {
 	r.x0, r.y0, r.x1, r.y1 = r.area.Min.X, r.area.Min.Y, r.area.Max.X, r.area.Max.Y
 	for _, c := range r.clips {
-		r.x0 = max(r.x0, int(math.Floor(float64(c.r.X))))
-		r.y0 = max(r.y0, int(math.Floor(float64(c.r.Y))))
-		r.x1 = min(r.x1, int(math.Ceil(float64(c.r.X+c.r.W))))
-		r.y1 = min(r.y1, int(math.Ceil(float64(c.r.Y+c.r.H))))
+		b := c.transform.Bounds(c.r)
+		if !c.valid {
+			r.x1, r.y1 = r.x0, r.y0
+			return
+		}
+		r.x0 = max(r.x0, int(math.Floor(float64(b.X))))
+		r.y0 = max(r.y0, int(math.Floor(float64(b.Y))))
+		r.x1 = min(r.x1, int(math.Ceil(float64(b.X+b.W))))
+		r.y1 = min(r.y1, int(math.Ceil(float64(b.Y+b.H))))
 	}
 }
 
@@ -287,7 +323,12 @@ func (r *renderer) clipCoverage(x, y int) float32 {
 	for i := range r.clips {
 		c := &r.clips[i]
 		px, py := float32(x)+0.5, float32(y)+0.5
-		if c.round {
+		if c.transform.Set {
+			if !c.valid {
+				return 0
+			}
+			cov *= transformedCoverage(&c.shape, c.transform, c.inverse, px, py)
+		} else if c.round {
 			cov *= coverage(&c.shape, px, py)
 		} else {
 			// Partial pixels at fractional clip edges.
@@ -306,6 +347,9 @@ func (r *renderer) clipSolid(y int) (lo, hi int) {
 	lo, hi = r.x0, r.x1
 	for i := range r.clips {
 		c := &r.clips[i]
+		if c.transform.Set {
+			return lo, lo
+		}
 		var l, h int
 		if k := c.spans + 2*(y-r.area.Min.Y); c.spans >= 0 && y >= r.area.Min.Y && y < r.area.Max.Y {
 			if r.spanBuf[k] == noSpan {

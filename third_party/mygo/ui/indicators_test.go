@@ -22,6 +22,39 @@ func TestSpinner(t *testing.T) {
 	}
 }
 
+// TestSpinnerColor paints a spinner in the theme's muted color, or in
+// its TextColor, as a spinner on a chosen row of a list needs one that
+// shows on the accent.
+func TestSpinnerColor(t *testing.T) {
+	red := RGB(255, 0, 0)
+	tt := coreNewTester(func(c *context) {
+		coreRow(c).Gap(20).Padding(10).Children(func() {
+			coreSpinner(c).Label("Muted")
+			coreSpinner(c).TextColor(red).Label("Red")
+		})
+	}, 200, 100)
+	tt.send(platform.SurfaceEvent{Kind: platform.AccessibilityOn})
+	img := tt.Image()
+	// How much redder than green the spinner's reddest pixel is.
+	redness := func(name string) int {
+		n := accessNode(t, tt.h.access, platform.RoleProgress, name)
+		most := 0
+		for y := int(n.Bounds.Y); y < int(n.Bounds.Y+n.Bounds.H); y++ {
+			for x := int(n.Bounds.X); x < int(n.Bounds.X+n.Bounds.W); x++ {
+				px := img.RGBAAt(x, y)
+				most = max(most, int(px.R)-int(px.G))
+			}
+		}
+		return most
+	}
+	if r := redness("Muted"); r > 20 {
+		t.Errorf("the spinner is not gray: %d redder than green", r)
+	}
+	if r := redness("Red"); r < 60 {
+		t.Errorf("the spinner whose text is red is not: %d redder than green", r)
+	}
+}
+
 func TestMeter(t *testing.T) {
 	levels := &MeterLevels{Warning: 70, Critical: 90}
 	battery := &MeterLevels{Warning: 20, Critical: 10}

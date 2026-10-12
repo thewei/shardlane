@@ -1,5 +1,7 @@
 # Back and forward buttons
 
+<!-- preview history-buttons 240 -->
+
 `ui.BackButton` and `ui.ForwardButton` create buttons going back and forward
 in a [router](navigation.md)'s history, as in the toolbar of Finder or a
 browser: disabled at the ends of the history, and showing a chevron. Give

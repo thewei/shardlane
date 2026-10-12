@@ -1,3 +1,5 @@
+//go:build !js
+
 package mygo
 
 import (
@@ -13,6 +15,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -350,6 +353,24 @@ func rename(from, to string) error {
 			return err
 		}
 		time.Sleep(time.Duration(i) * 100 * time.Millisecond)
+	}
+}
+
+// relaunchNow starts the app again; it runs after the quit sequence.
+func relaunchNow() {
+	if launchedByDev() {
+		os.Exit(devRelaunchCode)
+	}
+	// The executable the app started from, which an update may have
+	// replaced.
+	cmd := exec.Command(startExe, os.Args[1:]...)
+	cmd.Dir = startDir
+	if runtime.GOOS != "windows" {
+		// GUI executables on Windows have no standard streams to pass on.
+		cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+	}
+	if cmd.Start() == nil {
+		_ = cmd.Process.Release()
 	}
 }
 

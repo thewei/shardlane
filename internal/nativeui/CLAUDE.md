@@ -3,12 +3,12 @@
 
 成员清单
 icons.go: 矢量图标字典，inline SVG 定义，提供常用及跨平台窗格/窗口控制图标与堆叠多终端图标（iconTerminalStacked2/3）
-proc_brands.go: 进程与工具品牌标识解析器，将前台进程与 Agent CLI 映射为矢量图标与友好名称
+proc_brands.go: 进程与工具/服务品牌标识解析器，将前台进程、Agent CLI 与各类微服务/数据库/工具映射为矢量图标与友好名称
 brands.go: Agent 品牌位图资产与视觉标识解析器，将 live Agent 映射为全彩品牌 Logo 与 agentMarkForPane 窗格标识
 agent_visual.go: Agent 品牌矢量回退图标字典、窗格 Agent 绑定与状态指示点（statusDot）
 brands_test.go: Agent 品牌位图资产检索、Antigravity 及其它 Provider 标识与 agentProvider 回退回归
 gorex_style.go: Gorex 风格视觉设计系统，提供渐变背景/卡片配色/shortDir/samePath 等跨平台路径处理
-terminal.go: 终端画布与 Gorex 窗格卡片渲染器，Pane 标题双击最大化/恢复、多终端堆叠 Logo 视觉指示与标题原生拖动交换
+terminal.go: 终端画布与 Gorex 窗格卡片渲染器，Pane 标题双击最大化/恢复、多终端堆叠 Logo 视觉指示与标题原生拖动放置（跨窗格/跨 Tab 移动、拆分与交换）
 breadcrumb_switcher.go: 标题栏面包屑与快速切换弹层所有者，Pane 顺序与 Herdr 实际布局对齐并展示品牌图标
 titlebar.go: 窗口标题栏组件，红绿灯与工具区对齐、视图切换（History 内页先返回根）与 Windows 平台窗口控件支持
 router.go: 单一 Router 的页面归属、精确 History 路径分类与窗口标题路由语义
@@ -18,13 +18,15 @@ panel_motion_test.go: Reduce Motion 下左导航收起/恢复，以及各窗口�
 right_panel.go: 旧会话设置兼容字段及 Files 缓存、根目录 identity fence、URL Preview 管理；**不绘制右栏**
 right_panel_files.go: /files 左侧目录缓存/树及点击加载预览的适配器
 page_files.go: Header Files 独立页面：左树/中预览、当前 Tab CWD 归属和空态
+quick_panel.go: 托盘与顶栏 Agent 快捷浮层宿主，提供 Agent 概览与 Services 双 Tab 及详情卡片
 quick_panel_services.go: Agent 浮层里的 Services 内容：当前 Tab Scripts 与观测端口
+quick_panel_test.go: QuickPanel 尺寸伸缩、卡片详情点击与空态行为测试
 right_panel_git_test.go: Diff/历史 Commit 保留左导航/中预览而不绘制旧 Review Inspector
 command_center_ui.go: Command Center Files 操作直达独立 /files 页面，不受旧右栏宽度限制
 project_tree.go: 侧栏 Workspace/Tab/Pane 原生拖拽入口及运行状态树，尊重 Herdr 权威顺序而非按 Agent 状态重排
-reorder.go: 作用域隔离的拖放语义与目标插入索引、Herdr mutation 分发和 Pane layout 顺序投影
-reorder_test.go: Drag/Drop 真正鼠标事件、插入索引、跨 Session/父级边界和投影排序回归
-components.go: 共用导航树行与视觉组件，拖动时提供原生浮动预览、插入占位、动画及命中目标
+reorder.go: 作用域隔离的拖放语义与目标插入索引、跨 Tab/Project 移动与拆分位置计算、Herdr mutation 分发和 Pane layout 顺序投影
+reorder_test.go: Drag/Drop 真正鼠标事件、插入索引、跨 Tab/Project 移动校验、窗格卡片放置动作推导和投影排序回归
+components.go: 共用导航树行与视觉组件，拖动时提供原生浮动预览、同级插入占位条、容器高亮、动画及命中目标
 workbench.go: 桌面工作台状态中枢，Agent 目录与运行时事件分发
 page_history.go: History 左侧筛选与中心列表/详情布局，SearchField、结果计数和 Clear filters 回到同一个查询入口
 history_state.go: HistoryService 查询/详情的生成代际隔离，筛选清空旧可选行及 Provider 元数据选择
@@ -40,13 +42,13 @@ gd_surface.go: 下方 Git Diff、无仓库/无变更/无匹配状态，clean 时
 git_workbench_actions.go: Git 视图操作条（Stage/Unstage All、始终可见 Split/Unified、⋯ 更多菜单）；仓库 Refresh 唯一入口在 Git 侧栏，按 Diff 实际宽度折叠批量操作
 git_sidebar_tree.go: 左侧 Git 引用导航入口、分组操作弹窗和仓库身份展示，Worktrees/Branches/Remotes/Tags/Stashes 使用同一树组件
 git_ref_tree.go: Git 引用按斜线构树、目录键稳定、筛选时独立折叠/再次展开、右键菜单，不执行 Git IO
-git_review_split.go: Changes 双模式主工作台，Local Changes 文件树+Diff+底部 Commit 分离按钮（AI Commit 经 Pi 只填 Subject）；All Commits 为图谱上层+只读文件树/Diff 下层
+git_review_split.go: Changes 双模式主工作台，Local Changes 文件树+Diff+底部 Commit 分离按钮（经 Pi 只填 Subject）；All Commits 为图谱上层+只读文件树/Diff 下层
 git_review_split_test.go: Git 双模式分栏、960 DIP 几何、拖拽、历史只读与底部草稿统一 Commit Modal 测试
 git_tree_interaction_test.go: 所有 Git 引用组反复折叠/展开、筛选后目录折叠与恢复回归
 git_file_tree_fold_test.go: Local Changes/All Commits 中重复点击相同文件目录的折叠与再展开回归
 git_directory_actions.go: Staged/Unstaged 独立目录子文件解析，路径边界准确，不以目录路径批量 Git add
-git_quick_ai.go: 底部 AI Commit Pi 生成器；异步 root/snapshot/草稿门禁、仅安全元数据、只填 Subject，拒绝自动提交
-git_workbench_polish_test.go: Split/Unified 真实点击、目录选中与边界、唯一 Refresh、⋯ 菜单和异步 AI 草稿门禁回归
+git_quick_ai.go: 底部 Pi 提交生成器；异步 root/snapshot/草稿门禁、仅安全元数据、只填 Subject，拒绝自动提交
+git_workbench_polish_test.go: Split/Unified 真实点击、目录选中与边界、唯一 Refresh、⋯ 菜单和异步草稿门禁回归
 git_commit_graph.go: 历史提交真实父 SHA 的 merge lanes 纯渲染投影；无运行时 Git IO
 git_commit_graph_test.go: 提交父节点拓扑及合并分支回归
 git_layout_render_test.go: 仅显式启用时输出 Local Changes/All Commits 实际 MyGo 渲染截图
@@ -63,9 +65,9 @@ commit_ai_ui.go: Commit 内折叠的 Pi 生成、敏感路径受限 Prompt 原�
 commit_modal_layout_test.go: 960×640/1200×800 长文件与 Pi 展开后固定 CTA 几何、文件选择批量操作回归
 branch_menu_filter_test.go: 搜索过滤、当前分支优先、创建入口始终可见、跨仓库过滤状态清理
 commit_pi.go: Pi 一次性候选生成 UI 协调、后台取消/超时、repo/snapshot/paths identity fence，拒绝自动 git commit
-page_settings_git.go: Git & AI 配置页：默认 Conventional Commit 规范、显式保存/恢复、Pi CLI 可执行路径
+page_settings_git.go: Git 配置页：默认 Conventional Commit 规范、显式保存/恢复、Pi CLI 可执行路径
 commit_pi_test.go, settings_git_test.go: Pi 后台时序/过期消息隔离、Git Settings 持久化及 MyGo 控件回归
-commit_message_import.go: AI 建议文本纯校验与 Subject/Body 导入，已有手写消息时必须二次确认，不触发 Git 提交
+commit_message_import.go: 生成候选文本纯校验与 Subject/Body 导入，已有手写消息时必须二次确认，不触发 Git 提交
 commit_message_import_test.go: 消息长度/代码围栏/空主题校验、覆盖确认及本地状态销毁回归
 workspace_header.go: Commit Modal 打开/取消/草稿导航防护，仍使用既有 WorkspaceSurfaceCommit 主状态
 git_operations.go: 背景 mutation 编排，FF/no-FF Merge、Revert/Cherry-pick/Undo、Git Continue/Abort，经确认并在失败后刷新

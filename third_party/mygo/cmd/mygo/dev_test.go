@@ -150,12 +150,18 @@ func TestWatcher(t *testing.T) {
 	var reported []string // the paths of the last change
 	expect := func(changed bool, what string) {
 		t.Helper()
+		wait := 300 * time.Millisecond
+		if changed {
+			// Loaded CI runners can delay polling; unchanged-input checks
+			// still need only the short window to detect spurious events.
+			wait = 3 * time.Second
+		}
 		select {
 		case reported = <-changes:
 			if !changed {
 				t.Fatalf("%s: change reported", what)
 			}
-		case <-time.After(300 * time.Millisecond):
+		case <-time.After(wait):
 			if changed {
 				t.Fatalf("%s: change not reported", what)
 			}

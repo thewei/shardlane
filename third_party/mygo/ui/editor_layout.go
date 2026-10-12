@@ -168,6 +168,11 @@ func (e *node) paintInput(p *Painter) {
 		p.clip = saved
 		return
 	}
+	var sp *spanPaint
+	if !ed.password {
+		_, sp = ed.rangeSpans(0, ed.buf.n)
+	}
+	p.textBackgrounds(l, ox, oy, ts, sp)
 	if focused {
 		for _, selected := range ed.selectedRanges() {
 			for _, r := range l.SelectionVisual(ed.displayIndex(selected.Start), ed.displayIndex(selected.End), false) {
@@ -175,11 +180,7 @@ func (e *node) paintInput(p *Painter) {
 			}
 		}
 	}
-	var sp *spanPaint
-	if !ed.password {
-		_, sp = ed.rangeSpans(0, ed.buf.n)
-	}
-	p.textLayout(l, ox, oy, ts.color, ts, sp)
+	p.textForeground(l, ox, oy, ts.color, ts, sp)
 	if ed.compose != "" {
 		start := ed.caret
 		end := start + utf8.RuneCountInString(ed.compose)
@@ -193,7 +194,7 @@ func (e *node) paintInput(p *Painter) {
 		const blink = 530 * time.Millisecond
 		if (phase/blink)%2 == 0 {
 			x, y, h := l.CaretAt(text.CaretPosition{Index: ed.displayIndex(ed.caret) + ed.composeCaret, Affinity: ed.caretAffinity})
-			p.s.Ops = append(p.s.Ops, scene.Op{Kind: scene.OpFill, Rect: p.snap(Rect{ox + x, oy + y, 0, h}), Color: t.Accent.scene(), Wide: p.wide(t.Accent, Color{}, Color{}), Opacity: p.opacity})
+			p.add(scene.Op{Kind: scene.OpFill, Rect: p.snap(Rect{ox + x, oy + y, 0, h}), Color: t.Accent.scene(), Wide: p.wide(t.Accent, Color{}, Color{}), Opacity: p.opacity})
 			op := &p.s.Ops[len(p.s.Ops)-1]
 			op.Rect.W = max(round(p.scale), 1)
 		}

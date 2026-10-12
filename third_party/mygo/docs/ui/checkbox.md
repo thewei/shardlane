@@ -1,5 +1,7 @@
 # Checkbox
 
+<!-- preview checkbox 220 -->
+
 `ui.Checkbox` creates a check box toggling a `*bool`, with a label: a click
 on the box or its label checks it or unchecks it, as does Space while it
 has the keyboard focus, and `Changed` reports a click.

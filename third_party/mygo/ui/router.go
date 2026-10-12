@@ -50,18 +50,30 @@ import (
 // sidebar choosing the pages, where it stays: screen readers then hear
 // the title of the page. Pages slide or fade in (Transition).
 //
+// In a browser, the first router a window shows follows the history of
+// the browser's tab, in the URL's fragment, as "#/notes/42": going to a
+// page adds an entry to it, the browser's back and forward buttons go
+// through the router's pages, and a URL with a fragment opens the app at
+// its page.
+//
 // The zero Router shows "/". As the rest of the app's state, it is read
 // and changed on the main thread: from another goroutine, change it in
 // Window.Update.
 type Router struct {
 	Handle
 
-	// Transition is how pages replace each other.
+	// Transition is how pages replace each other, and Animation, if set,
+	// how they move then: as a spring (Snappy, …) or a curve, rather than
+	// easing out over 250 ms as they slide, 150 ms as they fade.
 	Transition Transition
+	Animation  *Animation
 
 	entries []*routeEntry
 	at      int
-	pages   uint64
+	// base numbers entries[0] among all the entries the history had, as
+	// the oldest go: a browser's history refers to them by number.
+	base  int
+	pages uint64
 	// rt is the window showing the router, which a change asks for a
 	// frame.
 	rt *engine
@@ -96,6 +108,8 @@ type routeView struct {
 	dir                  int
 	start                time.Time
 	focusing, announcing bool
+	// progress goes from 0 to 1 as the page comes in.
+	progress channel
 }
 
 // Transition is how a Router's pages replace each other.
@@ -198,11 +212,15 @@ func (r *Router) Push(target string) {
 	e := &routeEntry{loc: loc}
 	e.pages, e.layouts = shared(cur, p)
 	r.entries = append(r.entries[:r.at+1], e)
-	if len(r.entries) > maxHistory {
-		r.entries = r.entries[len(r.entries)-maxHistory:]
+	if n := len(r.entries) - maxHistory; n > 0 {
+		r.entries = r.entries[n:]
+		r.base += n
 	}
 	r.at = len(r.entries) - 1
 	r.changed()
+	if browserHistory != nil {
+		browserHistory.pushed(r)
+	}
 }
 
 // Replace shows the page at target in place of the page shown, in its
@@ -226,6 +244,9 @@ func (r *Router) Replace(target string) {
 		r.entries[r.at] = e
 	}
 	r.changed()
+	if browserHistory != nil {
+		browserHistory.replaced(r)
+	}
 }
 
 // Back shows the page before, if any.
@@ -240,9 +261,25 @@ func (r *Router) Go(n int) {
 	r.current()
 	at := max(0, min(r.at+n, len(r.entries)-1))
 	if at != r.at {
+		moved := at - r.at
 		r.at = at
 		r.changed()
+		if browserHistory != nil {
+			browserHistory.went(r, moved)
+		}
 	}
+}
+
+// browserHistory is the history of the browser's tab the app runs in,
+// which the first router a window shows follows (router_js.go): it hears
+// of the router's changes. It is nil elsewhere.
+var browserHistory interface {
+	// claim makes r the router following the history, unless another
+	// one does.
+	claim(r *Router)
+	pushed(r *Router)
+	replaced(r *Router)
+	went(r *Router, n int)
 }
 
 // CanGoBack reports whether there is a page to go back to, and
@@ -462,6 +499,9 @@ func (r *Route) coreView(c *context, fn func(r *Route)) *node {
 // going away too, which takes neither the pointer nor the keyboard.
 func (r *Router) coreView(c *context, fn func(r *Route)) *node {
 	r.rt = c.rt
+	if browserHistory != nil {
+		browserHistory.claim(r)
+	}
 	box := coreColumn(c).Grow(1).AlignSelf(Stretch).MinWidth(0).MinHeight(0)
 	box.widget = "Router"
 	wrapElement(box).Bind(&r.Handle)
@@ -489,12 +529,9 @@ func (r *Router) build(c *context, box *node, v *routeView, parent *Route, fn fu
 	}
 	progress := float32(1)
 	if v.leaving != nil {
-		d := slideTime
-		if v.dir == 0 {
-			d = fadeTime
-		}
-		if t := c.now.Sub(v.start); t < d {
-			progress = EaseOut(float32(t) / float32(d))
+		v.progress.advance(c.now)
+		if v.progress.moving || v.progress.pending {
+			progress = max(0, min(float32(v.progress.value), 1))
 			c.AnimationFrame()
 		} else {
 			v.leaving = nil
@@ -585,10 +622,14 @@ func (r *Router) show(c *context, box *node, v *routeView, parent *Route, cur *r
 		v.focusing, v.announcing = false, true
 	}
 	v.leaving, v.dir, v.start = nil, 0, c.now
-	if r.Transition == TransitionNone {
+	if r.Transition == TransitionNone || rt.instant() {
 		return
 	}
 	v.leaving = old
+	defer func() {
+		v.progress = channel{at: c.now}
+		headFor(&v.progress, 1, r.animation(v.dir), c.now)
+	}()
 	if r.Transition == TransitionAuto && !rt.preferences().ReduceMotion {
 		from, to := segmentsOf(old.loc), segmentsOf(cur.loc)
 		from, to = from[min(offset, len(from)):], to[min(offset, len(to)):]
@@ -599,6 +640,17 @@ func (r *Router) show(c *context, box *node, v *routeView, parent *Route, cur *r
 			v.dir = -1
 		}
 	}
+}
+
+// animation returns how pages go in direction dir (0 fading).
+func (r *Router) animation(dir int) Animation {
+	if r.Animation != nil {
+		return *r.Animation
+	}
+	if dir == 0 {
+		return Animation{Duration: fadeTime, Ease: EaseOut}
+	}
+	return Animation{Duration: slideTime, Ease: EaseOut}
 }
 
 // page builds the page of entry e with fn, in a view of the router or

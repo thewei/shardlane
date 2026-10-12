@@ -1,5 +1,7 @@
 # Stepper
 
+<!-- preview stepper 100 -->
+
 `ui.Stepper` creates a pair of arrows changing a `*float64` by a step
 between two bounds, as AppKit's stepper beside a field: a click on an arrow
 steps up or down, as do Up and Down while the stepper has the keyboard

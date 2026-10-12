@@ -13,6 +13,9 @@ import (
 // icons, check marks, charts.
 type Path struct {
 	cmds []pathCmd
+	// trim is the part of the path's length it keeps (Trim), when trimmed.
+	trim    [2]float32
+	trimmed bool
 }
 
 type pathCmd struct {
@@ -52,6 +55,19 @@ func (p *Path) Close() *Path {
 	return p
 }
 
+// Trim keeps of the path, as a Painter fills or strokes it, the part of
+// its length from from to to, as fractions of it, its subpaths one after
+// another, and returns the path: 0 to 0.5 draws its first half, and a check
+// mark draws itself as to animates from 0 to 1, as SwiftUI's trim(from:to:)
+// and Motion's pathLength. Trimmed, closed subpaths draw open, and a
+// stroke trimmed shorter than its width fades with its length, rather than
+// its round caps showing a dot that comes or goes at once.
+func (p *Path) Trim(from, to float32) *Path {
+	finiteMotion("trim", float64(from), float64(to))
+	p.trim, p.trimmed = [2]float32{max(0, min(from, 1)), max(0, min(to, 1))}, true
+	return p
+}
+
 // Circle adds a circle as a subpath.
 func (p *Path) Circle(cx, cy, r float32) *Path {
 	const k = 0.5522847498
@@ -70,6 +86,13 @@ type flatPath struct {
 	pts    [][2]float32
 	starts []int
 	closed []bool
+	// trimmed tells that Trim kept kept pixels of the path's length.
+	trimmed bool
+	kept    float32
+	// The polylines that trimming keeps, swapped with the others.
+	keptPts    [][2]float32
+	keptStarts []int
+	keptClosed []bool
 }
 
 func (f *flatPath) polys() int { return len(f.starts) }
@@ -85,6 +108,7 @@ func (f *flatPath) poly(i int) [][2]float32 {
 // flatten sets f to the path's subpaths as polylines in device pixels.
 func (p *Path) flatten(f *flatPath, scale float32) {
 	f.pts, f.starts, f.closed = f.pts[:0], f.starts[:0], f.closed[:0]
+	f.trimmed, f.kept = false, 0
 	begin, isClosed := 0, false
 	var origin, pen [2]float32
 	flush := func() {
@@ -136,6 +160,58 @@ func (p *Path) flatten(f *flatPath, scale float32) {
 		}
 	}
 	flush()
+	if p.trimmed {
+		f.trim(p.trim[0], p.trim[1])
+	}
+}
+
+// trim keeps the part of f's length from from to to, as fractions of it,
+// as open polylines.
+func (f *flatPath) trim(from, to float32) {
+	// segments returns how many segments polyline i has, a closed one's
+	// back to its start included.
+	segments := func(i int) int {
+		n := len(f.poly(i)) - 1
+		if f.closed[i] {
+			n++
+		}
+		return n
+	}
+	var total float32
+	for i := range f.polys() {
+		poly := f.poly(i)
+		for j := range segments(i) {
+			total += dist(poly[j], poly[(j+1)%len(poly)])
+		}
+	}
+	lo, hi := from*total, to*total
+	f.trimmed, f.kept = true, max(hi-lo, 0)
+	pts, starts, closed := f.keptPts[:0], f.keptStarts[:0], f.keptClosed[:0]
+	var at float32
+	for i := range f.polys() {
+		poly := f.poly(i)
+		open := false // a kept polyline goes on to the next segment
+		for j := range segments(i) {
+			a, b := poly[j], poly[(j+1)%len(poly)]
+			l := dist(a, b)
+			s, e := max(lo, at), min(hi, at+l)
+			at += l
+			if l == 0 || s >= e {
+				open = open && l == 0
+				continue
+			}
+			k0, k1 := (s-(at-l))/l, (e-(at-l))/l
+			if !open {
+				starts, closed = append(starts, len(pts)), append(closed, false)
+				pts = append(pts, [2]float32{a[0] + (b[0]-a[0])*k0, a[1] + (b[1]-a[1])*k0})
+			}
+			pts = append(pts, [2]float32{a[0] + (b[0]-a[0])*k1, a[1] + (b[1]-a[1])*k1})
+			open = k1 >= 1
+		}
+	}
+	f.keptPts, f.pts = f.pts, pts
+	f.keptStarts, f.starts = f.starts, starts
+	f.keptClosed, f.closed = f.closed, closed
 }
 
 func curveSteps(a, b, c, d [2]float32) int {
@@ -239,7 +315,7 @@ func (p *Painter) drawPath(f *flatPath, width float32, c Color, g *LinearGradien
 		p.gradient(&op, *g)
 		op.Wide = p.wide(g.From, g.To, Color{})
 	}
-	p.s.Ops = append(p.s.Ops, op)
+	p.add(op)
 }
 
 // rasterizePath draws the mask of the path job, into memory the engine
@@ -282,7 +358,17 @@ func (p *Painter) FillPathGradient(path *Path, g LinearGradient) {
 func (p *Painter) StrokePath(path *Path, width float32, c Color) {
 	f := &p.rt.paths.flat
 	path.flatten(f, p.scale)
-	p.drawPath(f, width*p.scale, c, nil)
+	p.drawPath(f, width*p.scale, c.Alpha(f.capFade(width*p.scale)), nil)
+}
+
+// capFade returns how opaque a stroke width pixels wide of f shows:
+// trimmed shorter than its width, which its round caps would show as a
+// dot appearing or going at once, it fades with its length.
+func (f *flatPath) capFade(width float32) float32 {
+	if !f.trimmed || width <= 0 || f.kept >= width {
+		return 1
+	}
+	return f.kept / width
 }
 
 // StrokePathGradient draws the outline of a path as StrokePath does, in a
@@ -290,6 +376,8 @@ func (p *Painter) StrokePath(path *Path, width float32, c Color) {
 func (p *Painter) StrokePathGradient(path *Path, width float32, g LinearGradient) {
 	f := &p.rt.paths.flat
 	path.flatten(f, p.scale)
+	k := f.capFade(width * p.scale)
+	g.From, g.To = g.From.Alpha(k), g.To.Alpha(k)
 	p.drawPath(f, width*p.scale, g.From, &g)
 }
 
@@ -369,7 +457,9 @@ func offsetLoop(z *vec.Rasterizer, pts [][2]float32, hw float32) {
 		b := pts[(k+1)%n]
 		z.LineTo(b[0]+nx, b[1]+ny)
 		ex, ey, mx, my := normal((k + 1) % n)
-		cross, dot := dx*ey-dy*ex, dx*ex+dy*ey
+		// Rounded apart, as fused multiply-adds would leave a polyline
+		// turning straight back, a cap's turn, a hair off zero.
+		cross, dot := float32(dx*ey)-float32(dy*ex), float32(dx*ex)+float32(dy*ey)
 		switch {
 		case cross > 0:
 			// The inside of the corner: through it, where the stroke

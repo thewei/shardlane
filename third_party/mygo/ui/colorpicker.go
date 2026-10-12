@@ -124,7 +124,7 @@ func coreColorPicker(c *context, color *Color) *node {
 		sq.Cursor(CursorCrosshair)
 		sq.afterInput(func() {
 			if s := sq.st; s.pressed && s.w > 0 && s.h > 0 {
-				px, py := c.rt.pointerX-s.x, c.rt.pointerY-s.y
+				px, py := s.local(c.rt.pointerX, c.rt.pointerY)
 				set(hsva{x.h, float64(px / s.w), 1 - float64(py/s.h), x.a})
 			}
 			switch {

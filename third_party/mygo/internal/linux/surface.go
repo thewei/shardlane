@@ -543,6 +543,15 @@ func keyvalKey(keyval uint32) platform.Key {
 	return platform.KeyUnknown
 }
 
+// eventPhysicalKey reads GdkEventKey.hardware_keycode on the supported
+// 64-bit GTK ABI. X11 and Wayland expose the evdev code plus 8 here.
+func eventPhysicalKey(event ptr) platform.Key {
+	if code := field[uint16](event, 48); code >= 8 {
+		return platform.KeyForScancode(code - 8)
+	}
+	return platform.KeyUnknown
+}
+
 func (b *Backend) surfaceOf(data ptr) *surface {
 	if w := b.window(data); w != nil {
 		return w.surface
@@ -737,7 +746,7 @@ func initSurfaceCallbacks() {
 		s.send(ev)
 		return true
 	})
-	// GdkEventKey: type 0, state 24, keyval 28.
+	// GdkEventKey: type 0, state 24, keyval 28, hardware_keycode 48.
 	cbSurfaceKey = purego.NewCallback(func(widget, event, data ptr) bool {
 		s := b().surfaceOf(data)
 		if s == nil {
@@ -769,14 +778,26 @@ func initSurfaceCallbacks() {
 			return false
 		}
 		k := keyvalKey(field[uint32](event, 28))
+		mods := gdkMods(field[uint32](event, 24))
+		physical := eventPhysicalKey(event)
+		// A key the layout types no US key for, as S on a Cyrillic layout,
+		// still reaches shortcuts by its position.
+		// A release is sent whatever the modifiers held now, so that a press
+		// sent as a chord is let go of even after Ctrl was.
 		if k == platform.KeyUnknown {
-			return false
+			switch {
+			case kind == platform.KeyReleased && physical != platform.KeyUnknown:
+				s.send(platform.SurfaceEvent{Kind: kind, PhysicalKey: physical, Mods: mods})
+				return false
+			case !platform.KeyByPosition(k, physical, mods):
+				return false
+			}
 		}
 		if kind == platform.KeyPressed {
 			s.pressing = event
 			defer func() { s.pressing = 0 }()
 		}
-		s.send(platform.SurfaceEvent{Kind: kind, Key: k, Mods: gdkMods(field[uint32](event, 24))})
+		s.send(platform.SurfaceEvent{Kind: kind, Key: k, PhysicalKey: physical, Mods: mods})
 		return true
 	})
 	cbSurfaceFocusIn = purego.NewCallback(func(widget, event, data ptr) bool {

@@ -1,3 +1,5 @@
+//go:build !js
+
 // Package e2e drives the real native backend. It needs a desktop session,
 // so it only runs with MYGO_E2E=1:
 //
@@ -3008,6 +3010,58 @@ func TestReorderByDragging(t *testing.T) {
 		t.Skip("pointer automation not available on this platform")
 	}
 	eventually(t, "the new order", func() bool { return order.Load() == "acdbe" })
+}
+
+// TestDraggableByDragging throws an element with the events of a real
+// mouse: it comes to rest where Snap chooses, shows there, and takes
+// clicks there.
+func TestDraggableByDragging(t *testing.T) {
+	var frames, clicks atomic.Int32
+	var rest atomic.Value
+	var moving atomic.Bool
+	rest.Store(ui.Point{})
+	var off ui.Point
+	view := func(c *ui.Context) {
+		frames.Add(1)
+		card := ui.Box(c).Absolute().Left(20).Top(20).Size(60, 40).Background(ui.RGB(255, 0, 0))
+		card.Draggable(&off, ui.DraggableOptions{
+			Axis:   ui.Horizontal,
+			Bounds: &ui.Rect{W: 200},
+			Snap:   ui.Nearest(ui.Point{}, ui.Point{X: 200}),
+		})
+		if card.Clicked() {
+			clicks.Add(1)
+		}
+		rest.Store(off)
+		moving.Store(card.Transitioning())
+	}
+	w := newWindow(t, mygo.WindowOptions{Title: "Draggable", Width: 400, Height: 200, Content: ui.View(view)})
+	eventually(t, "a frame", func() bool { return frames.Load() > 0 })
+	if !drag(w, [][2]float64{{50, 40}, {60, 40}, {100, 40}, {150, 40}, {180, 40}}) {
+		t.Skip("pointer automation not available on this platform")
+	}
+	eventually(t, "the card to rest at 200", func() bool { return rest.Load() == ui.Point{X: 200} && !moving.Load() })
+	if n := clicks.Load(); n != 0 {
+		t.Fatalf("the drag clicked %d times", n)
+	}
+	data, err := w.CapturePage()
+	if err != nil {
+		t.Fatal(err)
+	}
+	img, err := png.Decode(bytes.NewReader(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, s := img.Bounds(), deviceScale(w)
+	red := func(x, y float64) bool {
+		c := color.RGBAModel.Convert(img.At(b.Min.X+int(x*s), b.Min.Y+int(y*s))).(color.RGBA)
+		return c.R > 200 && c.G < 60
+	}
+	if !red(250, 40) || red(50, 40) {
+		t.Fatalf("at rest, the card is not at 220 to 280: red at 250 %v, at 50 %v", red(250, 40), red(50, 40))
+	}
+	click(w, 250, 40)
+	eventually(t, "a click where the card rests", func() bool { return clicks.Load() == 1 })
 }
 
 // TestRouterSideButtons goes back and forward in a router with the side

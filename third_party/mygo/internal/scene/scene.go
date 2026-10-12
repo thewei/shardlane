@@ -105,6 +105,9 @@ const (
 type Op struct {
 	Kind Kind
 	Rect Rect
+	// Transform maps this operation's geometry to frame pixels. Clips
+	// retain the transform with which they were pushed.
+	Transform Affine
 	// Radii are the corner radii: top-left, top-right, bottom-right and
 	// bottom-left.
 	Radii [4]float32
@@ -192,6 +195,8 @@ func InnerRadii(r Rect, radii, w [4]float32) (Rect, [4]float32) {
 
 // Glyph is a glyph mask or color glyph copied from an atlas into a frame.
 type Glyph struct {
+	// Transform is applied before its Op's transform, for inline text.
+	Transform Affine
 	// X, Y, W and H place the glyph's bitmap, in device pixels.
 	X, Y, W, H float32
 	// U, V, UW and VH are the bitmap's rectangle in its atlas.
@@ -351,6 +356,19 @@ func (m *Image) Version() uint64 { return m.version }
 
 // Changed records that Pix was modified.
 func (m *Image) Changed() { m.version++ }
+
+// Resize keeps the image's texture-cache identity while changing its size.
+// Renderers replace the backing texture on a size change, so an animated
+// clip does not leave a new texture in the cache on every frame.
+func (m *Image) Resize(w, h int) {
+	m.W, m.H = w, h
+	if cap(m.Pix) >= 4*w*h {
+		m.Pix = m.Pix[:4*w*h]
+	} else {
+		m.Pix = make([]byte, 4*w*h)
+	}
+	m.Changed()
+}
 
 // FitRadii scales corner radii down so that adjacent ones fit along each
 // side of r, as CSS does; renderers apply it before drawing.

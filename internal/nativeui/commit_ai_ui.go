@@ -21,8 +21,8 @@ func (s *Shell) commitAISection(c *ui.Context, snap *gitworkbench.ChangesSnapsho
 	sp := Spacing()
 	t := c.Theme()
 	if !s.commitPromptPreviewOpen {
-		open := ui.Button(c, "AI Commit Message…").FontSize(Typography().Caption).
-			Tooltip("Generate a candidate with Pi or review a prompt to copy")
+		open := ui.Button(c, "Draft Commit Message…").FontSize(Typography().Caption).
+			Tooltip("Generate candidate with Pi or inspect prompt")
 		open.Disabled(len(s.selectedCommitPaths()) == 0)
 		if open.Clicked() {
 			s.commitPromptPreviewOpen = true
@@ -36,8 +36,8 @@ func (s *Shell) commitAISection(c *ui.Context, snap *gitworkbench.ChangesSnapsho
 	ui.Column(c).FillWidth().MinWidth(0).Gap(sp.S).Padding(sp.M).
 		Border(1, designTokens(t.Dark).BorderSubtle).Radius(Radius().Control).Children(func() {
 		ui.Row(c).FillWidth().Gap(sp.S).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, "AI commit message").FontSize(Typography().Section).FontWeight(650).Grow(1)
-			if ui.Button(c, "Hide AI").FontSize(Typography().Caption).Clicked() {
+			ui.Text(c, "Commit message draft").FontSize(Typography().Section).FontWeight(650).Grow(1)
+			if ui.Button(c, "Hide draft").FontSize(Typography().Caption).Clicked() {
 				s.cancelPiCommitSuggestion()
 				s.commitPromptPreviewOpen = false
 			}
@@ -45,7 +45,7 @@ func (s *Shell) commitAISection(c *ui.Context, snap *gitworkbench.ChangesSnapsho
 		ui.Textf(c, "%d included · %d sensitive excluded", preview.IncludedFiles, preview.ExcludedFiles).
 			FontSize(Typography().Caption).TextColor(t.TextMuted)
 		ui.Checkbox(c, &s.commitPromptIncludeExcerpt, "Include code excerpts (explicit opt-in)")
-		ui.Text(c, "Pi drafts a message only. Review it before committing. Rules: Settings → Git & AI.").
+		ui.Text(c, "Drafts candidate from staged changes based on commit rules (Settings → Git).").
 			FontSize(Typography().Caption).TextColor(t.TextMuted)
 		if preview.Text == "" {
 			ui.Text(c, "No eligible selected files. Sensitive paths stay excluded.").
@@ -91,15 +91,15 @@ func (s *Shell) commitAISection(c *ui.Context, snap *gitworkbench.ChangesSnapsho
 					ui.Text(c, preview.Text).FontSize(Typography().Micro).TextColor(t.TextMuted)
 				})
 			})
-			if ui.Button(c, "Copy Reviewed AI Prompt").Clicked() {
+			if ui.Button(c, "Copy Prompt").Clicked() {
 				s.copyToClipboard(preview.Text)
-				s.pendingToast = "Reviewed prompt copied. No AI request was sent."
+				s.pendingToast = "Prompt copied to clipboard."
 			}
 		}
 		if s.commitAIManualEntryOpen || s.commitAIResponse != "" {
 			ui.Text(c, "Suggested commit message").FontSize(Typography().Caption).FontWeight(650)
 			ui.TextArea(c, &s.commitAIResponse).Height(76).Grow(0).
-				Placeholder("Subject followed by optional body").Label("AI message suggestion")
+				Placeholder("Subject followed by optional body").Label("Message suggestion")
 			if s.commitAIError != "" {
 				ui.Text(c, s.commitAIError).FontSize(Typography().Caption).TextColor(t.Danger)
 			}

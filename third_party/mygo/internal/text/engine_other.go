@@ -1,4 +1,4 @@
-//go:build !(windows && (amd64 || arm64)) && !darwin && !(linux && (amd64 || arm64))
+//go:build !(windows && (amd64 || arm64)) && !darwin && !(linux && (amd64 || arm64)) && !js
 
 package text
 

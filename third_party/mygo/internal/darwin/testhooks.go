@@ -80,13 +80,27 @@ func TestClick(handle uintptr, x, y float64) { testClick(handle, x, y, false) }
 // transient popovers that close on clicks elsewhere.
 func TestAppClick(handle uintptr, x, y float64) { testClick(handle, x, y, true) }
 
+// TestAppPress is half of TestAppClick: the left mouse down, or the up,
+// which a user's click handles apart, a frame or more later.
+func TestAppPress(handle uintptr, x, y float64, down bool) {
+	typ := uint(2) // NSEventTypeLeftMouseUp
+	if down {
+		typ = 1 // NSEventTypeLeftMouseDown
+	}
+	testMouse(handle, x, y, true, typ)
+}
+
 func testClick(handle uintptr, x, y float64, viaApp bool) {
+	testMouse(handle, x, y, viaApp, 1, 2) // NSEventTypeLeftMouseDown, LeftMouseUp
+}
+
+func testMouse(handle uintptr, x, y float64, viaApp bool, types ...uint) {
 	withPool(func() {
 		win := id(handle)
 		content := msgRect(send(win, "contentView"), sel("frame"))
 		loc := NSPoint{x, content.Size.Height - y}
 		number := sendInt(win, "windowNumber")
-		for _, typ := range []uint{1, 2} { // NSEventTypeLeftMouseDown, LeftMouseUp
+		for _, typ := range types {
 			ev := msgMouseEvent(class("NSEvent"), sel("mouseEventWithType:location:modifierFlags:timestamp:windowNumber:context:eventNumber:clickCount:pressure:"),
 				typ, loc, 0, 0, number, 0, 0, 1, 1)
 			if viaApp {

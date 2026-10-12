@@ -1,5 +1,7 @@
 # Grid
 
+<!-- preview grid 260 -->
+
 `ui.Grid` lays its children out in columns and rows, as CSS grid does: they
 fill its cells row by row, and it adds rows as they need them. `Columns(3)`
 makes three columns of equal width; `ColumnTracks` sets them one by one, as

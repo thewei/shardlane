@@ -190,5 +190,6 @@ func (rt *engine) dataPreview(s *state) (image.Image, image.Point) {
 			img.Pix[j], img.Pix[j+1], img.Pix[j+2], img.Pix[j+3] = m.Pix[i+2], m.Pix[i+1], m.Pix[i], m.Pix[i+3]
 		}
 	}
-	return img, image.Pt(min(max(int(s.x+s.pressX-s.vx), 0), w-1), min(max(int(s.y+s.pressY-s.vy), 0), h-1))
+	x, y := s.world.Point(s.x+s.pressX, s.y+s.pressY)
+	return img, image.Pt(min(max(int(x-s.vx), 0), w-1), min(max(int(y-s.vy), 0), h-1))
 }

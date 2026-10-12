@@ -29,6 +29,10 @@ func click(w *mygo.Window, x, y float64) (ok bool) {
 // appClick is click, already through XTEST.
 func appClick(w *mygo.Window, x, y float64) bool { return click(w, x, y) }
 
+// heldAppClick is appClick: the grab of a focusable flyout eats the press
+// that closes it, however long it is held.
+func heldAppClick(w *mygo.Window, x, y float64) bool { return appClick(w, x, y) }
+
 func sideButton(w *mygo.Window, back bool) (ok bool) {
 	mygo.RunOnMain(func() { ok = linux.TestSideButton(w.NativeHandle(), back) })
 	return ok

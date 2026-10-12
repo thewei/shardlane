@@ -14,7 +14,7 @@ import (
 /**
  * [INPUT]: 依赖 mygo/plugins/terminal, mygo/ui, herdr, settings, gorex_style, brands 的 agentProvider/agentMark
  * [OUTPUT]: 对外提供 terminalCanvas, paneCard, paneCardHeader, paneStackInfo, paneLogoView, syncTerminals, closeAllTerminals, paneHeaderVisuals
- * [POS]: nativeui 的终端画布与 Gorex 窗格卡片主渲染器，管理活动的终端连接、堆叠多窗格状态与卡片头部视觉呈现
+ * [POS]: nativeui 的终端画布与 Gorex 窗格卡片主渲染器，管理活动的终端连接、堆叠多窗格状态与卡片拖拽放置（移动/拆分/交换）
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 
@@ -169,15 +169,21 @@ func (s *Shell) paneCard(c *ui.Context, k *gorexColors, surface *terminalSurface
 	card.Background(bg).Border(1, border).
 		Shadow(0, 1, 2, 0, shadow).
 		Shadow(0, 6, 22, -2, shadow)
-	swapTarget := false
-	if dragged, over := ui.DragOver[paneCardDrag](card); over && s.canSwapCard(dragged, surface.paneID, s.selectedTabID) {
-		// Native drag ghost follows the pointer; the outline and floating
-		// badge preview its landing slot without resizing the live PTY.
-		swapTarget = true
+	var dropAction paneCardDropAction
+	var dropLabel string
+	if dragged, over := ui.DragOver[treeNodeDrag](card); over && s.canDropOnPaneCard(dragged, surface.paneID, s.selectedTabID) {
+		// Native drag ghost follows the pointer; preview action (swap vs split)
+		// without resizing the live PTY.
+		px, py, _ := card.PointerPosition()
+		bounds := card.Bounds()
+		dropAction, dropLabel = resolvePaneCardDropAction(dragged, surface.paneID, s.selectedTabID, px, py, bounds.W, bounds.H)
 		card.Border(2, c.Theme().Accent).Background(c.Theme().Accent.Alpha(0.08))
 	}
-	if dragged, dropped := ui.Drop[paneCardDrag](card); dropped && s.canSwapCard(dragged, surface.paneID, s.selectedTabID) {
-		s.swapPaneDrop(dragged.PaneID, surface.paneID, s.selectedTabID)
+	if dragged, dropped := ui.Drop[treeNodeDrag](card); dropped && s.canDropOnPaneCard(dragged, surface.paneID, s.selectedTabID) {
+		px, py, _ := card.PointerPosition()
+		bounds := card.Bounds()
+		action, _ := resolvePaneCardDropAction(dragged, surface.paneID, s.selectedTabID, px, py, bounds.W, bounds.H)
+		s.handlePaneCardDrop(dragged, surface.paneID, s.selectedTabID, action)
 	}
 	card.Transition(ui.ElementTransition{Colors: true, Duration: 160 * time.Millisecond})
 	hovered := card.Hovered()
@@ -205,14 +211,14 @@ func (s *Shell) paneCard(c *ui.Context, k *gorexColors, surface *terminalSurface
 				s.selectPane(surface.paneID)
 			}
 		})
-		if swapTarget {
-			ui.Row(c.Key("swap-target")).Absolute().Right(12).Top(gorexHeaderH+12).
+		if dropAction != paneCardDropNone {
+			ui.Row(c.Key("card-drop-target")).Absolute().Right(12).Top(gorexHeaderH+12).
 				Padding(6, 10).Radius(7).Background(c.Theme().Surface).
 				Border(1, c.Theme().Accent.Alpha(0.5)).Shadow(0, 2, 10, 0, shadow).
 				PassThrough().Transition(ui.ElementTransition{
 				Enter: &ui.Motion{Y: 6}, Exit: &ui.Motion{Y: -4}, Duration: 140 * time.Millisecond,
 			}).Children(func() {
-				ui.Text(c, "Swap positions").FontSize(11).FontWeight(600).
+				ui.Text(c, dropLabel).FontSize(11).FontWeight(600).
 					TextColor(c.Theme().Accent).PassThrough()
 			})
 		}
@@ -355,8 +361,12 @@ func (s *Shell) paneCardHeader(c *ui.Context, k *gorexColors, surface *terminalS
 			s.selectPane(surface.paneID)
 		}
 		if s.canDragPaneCard(surface.paneID) {
-			caption.Drag(paneCardDrag{s.activeInstance, s.selectedTabID, surface.paneID}).
-				Cursor(ui.CursorGrab).Tooltip("Drag to swap pane positions")
+			caption.Drag(treeNodeDrag{
+				Instance: s.activeInstance,
+				Kind:     "pane",
+				ParentID: s.selectedTabID,
+				ID:       surface.paneID,
+			}).Cursor(ui.CursorGrab).Tooltip("Drag to move or swap pane")
 			if caption.Dragging() {
 				caption.Opacity(0.4).Cursor(ui.CursorGrabbing)
 			}

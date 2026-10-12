@@ -2,9 +2,9 @@
 > L2 | 父级: /CLAUDE.md
 
 成员清单
-actions.go: Herdr Workspace/Tab/Pane 的权威 mutation RPC 适配器；拖放经 workspace.move、tab.move、pane.swap 提交后重新读取 snapshot
+actions.go: Herdr Workspace/Tab/Pane 的权威 mutation RPC 适配器；拖放经 workspace.move、tab.move、pane.swap、pane.move 提交后重新读取 snapshot
 actions_contract_test.go: SplitPane RPC 与 mutation → snapshot 时序契约
-reorder_contract_test.go: Workspace/Tab/Panes 排序 RPC 的 method、字段、回读与输入校验契约
+reorder_contract_test.go: Workspace/Tab/Panes 排序与跨 Tab 移动 RPC 的 method、字段、回读与输入校验契约
 herdr.go: Herdr Manager、PATH/常见安装位置优先的 CLI 发现及受限时 session list（6 秒）
 instances.go: Session 列举与实例身份的解析、管理
 instances_test.go: Session 实例发现与边界回归

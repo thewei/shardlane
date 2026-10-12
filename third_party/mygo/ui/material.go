@@ -59,7 +59,7 @@ func (p *Painter) Effect(fx *scene.Effect, r Rect, radii [4]float32, blur float3
 	if fx == nil || r.W <= 0 || r.H <= 0 {
 		return
 	}
-	p.s.Ops = append(p.s.Ops, scene.Op{Kind: scene.OpEffect, Rect: p.snap(r), Radii: p.radii(radii), Continuous: continuousCorners,
+	p.add(scene.Op{Kind: scene.OpEffect, Rect: p.snap(r), Radii: p.radii(radii), Continuous: continuousCorners,
 		Start: int32(len(p.s.Effects)), Opacity: p.opacity})
 	p.s.Effects = append(p.s.Effects, scene.EffectOp{Effect: fx, Blur: blur, Params: params})
 }

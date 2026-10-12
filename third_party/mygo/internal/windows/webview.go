@@ -949,7 +949,7 @@ type schemeResponse struct {
 	done     bool
 }
 
-func (r *schemeResponse) Respond(status int, header http.Header) {
+func (r *schemeResponse) Respond(status int, header map[string][]string) {
 	r.status, r.header = status, header
 }
 

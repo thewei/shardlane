@@ -1,5 +1,7 @@
 # Popover
 
+<!-- preview popover 240 -->
+
 `ui.Popover` shows a panel its function builds below an element, its
 anchor, while a `*bool` is true; pressing outside it or Escape sets it to
 false. The press goes on to what is under the pointer, as with the web's

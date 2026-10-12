@@ -1,5 +1,7 @@
 # Image
 
+<!-- preview image 240 -->
+
 `ui.Image` shows a bitmap, or an SVG in its own colors, by default at its
 size in DIPs, scaled to fit when given another size.
 

@@ -136,14 +136,17 @@ func BlurWeight(i int, sigma float32) float32 {
 // reads.
 type BackdropImage struct {
 	Backdrop
-	W, H int
-	Pix  []float32
+	// Transform maps local sampling coordinates to the frame.
+	Transform Affine
+	W, H      int
+	Pix       []float32
 }
 
 // Sample returns the backdrop at (x, y), in the frame's pixels,
 // premultiplied RGB, filtered bilinearly from its texels and clamped to
 // its edges, as the shaders' sampleBackdrop.
 func (b *BackdropImage) Sample(x, y float32) [3]float32 {
+	x, y = b.Transform.Point(x, y)
 	k := float32(b.Down)
 	u := (x-float32(b.Area.Min.X))/k - 0.5
 	v := (y-float32(b.Area.Min.Y))/k - 0.5

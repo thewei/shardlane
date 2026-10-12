@@ -1,5 +1,7 @@
 # Meter
 
+<!-- preview meter 200 -->
+
 `ui.Meter` creates a bar showing a value between two bounds, as AppKit's
 level indicator and the web's `meter`: in the theme's `Success` color, or
 `Warning` and `Danger` from the levels given, nil for none.

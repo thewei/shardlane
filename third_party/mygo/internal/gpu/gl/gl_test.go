@@ -58,6 +58,21 @@ func TestDrawsAsTheCPURenderer(t *testing.T) {
 				}
 				gputest.Compare(t, "gl", read(), s.Width*4, s)
 			}
+
+			s = gputest.TransformedScene()
+			for range 2 {
+				if err := r.Render(s); err != nil {
+					t.Fatal(err)
+				}
+				gputest.Compare(t, "gl-affine", read(), s.Width*4, s)
+			}
+			s = gputest.PerspectiveScene()
+			for range 2 {
+				if err := r.Render(s); err != nil {
+					t.Fatal(err)
+				}
+				gputest.Compare(t, "gl-perspective", read(), s.Width*4, s)
+			}
 		})
 	}
 }

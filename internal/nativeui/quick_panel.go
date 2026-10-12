@@ -127,7 +127,7 @@ func (s *Shell) QuickPanelView(c *ui.Context) {
 		ui.Scroll(c).Grow(1).Children(func() {
 			ui.Column(c).FillWidth().Padding(sp.S, sp.L, sp.L).Gap(sp.S).Children(func() {
 				if len(entries) == 0 {
-					emptyState(c, "No agents here", "Agents in this status will appear here.")
+					emptyState(c, "No active agents", "Agents in this category will appear here.")
 					return
 				}
 				for _, entry := range entries {

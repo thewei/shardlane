@@ -295,7 +295,7 @@ func (rt *engine) accessElement(t *platform.AccessTree, e *node, parent int, scr
 	if role, ok := e.accessRole(); ok {
 		n := platform.AccessNode{
 			ID: e.id, Parent: parent, Role: role, Label: e.label,
-			Bounds: platform.RectF{X: float64(e.x), Y: float64(e.y), W: float64(e.w), H: float64(e.h)},
+			Bounds: accessBounds(e),
 		}
 		if scrolled {
 			n.Actions |= platform.ActionScrollIntoView

@@ -1,5 +1,7 @@
 # Sidebar
 
+<!-- preview sidebar 280 -->
+
 `ui.Sidebar` is a source list, as the sidebars of Finder and Mail: items
 with icons, in sections whose titles hide and show them, choosing the ID of
 one into a `*string`. It scrolls when they do not fit. Give it a width:

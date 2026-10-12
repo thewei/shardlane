@@ -1,5 +1,7 @@
 # Drag and drop
 
+<!-- preview drag-and-drop 230 -->
+
 `Drag(value)` makes an element the source of a value dragged within the
 window: once the pointer pressing it moves a few DIPs, a translucent copy
 of the element follows the pointer, and the press is no click.
@@ -165,6 +167,7 @@ The image is copied at drag start; one image pixel represents one DIP.
 | macOS | AppKit dragging sessions and pasteboard item providers | Text/HTML/PNG/file URLs use system UTIs. MIME names map through `UTType`, with a reversible identifier fallback. Item boundaries are preserved. |
 | Linux | GTK 3 drag contexts and asynchronous selections | MIME targets, UTF8_STRING for text, text/uri-list for URLs and files. Accepted formats are requested after drop. |
 | Windows | OLE IDataObject / IDropSource / IDropTarget | Unicode text, CF_HDROP, URL, CF_HTML, PNG and registered custom names; delayed rendering and Shell drag images. Streams preserve exact binary lengths; HGLOBAL sources may include padding. |
+| Browsers | Files dropped on the canvas, read as they drop (see [browsers](browsers.md)) | Files only, at paths of the backend's that `os` reads. Other drags, and drags out of the window, have no transfer. |
 
 GTK and OLE have a single selection/data object: multiple text items are
 joined by newlines, URI/file lists by CRLF, and other formats use the first

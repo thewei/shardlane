@@ -1,4 +1,4 @@
-//go:build !mygo_noinspector
+//go:build !mygo_noinspector && !js
 
 package mygo
 

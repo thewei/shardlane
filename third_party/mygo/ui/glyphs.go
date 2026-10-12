@@ -100,7 +100,7 @@ func (p *Painter) Glyphs(glyphs []Glyph, x, y float32, c Color) {
 			continue
 		}
 		pen := (x + g.X) * s
-		if pen > right || pen+(g.Advance+g.font.Size)*s < left {
+		if !p.transform.Set && (pen > right || pen+(g.Advance+g.font.Size)*s < left) {
 			continue
 		}
 		ix := float32(math.Floor(float64(pen)))
@@ -129,7 +129,7 @@ func (p *Painter) Glyphs(glyphs []Glyph, x, y float32, c Color) {
 		run.flush(p, baseline)
 	}
 	if end := int32(len(p.s.Glyphs)); end > start {
-		p.s.Ops = append(p.s.Ops, scene.Op{Kind: scene.OpGlyphs, Start: start, End: end})
+		p.add(scene.Op{Kind: scene.OpGlyphs, Start: start, End: end})
 	}
 }
 

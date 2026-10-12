@@ -222,6 +222,8 @@ The apps run where they are, but to ship them to users, sign them: see
     view), `examples/vibrancy` (a translucent sidebar under an inset title
     bar, its material picked in it), `examples/effort-slider` (a web
     demo's animated slider redrawn: letters blurring in, a burst of
-    pixels, a shaking card) and `examples/gallery` (a tour of the
+    pixels, a shaking card), `examples/confetti` (canvas-confetti's
+    demos, every piece flying on poses that only paint) and
+    `examples/gallery` (a tour of the
     toolkit: layout, widgets, text editing, a list of ten thousand rows,
     drawing and overlays).

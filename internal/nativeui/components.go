@@ -218,7 +218,7 @@ func treeRow(c *ui.Context, spec treeRowSpec) ui.Element {
 			_, y, _ := container.PointerPosition()
 			if over && drag.Accept(value) {
 				row.Background(t.Accent.Alpha(0.13))
-				if y < height/2 {
+				if value.Kind == drag.Value.Kind && y < height/2 {
 					before.Height(7).Background(t.Accent.Alpha(0.65))
 				}
 			}

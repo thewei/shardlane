@@ -589,6 +589,72 @@ func (b *Backend) watchOutsideClicks() {
 		}
 	})
 	outsideClicks = retain(send(class("NSEvent"), "addGlobalMonitorForEventsMatchingMask:handler:", mask, uintptr(blk)))
+	b.watchAnchorPresses()
+}
+
+// anchorPresses is the monitor of presses in the app that eats a press on
+// the anchor of a focusable flyout, which only closes the flyout, as
+// AppKit's transient popovers eat a press on their positioning rect: the
+// press would make the parent key, which closes the flyout before the
+// release clicks what opened it, which would open it again. The press's
+// drags and release are eaten too. Presses elsewhere go on to what is
+// under the pointer. It is made once, with outsideClicks.
+var anchorPresses id
+
+// eatingPress is the type of the release that ends a press anchorPresses
+// ate, or 0. Main thread only.
+var eatingPress int
+
+func (b *Backend) watchAnchorPresses() {
+	// left, right and other mouse down, up and dragged
+	const mask = 1<<1 | 1<<3 | 1<<25 | 1<<2 | 1<<4 | 1<<26 | 1<<6 | 1<<7 | 1<<27
+	blk := newBlock(func(_ objc.Block, ev id) id {
+		switch typ := sendInt(ev, "type"); typ {
+		case 2, 4, 26: // NSEventTypeLeftMouseUp, RightMouseUp, OtherMouseUp
+			if typ == eatingPress {
+				eatingPress = 0
+				return 0
+			}
+		case 6, 7, 27: // NSEventTypeLeftMouseDragged, RightMouseDragged, OtherMouseDragged
+			if eatingPress != 0 {
+				return 0
+			}
+		default: // a press, which ends any other
+			eatingPress = 0
+			if w := b.flyoutAnchoredAt(ev); w != nil {
+				eatingPress = typ + 1
+				if w.h.ShouldClose() {
+					w.Close()
+				}
+				return 0
+			}
+		}
+		return ev
+	})
+	anchorPresses = retain(send(class("NSEvent"), "addLocalMonitorForEventsMatchingMask:handler:", mask, uintptr(blk)))
+}
+
+// flyoutAnchoredAt returns the focusable flyout that shows in a panel
+// whose anchor is under the press ev in its parent, or nil.
+func (b *Backend) flyoutAnchoredAt(ev id) *window {
+	p := b.byNSWindow[send(ev, "window")]
+	if p == nil || p.closed {
+		return nil
+	}
+	frame := msgRect(p.win, sel("frame"))
+	c := msgRectToRect(p.win, sel("contentRectForFrameRect:"), frame)
+	loc := msgPoint(ev, sel("locationInWindow"))
+	x := loc.X - (c.Origin.X - frame.Origin.X)
+	y := c.Origin.Y - frame.Origin.Y + c.Size.Height - loc.Y
+	for _, w := range b.byNSWindow {
+		if w.parent != p || w.opts.Flyout == nil || w.popover != 0 || !w.flyout.Focusable || w.closed || !sendBool(w.win, "isVisible") {
+			continue
+		}
+		if a := w.flyout.Anchor; x >= float64(a.X) && y >= float64(a.Y) && x < float64(a.X+a.Width) && y < float64(a.Y+a.Height) {
+			return w
+		}
+	}
+	return nil
 }
 
 // dismissFlyout closes a focusable flyout that lost the keyboard, as the

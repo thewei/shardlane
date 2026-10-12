@@ -145,8 +145,26 @@ func (c *context) reset(now time.Time, w, h float32) {
 // that a few rows entering and leaving a list do not allocate every frame.
 func (c *context) finish() {
 	c.chunks = trimArena(c.chunks, c.used, max(c.dirty, c.used))
-	c.spare = trimArena(c.spare, 0, c.spareDirty)
+	// While this frame built an exit transition, the spare chunks are the
+	// arena the next frame builds into: keep as many as this frame used,
+	// only cleared.
+	keep := 0
+	if c.rt.exitsBuilt {
+		keep = c.used
+	}
+	c.spare = clearArena(c.spare, c.spareDirty, keep)
 	c.dirty, c.spareDirty = c.used, 0
+}
+
+// clearArena drops what the first dirty elements reference, and keeps the
+// storage of keep elements and one chunk more.
+func clearArena(chunks [][]node, dirty, keep int) [][]node {
+	n := min(len(chunks), (keep+chunkSize-1)/chunkSize+1)
+	for ci := 0; ci < n && ci*chunkSize < dirty; ci++ {
+		clear(chunks[ci][:min(chunkSize, dirty-ci*chunkSize)])
+	}
+	clear(chunks[n:])
+	return chunks[:n]
 }
 
 func trimArena(chunks [][]node, used, dirty int) [][]node {
@@ -339,6 +357,18 @@ func (c *context) Invalidate() { c.rt.host.invalidate() }
 // Painter.AnimationFrame instead, whose frames do not build the view.
 func (c *context) AnimationFrame() { c.rt.animating = true }
 
+// DisableAnimations makes the values that animate in this frame
+// (AnimateTo, Animate, Spring), the element transitions and the pages of
+// routers go to their targets at once, as SwiftUI's disablesAnimations:
+// for a change that should not show as motion, as restoring a window's
+// state or jumping to a search result. Call it before building what
+// changes.
+func (c *context) DisableAnimations() { c.rt.instantFrame = c.rt.frame }
+
+// instant reports whether this frame shows changes at once
+// (DisableAnimations).
+func (rt *engine) instant() bool { return rt.instantFrame == rt.frame && rt.frame != 0 }
+
 // After asks for another frame after d, for something that changes with
 // time, such as a clock.
 func (c *context) After(d time.Duration) { c.rt.scheduleAt(c.now.Add(d)) }
@@ -423,10 +453,14 @@ type state struct {
 	pendingSubmit bool
 	noticeQueued  bool
 
-	id   uint64
-	seen uint64
-	pass int    // the pass of the frame that built it last
-	born uint64 // the frame that first built the element
+	world     scene.Affine
+	clips     bool
+	clipRect  Rect
+	clipRadii [4]float32
+	id        uint64
+	seen      uint64
+	pass      int    // the pass of the frame that built it last
+	born      uint64 // the frame that first built the element
 	// The element's box and its visible part in the last frame.
 	x, y, w, h     float32
 	vx, vy, vw, vh float32
@@ -453,7 +487,16 @@ type state struct {
 	pressX, pressY float32
 	dragX, dragY   float32
 	pressed        bool
-	pressPending   bool // the press began since the last build pass
+	// drag follows the press's moves; released tells that it ended since
+	// the last frame, going at releaseVX and releaseVY in the element's
+	// axes, releaseWX and releaseWY in the window's.
+	drag                 dragTrack
+	released             bool
+	releaseVX, releaseVY float32
+	releaseWX, releaseWY float32
+	pressPending         bool // the press began since the last build pass
+	// dragRec is what Draggable keeps of the element from frame to frame.
+	dragRec *dragRec
 
 	// scrollX and scrollY are float64, as the content a List scrolls
 	// may be taller than float32 counts to a fraction of a DIP.
@@ -512,6 +555,11 @@ type state struct {
 	valueBinding any
 	locals       map[any]any
 	anims        map[any]*anim
+	motions      map[any]*channel
+	colorMotions map[any]*colorMotion
+	crec         *contentRec
+	pose         *poseRec
+	sequences    map[any]*sequence
 	shortcuts    []shortcut
 	delivered    []shortcut
 

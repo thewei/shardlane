@@ -20,7 +20,7 @@ func TestGitPreferencesPageDefaultAndSave(t *testing.T) {
 	s.loading = false
 	s.router.Replace("/settings/git")
 	tester := ui.NewTester(s.View, 1200, 800)
-	for _, title := range []string{"Git & AI", "Commit Message", "Save Commit Rules", "Restore Default Rules", "Pi Agent", "Save Pi Path"} {
+	for _, title := range []string{"Git", "Commit Message", "Save Commit Rules", "Restore Default Rules", "Pi CLI", "Save Pi Path"} {
 		if !tester.HasText(title) {
 			t.Fatalf("Git Settings missing %q: %q", title, tester.Texts())
 		}

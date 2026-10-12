@@ -37,15 +37,29 @@ it. A build that fails to compile keeps the previous one running; the next
 change tries again. Frontend changes are left to the dev server. Quitting the app ends mygo dev.
 
 On a terminal, type r and Enter to rebuild and restart the app, c to clear
-the console, q to quit, h for help.`)
+the console, q to quit, h for help.
+
+With -web, it develops an app of native UI in browsers instead: it builds
+the app for them (GOOS=js GOARCH=wasm), serves it at http://localhost:<port>,
+opens it, and rebuilds it as its code changes, which reloads the page; the
+page shows why a build failed.`)
 	skipDevCommand := flags.Bool("skip-dev-command", false, "do not run devCommand")
 	sign := flags.String("sign", "-", "macOS signing identity for the development app")
+	web := flags.Bool("web", false, "develop the app in browsers")
+	port := flags.Int("port", 5174, "with -web, the port to serve the app at, or the next free one")
+	openPage := flags.Bool("open", true, "with -web, open the app in the browser")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
 	c, err := loadConfig(dirArg(flags.Args()))
 	if err != nil {
 		return err
+	}
+	if *web {
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+		con.startBanner("dev")
+		return runWebDev(ctx, c, *port, *openPage)
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

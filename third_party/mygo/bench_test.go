@@ -1,3 +1,5 @@
+//go:build !js
+
 package mygo
 
 import (
@@ -122,10 +124,10 @@ func BenchmarkEmit(b *testing.B) {
 
 type discardResponder struct{ finished chan struct{} }
 
-func (discardResponder) Respond(int, http.Header) {}
-func (discardResponder) Write([]byte)             {}
-func (r discardResponder) Finish()                { r.finished <- struct{}{} }
-func (r discardResponder) Fail(error)             { r.finished <- struct{}{} }
+func (discardResponder) Respond(int, map[string][]string) {}
+func (discardResponder) Write([]byte)                     {}
+func (r discardResponder) Finish()                        { r.finished <- struct{}{} }
+func (r discardResponder) Fail(error)                     { r.finished <- struct{}{} }
 
 // BenchmarkScheme8MB serves 8 MB from a custom scheme's handler.
 func BenchmarkScheme8MB(b *testing.B) {

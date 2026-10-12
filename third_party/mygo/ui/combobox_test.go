@@ -111,6 +111,53 @@ func TestCombobox(t *testing.T) {
 	}
 }
 
+// A click opening a combobox's options selects its choice, as the chevron
+// does, so that typing replaces it and filters, instead of appending to it
+// and matching nothing; clicks while they show place the caret.
+func TestComboboxClickSelectsChoice(t *testing.T) {
+	font, changes := "Arial", 0
+	tt := coreNewTester(func(c *context) {
+		if coreCombobox(c, &font, fonts).Label("Font").Width(200).Changed() {
+			changes++
+		}
+	}, 400, 400)
+	tt.Click("Font")
+	if !tt.HasText("Helvetica") {
+		t.Fatalf("a click shows %q", tt.Texts())
+	}
+	tt.Type("ti")
+	if !tt.HasText("Times") || !tt.HasText("Helvetica") || !tt.HasText("Optima") || tt.HasText("Courier") {
+		t.Fatalf("typing after a click filters %q", tt.Texts())
+	}
+	tt.Key(0, KeyEnter)
+	if font != "Times" || changes != 1 {
+		t.Fatalf("Enter chose %q (%d changes)", font, changes)
+	}
+	// The chevron, at the field's end, opens them the same way.
+	r, _ := tt.Find("Font")
+	tt.ClickAt(r.X+r.W-12, r.Y+r.H/2)
+	if !tt.HasText("Optima") {
+		t.Fatalf("the chevron shows %q", tt.Texts())
+	}
+	tt.Type("co")
+	if tt.HasText("Optima") || !tt.HasText("Courier") {
+		t.Fatalf("typing after the chevron filters %q", tt.Texts())
+	}
+	tt.Key(0, KeyEnter)
+	if font != "Courier" || changes != 2 {
+		t.Fatalf("Enter chose %q (%d changes)", font, changes)
+	}
+	// A click while they show places the caret: typing appends. (Away
+	// from the first, which a double-click would select a word.)
+	tt.Click("Font")
+	tt.ClickAt(r.X+r.W/2+20, r.Y+r.H/2)
+	tt.Type("x")
+	tt.send(platform.SurfaceEvent{Kind: platform.AccessibilityOn})
+	if n := accessNode(t, tt.h.access, platform.RoleComboBox, "Font"); n.Value == "x" {
+		t.Errorf("a second click left the choice selected: %q", n.Value)
+	}
+}
+
 func TestComboboxAccessibility(t *testing.T) {
 	font := "Arial"
 	tt := coreNewTester(func(c *context) {

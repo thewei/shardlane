@@ -1,5 +1,7 @@
 # Radio
 
+<!-- preview radio 160 -->
+
 `ui.Radio` creates a radio button that selects its value into a `*T`, with
 a label: a click selects it, as does Space while it has the keyboard focus,
 and `Changed` reports it. The value can be of any comparable type.

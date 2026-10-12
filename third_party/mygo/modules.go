@@ -2,7 +2,6 @@ package mygo
 
 import (
 	"bytes"
-	"crypto/rand"
 	"errors"
 	"image/png"
 	"math"
@@ -565,7 +564,7 @@ func NewNotification(opts NotificationOptions) *Notification {
 	id := opts.ID
 	if id == "" {
 		// Unique across runs too, as notifications outlive them.
-		id = "mygo-" + rand.Text()
+		id = "mygo-" + randomText()
 	}
 	return &Notification{id: id, opts: opts}
 }

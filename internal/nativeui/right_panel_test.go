@@ -140,7 +140,7 @@ func TestAgentServicesTabsAreClickable(t *testing.T) {
 	if err := tt.Click("Agents"); err != nil {
 		t.Fatal(err)
 	}
-	if s.quickPanelTab != 0 || !tt.HasText("No agents here") {
+	if s.quickPanelTab != 0 || !tt.HasText("No active agents") {
 		t.Fatalf("Agents tab should restore Agent overview, got: %q", tt.Texts())
 	}
 }

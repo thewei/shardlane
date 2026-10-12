@@ -553,20 +553,22 @@ func (s *surface) message(hwnd uintptr, m uint32, wp, lp uintptr) (uintptr, bool
 	case wmKeyDown, wmSysKeyDown:
 		s.clientComposition.Reset()
 		s.keyTaken = false
+		modifiers := mods()
 		if modifierKey(wp) {
-			s.send(platform.SurfaceEvent{Kind: platform.ModifiersChanged, Mods: mods()})
+			s.send(platform.SurfaceEvent{Kind: platform.ModifiersChanged, Mods: modifiers})
 		}
-		if k := vkKey(wp); k != platform.KeyUnknown {
-			s.keyTaken = s.send(platform.SurfaceEvent{Kind: platform.KeyPressed, Key: k, Mods: mods(), Repeat: lp&(1<<30) != 0})
+		if k, physical, ok := keyAndPosition(wp, lp, false, modifiers); ok {
+			s.keyTaken = s.send(platform.SurfaceEvent{Kind: platform.KeyPressed, Key: k, PhysicalKey: physical, Mods: modifiers, Repeat: lp&(1<<30) != 0})
 		}
 		// Alt+F4, Alt+Space and F10 keep working.
 		return 0, m == wmKeyDown
 	case wmKeyUp, wmSysKeyUp:
+		modifiers := mods()
 		if modifierKey(wp) {
-			s.send(platform.SurfaceEvent{Kind: platform.ModifiersChanged, Mods: mods()})
+			s.send(platform.SurfaceEvent{Kind: platform.ModifiersChanged, Mods: modifiers})
 		}
-		if k := vkKey(wp); k != platform.KeyUnknown {
-			s.send(platform.SurfaceEvent{Kind: platform.KeyReleased, Key: k, Mods: mods()})
+		if k, physical, ok := keyAndPosition(wp, lp, true, modifiers); ok {
+			s.send(platform.SurfaceEvent{Kind: platform.KeyReleased, Key: k, PhysicalKey: physical, Mods: modifiers})
 		}
 		return 0, m == wmKeyUp
 	case wmSysChar:
@@ -671,7 +673,31 @@ func wheelLines() int {
 	return surfaceWheelLines
 }
 
-// vkKey maps a virtual key code to a key.
+// keyAndPosition returns the key of a WM_KEYDOWN or WM_KEYUP by virtual
+// key, and by position (the scancode in lp). ok is false for a key to leave
+// out: one whose virtual key is unmapped, unless a shortcut modifier is
+// held and its position is a US key. Known virtual keys keep their meaning
+// (Russian letters already use VK_A through VK_Z). A release
+// is sent whatever the modifiers held now, so that a press sent as a chord
+// is let go of even after Ctrl was.
+func keyAndPosition(vk, lp uintptr, release bool, modifiers platform.Modifiers) (k, physical platform.Key, ok bool) {
+	k = vkKey(vk)
+	// An input method (VK_PROCESSKEY) or injected Unicode text (VK_PACKET)
+	// keeps the key from the application: the scancode is not a shortcut.
+	if vk == vkProcessKey || vk == vkPacket {
+		return k, platform.KeyUnknown, k != platform.KeyUnknown
+	}
+	// Bit 24 is the extended flag: the keypad's slash shares the code of /.
+	if lp&(1<<24) == 0 {
+		physical = platform.KeyForScancode(uint16(lp >> 16 & 0xFF))
+	}
+	if k == platform.KeyUnknown && !(release && physical != platform.KeyUnknown) && !platform.KeyByPosition(k, physical, modifiers) {
+		return k, physical, false
+	}
+	return k, physical, true
+}
+
+// vkKey maps a virtual key code to the key it stands for.
 func vkKey(vk uintptr) platform.Key {
 	switch {
 	case vk >= 'A' && vk <= 'Z':

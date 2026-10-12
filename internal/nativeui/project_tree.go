@@ -123,7 +123,7 @@ func (s *Shell) projectItems(c *ui.Context) {
 					// A Pane running a recognizable program shows that
 					// program's brand (2026-10-06 A11); the rest keep the
 					// terminal glyph.
-					if brand, ok := s.procMarkForPane(pane.ID); ok {
+					if brand, ok := s.procMarkForPaneWithTheme(pane.ID, dark); ok {
 						mark = brand
 					}
 				}

@@ -61,8 +61,9 @@ func (rt *engine) noteWebView(e *node, clip Rect, invisible bool) {
 	if e.flags&flagInvisible != 0 {
 		return
 	}
-	// The hole the painter makes: the content box on whole pixels.
-	b := e.contentBox()
+	// The hole the painter makes: the content box on whole pixels. Native
+	// web views stay upright, covering a transformed box's bounds.
+	b := e.visualRect(e.contentBox())
 	if s := rt.painted[2]; s > 0 {
 		x0, y0 := float32(math.Round(float64(b.X*s)))/s, float32(math.Round(float64(b.Y*s)))/s
 		x1, y1 := float32(math.Round(float64((b.X+b.W)*s)))/s, float32(math.Round(float64((b.Y+b.H)*s)))/s
@@ -203,8 +204,8 @@ func (p *Painter) hole(e *node) {
 	}
 	r := p.snap(b)
 	// Translucent, the page blends over what was painted under it.
-	p.s.Ops = append(p.s.Ops, scene.Op{Kind: scene.OpHole, Rect: r, Radii: radii, Continuous: continuousCorners, Opacity: p.opacity})
-	if c := intersect(b, p.clip); c.W > 0 && c.H > 0 {
+	p.add(scene.Op{Kind: scene.OpHole, Rect: r, Radii: radii, Continuous: continuousCorners, Opacity: p.opacity})
+	if c := intersect(transformRect(p.transform, b), p.clip); c.W > 0 && c.H > 0 {
 		p.holes = append(p.holes, c)
 	}
 }

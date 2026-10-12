@@ -1,5 +1,7 @@
 # Toggle
 
+<!-- preview toggle 150 -->
+
 `ui.Toggle` creates a button that stays pressed while a `*bool` is true, as
 Bold in an editor's toolbar: a click presses it or lets it go, as does
 Space while it has the keyboard focus, and `Changed` reports a change.

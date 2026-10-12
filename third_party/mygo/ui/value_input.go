@@ -122,10 +122,13 @@ func sliderInput(n *node) {
 	}
 	st, rt := n.st, n.c.rt
 	if st.pressed {
+		x, y := st.local(rt.pointerX, rt.pointerY)
+		x += st.x
+		y += st.y
 		if settings.vertical && st.ch > 0 {
-			set(b.lo + float64(max(0, min(1, 1-(rt.pointerY-st.cy)/st.ch)))*(b.hi-b.lo))
+			set(b.lo + float64(max(0, min(1, 1-(y-st.cy)/st.ch)))*(b.hi-b.lo))
 		} else if !settings.vertical && st.cw > 0 {
-			set(b.lo + float64(max(0, min(1, (rt.pointerX-st.cx)/st.cw)))*(b.hi-b.lo))
+			set(b.lo + float64(max(0, min(1, (x-st.cx)/st.cw)))*(b.hi-b.lo))
 		}
 	}
 	if step <= 0 {

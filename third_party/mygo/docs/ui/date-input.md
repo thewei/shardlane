@@ -1,5 +1,7 @@
 # Date input
 
+<!-- preview date-input 320 -->
+
 `ui.DateInput` creates a field showing a `*time.Time` as 2006-01-02, which a
 [calendar](calendar.md) below it changes. A click, Enter or Space opens the
 calendar, where a click chooses a day, as do the arrows and Enter; Page Up

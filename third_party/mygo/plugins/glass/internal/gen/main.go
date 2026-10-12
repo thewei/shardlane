@@ -1,3 +1,5 @@
+//go:build !js
+
 // Command gen compiles the glass's and the blur's shaders ahead of time,
 // so that renderers start without compiling them: the Metal libraries on
 // macOS, with Xcode's metal tools, into shaders_darwin.go, and the

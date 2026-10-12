@@ -1,11 +1,10 @@
 // A level of the blur's effect in GLSL (see scene.Effect), as blur.metal
 // is in Metal Shading Language and blur.go draws it on the CPU.
 
-vec4 blurAt(ivec2 p, ivec2 size) {
-	return texelFetch(uBackdrop, clamp(p, ivec2(0), size - 1), 0);
-}
+vec4 blurAt(ivec2 p, ivec2 size) { return texelFetch(uBackdrop, clamp(p, ivec2(0), size - 1), 0); }
 
 vec4 blurSample(Effect e, vec2 q) {
+	q = framePoint(e, q);
 	vec2 u = (q - e.area.xy) / e.down - 0.5;
 	vec2 f = floor(u);
 	vec2 w = u - f;

@@ -1,5 +1,7 @@
 # Badge
 
+<!-- preview badge 180 -->
+
 `ui.Badge` creates a short text in a pill, as a count of unread messages
 beside a [sidebar](sidebar.md)'s item:
 

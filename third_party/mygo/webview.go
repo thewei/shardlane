@@ -1,7 +1,6 @@
 package mygo
 
 import (
-	"crypto/rand"
 	"errors"
 	"fmt"
 	"log"
@@ -79,7 +78,7 @@ func (w *Window) newWebView(opts WebViewOptions, bg *background) (*WebView, erro
 
 	// The web view's page lives in a Window of its own, which no list
 	// holds: everything a page does works through it as for a window.
-	pw := &Window{id: id, host: w, trustedOrigins: opts.Page.TrustedOrigins, secret: rand.Text(), background: bg}
+	pw := &Window{id: id, host: w, trustedOrigins: opts.Page.TrustedOrigins, secret: randomText(), background: bg}
 	pw.pg = &Page{pw}
 	pw.resetPage()
 	popts := pw.platformOptions(&WindowOptions{Page: opts.Page, Transparent: opts.Transparent})

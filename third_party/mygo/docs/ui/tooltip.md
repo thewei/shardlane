@@ -1,5 +1,7 @@
 # Tooltip
 
+<!-- preview tooltip 160 -->
+
 `Tooltip` shows a tip once the pointer rests on an element, or the keyboard
 focus comes to it, and describes the element to assistive technology:
 

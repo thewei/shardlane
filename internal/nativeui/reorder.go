@@ -1,8 +1,8 @@
 package nativeui
 
 /**
- * [INPUT]: 依赖 Herdr 权威排序与 pane.swap 协议、MyGo 原生 Drag/Drop 事件
- * [OUTPUT]: 提供 Workspace/Tab/Panes 安全拖放校验、目标索引计算和布局排序
+ * [INPUT]: 依赖 Herdr 权威排序、pane.swap、pane.move 协议以及 MyGo 原生 Drag/Drop 事件
+ * [OUTPUT]: 提供 Workspace/Tab/Panes 安全拖放校验、目标索引计算、跨 Tab/Project 移动与卡片布局放置
  * [POS]: nativeui 拖拽语义桥接层；仅在 Drop 提交 Herdr mutation，预览不修改 runtime
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -13,8 +13,8 @@ import (
 	"github.com/wh-studio/herdr-client/internal/herdr"
 )
 
-// treeNodeDrag is deliberately scoped to one Herdr instance and parent.
-// Reordering never silently transfers a Tab to a different Project.
+// treeNodeDrag is scoped to one Herdr instance and hierarchy node.
+// It is the canonical drag payload shared across sidebar tree rows and terminal cards.
 type treeNodeDrag struct {
 	Instance string
 	Kind     string // project, tab, pane
@@ -29,7 +29,7 @@ type treeRowDrag struct {
 }
 
 // treeDragFor binds a row's drop target to the current authoritative
-// projection. Invalid/self/cross-parent drags have no preview or mutation.
+// projection. Invalid/self drags have no preview or mutation.
 func (s *Shell) treeDragFor(target treeNodeDrag) *treeRowDrag {
 	return &treeRowDrag{
 		Value: target,
@@ -44,20 +44,31 @@ func (s *Shell) treeDragFor(target treeNodeDrag) *treeRowDrag {
 
 func (s *Shell) canReorderTree(from, to treeNodeDrag) bool {
 	if s.loading || s.activeInstance == "" || from.Instance != s.activeInstance ||
-		to.Instance != s.activeInstance || from.Kind != to.Kind ||
-		from.ParentID != to.ParentID || from.ID == to.ID {
+		to.Instance != s.activeInstance || from.ID == to.ID {
 		return false
 	}
 	switch from.Kind {
 	case "project":
-		return containsProject(s.projection, from.ID) && containsProject(s.projection, to.ID)
+		return to.Kind == "project" &&
+			containsProject(s.projection, from.ID) &&
+			containsProject(s.projection, to.ID)
 	case "tab":
-		return tabInProject(s.projection, from.ID, from.ParentID) &&
+		return to.Kind == "tab" &&
+			from.ParentID == to.ParentID &&
+			tabInProject(s.projection, from.ID, from.ParentID) &&
 			tabInProject(s.projection, to.ID, to.ParentID)
 	case "pane":
-		return paneBelongsToTab(s.projection, from.ID, from.ParentID) &&
-			paneBelongsToTab(s.projection, to.ID, to.ParentID) &&
-			!tabZoomed(s.projection, from.ParentID)
+		if !paneBelongsToTab(s.projection, from.ID, from.ParentID) || tabZoomed(s.projection, from.ParentID) {
+			return false
+		}
+		switch to.Kind {
+		case "pane":
+			return paneBelongsToTab(s.projection, to.ID, to.ParentID) && !tabZoomed(s.projection, to.ParentID)
+		case "tab":
+			return from.ParentID != to.ID && tabByID(s.projection, to.ID) != nil && !tabZoomed(s.projection, to.ID)
+		case "project":
+			return containsProject(s.projection, to.ID)
+		}
 	}
 	return false
 }
@@ -143,7 +154,34 @@ func (s *Shell) reorderTree(from, to treeNodeDrag, before bool) {
 			})
 		}
 	case "pane":
-		s.swapPaneDrop(from.ID, to.ID, from.ParentID)
+		switch to.Kind {
+		case "pane":
+			if from.ParentID == to.ParentID {
+				s.swapPaneDrop(from.ID, to.ID, from.ParentID)
+			} else {
+				split := "down"
+				if before {
+					split = "right"
+				}
+				s.movePaneDrop(from.ID, herdr.PaneMoveDestination{
+					Type:         "tab",
+					TabID:        to.ParentID,
+					Split:        split,
+					TargetPaneID: to.ID,
+				})
+			}
+		case "tab":
+			s.movePaneDrop(from.ID, herdr.PaneMoveDestination{
+				Type:  "tab",
+				TabID: to.ID,
+				Split: "right",
+			})
+		case "project":
+			s.movePaneDrop(from.ID, herdr.PaneMoveDestination{
+				Type:        "new_tab",
+				WorkspaceID: to.ID,
+			})
+		}
 	}
 }
 
@@ -154,36 +192,103 @@ type paneCardDrag struct {
 }
 
 func (s *Shell) canDragPaneCard(paneID string) bool {
-	if s.loading || s.activeInstance == "" || s.selectedTabID == "" || tabZoomed(s.projection, s.selectedTabID) ||
-		!paneBelongsToTab(s.projection, paneID, s.selectedTabID) {
-		return false
-	}
-	for _, layout := range s.projection.Layouts {
-		if layout.TabID == s.selectedTabID {
-			return len(layout.Panes) > 1
-		}
-	}
-	return false
+	return !s.loading && s.activeInstance != "" && s.selectedTabID != "" &&
+		!tabZoomed(s.projection, s.selectedTabID) &&
+		paneBelongsToTab(s.projection, paneID, s.selectedTabID)
 }
 
-func (s *Shell) canSwapCard(from paneCardDrag, toPaneID, tabID string) bool {
-	return !s.loading && from.Instance == s.activeInstance &&
-		from.TabID == tabID && from.PaneID != toPaneID &&
-		s.activeInstance != "" && !tabZoomed(s.projection, tabID) &&
-		paneBelongsToTab(s.projection, from.PaneID, tabID) &&
+func (s *Shell) canDropOnPaneCard(from treeNodeDrag, toPaneID, tabID string) bool {
+	return !s.loading && s.activeInstance != "" &&
+		from.Instance == s.activeInstance &&
+		from.Kind == "pane" &&
+		from.ID != toPaneID &&
+		!tabZoomed(s.projection, tabID) &&
+		paneBelongsToTab(s.projection, from.ID, from.ParentID) &&
+		!tabZoomed(s.projection, from.ParentID) &&
 		paneBelongsToTab(s.projection, toPaneID, tabID)
 }
 
+func (s *Shell) canSwapCard(from paneCardDrag, toPaneID, tabID string) bool {
+	return s.canDropOnPaneCard(treeNodeDrag{
+		Instance: from.Instance,
+		Kind:     "pane",
+		ParentID: from.TabID,
+		ID:       from.PaneID,
+	}, toPaneID, tabID)
+}
+
+type paneCardDropAction int
+
+const (
+	paneCardDropNone paneCardDropAction = iota
+	paneCardDropSwap
+	paneCardDropSplitRight
+	paneCardDropSplitDown
+	paneCardDropMoveTab
+)
+
+func resolvePaneCardDropAction(from treeNodeDrag, toPaneID, toTabID string, px, py, cardW, cardH float32) (paneCardDropAction, string) {
+	if from.ParentID == toTabID {
+		return paneCardDropSwap, "Swap positions"
+	}
+	if cardW > 0 && px > cardW*0.68 {
+		return paneCardDropSplitRight, "Split right"
+	}
+	if cardH > 0 && py > cardH*0.68 {
+		return paneCardDropSplitDown, "Split down"
+	}
+	return paneCardDropMoveTab, "Move to tab"
+}
+
+func (s *Shell) handlePaneCardDrop(from treeNodeDrag, toPaneID, toTabID string, action paneCardDropAction) {
+	switch action {
+	case paneCardDropSwap:
+		s.swapPaneDrop(from.ID, toPaneID, toTabID)
+	case paneCardDropSplitRight:
+		s.movePaneDrop(from.ID, herdr.PaneMoveDestination{
+			Type:         "tab",
+			TabID:        toTabID,
+			Split:        "right",
+			TargetPaneID: toPaneID,
+		})
+	case paneCardDropSplitDown:
+		s.movePaneDrop(from.ID, herdr.PaneMoveDestination{
+			Type:         "tab",
+			TabID:        toTabID,
+			Split:        "down",
+			TargetPaneID: toPaneID,
+		})
+	case paneCardDropMoveTab:
+		s.movePaneDrop(from.ID, herdr.PaneMoveDestination{
+			Type:         "tab",
+			TabID:        toTabID,
+			Split:        "right",
+			TargetPaneID: toPaneID,
+		})
+	}
+}
+
 func (s *Shell) swapPaneDrop(from, to, tabID string) {
-	if !s.canSwapCard(paneCardDrag{s.activeInstance, tabID, from}, to, tabID) {
+	if !s.canDropOnPaneCard(treeNodeDrag{
+		Instance: s.activeInstance,
+		Kind:     "pane",
+		ParentID: tabID,
+		ID:       from,
+	}, to, tabID) {
 		return
 	}
 	instance := s.activeInstance
-	// Herdr swaps the pane IDs in its canonical split layout. The client
-	// does not temporarily own geometry or create another layout model.
 	s.mutate(func() (herdr.Projection, error) {
 		return s.runtime.SwapPanes(instance, from, to)
 	})
+}
+
+func (s *Shell) movePaneDrop(paneID string, dest herdr.PaneMoveDestination) {
+	instance := s.activeInstance
+	s.mutate(func() (herdr.Projection, error) {
+		return s.runtime.MovePane(instance, paneID, dest, true)
+	})
+	s.selectPane(paneID)
 }
 
 func orderedProjects(p herdr.Projection) []herdr.Project {

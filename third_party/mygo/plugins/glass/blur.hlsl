@@ -1,11 +1,10 @@
 // A level of the blur's effect in HLSL (see scene.Effect), as blur.metal
 // is in Metal Shading Language and blur.go draws it on the CPU.
 
-float4 blurAt(int2 p, int2 size) {
-	return backdropTex.Load(int3(clamp(p, int2(0, 0), size - 1), 0));
-}
+float4 blurAt(int2 p, int2 size) { return backdropTex.Load(int3(clamp(p, int2(0, 0), size - 1), 0)); }
 
 float4 blurSample(Effect e, float2 q) {
+	q = framePoint(e, q);
 	float2 u = (q - e.area.xy) / e.down - 0.5;
 	float2 f = floor(u);
 	float2 w = u - f;

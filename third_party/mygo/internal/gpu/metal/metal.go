@@ -336,6 +336,15 @@ type Renderer struct {
 	bounds            cgRect
 	scale             float64
 
+	// synced tells that the layer presents with the Core Animation
+	// transaction, and holes that the last frame had holes (web views
+	// under it). waited tells that the last frame, presented as soon as
+	// drawn, waited for its drawable; behind that the last Render drew
+	// nothing to catch up with the display, and skippedAt when one last
+	// did.
+	synced, holes, waited, behind bool
+	skippedAt                     time.Time
+
 	instBuf id
 	instCap int
 	mask    texture
@@ -391,9 +400,10 @@ func New(layer uintptr) (r *Renderer, err error) {
 		if respondsTo(ml, "setMaximumDrawableCount:") {
 			send(ml, "setMaximumDrawableCount:", 2)
 		}
-		// Frames show with the window's other changes, as during a live
-		// resize, instead of a moment after them.
+		// The first frame shows with the window's other changes; render
+		// decides for each frame.
 		send(ml, "setPresentsWithTransaction:", 1)
+		r.synced = true
 		send(ml, "setColorspace:", srgb)
 		send(ml, "setOpaque:", 0)
 		send(ml, "setAutoresizingMask:", layerWidthSizable|layerHeightSizable)
@@ -515,11 +525,11 @@ func (r *Renderer) SetWide(on bool) bool {
 }
 
 // setLayerWide has the layer's drawables hold the colors outside the sRGB
-// gamut, or not: the system makes others, which hold no frame drawn in
-// memory.
-func (r *Renderer) setLayerWide(on bool) {
+// gamut, or not, and reports whether that changed: the system makes
+// others, which hold no frame drawn in memory.
+func (r *Renderer) setLayerWide(on bool) (changed bool) {
 	if r.layerWide == on || r.layer == 0 {
-		return
+		return false
 	}
 	format, space := uintptr(pixelFormatBGRA8Unorm), srgb
 	if on {
@@ -532,6 +542,7 @@ func (r *Renderer) setLayerWide(on bool) {
 	send(r.layer, "setColorspace:", space)
 	send(tx, "commit")
 	r.layerWide = on
+	return true
 }
 
 // newPipeline returns a pipeline drawing instances with the vertex
@@ -722,6 +733,13 @@ func (r *Renderer) imageTexture(img *scene.Image) uintptr {
 		}
 		t = &texture{tex: tex, w: img.W, h: img.H, ver: img.Version()}
 		r.images[img.ID()] = t
+	} else if t.w != img.W || t.h != img.H {
+		tex := r.newTexture(img.W, img.H, pixelFormatRGBA8Unorm, usageShaderRead, img.Pix, img.W*4)
+		if tex == 0 {
+			return 0
+		}
+		release(&t.tex)
+		t.tex, t.w, t.h, t.ver = tex, img.W, img.H, img.Version()
 	} else if t.ver != img.Version() {
 		msgReplaceRegion(t.tex, sel("replaceRegion:mipmapLevel:withBytes:bytesPerRow:"), mtlRegion{W: uint(img.W), H: uint(img.H), D: 1}, 0, unsafe.Pointer(&img.Pix[0]), uint(img.W*4))
 		t.ver = img.Version()
@@ -762,7 +780,7 @@ func (r *Renderer) encode(s *scene.Scene, target id) (id, error) {
 		return 0, err
 	}
 	r.b.Wide = r.cur.format == pixelFormatRGBA16Float
-	r.b.Build(s, r.imageTexture)
+	s = r.b.Build(s, r.imageTexture)
 	if n := len(r.b.Instances); n > r.instCap {
 		release(&r.instBuf)
 		capacity := max(n*3/2, 1024)
@@ -783,7 +801,7 @@ func (r *Renderer) encode(s *scene.Scene, target id) (id, error) {
 	}
 	cb := send(r.queue, "commandBuffer")
 	if !r.checked {
-		if err := need(cb, "command buffer", "renderCommandEncoderWithDescriptor:", "commit", "waitUntilScheduled", "waitUntilCompleted", "status", "blitCommandEncoder"); err != nil {
+		if err := need(cb, "command buffer", "renderCommandEncoderWithDescriptor:", "commit", "presentDrawable:", "waitUntilScheduled", "waitUntilCompleted", "status", "blitCommandEncoder"); err != nil {
 			return 0, err
 		}
 	}
@@ -827,6 +845,7 @@ func (r *Renderer) encode(s *scene.Scene, target id) (id, error) {
 			bound = b.Image
 			send(enc, "setFragmentTexture:atIndex:", bound, 2)
 		}
+		send(enc, "setFragmentTexture:atIndex:", or(id(b.ClipMask), r.empty), 4)
 		offset := uintptr(b.Start * gpu.InstanceSize)
 		send(enc, "setVertexBuffer:offset:atIndex:", r.instBuf, offset, 0)
 		send(enc, "setFragmentBuffer:offset:atIndex:", r.instBuf, offset, 0)
@@ -932,6 +951,21 @@ func (r *Renderer) fitBackdrop() error {
 	return nil
 }
 
+// hasHoles reports whether s has holes (scene.OpHole), where it shows
+// web views under it.
+func hasHoles(s *scene.Scene) bool {
+	for i := range s.Ops {
+		if s.Ops[i].Kind == scene.OpHole {
+			return true
+		}
+	}
+	return false
+}
+
+// Behind reports whether the last Render drew nothing, to catch up with
+// the display: the window draws the frame again at the next refresh.
+func (r *Renderer) Behind() bool { return r.behind }
+
 func or(a, b id) id {
 	if a != 0 {
 		return a
@@ -948,6 +982,12 @@ func (r *Renderer) Render(s *scene.Scene) (err error) {
 	return err
 }
 
+// behindAfter is how long a frame presented as soon as drawn waits for its
+// drawable before the next skips a refresh (Behind), at most once a
+// second: a drawable frees within a millisecond or so while frames show at
+// the refresh after they present.
+const behindAfter = 4 * time.Millisecond
+
 func (r *Renderer) render(s *scene.Scene) error {
 	r.waitLast()
 	if r.err != nil {
@@ -961,20 +1001,53 @@ func (r *Renderer) render(s *scene.Scene) error {
 	if r.wide {
 		r.cur = &r.formats[1]
 	}
-	r.setLayerWide(r.wide)
-	r.fit(s.Width, s.Height, scale)
+	changed := r.setLayerWide(r.wide)
+	changed = r.fit(s.Width, s.Height, scale) || changed
+	// A frame changing the layer, or showing web views, which move with
+	// the window's other changes, presents with the Core Animation
+	// transaction, so that they show together, as during a live resize.
+	// Others present as soon as the GPU has them, sparing a commit of the
+	// transaction for each.
+	holes := hasHoles(s)
+	sync := changed || holes || r.holes
+	r.holes = holes
+	now := time.Now()
+	r.behind = !sync && r.waited && now.Sub(r.lastRender) < 50*time.Millisecond && now.Sub(r.skippedAt) > time.Second
+	r.waited = false
+	if r.behind {
+		// The last frame waited for a drawable, as the display held both
+		// until its next refresh: the frames following it would wait as
+		// long, most of each refresh, blocking the main thread. Drawing
+		// none for a refresh catches up.
+		r.skippedAt = now
+		return nil
+	}
+	if sync != r.synced {
+		on := uintptr(0)
+		if sync {
+			on = 1
+		}
+		send(r.layer, "setPresentsWithTransaction:", on)
+		r.synced = sync
+	}
 	drawable := send(r.layer, "nextDrawable")
 	if drawable == 0 {
 		return nil // none came within a second: skip the frame
 	}
+	r.waited = !sync && time.Since(now) > behindAfter
 	texture := send(drawable, "texture")
 	cb, err := r.encode(s, texture)
 	if err != nil {
 		return err
 	}
-	send(cb, "commit")
-	send(cb, "waitUntilScheduled")
-	send(drawable, "present")
+	if sync {
+		send(cb, "commit")
+		send(cb, "waitUntilScheduled")
+		send(drawable, "present")
+	} else {
+		send(cb, "presentDrawable:", drawable)
+		send(cb, "commit")
+	}
 	r.last = send(cb, "retain")
 	r.lastRender = time.Now()
 	r.armTrim()
@@ -991,11 +1064,11 @@ func (r *Renderer) render(s *scene.Scene) error {
 }
 
 // fit sizes the layer and its drawables for frames of w×h pixels at
-// scale, and as its view.
-func (r *Renderer) fit(w, h int, scale float64) {
+// scale, and as its view, and reports whether they changed.
+func (r *Renderer) fit(w, h int, scale float64) (changed bool) {
 	bounds := msgRect(r.superlayer, sel("bounds"))
 	if w == r.w && h == r.h && scale == r.scale && bounds == r.bounds && !r.trimmed {
-		return
+		return false
 	}
 	// Without animating the change, as layers do by default.
 	tx := class("CATransaction")
@@ -1006,6 +1079,7 @@ func (r *Renderer) fit(w, h int, scale float64) {
 	msgSetSize(r.layer, sel("setDrawableSize:"), cgSize{float64(w), float64(h)})
 	send(tx, "commit")
 	r.w, r.h, r.scale, r.bounds, r.trimmed = w, h, scale, bounds, false
+	return true
 }
 
 // releaseTextures frees what the GPU's frames use, once the window is
@@ -1025,6 +1099,7 @@ func (r *Renderer) releaseTextures() {
 			r.formats[i].backdrop[j] = texture{}
 		}
 	}
+	r.b.Release()
 	r.b = gpu.Builder{}
 }
 
@@ -1120,6 +1195,7 @@ func (r *Renderer) renderOffscreen(s *scene.Scene) (pix []byte, err error) {
 
 // Release frees the renderer's GPU objects and takes its layer out.
 func (r *Renderer) Release() {
+	r.b.Release()
 	if r.trimTimer != 0 {
 		purego.SyscallN(cfRunLoopTimerInvalidate, r.trimTimer)
 		purego.SyscallN(cfRelease, r.trimTimer)

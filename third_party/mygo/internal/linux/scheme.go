@@ -115,7 +115,8 @@ type schemeTask struct {
 
 var errNoResponse = errors.New("mygo: the response was not started")
 
-func (t *schemeTask) Respond(status int, header http.Header) {
+func (t *schemeTask) Respond(status int, h map[string][]string) {
+	header := http.Header(h)
 	if t.done || t.responded {
 		return
 	}

@@ -319,6 +319,7 @@ func convertArg(fs *token.FileSet, t ast.Expr, name, c string) string {
 	}
 	if ft, ok := t.(*ast.FuncType); ok {
 		var rawNames, args []string
+		converts := false
 
 		if ft.Params != nil {
 			for i, p := range ft.Params.List {
@@ -331,12 +332,18 @@ func convertArg(fs *token.FileSet, t ast.Expr, name, c string) string {
 					v := n.Name
 					if mentions(p.Type, "context") {
 						v = "makeContext(" + v + ")"
+						converts = true
 					} else if st, ok := p.Type.(*ast.StarExpr); ok && baseName(st.X) == "node" {
 						v = "wrapElement(" + v + ")"
+						converts = true
 					}
 					args = append(args, v)
 				}
 			}
+		}
+		if !converts {
+			// The callback types match: preserve nil and avoid a wrapper closure.
+			return name
 		}
 		ret := ""
 		if ft.Results != nil && len(ft.Results.List) > 0 {
@@ -404,7 +411,6 @@ func generate(out *bytes.Buffer, fs *token.FileSet, fn *ast.FuncDecl) {
 	if fn.Doc != nil {
 		for _, comment := range fn.Doc.List {
 			v := comment.Text
-			v = strings.ReplaceAll(v, "Frame", "Context")
 			v = strings.ReplaceAll(v, "*Element", "Element")
 			for pub, priv := range parts {
 				v = strings.ReplaceAll(v, priv, pub)

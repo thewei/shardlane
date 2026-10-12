@@ -1,5 +1,7 @@
 # Search field
 
+<!-- preview search-field 200 -->
+
 `ui.SearchField` creates a field for searching, editing a `*string`: a
 magnifying glass, the text, and a button clearing it while it holds any,
 as Escape does then. It shows "Search" while empty. `Changed` reports a

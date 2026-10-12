@@ -309,10 +309,10 @@ func chevronDown(c *context) *node {
 // Combobox creates a combobox choosing *selected among options: a field
 // showing the choice, whose text filters the options below it as the user
 // types, those starting with it first, while a click or Down shows them
-// all. Up and Down move among them and Enter chooses, as does a click;
-// Escape closes them, and the text goes back to the choice when the
-// field loses the focus. Changed reports a new choice. Name it with
-// Label.
+// all; a click showing them selects the choice, for typing to replace.
+// Up and Down move among them and Enter chooses, as does a click; Escape
+// closes them, and the text goes back to the choice when the field loses
+// the focus. Changed reports a new choice. Name it with Label.
 //
 //	ui.Combobox(c, &app.font, fonts).Label("Font")
 func coreCombobox(c *context, selected *string, options []string) *node {
@@ -329,17 +329,30 @@ func coreCombobox(c *context, selected *string, options []string) *node {
 			if arrow.Clicked() {
 				p.SetOpen(!p.Open())
 				p.Input.Focus()
+				if p.Open() {
+					// As a click in the text opening them does.
+					p.Input.st.editor.selectAll()
+				}
 			}
 		})
 		return p.Input
 	})
 	p.anchor = f
+	// Whether the popup showed before this frame's input.
+	wasOpen := p.Open()
 	shown := options
 	if p.Filtering() {
 		shown = matching(options, *text)
 	}
 	styleOptions(c, p, shown)
 	f.afterInput(func() {
+		// A click opening the options selects the choice, as choosing
+		// one leaves it, so that the next keystroke replaces it and
+		// filters, instead of appending to it and matching nothing.
+		// Clicks while they show place the caret.
+		if in.Clicked() && !wasOpen && p.Open() && !p.Filtering() {
+			in.st.editor.selectAll()
+		}
 		if v, ok := p.Chosen(); ok {
 			if *selected != v {
 				*selected = v

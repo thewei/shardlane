@@ -50,7 +50,7 @@ var settingsSections = []struct {
 	{"/settings/general", "General", iconSettings},
 	{"/settings/terminal", "Terminal", iconTerminal},
 	{"/settings/providers", "Providers", iconAgent},
-	{"/settings/git", "Git & AI", iconBranch},
+	{"/settings/git", "Git", iconBranch},
 	{"/settings/runtime", "Runtime", iconWorkspace},
 	{"/settings/diagnostics", "Diagnostics", iconSearch},
 }
@@ -98,8 +98,8 @@ func (s *Shell) settingsLayout(c *ui.Context, r *ui.Route) {
 				r.Title("Settings · Providers")
 				settingsPage(c, "Providers", "Integration health and supported provider actions.", func() { s.settingsProviders(c) })
 			case r.Match("/git"):
-				r.Title("Settings · Git & AI")
-				settingsPage(c, "Git & AI", "Commit rules, Pi Agent and safe one-shot message generation.", func() { s.settingsGit(c) })
+				r.Title("Settings · Git")
+				settingsPage(c, "Git", "Commit message rules and Pi generator preferences.", func() { s.settingsGit(c) })
 			case r.Match("/runtime"):
 				r.Title("Settings · Runtime")
 				settingsPage(c, "Runtime", "Current Herdr session and application runtime facts.", func() { s.settingsRuntime(c) })

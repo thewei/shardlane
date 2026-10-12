@@ -20,26 +20,26 @@ const maxCommitCandidateBytes = 4096
 // existing Commit transaction can use the draft.
 func parseCommitCandidate(text string) (subject, body string, err error) {
 	if len(text) > maxCommitCandidateBytes {
-		return "", "", errors.New("AI suggestion is too long; paste at most 4096 bytes")
+		return "", "", errors.New("candidate message exceeds maximum length of 4096 bytes")
 	}
 	raw := strings.TrimSpace(strings.ReplaceAll(text, "\r\n", "\n"))
 	if strings.ContainsRune(raw, 0) {
-		return "", "", errors.New("AI suggestion contains unsupported control characters")
+		return "", "", errors.New("candidate message contains unsupported control characters")
 	}
 	if strings.HasPrefix(raw, "```") {
 		lines := strings.Split(raw, "\n")
 		if len(lines) < 3 || !strings.HasPrefix(strings.TrimSpace(lines[len(lines)-1]), "```") {
-			return "", "", errors.New("AI response code fence is incomplete")
+			return "", "", errors.New("markdown code fence is incomplete")
 		}
 		raw = strings.TrimSpace(strings.Join(lines[1:len(lines)-1], "\n"))
 	}
 	lines := strings.SplitN(raw, "\n", 2)
 	subject = strings.TrimSpace(lines[0])
 	if subject == "" {
-		return "", "", errors.New("AI suggestion needs a subject on the first line")
+		return "", "", errors.New("commit message needs a subject line")
 	}
 	if utf8.RuneCountInString(subject) > 72 {
-		return "", "", errors.New("AI suggestion subject exceeds 72 characters; edit it before applying")
+		return "", "", errors.New("commit subject exceeds 72 characters; edit it before applying")
 	}
 	if len(lines) > 1 {
 		body = strings.TrimSpace(lines[1])

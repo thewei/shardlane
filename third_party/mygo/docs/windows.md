@@ -197,10 +197,11 @@ With `Focusable`, a flyout takes the keyboard as it shows and closes as a
 menu does when the user presses outside it, another window takes the
 keyboard or the app is deactivated. `OnClose` listeners hear it and may
 keep it open, except on Wayland, whose compositor dismisses it. On Linux
-and Windows the press only closes the flyout, as it closes their menus,
-so a click on the button that opened it does not open it again; on macOS
-it goes on to what is under the pointer. Menus, lists to choose from and
-popovers are focusable, and handle their own keys: the arrows, Enter.
+and Windows the press only closes the flyout, as it closes their menus;
+on macOS it goes on to what is under the pointer, but on the anchor, as
+AppKit's popovers. So a click on the button that opened it closes it, and
+does not open it again. Menus, lists to choose from and popovers are
+focusable, and handle their own keys: the arrows, Enter.
 
 Without it, a flyout never takes the keyboard, which stays in the parent,
 and it stays until it is closed: a tooltip, a hover card, or the

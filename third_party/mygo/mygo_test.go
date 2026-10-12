@@ -1,3 +1,5 @@
+//go:build !js
+
 package mygo
 
 import (
@@ -1023,10 +1025,10 @@ type recorder struct {
 	finished chan struct{}
 }
 
-func (r *recorder) Respond(status int, h http.Header) { r.status, r.header = status, h }
-func (r *recorder) Write(p []byte)                    { r.body.Write(p) }
-func (r *recorder) Finish()                           { close(r.finished) }
-func (r *recorder) Fail(err error)                    { r.body.WriteString("FAIL " + err.Error()); close(r.finished) }
+func (r *recorder) Respond(status int, h map[string][]string) { r.status, r.header = status, h }
+func (r *recorder) Write(p []byte)                            { r.body.Write(p) }
+func (r *recorder) Finish()                                   { close(r.finished) }
+func (r *recorder) Fail(err error)                            { r.body.WriteString("FAIL " + err.Error()); close(r.finished) }
 
 func request(t *testing.T, fw *fake.Window, method, url string, body io.Reader) *recorder {
 	t.Helper()
