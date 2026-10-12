@@ -300,6 +300,8 @@ Same-length edits after 64 KiB can retain the same fingerprint. `TooLarge` files
 
 Use full selected-file Git blob/worktree identity or an independently streamed cryptographic digest for commit fencing. Presentation fingerprints may stay short/capped for cache invalidation, but must not be the mutation safety authority.
 
+_Update 2026-10-12:_ an oversized diff is no longer `TooLarge` by default. It is `Deferred` (counts known, `Patch` empty until the user opens it) and its fingerprint adds the file's size and mtime (`deferredStamp`), so an edit still changes it (`TestDeferredFingerprintFollowsTheFile`). `TooLarge` now means only an untracked file or an on-demand diff past 16 MiB.
+
 ### P1-03 — Git stdout truncation is silent
 
 `limitedWriter` swallows bytes past `MaxReadOutput` and still reports full success. It exposes no overflow bit.
@@ -309,6 +311,8 @@ A `git diff` larger than 32 MiB can be parsed as if complete. `Snapshot.Truncate
 Fix `limitedWriter` to record overflow and propagate `ErrTooLarge` / explicit partial snapshot state. Do not parse a silently cut patch as authoritative review content.
 
 Also cap stderr; current stderr buffers are unbounded.
+
+_Update 2026-10-12:_ closed. `limitedWriter` flags overflow and `Runner` returns `ErrTooLarge`; the snapshot reads leave large files out by pathspec, and when the bulk read still overflows every text file is deferred instead of the snapshot failing (`TestSnapshotSurvivesADiffPastTheReadLimit`, `TestSnapshotDefersEverythingWhenTheBulkReadOverflows`).
 
 ### P1-04 — untracked symlink can read outside repository
 
@@ -461,6 +465,8 @@ For large diffs:
 - move flattening/word-pair calculation to immutable background presentation snapshots;
 - cache syntax spans by `(snapshot,file,line,theme)` or highlight a bounded region once;
 - apply new row model via generation guard.
+
+_Update 2026-10-12:_ word-diff pairing is now lazy and memoized per drawn line, line-number metrics are cached, derived caches survive a snapshot refresh for files whose fingerprint is unchanged, and a file over 5,000 changed lines sits behind Show (`gd_perf_test.go`, `gd_large_test.go`).
 
 ### P2-08 — Files preview performs file IO synchronously in click handler
 

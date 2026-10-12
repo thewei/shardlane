@@ -52,7 +52,7 @@ All eleven rows: see the RealityMatrix for per-item evidence.
 | Sidebar compact refresh + structure lines | DONE | `sidebarTopAction` icon row with labels/tooltips; density-token row heights (26/28/32); treeRow connector guides preserved |
 | Right Panel Changes/Files/Services | DONE | v2 surfaces wired; per-Tab last-tool restore; Changes default when Git changes exist |
 | Git runner/repository | DONE | argv-only `exec.CommandContext`, read/mutate policy, single-flight per root, classification (`runner.go`, `TestRunnerMutationSingleFlight`, `TestRunnerReadTimeout`) |
-| Change snapshots | DONE | working tree + index vs HEAD + untracked; unborn-branch empty-tree; bounds (4 MiB/file, 1000 untracked, 64 MiB snapshot); fingerprints (`changes.go`, `TestSnapshotMatrix`, `TestSnapshotRepositoryWithoutHead`) |
+| Change snapshots | DONE | working tree + index vs HEAD + untracked; unborn-branch empty-tree; bounds (a file over 5,000 changed lines or 4 MiB is held behind Show and read on demand up to 16 MiB, 1000 untracked, 64 MiB snapshot); fingerprints (`changes.go`, `large_diff.go`, `TestSnapshotMatrix`, `TestSnapshotRepositoryWithoutHead`, `TestSnapshotDefersLargeTrackedDiffs`, `TestSnapshotSurvivesADiffPastTheReadLimit`) |
 | Clean-room patch parser | DONE | multi-file fixtures incl. quoted/exotic paths, rename/copy/mode/binary, no-newline marker, pathological caps (`models_test.go`) |
 | Word diff | DONE | bounded LCS word diff, Unicode-safe, rewrite suppression (`worddiff.go`, `TestWordDiff*`) |
 | Syntax highlighting | DONE | Chroma v2.27.0 (MIT; dependency audit in `highlight.go`) behind `Highlighter`; plain/binary/unsupported fallback |

@@ -433,7 +433,8 @@ status
 additions/deletions
 binary
 generated
-too large
+deferred (diff held back for its size, read on demand)
+too large (even on demand)
 fingerprint
 hunks
 ```
@@ -441,7 +442,7 @@ hunks
 Initial safety limits:
 
 ```text
-per-file rendered patch <= 4 MiB
+a file over 5,000 changed lines or 4 MiB is held back (deferred) and read on demand, <= 16 MiB
 untracked entries <= 1000 before summary/degrade
 whole-snapshot memory budget must be explicitly defined
 ```

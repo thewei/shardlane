@@ -384,7 +384,8 @@ type ChangeFile struct {
     Deletions   int
     Binary      bool
     Generated   bool
-    TooLarge    bool
+    Deferred    bool // diff held back for its size: counts known, Patch/Hunks empty until the user opens it
+    TooLarge    bool // too large even on demand (untracked or on-demand diff past 16 MiB)
     Fingerprint string
 }
 ```
@@ -507,7 +508,8 @@ Untracked files are gathered separately and modeled as additions.
 Recommended initial limits inspired by measured Godiff behavior:
 
 ```text
-max rendered patch per file: 4 MiB
+diff held behind Show (Deferred): more than 5,000 changed lines, or a patch over 4 MiB
+max on-demand diff of one file: 16 MiB / 20 s (past it: TooLarge)
 max individually listed untracked files: 1000
 scanner/token maximum: bounded >= expected patch lines
 syntax highlight only visible/needed rows where practical
@@ -1049,7 +1051,7 @@ Git command hard deadline for read operation group: target <= 5 s
 - virtualized rows;
 - only visible/near-visible syntax highlight work where practical;
 - no whole-repository rich-text element tree;
-- 4 MiB per-file rendered patch cap initially;
+- a file over 5,000 changed lines or 4 MiB is held behind Show and read on demand (up to 16 MiB);
 - no UI-thread Git command/patch parse for large data.
 
 ### Changed-file tree
@@ -1459,7 +1461,7 @@ These tasks are stretch after release-blocking commit/switch work.
 16. scrolling center updates selected file in Changes.
 17. filter does not run Git.
 18. unified/split both handle add/delete/rename/untracked/binary.
-19. generated and >4 MiB files degrade safely.
+19. generated files collapse by default; a file over 5,000 changed lines or 4 MiB waits behind Show and never freezes the review.
 20. unchanged context can expand 100 lines without whole-list rebuild.
 21. Diff find does not invoke Terminal search.
 22. large repo keeps UI responsive.
