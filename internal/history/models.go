@@ -227,25 +227,3 @@ type ParsedTranscript struct {
 	Sidechains       []SidechainInfo     `json:"sidechains"`
 	UnknownLineCount uint32              `json:"unknown_line_count"`
 }
-
-type IndexUnit struct {
-	Seq         int64   `json:"seq"`
-	SidechainID *string `json:"sidechain_id,omitempty"`
-	Role        Role    `json:"role"`
-	Timestamp   *int64  `json:"timestamp,omitempty"`
-	Text        string  `json:"text"`
-}
-
-type ParsedSession struct {
-	Meta             SessionMeta `json:"meta"`
-	Units            []IndexUnit `json:"units"`
-	UnknownLineCount uint32      `json:"unknown_line_count"`
-}
-
-type SearchHit struct {
-	Session   SessionMeta `json:"session"`
-	Seq       int64       `json:"seq"`
-	Role      string      `json:"role"`
-	Snippet   string      `json:"snippet"`
-	Timestamp *int64      `json:"timestamp,omitempty"`
-}

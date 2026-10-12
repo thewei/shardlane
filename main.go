@@ -26,10 +26,6 @@ import (
 	"github.com/wh-studio/herdr-client/internal/settings"
 )
 
-// historyCatalogFileName is the Shardlane-owned disposable FTS index over
-// read-only provider history, inside the MyGo user-data directory.
-const historyCatalogFileName = "history.sqlite3"
-
 // followUpLedgerFileName mirrors app.LaunchService's durable ledger name.
 const followUpLedgerFileName = "follow-up-ledger.json"
 
@@ -66,15 +62,20 @@ func main() {
 	// the file the store falls back to defaults on first launch.
 	settingsService := app.NewSettingsService(settings.NewFileStore(userDataDir))
 
-	// The history catalog is disposable: a failed open degrades to the
-	// in-memory empty catalog instead of blocking startup.
-	historyOpts := []nativeui.ShellOption{}
-	if catalog, err := history.OpenCatalog(filepath.Join(userDataDir, historyCatalogFileName)); err != nil {
-		slog.Warn("open history catalog failed; degraded catalog", "error", err)
-	} else {
-		home, _ := os.UserHomeDir()
-		historyService := history.NewHistoryService(catalog, history.DefaultRoots(home))
-		historyOpts = append(historyOpts, nativeui.WithHistory(historyService))
+	// The history catalog is an in-memory index rebuilt from the provider
+	// session files at launch: conversation content is never stored, every
+	// transcript is read from the original file on demand. The SQLite copy
+	// earlier builds kept is removed.
+	freed, err := history.RemoveLegacyCatalog(userDataDir)
+	if err != nil {
+		slog.Warn("remove legacy history catalog failed", "error", err)
+	}
+	if freed > 0 {
+		slog.Info("removed legacy history catalog", "freed_bytes", freed)
+	}
+	home, _ := os.UserHomeDir()
+	historyOpts := []nativeui.ShellOption{
+		nativeui.WithHistory(history.NewHistoryService(history.NewCatalog(), history.DefaultRoots(home))),
 	}
 
 	shell := nativeui.NewShell(append([]nativeui.ShellOption{

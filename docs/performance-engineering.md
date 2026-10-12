@@ -145,49 +145,38 @@ The isolated release smoke verified that creating a second Workspace after Shard
 
 ## 3. History performance contract
 
-History is a read-only projection over external Agent sources plus Shardlane’s disposable catalog/cache.
+History is a read-only projection over the external Agent session files. Shardlane stores no conversation content (2026-10-12): the catalog is an in-memory list-row index rebuilt from the provider files, and every transcript read goes to the original file.
 
-### Current UI strategy
+### Current strategy
 
 ```text
-Conversation selected
+Launch / explicit refresh (background lane)
   ↓
-read source identity from Shardlane catalog
+scanner lists provider roots → (mtime, size) unchanged → keep the in-memory row
+  └─ changed or new → adapter parses the file once → keep list-row metadata → drop the transcript
   ↓
-page-cache hit → load only target/current 60-message window
-  │
-  └─ page-cache miss → adapter parses source once → write page cache → project 60 messages
+unobserved files drop their rows (only after a complete observation)
+
+Conversation opened
   ↓
-long text → bounded preview
-short text / explicitly expanded text → Markdown TextView
+adapter parses the original file → cut one 60-message window → drop the rest
   ↓
-Earlier / Later loads another bounded cache window with overlap
+Earlier / Later opens re-read the file for the adjacent window (overlap kept by the caller)
 ```
 
-`Load earlier` / `Load later` must never grow one range indefinitely. The amount of GPUI transcript content alive at once remains bounded regardless of a 2,000-, 10,000-, or larger-message source.
+`Load earlier` / `Load later` must never grow one range indefinitely: the transcript content alive at once stays bounded regardless of a 2,000-, 10,000-, or larger-message source, and metadata loading never parses a transcript.
 
-`gpui-component::TextView::markdown` uses keyed GPUI state and suppresses reparsing when the text is unchanged, but constructing hundreds of Markdown views still creates layout/node pressure. Keep the visible window bounded and avoid full Markdown views for long collapsed content.
+### Measured on the reference machine (2026-10-12)
 
-### Parsing versus rendering
+| What | Result |
+| --- | --- |
+| Cold scan: 460 session files, 316 MB (Pi 223 MB, Codex 55 MB, Claude Code 38 MB), one worker | ≈2.3 s, background lane |
+| Same scan on the shipped pool (4 workers; 460 files, 331 MB on a later run) | ≈0.7 s (2 workers ≈1.1 s, 6–8 workers ≈0.6 s; peak process memory 58 MB vs 45 MB) |
+| Same scan inside the running app (log `history scan finished`, window shown → rows landed, startup work in parallel; three launches) | ≈1.4–2.4 s |
+| Open the largest source (44 MB Pi file) | ≈0.11 s |
+| Open a 23 MB Codex rollout | ≈0.06 s |
 
-The Shardlane-owned cache is now page-addressable:
-
-- `transcript_page_meta` stores stable source identity plus normalized transcript metadata;
-- `transcript_page_cache` stores fixed 64-message JSON pages;
-- `transcript_message_index` maps authoritative message `seq` to normalized message index for search-target jumps;
-- `HistoryUiState` owns only the current `CachedTranscriptWindow`, not a complete `ParsedTranscript`.
-
-New cache writes do **not** keep a second full-transcript blob. The former `transcript_cache` table is legacy-read-only: an old blob may be read once, converted into page cache, then deleted. Source identity changes invalidate page metadata, page payloads, and seq index together.
-
-Changed History sources are now prewarmed during the existing background scanner pass. The scanner already had to parse those sources to rebuild FTS/index metadata; it now uses `parse_transcript` once, derives index units from that same normalized transcript, writes session metadata/FTS, and writes the page cache before dropping the full object. Do not parse the same changed source once for indexing and again when the user opens it.
-
-Workspace-scoped History lookup must use the indexed normalized `sessions.project_key`, not `SELECT DISTINCT project_path` followed by filesystem canonicalization and repeated per-path queries. Catalog migration backfills legacy rows once; steady-state `sessions_for_project` and scoped metadata/FTS queries normalize the requested Workspace path once and filter in SQLite. Preserve `sessions_project_key(project_key, updated_at DESC)` as the lookup index.
-
-A first open can still miss page cache for an unchanged legacy catalog entry that predates prewarming. Normal background scans therefore perform a **bounded progressive legacy backfill** after changed-source work: at most 2 recent uncached sessions and at most 8 MiB of source data per scan. Oversized sources are skipped instead of consuming the whole budget. Backfill writes only the derived page cache; it does not rewrite FTS/session metadata for an unchanged source. Anything still uncached uses the adapter's complete `ParsedTranscript` compatibility parser once on explicit open, converts the result to page cache, immediately reduces the UI projection to 60 messages, then drops the full object. External Agent formats stay behind adapters; GPUI must not grow independent partial parsers.
-
-The current local synthetic baseline for a real Claude JSONL scan with 10,000 messages is **288.77 ms** for source parse + FTS/session write + page-cache prewarm in the debug test profile. A 10,000-message/512-byte-body page-cache build alone measured about **200.76 ms**. These are background/indexing costs, not UI-thread costs.
-
-A deeper future optimization is adapter/core-level source streaming or offset-aware parsing only if background indexing itself becomes the measured bottleneck, or if legacy first-open fallback remains materially slow for very large sources.
+These costs are why no derived transcript store exists: re-reading is cheaper than keeping, invalidating and migrating a second copy. Parallel parsing is shipped (`maxScanWorkers` = 4; rows are committed in listing order, so the catalog equals a sequential round's). If cold scans ever become the measured bottleneck again, the next lever is a metadata-only persisted index — never a stored transcript or message-body index.
 
 ### History performance regressions
 
@@ -195,23 +184,11 @@ Maintain tests for:
 
 - initial transcript window size independent of total message count;
 - earlier/later page navigation remaining bounded;
-- search target included in the initial bounded window;
+- an anchored open including its target message in the bounded window;
+- an open reflecting a changed provider file immediately, without a rescan;
+- the scanner re-reading a file whose size changed at an unchanged mtime;
 - Unicode-safe long-text preview boundaries;
-- heavy synthetic transcript projection remaining constant-work;
-- page cache reading only the requested window and resolving `seq → message_index`;
-- stable-source page cache migration and source-identity invalidation;
-- progressive legacy backfill respecting both session-count and total-source-byte budgets without reindexing unchanged rows;
-- obsolete transcript/page task cancellation when switching sessions.
-
-Slow History UI construction logs as:
-
-```text
-history.transcript.render messages=<visible> collapsed=<count> markdown=<count> total_messages=<total> <ms>
-```
-
-Slow transcript loading logs source bytes, cache hit/miss, and elapsed time. Page changes taking at least 20 ms emit `history.transcript.page key=<key> start=<index> <ms>`.
-
-The explicit local page-cache performance smoke now uses a real file-backed SQLite catalog with 10,000 messages and reopens an initialized catalog connection for each of 64 random 60-message reads, matching the UI paging path more closely. The latest 2026-08-21 debug-profile run measured **1.02 ms/window average**; the regression ceiling remains deliberately broad at 50 ms so the test catches algorithmic/schema regressions rather than machine noise.
+- obsolete transcript open task cancellation when switching sessions.
 
 ## 4. Terminal performance contract
 

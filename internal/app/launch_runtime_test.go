@@ -53,11 +53,12 @@ func (f *fakeAppRuntime) RenameTab(ctx context.Context, tabID, label string) err
 func (f *fakeAppRuntime) RenamePane(ctx context.Context, paneID, label string) error { return nil }
 func (f *fakeAppRuntime) CloseTab(ctx context.Context, tabID string) error           { return nil }
 
-// TestContextTransferBriefingBuiltFromPageCache pins the 0.5 completion: the
-// ContextTransfer execution reads the source window through the injected
-// page-cache opener, builds the bounded briefing from it, and sends exactly
-// one prompt containing the source context and the user instruction.
-func TestContextTransferBriefingBuiltFromPageCache(t *testing.T) {
+// TestContextTransferBriefingBuiltFromSourceWindow pins the 0.5 completion:
+// the ContextTransfer execution reads the source window through the injected
+// opener (the History service's read of the original session), builds the
+// bounded briefing from it, and sends exactly one prompt containing the
+// source context and the user instruction.
+func TestContextTransferBriefingBuiltFromSourceWindow(t *testing.T) {
 	projectDir := t.TempDir()
 	var opened []history.SessionFileRef
 	openWindow := func(ctx context.Context, source history.SessionFileRef) (history.TranscriptWindow, error) {

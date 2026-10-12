@@ -2,8 +2,6 @@ package nativeui
 
 import (
 	"context"
-	"math"
-	"path/filepath"
 	"testing"
 
 	"github.com/egoist/mygo/ui"
@@ -165,78 +163,5 @@ func TestHistoryListLatestRequestWins(t *testing.T) {
 	}
 	if !tester.HasText("Second Session") {
 		t.Fatalf("latest rows missing; texts=%q", tester.Texts())
-	}
-}
-
-// TestHistoryDetailScrollIntentsFollowPaging pins CLOSURE-03: the detail has
-// one explicit scroll owner; paging later follows the end, paging earlier
-// returns to the top, and neither intent lingers into later frames.
-func TestHistoryDetailScrollIntentsFollowPaging(t *testing.T) {
-	shell := NewShell()
-	catalog, err := history.OpenCatalog(filepath.Join(t.TempDir(), "catalog.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer catalog.Close()
-	shell.hist.service = history.NewHistoryService(catalog, nil)
-
-	source := history.SessionFileRef{Agent: history.AgentCodex, NativeID: "big", FilePath: "/nowhere/big.jsonl", MtimeMS: 1, SizeBytes: 2}
-	meta := history.SessionMeta{
-		Key: "codex:big", ID: "big", Agent: history.AgentCodex, Title: "Big",
-		FilePath: source.FilePath, UpdatedAt: 1, SizeBytes: source.SizeBytes,
-	}
-	if err := catalog.WriteSession(meta, source.MtimeMS, nil); err != nil {
-		t.Fatal(err)
-	}
-	transcript := history.ParsedTranscript{Meta: meta}
-	for index := 0; index < 200; index++ {
-		transcript.Mainline = append(transcript.Mainline, history.TranscriptMessage{
-			Seq: int64(index), Role: history.RoleUser, Kind: history.MessageText, Text: "line",
-		})
-	}
-	if err := catalog.CacheTranscript(source, transcript); err != nil {
-		t.Fatal(err)
-	}
-
-	shell.router.Replace("/history/codex:big")
-	tester := ui.NewTester(shell.View, 1200, 800)
-	if shell.hist.detail == nil || shell.hist.detail.scroll.Y != 0 {
-		t.Fatalf("fresh detail scroll = %+v", shell.hist.detail)
-	}
-
-	// Load later: the button lives at the window end, so scroll to it like a
-	// reader would, then activate it.
-	shell.hist.detail.scroll.Y = math.MaxFloat32
-	tester.Frame()
-	if err := tester.Click("Load 140 later messages"); err != nil {
-		t.Fatal(err)
-	}
-	tester.Frame()
-	if shell.hist.detail.window.Start != 48 {
-		t.Fatalf("later window start = %d, want 48", shell.hist.detail.window.Start)
-	}
-	if shell.hist.detail.scrollToBot || shell.hist.detail.scrollToTop {
-		t.Fatal("paging intents were not consumed")
-	}
-	if shell.hist.detail.scroll.Y <= 0 {
-		t.Fatalf("later paging did not scroll (Y=%f)", shell.hist.detail.scroll.Y)
-	}
-
-	// Load earlier: the button lives at the window top, so scroll back up
-	// first, then activate it.
-	shell.hist.detail.scroll.Y = 0
-	tester.Frame()
-	if err := tester.Click("Load 48 earlier messages"); err != nil {
-		t.Fatal(err)
-	}
-	tester.Frame()
-	if shell.hist.detail.window.Start != 0 {
-		t.Fatalf("earlier window start = %d, want 0", shell.hist.detail.window.Start)
-	}
-	if shell.hist.detail.scrollToBot || shell.hist.detail.scrollToTop {
-		t.Fatal("paging intents were not consumed")
-	}
-	if shell.hist.detail.scroll.Y != 0 {
-		t.Fatalf("earlier paging did not return to the top (Y=%f)", shell.hist.detail.scroll.Y)
 	}
 }

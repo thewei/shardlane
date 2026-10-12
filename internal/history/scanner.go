@@ -6,7 +6,14 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"runtime"
+	"sync"
 )
+
+// maxScanWorkers bounds how many provider files one round parses at once:
+// enough to cut a cold scan to a fraction, few enough to leave cores to the
+// UI that is already drawing.
+const maxScanWorkers = 4
 
 // SourceRoot is one provider-owned data root the scanner observes. Shardlane
 // never writes to it.
@@ -45,7 +52,7 @@ type ScanResult struct {
 	Removed int
 }
 
-// Scanner reconciles the disposable catalog with the observed provider
+// Scanner reconciles the in-memory catalog with the observed provider
 // sources. Missing roots are legitimate empty sources; a root that exists but
 // cannot be read aborts the round so cleanup never follows an incomplete
 // observation.
@@ -53,10 +60,11 @@ type Scanner struct {
 	catalog *Catalog
 	roots   []SourceRoot
 	parse   func(reference SessionFileRef) (ParsedTranscript, error)
+	workers int
 }
 
 func NewScanner(catalog *Catalog, roots []SourceRoot) *Scanner {
-	return &Scanner{catalog: catalog, roots: roots, parse: parseByAgent}
+	return &Scanner{catalog: catalog, roots: roots, parse: parseByAgent, workers: min(maxScanWorkers, runtime.GOMAXPROCS(0))}
 }
 
 // parseByAgent dispatches to the shipped adapters. Unknown providers fail
@@ -75,16 +83,14 @@ func parseByAgent(reference SessionFileRef) (ParsedTranscript, error) {
 }
 
 // Scan runs one reconciliation round: list roots, parse changed sources once
-// (metadata + FTS + page cache), then remove sessions whose files were not
+// for their list-row metadata, then remove sessions whose files were not
 // observed. Cancelled rounds return ctx.Err() without cleanup.
 func (s *Scanner) Scan(ctx context.Context) (ScanResult, error) {
 	result := ScanResult{}
 
-	known, err := s.catalog.KnownFiles()
-	if err != nil {
-		return result, err
-	}
+	known := s.catalog.KnownFiles()
 	seen := make(map[string]bool)
+	var changed []SessionFileRef
 	for _, root := range s.roots {
 		references, err := listJSONLRefs(root.Directory, root.Agent, root.NativeID)
 		if err != nil {
@@ -96,42 +102,108 @@ func (s *Scanner) Scan(ctx context.Context) (ScanResult, error) {
 			}
 			seen[reference.FilePath] = true
 			result.Scanned++
-			if mtime, ok := known[reference.FilePath]; ok && mtime == reference.MtimeMS {
+			if stamp, ok := known[reference.FilePath]; ok && stamp.mtimeMS == reference.MtimeMS && stamp.size == reference.SizeBytes {
 				continue
 			}
-			if err := s.indexReference(ctx, reference); err != nil {
-				return result, err
-			}
-			result.Changed++
+			changed = append(changed, reference)
 		}
 	}
-	removed, err := s.catalog.RemoveMissing(seen)
+	indexed, err := s.indexChanged(ctx, changed)
+	result.Changed = indexed
 	if err != nil {
 		return result, err
 	}
-	result.Removed = removed
+	result.Removed = s.catalog.RemoveMissing(seen)
 	return result, nil
 }
 
-// indexReference parses the changed source exactly once, writes session
-// metadata/FTS, prewarms the page cache, and drops the full transcript.
-func (s *Scanner) indexReference(ctx context.Context, reference SessionFileRef) error {
+// indexedRow is one parsed source waiting for its turn to enter the catalog.
+type indexedRow struct {
+	meta        SessionMeta
+	mtimeMS     int64
+	description string
+	ready       bool
+}
+
+// indexChanged parses the changed sources on up to s.workers goroutines and
+// commits their rows in listing order, so the catalog ends up exactly as a
+// sequential round would leave it (of two files with the same session key the
+// later one wins, whichever parse finishes first). The first failure cancels
+// the rest of the round and is returned; the rows committed before it stay,
+// and the caller skips cleanup.
+func (s *Scanner) indexChanged(ctx context.Context, references []SessionFileRef) (int, error) {
+	if len(references) == 0 {
+		return 0, nil
+	}
+	round, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	var (
+		mu      sync.Mutex
+		rows    = make([]indexedRow, len(references))
+		next    int // first row not yet committed
+		failure error
+		wg      sync.WaitGroup
+	)
+	jobs := make(chan int)
+	for range max(1, min(s.workers, len(references))) {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := range jobs {
+				row, err := s.parseRow(round, references[i])
+				mu.Lock()
+				switch {
+				case err != nil:
+					// A source that cannot be parsed fails the round, not the
+					// catalog: nothing is cleaned after it.
+					if failure == nil {
+						failure = err
+						cancel()
+					}
+				case failure == nil:
+					rows[i] = row
+					for next < len(rows) && rows[next].ready {
+						s.catalog.Put(rows[next].meta, rows[next].mtimeMS, rows[next].description)
+						next++
+					}
+				}
+				mu.Unlock()
+			}
+		}()
+	}
+dispatch:
+	for i := range references {
+		select {
+		case jobs <- i:
+		case <-round.Done():
+			break dispatch
+		}
+	}
+	close(jobs)
+	wg.Wait()
+
+	if failure != nil {
+		return next, failure
+	}
+	return next, ctx.Err()
+}
+
+// parseRow parses one changed source exactly once, keeps only the session's
+// list-row metadata, and drops the transcript.
+func (s *Scanner) parseRow(ctx context.Context, reference SessionFileRef) (indexedRow, error) {
 	if err := ctx.Err(); err != nil {
-		return err
+		return indexedRow{}, err
 	}
 	transcript, err := s.parse(reference)
 	if err != nil {
-		// An unparseable source is a scan error for this round, not a
-		// reason to corrupt or clean the catalog.
-		return fmt.Errorf("parse %s source %s: %w", reference.Agent, reference.FilePath, err)
-	}
-	units := unitsFromMessages(transcript.Mainline)
-	if err := s.catalog.WriteSession(transcript.Meta, reference.MtimeMS, units); err != nil {
-		return err
-	}
-	if err := s.catalog.CacheTranscript(reference, transcript); err != nil {
-		return err
+		return indexedRow{}, fmt.Errorf("parse %s source %s: %w", reference.Agent, reference.FilePath, err)
 	}
 	slog.Debug("indexed history source", "agent", string(reference.Agent), "session", transcript.Meta.Key, "messages", len(transcript.Mainline))
-	return nil
+	return indexedRow{
+		meta:        transcript.Meta,
+		mtimeMS:     reference.MtimeMS,
+		description: descriptionFromMessages(transcript.Mainline),
+		ready:       true,
+	}, nil
 }

@@ -2,6 +2,7 @@ package history
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -10,18 +11,16 @@ import (
 func newTestService(t *testing.T) (*HistoryService, string) {
 	t.Helper()
 	home := t.TempDir()
-	catalog, err := OpenCatalog(filepath.Join(t.TempDir(), "catalog.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { catalog.Close() })
 	roots := []SourceRoot{{
 		Agent:     AgentCodex,
 		Directory: filepath.Join(home, "sessions"),
 		NativeID:  rolloutNativeID,
 	}}
-	return NewHistoryService(catalog, roots), home
+	return NewHistoryService(NewCatalog(), roots), home
 }
+
+const testRolloutName = "rollout-2026-08-02T09-15-00-22222222-aaaa-bbbb-cccc-000000000002.jsonl"
+const testRolloutKey = "codex:22222222-aaaa-bbbb-cccc-000000000002"
 
 func TestServiceListAndRecentNeverParseTranscripts(t *testing.T) {
 	service, _ := newTestService(t)
@@ -30,9 +29,7 @@ func TestServiceListAndRecentNeverParseTranscripts(t *testing.T) {
 	meta := catalogTestSession("codex:ghost", "Ghost", "/nowhere/rollout.jsonl", "/work")
 	meta.Agent = AgentCodex
 	meta.ID = "ghost"
-	if err := service.Catalog().WriteSession(meta, 1000, catalogTestUnits("body")); err != nil {
-		t.Fatal(err)
-	}
+	service.Catalog().Put(meta, 1000, "body")
 
 	summaries, err := service.List(context.Background(), HistoryQuery{Limit: 10})
 	if err != nil {
@@ -55,26 +52,25 @@ func TestServiceListAndRecentNeverParseTranscripts(t *testing.T) {
 	if len(filtered) != 0 {
 		t.Fatalf("provider filter = %+v", filtered)
 	}
+	searched, err := service.List(context.Background(), HistoryQuery{Limit: 10, Search: "ghost"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(searched) != 1 || searched[0].Description != "body" {
+		t.Fatalf("metadata search = %+v", searched)
+	}
 }
 
-// TestServiceOpenParsesOnCacheMissAndReusesCache pins the open path: first
-// Open parses the source once and prewarms the cache; later opens serve from
-// the cache and stay bounded.
-func TestServiceOpenParsesOnCacheMissAndReusesCache(t *testing.T) {
+// TestServiceOpenReadsOriginalFileWindows pins the open path: a window is cut
+// from the parsed original file, bounded, with honest paging flags.
+func TestServiceOpenReadsOriginalFileWindows(t *testing.T) {
 	service, home := newTestService(t)
-	sessions := filepath.Join(home, "sessions")
-	writeCodexSessionFile(t, sessions, "rollout-2026-08-02T09-15-00-22222222-aaaa-bbbb-cccc-000000000002.jsonl", codexFixtureRollout)
+	writeCodexSessionFile(t, filepath.Join(home, "sessions"), testRolloutName, codexFixtureRollout)
 	if _, err := service.Scan(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	// Simulate a legacy uncached catalog row.
-	if _, err := service.Catalog().db.Exec("DELETE FROM transcript_page_meta WHERE session_key = 'codex:22222222-aaaa-bbbb-cccc-000000000002'"); err != nil {
-		t.Fatal(err)
-	}
 
-	window, err := service.Open(context.Background(), ConversationWindowRequest{
-		ConversationID: "codex:22222222-aaaa-bbbb-cccc-000000000002",
-	})
+	window, err := service.Open(context.Background(), ConversationWindowRequest{ConversationID: testRolloutKey})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,7 +84,7 @@ func TestServiceOpenParsesOnCacheMissAndReusesCache(t *testing.T) {
 		t.Fatalf("window meta title = %q", window.Meta.Title)
 	}
 
-	// Explicit paging: start beyond the end clamps, flags report bounds.
+	// Explicit paging: flags report bounds.
 	paged, err := service.Open(context.Background(), ConversationWindowRequest{
 		ConversationID: window.Key,
 		StartIndex:     ptr(1),
@@ -103,38 +99,105 @@ func TestServiceOpenParsesOnCacheMissAndReusesCache(t *testing.T) {
 	if paged.HasLater() {
 		t.Fatal("small source should not report later messages")
 	}
+
+	// A start beyond the end clamps to an empty window at the end.
+	beyond, err := service.Open(context.Background(), ConversationWindowRequest{
+		ConversationID: window.Key,
+		StartIndex:     ptr(500),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if beyond.Start != beyond.TotalMessages || len(beyond.Messages) != 0 || beyond.HasLater() {
+		t.Fatalf("clamped window = %+v", beyond)
+	}
+}
+
+// TestServiceOpenAlwaysReadsOriginalFile is the no-copy contract: nothing of
+// a transcript is kept between opens, so a change to the provider file shows
+// in the very next Open — without a rescan.
+func TestServiceOpenAlwaysReadsOriginalFile(t *testing.T) {
+	service, home := newTestService(t)
+	path := writeCodexSessionFile(t, filepath.Join(home, "sessions"), testRolloutName, codexFixtureRollout)
+	if _, err := service.Scan(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	before, err := service.Open(context.Background(), ConversationWindowRequest{ConversationID: testRolloutKey})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	appended := `{"timestamp":"2026-08-02T09:20:00Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Appended after the scan."}]}}` + "\n"
+	file, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := file.WriteString(appended); err != nil {
+		t.Fatal(err)
+	}
+	file.Close()
+
+	after, err := service.Open(context.Background(), ConversationWindowRequest{ConversationID: testRolloutKey})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.TotalMessages != before.TotalMessages+1 {
+		t.Fatalf("total messages %d → %d, want one more from the original file", before.TotalMessages, after.TotalMessages)
+	}
+	if last := after.Messages[len(after.Messages)-1]; last.Text != "Appended after the scan." {
+		t.Fatalf("last message = %q", last.Text)
+	}
+
+	// The file is the only source: once it is gone the conversation cannot
+	// be opened, whatever was seen before.
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Open(context.Background(), ConversationWindowRequest{ConversationID: testRolloutKey}); err == nil {
+		t.Fatal("open must fail once the original file is gone")
+	}
 }
 
 func TestServiceOpenAnchorSeqIncludesTarget(t *testing.T) {
 	service, home := newTestService(t)
-	sessions := filepath.Join(home, "sessions")
-	writeCodexSessionFile(t, sessions, "rollout-2026-08-02T09-15-00-22222222-aaaa-bbbb-cccc-000000000002.jsonl", codexFixtureRollout)
+	writeCodexSessionFile(t, filepath.Join(home, "sessions"), testRolloutName, codexFixtureRollout)
 	if _, err := service.Scan(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-
-	hits, err := service.Search(context.Background(), "Implemented", "", 10)
+	all, err := service.Open(context.Background(), ConversationWindowRequest{ConversationID: testRolloutKey})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(hits) != 1 {
-		t.Fatalf("hits = %+v", hits)
+	var anchor int64 = -1
+	for _, message := range all.Messages {
+		if message.Text == "Implemented." {
+			anchor = message.Seq
+		}
+	}
+	if anchor < 0 {
+		t.Fatalf("fixture lost its assistant answer: %+v", all.Messages)
 	}
 
 	window, err := service.Open(context.Background(), ConversationWindowRequest{
-		ConversationID: hits[0].Session.Key,
-		AnchorSeq:      &hits[0].Seq,
+		ConversationID: testRolloutKey,
+		AnchorSeq:      &anchor,
 		Limit:          60,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if window.AnchorIndex < 0 {
-		t.Fatalf("anchor index = %d", window.AnchorIndex)
-	}
 	if window.AnchorIndex < window.Start || window.AnchorIndex >= window.Start+len(window.Messages) {
 		t.Fatalf("anchor outside window: anchor=%d window=%d..%d",
 			window.AnchorIndex, window.Start, window.Start+len(window.Messages))
+	}
+	if window.Messages[window.AnchorIndex-window.Start].Seq != anchor {
+		t.Fatalf("anchor index %d does not point at seq %d", window.AnchorIndex, anchor)
+	}
+
+	missing := int64(9999)
+	window, err = service.Open(context.Background(), ConversationWindowRequest{ConversationID: testRolloutKey, AnchorSeq: &missing})
+	if err != nil || window.AnchorIndex != -1 {
+		t.Fatalf("unknown anchor = (%d, %v), want index -1", window.AnchorIndex, err)
 	}
 }
 
@@ -147,23 +210,18 @@ func TestServiceOpenUnknownConversationFailsClosed(t *testing.T) {
 
 func TestServiceOpenRespectsWindowLimitCap(t *testing.T) {
 	service, _ := newTestService(t)
-	source := SessionFileRef{Agent: AgentCodex, NativeID: "big", FilePath: "/nowhere/big.jsonl", MtimeMS: 1, SizeBytes: 2}
-	meta := catalogTestSession("codex:big", "Big", source.FilePath, "/work")
+	meta := catalogTestSession("codex:big", "Big", "/nowhere/big.jsonl", "/work")
 	meta.Agent = AgentCodex
 	meta.ID = "big"
-	meta.SizeBytes = source.SizeBytes
-	catalog := service.Catalog()
-	if err := catalog.WriteSession(meta, source.MtimeMS, catalogTestUnits("body")); err != nil {
-		t.Fatal(err)
-	}
-	transcript := ParsedTranscript{Meta: meta}
-	for index := 0; index < 200; index++ {
-		transcript.Mainline = append(transcript.Mainline, TranscriptMessage{
-			Seq: int64(index), Role: RoleUser, Kind: MessageText, Text: "line",
-		})
-	}
-	if err := catalog.CacheTranscript(source, transcript); err != nil {
-		t.Fatal(err)
+	service.Catalog().Put(meta, 1, "body")
+	service.parse = func(SessionFileRef) (ParsedTranscript, error) {
+		transcript := ParsedTranscript{Meta: meta}
+		for index := 0; index < 200; index++ {
+			transcript.Mainline = append(transcript.Mainline, TranscriptMessage{
+				Seq: int64(index), Role: RoleUser, Kind: MessageText, Text: "line",
+			})
+		}
+		return transcript, nil
 	}
 
 	// A UI asking for an unbounded window still gets at most 60 messages.
@@ -178,6 +236,64 @@ func TestServiceOpenRespectsWindowLimitCap(t *testing.T) {
 	}
 	if !window.HasLater() || window.HasEarlier() {
 		t.Fatalf("flags = earlier:%v later:%v", window.HasEarlier(), window.HasLater())
+	}
+}
+
+// TestServiceOpenTailReturnsNewestWindow pins the chat-style entry: Tail asks
+// for the newest Limit messages, an explicit StartIndex or AnchorSeq still
+// wins, and a transcript shorter than the limit just starts at zero.
+func TestServiceOpenTailReturnsNewestWindow(t *testing.T) {
+	service, _ := newTestService(t)
+	meta := catalogTestSession("codex:tail", "Tail", "/nowhere/tail.jsonl", "/work")
+	meta.Agent = AgentCodex
+	meta.ID = "tail"
+	service.Catalog().Put(meta, 1, "body")
+	total := 0
+	service.parse = func(SessionFileRef) (ParsedTranscript, error) {
+		transcript := ParsedTranscript{Meta: meta}
+		for index := 0; index < total; index++ {
+			transcript.Mainline = append(transcript.Mainline, TranscriptMessage{
+				Seq: int64(index), Role: RoleUser, Kind: MessageText, Text: "line",
+			})
+		}
+		return transcript, nil
+	}
+
+	total = 200
+	tail, err := service.Open(context.Background(), ConversationWindowRequest{ConversationID: "codex:tail", Tail: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tail.Start != 140 || len(tail.Messages) != WindowLimit || tail.Messages[0].Seq != 140 || tail.Messages[WindowLimit-1].Seq != 199 {
+		t.Fatalf("tail window = start %d, %d messages", tail.Start, len(tail.Messages))
+	}
+	if !tail.HasEarlier() || tail.HasLater() {
+		t.Fatalf("tail flags = earlier:%v later:%v", tail.HasEarlier(), tail.HasLater())
+	}
+
+	small, err := service.Open(context.Background(), ConversationWindowRequest{ConversationID: "codex:tail", Tail: true, Limit: 8})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if small.Start != 192 || len(small.Messages) != 8 {
+		t.Fatalf("limited tail = start %d, %d messages", small.Start, len(small.Messages))
+	}
+
+	paged, err := service.Open(context.Background(), ConversationWindowRequest{ConversationID: "codex:tail", Tail: true, StartIndex: ptr(10), Limit: 5})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if paged.Start != 10 || len(paged.Messages) != 5 {
+		t.Fatalf("explicit start must beat Tail: start %d, %d messages", paged.Start, len(paged.Messages))
+	}
+
+	total = 12
+	short, err := service.Open(context.Background(), ConversationWindowRequest{ConversationID: "codex:tail", Tail: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if short.Start != 0 || len(short.Messages) != 12 || short.HasEarlier() {
+		t.Fatalf("short tail = start %d, %d messages", short.Start, len(short.Messages))
 	}
 }
 

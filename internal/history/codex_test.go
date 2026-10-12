@@ -18,7 +18,7 @@ const codexFixtureRollout = `{"timestamp":"2026-08-02T09:15:00Z","type":"session
 `
 
 // TestCodexAdapterParsesRollout pins the audited Rust rollout fixture: meta
-// enrichment, tool call/output resolution, token counting, and index units.
+// enrichment, tool call/output resolution, token counting, and previews.
 func TestCodexAdapterParsesRollout(t *testing.T) {
 	dir := t.TempDir()
 	sessions := filepath.Join(dir, "sessions", "2026", "08", "02")
@@ -74,16 +74,14 @@ func TestCodexAdapterParsesRollout(t *testing.T) {
 		t.Fatalf("message count = %d, want 3", meta.MessageCount)
 	}
 
-	units := unitsFromMessages(parsed.Mainline)
-	if len(units) != 3 {
-		t.Fatalf("units = %d, want 3", len(units))
-	}
 	joined := ""
-	for _, unit := range units {
-		joined += unit.Text + "\n"
+	for _, message := range parsed.Mainline {
+		if message.Kind == MessageText {
+			joined += previewText(message) + "\n"
+		}
 	}
 	if !strings.Contains(joined, "shell cargo test") {
-		t.Fatalf("tool summary missing from units: %q", joined)
+		t.Fatalf("tool summary missing from message previews: %q", joined)
 	}
 
 	found := false

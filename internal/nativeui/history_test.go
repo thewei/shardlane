@@ -51,11 +51,7 @@ func newHistoryTestShell(t *testing.T) (*Shell, *history.Catalog, string) {
 	sessions := filepath.Join(home, "sessions")
 	writeCodexSessionFile(t, sessions, "rollout-2026-08-02T09-15-00-22222222-aaaa-bbbb-cccc-000000000002.jsonl", codexFixtureRollout)
 
-	catalog, err := history.OpenCatalog(filepath.Join(t.TempDir(), "catalog.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { catalog.Close() })
+	catalog := history.NewCatalog()
 	service := history.NewHistoryService(catalog, []history.SourceRoot{{
 		Agent: history.AgentCodex, Directory: sessions, NativeID: testRolloutNativeID,
 	}})
@@ -87,10 +83,13 @@ func TestHistoryListRendersRealSessionsWithFilters(t *testing.T) {
 		t.Fatalf("recent items = %+v", shell.recentItems)
 	}
 
-	// Provider filter narrows the list.
-	if err := tester.Click("Codex"); err != nil {
-		t.Fatal(err)
+	// A single-agent catalog offers no agent filter: the rows already name
+	// their agent, and a one-option control is noise.
+	if tester.HasText("All") && shell.hist.provider != "" {
+		t.Fatalf("single-agent catalog shows a filter; texts=%q", tester.Texts())
 	}
+	shell.hist.provider = string(history.AgentCodex)
+	shell.applyHistoryFilters()
 	tester.Frame()
 	if !tester.HasText("Build history") {
 		t.Fatal("codex filter dropped the codex session")
@@ -98,12 +97,7 @@ func TestHistoryListRendersRealSessionsWithFilters(t *testing.T) {
 }
 
 func TestHistoryEmptyStateWhenCatalogIsEmpty(t *testing.T) {
-	catalog, err := history.OpenCatalog(filepath.Join(t.TempDir(), "catalog.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer catalog.Close()
-	shell := NewShell(WithHistory(history.NewHistoryService(catalog, nil)))
+	shell := NewShell(WithHistory(history.NewHistoryService(history.NewCatalog(), nil)))
 	shell.router.Replace("/history")
 	tester := ui.NewTester(shell.View, 1200, 800)
 
@@ -112,43 +106,25 @@ func TestHistoryEmptyStateWhenCatalogIsEmpty(t *testing.T) {
 	}
 }
 
-func TestHistoryDetailRendersBoundedNativeBlocks(t *testing.T) {
-	shell, _, _ := newHistoryTestShell(t)
-	shell.router.Replace("/history/codex:22222222-aaaa-bbbb-cccc-000000000002")
-	tester := ui.NewTester(shell.View, 1200, 800)
-
-	for _, want := range []string{"Build history", "USER", "ASSISTANT", "Implemented.", "cargo test", "Showing 1–3 of 3 messages"} {
-		if !tester.HasText(want) {
-			t.Fatalf("detail missing %q; texts=%q", want, tester.Texts())
-		}
-	}
-	// The empty tool host message contributes no visible text block.
-	if shell.hist.detail == nil || len(shell.hist.detail.window.Messages) != 3 {
-		t.Fatalf("materialized messages = %+v", shell.hist.detail)
-	}
-}
-
 func TestHistoryDetailThinkingCollapsedByDefault(t *testing.T) {
-	shell, catalog, _ := newHistoryTestShell(t)
-	// Seed one thinking-bearing session directly into the catalog + cache.
-	source := history.SessionFileRef{Agent: history.AgentCodex, NativeID: "think", FilePath: filepath.Join(t.TempDir(), "rollout-think.jsonl"), MtimeMS: 1000, SizeBytes: 12}
-	meta := history.SessionMeta{
-		Key: "codex:think", ID: "think", Agent: history.AgentCodex, Title: "Reasoning session",
-		FilePath: source.FilePath, UpdatedAt: 1000, SizeBytes: source.SizeBytes,
-	}
-	transcript := history.ParsedTranscript{Meta: meta, Mainline: []history.TranscriptMessage{{
-		Seq: 0, Role: history.RoleAssistant, Kind: history.MessageText,
-		Text: "Answer with reasoning", Thinking: strPtr("line one of hidden reasoning\nline two"),
-	}}}
-	if err := catalog.WriteSession(meta, source.MtimeMS, nil); err != nil {
-		t.Fatal(err)
-	}
-	if err := catalog.CacheTranscript(source, transcript); err != nil {
+	shell, _, home := newHistoryTestShell(t)
+	// A second rollout whose assistant turn carries a reasoning summary.
+	writeCodexSessionFile(t, filepath.Join(home, "sessions"),
+		"rollout-2026-08-03T09-15-00-44444444-aaaa-bbbb-cccc-000000000004.jsonl",
+		`{"timestamp":"2026-08-03T09:15:00Z","type":"session_meta","payload":{"cwd":"/work/reasoning","originator":"codex_cli_rs"}}
+{"timestamp":"2026-08-03T09:15:01Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Reasoning session"}]}}
+{"timestamp":"2026-08-03T09:15:02Z","type":"response_item","payload":{"type":"reasoning","summary":[{"type":"summary_text","text":"line one of hidden reasoning\nline two"}]}}
+{"timestamp":"2026-08-03T09:15:03Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Answer with reasoning"}]}}
+`)
+	if _, err := shell.hist.service.Scan(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 
-	shell.router.Replace("/history/codex:think")
+	shell.router.Replace("/history/codex:44444444-aaaa-bbbb-cccc-000000000004")
 	tester := ui.NewTester(shell.View, 1200, 800)
+	if !tester.HasText("Answer with reasoning") {
+		t.Fatalf("assistant answer missing; texts=%q", tester.Texts())
+	}
 	if tester.HasText("line two") {
 		t.Fatalf("thinking must be collapsed by default; texts=%q", tester.Texts())
 	}
@@ -159,28 +135,6 @@ func TestHistoryDetailThinkingCollapsedByDefault(t *testing.T) {
 	tester.Frame()
 	if !tester.HasText("line two") {
 		t.Fatal("expanding thinking did not reveal the body")
-	}
-}
-
-func TestHistoryDetailSwitchCancelsObsoleteWindow(t *testing.T) {
-	shell, _, home := newHistoryTestShell(t)
-	// A second conversation to switch to.
-	writeCodexSessionFile(t, filepath.Join(home, "sessions"),
-		"rollout-2026-08-02T10-15-00-33333333-aaaa-bbbb-cccc-000000000003.jsonl", codexFixtureRollout)
-	if _, err := shell.hist.service.Scan(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-
-	shell.router.Replace("/history/codex:22222222-aaaa-bbbb-cccc-000000000002")
-	tester := ui.NewTester(shell.View, 1200, 800)
-	if shell.hist.detail == nil || shell.hist.detail.key != "codex:22222222-aaaa-bbbb-cccc-000000000002" {
-		t.Fatalf("first detail = %+v", shell.hist.detail)
-	}
-	// Switching conversations supersedes the first window.
-	shell.router.Replace("/history/codex:33333333-aaaa-bbbb-cccc-000000000003")
-	tester.Frame()
-	if shell.hist.detail == nil || shell.hist.detail.key != "codex:33333333-aaaa-bbbb-cccc-000000000003" {
-		t.Fatalf("switched detail = %+v", shell.hist.detail)
 	}
 }
 
@@ -201,49 +155,6 @@ func TestHistoryListSearchNarrowsSessions(t *testing.T) {
 	if !tester.HasText("No matching sessions") {
 		t.Fatalf("filtered empty state missing; texts=%q", tester.Texts())
 	}
-}
-
-func TestHistoryBlocksBoundsAndPureModel(t *testing.T) {
-	longLine := strings.Repeat("x", historyMessagePreviewChars+500)
-	manyLines := strings.Repeat("line\n", historyMessagePreviewLines+30)
-	blocks := historyBlocksFromMessages([]history.TranscriptMessage{
-		{Seq: 0, Role: history.RoleUser, Kind: history.MessageText, Text: longLine},
-		{Seq: 1, Role: history.RoleAssistant, Kind: history.MessageText, Text: manyLines},
-		{Seq: 2, Role: history.RoleSystem, Kind: history.MessageMeta, Text: "meta stays whole"},
-	})
-	if len(blocks) != 3 {
-		t.Fatalf("blocks = %d", len(blocks))
-	}
-	if len([]rune(blocks[0].Text)) > historyMessagePreviewChars+len("\n… (truncated)") || !blocks[0].Truncated {
-		t.Fatalf("char bound: %d runes truncated=%v", len([]rune(blocks[0].Text)), blocks[0].Truncated)
-	}
-	if lineCount(blocks[1].Text) > historyMessagePreviewLines || !blocks[1].Truncated {
-		t.Fatalf("line bound: %d lines truncated=%v", lineCount(blocks[1].Text), blocks[1].Truncated)
-	}
-	if blocks[2].Kind != historyBlockMeta || blocks[2].Truncated {
-		t.Fatalf("meta block = %+v", blocks[2])
-	}
-
-	thinking := strings.Repeat("thought ", historyThinkingChars)
-	withThinking := historyBlocksFromMessages([]history.TranscriptMessage{{
-		Seq: 9, Role: history.RoleAssistant, Kind: history.MessageText,
-		Text: "answer", Thinking: &thinking,
-	}})
-	if len([]rune(withThinking[0].Thinking)) > historyThinkingChars+len("\n… (truncated)") {
-		t.Fatalf("thinking bound = %d runes", len([]rune(withThinking[0].Thinking)))
-	}
-
-	// Empty tool hosts collapse away; compact summaries survive.
-	empty := historyBlocksFromMessages([]history.TranscriptMessage{
-		{Seq: 0, Role: history.RoleAssistant, Kind: history.MessageText, Text: ""},
-	})
-	if len(empty) != 0 {
-		t.Fatalf("empty host blocks = %+v", empty)
-	}
-}
-
-func lineCount(text string) int {
-	return strings.Count(text, "\n") + 1
 }
 
 func strPtr(value string) *string { return &value }

@@ -31,32 +31,6 @@ func titleFromMessages(messages []TranscriptMessage) string {
 	return ""
 }
 
-// unitsFromMessages reduces a transcript into search/index units: one unit
-// per text-kind message including its tool-call summaries.
-func unitsFromMessages(messages []TranscriptMessage) []IndexUnit {
-	units := make([]IndexUnit, 0, len(messages))
-	for _, message := range messages {
-		if message.Kind != MessageText {
-			continue
-		}
-		parts := []string{message.Text}
-		for _, call := range message.ToolCalls {
-			parts = append(parts, call.Name+" "+call.InputPreview)
-		}
-		text, _ := clipText(strings.Join(parts, "\n"), MaxMessageText)
-		if strings.TrimSpace(text) == "" {
-			continue
-		}
-		units = append(units, IndexUnit{
-			Seq:       message.Seq,
-			Role:      message.Role,
-			Timestamp: message.Timestamp,
-			Text:      text,
-		})
-	}
-	return units
-}
-
 // pathOwns reports whether path lives under root, respecting separator
 // boundaries — the shared roster/cleanup ownership predicate.
 func pathOwns(root, path string) bool {

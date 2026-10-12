@@ -264,7 +264,7 @@ func DefaultTransferBriefingLimits() TransferBriefingLimits {
 }
 
 // BuildTransferBriefing builds the bounded ContextTransfer briefing from the
-// source transcript window read out of the history page cache: a header
+// source transcript window read from the original session file: a header
 // naming source provider/session, then the most recent messages (bounded
 // count, then bounded characters, Unicode-safe) with their roles. The result
 // is the single initial prompt of the transfer launch.

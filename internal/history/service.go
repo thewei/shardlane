@@ -1,9 +1,9 @@
 package history
 
 /**
- * [INPUT]: 依赖只读 Catalog 的最新元数据、会话索引与有界 transcript 缓存
+ * [INPUT]: 依赖内存 Catalog 的元数据行与 Provider 原始会话文件（经 parseByAgent 现读）
  * [OUTPUT]: 对外提供 HistoryService 的列表/筛选/阅读查询与增量扫描入口
- * [POS]: 历史领域服务层；Project/Provider 条件在 SQL 限额之前生效
+ * [POS]: 历史领域服务层；Project/Provider 条件在限额之前生效；Open 每次直接读取原始会话文件，不持久化任何会话正文
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 
@@ -21,12 +21,15 @@ type HistoryQuery struct {
 }
 
 // ConversationWindowRequest asks for one bounded transcript window. Either an
-// AnchorSeq (search-target jump) or a StartIndex (paging) may be supplied.
+// AnchorSeq (message jump) or a StartIndex (paging) may be supplied; without
+// either, the window starts at the first message — or, with Tail, ends at the
+// newest one (the chat-style entry that pages upward with StartIndex).
 type ConversationWindowRequest struct {
 	ConversationID string
 	AnchorSeq      *int64
 	StartIndex     *int
 	Limit          int
+	Tail           bool
 }
 
 // TranscriptWindow is the UI-facing bounded transcript projection. The amount
@@ -50,14 +53,17 @@ func (w TranscriptWindow) HasLater() bool { return w.Start+len(w.Messages) < w.T
 const WindowLimit = 60
 
 // HistoryService is the UI-independent read-only history facade over the
-// catalog and the provider sources. It never mutates provider files.
+// catalog and the provider sources. It never mutates provider files and
+// never stores conversation content: every transcript read goes to the
+// original session file.
 type HistoryService struct {
 	catalog *Catalog
 	scanner *Scanner
+	parse   func(reference SessionFileRef) (ParsedTranscript, error)
 }
 
 func NewHistoryService(catalog *Catalog, roots []SourceRoot) *HistoryService {
-	return &HistoryService{catalog: catalog, scanner: NewScanner(catalog, roots)}
+	return &HistoryService{catalog: catalog, scanner: NewScanner(catalog, roots), parse: parseByAgent}
 }
 
 // Catalog exposes the underlying catalog for the scanner caller and tests.
@@ -74,7 +80,16 @@ func (s *HistoryService) AvailableProviders(ctx context.Context) ([]AgentID, err
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	return s.catalog.AvailableProviders()
+	return s.catalog.AvailableProviders(), nil
+}
+
+// ProviderCounts lists each catalog Provider with its session total; like
+// AvailableProviders it is a metadata-only read without the list page limit.
+func (s *HistoryService) ProviderCounts(ctx context.Context) ([]ProviderCount, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return s.catalog.ProviderCounts(), nil
 }
 
 // List returns bounded session metadata. It never parses transcripts.
@@ -91,43 +106,23 @@ func (s *HistoryService) List(ctx context.Context, q HistoryQuery) ([]SessionSum
 		if q.ProjectPath != "" {
 			paths = []string{q.ProjectPath}
 		}
-		metas, err := s.catalog.SearchMetadata(q.Search, paths, agents, q.Limit)
-		if err != nil {
-			return nil, err
-		}
-		summaries := make([]SessionSummary, 0, len(metas))
-		for _, meta := range metas {
-			summaries = append(summaries, SessionSummary{Meta: meta})
-		}
-		return summaries, nil
+		return s.catalog.SearchMetadata(q.Search, paths, agents, q.Limit), nil
 	}
 	if q.ProjectPath != "" || q.Provider != "" {
-		return s.catalog.ListFilteredSessions(q.ProjectPath, q.Provider, q.Limit)
+		return s.catalog.ListFilteredSessions(q.ProjectPath, q.Provider, q.Limit), nil
 	}
-	return s.catalog.ListSessions(q.Limit)
+	return s.catalog.ListSessions(q.Limit), nil
 }
 
 // Recent returns the most recent sessions for the Sidebar Recent section:
 // metadata only, no transcript parse.
 func (s *HistoryService) Recent(ctx context.Context, limit int) ([]SessionSummary, error) {
-	return s.catalog.ListSessions(limit)
+	return s.catalog.ListSessions(limit), nil
 }
 
-// Search returns bounded message-body hits.
-func (s *HistoryService) Search(ctx context.Context, query string, projectPath string, limit int) ([]SearchHit, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	paths := []string(nil)
-	if projectPath != "" {
-		paths = []string{projectPath}
-	}
-	return s.catalog.SearchScoped(query, paths, nil, limit)
-}
-
-// Open materializes one bounded transcript window. Page-cache hits stay
-// metadata-only; a miss parses the source once, prewarms the cache, then
-// re-reads the window so UI state never holds a full transcript.
+// Open reads the original session file and materializes one bounded
+// transcript window from it. Nothing is cached on disk or reused between
+// calls, so what the window shows is always what the provider file holds now.
 func (s *HistoryService) Open(ctx context.Context, req ConversationWindowRequest) (TranscriptWindow, error) {
 	if err := ctx.Err(); err != nil {
 		return TranscriptWindow{}, err
@@ -136,30 +131,40 @@ func (s *HistoryService) Open(ctx context.Context, req ConversationWindowRequest
 	if limit <= 0 || limit > WindowLimit {
 		limit = WindowLimit
 	}
-	meta, err := s.catalog.Session(req.ConversationID)
-	if err != nil {
-		return TranscriptWindow{}, err
-	}
+	meta := s.catalog.Session(req.ConversationID)
 	if meta == nil {
 		return TranscriptWindow{}, fmt.Errorf("unknown conversation %q", req.ConversationID)
 	}
-	source, ok := s.sourceRef(*meta)
-	if !ok {
+	if meta.FilePath == "" || meta.ID == "" || meta.Agent == "" {
 		return TranscriptWindow{}, fmt.Errorf("conversation %q has no readable source", req.ConversationID)
 	}
+	transcript, err := s.parse(SessionFileRef{
+		Agent:     meta.Agent,
+		NativeID:  meta.ID,
+		FilePath:  meta.FilePath,
+		MtimeMS:   meta.MtimeMS,
+		SizeBytes: meta.SizeBytes,
+	})
+	if err != nil {
+		return TranscriptWindow{}, fmt.Errorf("read conversation %q: %w", meta.Key, err)
+	}
+	if err := ctx.Err(); err != nil {
+		return TranscriptWindow{}, err
+	}
 
+	messages := transcript.Mainline
+	total := len(messages)
 	start := 0
+	if req.Tail {
+		start = max(0, total-limit)
+	}
 	anchorIndex := -1
 	if req.AnchorSeq != nil {
-		index, found, err := s.catalog.CachedTranscriptIndexForSeq(meta.Key, source, *req.AnchorSeq)
-		if err != nil {
-			return TranscriptWindow{}, err
-		}
-		if found {
-			anchorIndex = index
-			start = anchorIndex - (limit - 13)
-			if start < 0 {
-				start = 0
+		for index, message := range messages {
+			if message.Seq == *req.AnchorSeq {
+				anchorIndex = index
+				start = max(0, anchorIndex-(limit-13))
+				break
 			}
 		}
 	}
@@ -167,75 +172,15 @@ func (s *HistoryService) Open(ctx context.Context, req ConversationWindowRequest
 		start = max(0, *req.StartIndex)
 		anchorIndex = -1
 	}
+	start = min(start, total)
+	end := min(start+limit, total)
 
-	window, err := s.catalog.CachedTranscriptWindow(meta.Key, source, start, limit)
-	if err != nil {
-		return TranscriptWindow{}, err
-	}
-	if window == nil {
-		if err := s.parseIntoCache(ctx, source, *meta); err != nil {
-			return TranscriptWindow{}, err
-		}
-		if window, err = s.catalog.CachedTranscriptWindow(meta.Key, source, start, limit); err != nil {
-			return TranscriptWindow{}, err
-		}
-		if window == nil {
-			return TranscriptWindow{}, fmt.Errorf("transcript cache rebuild failed for %q", meta.Key)
-		}
-		if req.AnchorSeq != nil && anchorIndex < 0 {
-			if index, found, err := s.catalog.CachedTranscriptIndexForSeq(meta.Key, source, *req.AnchorSeq); err != nil {
-				return TranscriptWindow{}, err
-			} else if found {
-				anchorIndex = index
-				start = max(0, anchorIndex-(limit-13))
-				if window, err = s.catalog.CachedTranscriptWindow(meta.Key, source, start, limit); err != nil {
-					return TranscriptWindow{}, err
-				}
-			}
-		}
-	}
-	if window == nil {
-		return TranscriptWindow{}, fmt.Errorf("transcript window unavailable for %q", meta.Key)
-	}
 	return TranscriptWindow{
 		Key:           meta.Key,
-		Meta:          window.Meta,
-		Start:         window.Start,
-		TotalMessages: window.TotalMessages,
-		Messages:      window.Messages,
+		Meta:          transcript.Meta,
+		Start:         start,
+		TotalMessages: total,
+		Messages:      messages[start:end:end],
 		AnchorIndex:   anchorIndex,
 	}, nil
-}
-
-// sourceRef rebuilds the source identity facts stored with the session row.
-func (s *HistoryService) sourceRef(meta SessionMeta) (SessionFileRef, bool) {
-	if meta.FilePath == "" || meta.ID == "" || meta.Agent == "" {
-		return SessionFileRef{}, false
-	}
-	var mtimeMS, sizeBytes int64
-	if err := s.catalog.db.QueryRow(
-		"SELECT mtime_ms, size_bytes FROM sessions WHERE key = ?", meta.Key,
-	).Scan(&mtimeMS, &sizeBytes); err != nil {
-		return SessionFileRef{}, false
-	}
-	return SessionFileRef{
-		Agent:     meta.Agent,
-		NativeID:  meta.ID,
-		FilePath:  meta.FilePath,
-		MtimeMS:   mtimeMS,
-		SizeBytes: sizeBytes,
-	}, true
-}
-
-// parseIntoCache is the page-cache-miss compatibility path: one complete
-// adapter parse, cached, then dropped.
-func (s *HistoryService) parseIntoCache(ctx context.Context, source SessionFileRef, meta SessionMeta) error {
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	transcript, err := parseByAgent(source)
-	if err != nil {
-		return fmt.Errorf("parse conversation %q: %w", meta.Key, err)
-	}
-	return s.catalog.CacheTranscript(source, transcript)
 }

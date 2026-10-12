@@ -27,12 +27,7 @@ func TestRenderSmokeEvidence(t *testing.T) {
 	home := t.TempDir()
 	sessions := filepath.Join(home, "sessions")
 	writeCodexSessionFile(t, sessions, "rollout-2026-08-02T09-15-00-22222222-aaaa-bbbb-cccc-000000000002.jsonl", codexFixtureRollout)
-	catalog, err := history.OpenCatalog(filepath.Join(t.TempDir(), "catalog.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer catalog.Close()
-	service := history.NewHistoryService(catalog, []history.SourceRoot{{
+	service := history.NewHistoryService(history.NewCatalog(), []history.SourceRoot{{
 		Agent: history.AgentCodex, Directory: sessions, NativeID: testRolloutNativeID,
 	}})
 	if _, err := service.Scan(context.Background()); err != nil {
