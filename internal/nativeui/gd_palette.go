@@ -73,7 +73,7 @@ var (
 		muted:      ui.RGBA(17, 17, 17, 0.48),
 	}
 	gdDarkPalette = gdPalette{
-		appBg:      ui.RGBA(36, 36, 41, 0.94), // gorexStyle cardFocused (dark)
+		appBg:      ui.Hex("#1e1e22"), // gorexStyle cardFocused (dark)
 		code:       ui.Hex("#c8c8c8"),
 		lineNumber: ui.Hex("#6c6c6c"),
 		codeBg:     ui.Hex("#1c1c1c"),

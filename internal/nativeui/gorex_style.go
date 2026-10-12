@@ -84,8 +84,8 @@ var gorexDarkColors = gorexColors{
 	bgTint:   ui.RGBA(80, 40, 60, 0.25),
 
 	card:              ui.RGBA(20, 20, 24, 0.5),
-	cardFocused:       ui.RGBA(36, 36, 41, 0.94),
-	cardTranslucent:   ui.RGBA(36, 36, 41, 0.6),
+	cardFocused:       ui.Hex("#1e1e22"),
+	cardTranslucent:   ui.RGBA(30, 30, 34, 0.6),
 	cardBorder:        ui.RGBA(255, 255, 255, 0.05),
 	cardBorderFocused: ui.RGBA(255, 255, 255, 0.14),
 	shadow:            ui.RGBA(0, 0, 0, 0.25),
