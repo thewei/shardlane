@@ -41,14 +41,9 @@ func (s *Shell) gitWorkbenchActionBar(c *ui.Context) {
 	}
 	sp := Spacing()
 	t := c.Theme()
-	width, _ := c.Size()
-	// The file navigator is a separate column inside the center: don't
-	// overestimate the actual Diff toolbar space at common window widths.
-	actualDiffWidth := width - gitFilePaneDefaultWidth
-	if !s.sidebarCollapsed {
-		actualDiffWidth -= sidebarWidth
-	}
-	compact := actualDiffWidth < gitActionBarMinExpandedCenterWidth
+	// The file navigator is a separate column inside the center: judge the
+	// room the toolbar really has, wherever the navigator was dragged to.
+	compact := s.gdColumnWidth(c) < gitActionBarMinExpandedCenterWidth
 	ui.Row(c).FillWidth().MinWidth(0).Gap(sp.S).AlignItems(ui.Center).Children(func() {
 		// The branch selector already lives in the repo bar. Don't render
 		// the same branch label a second time in the Diff toolbar.

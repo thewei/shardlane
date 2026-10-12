@@ -140,7 +140,7 @@ func (s *Shell) gdDiffList(c *ui.Context, pal *gdPalette) {
 	// card that hosts the surface; only the bands above file headers keep
 	// the paper color, masking the lines that scroll under them.
 	ui.List(c, &s.git.gdList, len(s.git.gdRows), func(i int) { s.gdDiffRow(c, pal, i) }).
-		Grow(1).MinHeight(0).Padding(0, 12, 24).Label("Changes")
+		Grow(1).MinHeight(0).Padding(0, gdListMargin, 24).Label("Changes")
 
 	// The file at the top follows the scrolling, and the tree with it.
 	if first, _ := s.git.gdList.Visible(); first >= 0 && first < len(s.git.gdRows) && s.git.gdRows[first].kind != gdRowEnd {
@@ -275,12 +275,37 @@ func (s *Shell) gdGutterWidth(c *ui.Context, f *gdFile) float32 {
 	return float32(f.metrics().digits)*s.gdCharWidth(c) + 18
 }
 
+// gdListMargin is the space between the list of cards and the window's edges.
+const gdListMargin float32 = 12
+
+// gdHeaderRoomy is the card width from which a header has room for all its
+// controls; narrower, the copy/open buttons and the Viewed label step aside
+// so that the file name keeps its width (~330 px at 900 px, both rails open).
+const gdHeaderRoomy float32 = 560
+
+// gdColumnWidth is the width of the diff column: the window less the sidebar
+// and the file navigator beside it, with its splitter.
+func (s *Shell) gdColumnWidth(c *ui.Context) float32 {
+	width, _ := c.Size()
+	pane, _ := s.gitFilePaneLimits(width)
+	if !s.sidebarCollapsed {
+		width -= sidebarWidth
+	}
+	return width - pane - gitFileSplitterWidth
+}
+
+// gdCardWidth is the width of a file card: the column less the list's margins.
+func (s *Shell) gdCardWidth(c *ui.Context) float32 {
+	return s.gdColumnWidth(c) - 2*gdListMargin
+}
+
 // gdFileHeader draws one file's card header.
 func (s *Shell) gdFileHeader(c *ui.Context, pal *gdPalette, idx int, f *gdFile) {
 	t := c.Theme()
 	cf := f.cf
 	collapsed := f.collapsed && !s.gdForceOpen(idx)
 	viewed := s.gdIsViewed(f)
+	roomy := s.gdCardWidth(c) >= gdHeaderRoomy
 	// The band above the header spaces the cards, and hides the lines
 	// scrolling under it while it is pinned.
 	band := ui.Column(c).Padding(12, 0, 0, 0).Background(pal.appBg)
@@ -366,36 +391,52 @@ func (s *Shell) gdFileHeader(c *ui.Context, pal *gdPalette, idx int, f *gdFile) 
 				pathColor = t.TextMuted
 			}
 			ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Gap(1).Children(func() {
-				// The folder gives way first: a narrow card keeps the file name.
 				dir, name := gdDirName(cf.Path)
-				ui.Row(c).MinWidth(0).Children(func() {
-					if dir != "" {
-						ui.Text(c, dir).Font(gdCodeFont()).FontSize(Typography().Section).TextColor(t.TextMuted).
-							SingleLine().Ellipsis("…").Shrink(4).MinWidth(0)
-					}
+				nameText := func() {
 					ui.Text(c, name).Font(gdCodeFont()).FontSize(Typography().Section).FontWeight(WeightSemibold).TextColor(pathColor).
 						SingleLine().Ellipsis("…").Shrink(1).MinWidth(0)
-				})
-				if cf.OldPath != "" && cf.OldPath != cf.Path {
+				}
+				renamed := cf.OldPath != "" && cf.OldPath != cf.Path
+				if roomy {
+					// The folder gives way first: a long path keeps the file name.
+					ui.Row(c).MinWidth(0).Children(func() {
+						if dir != "" {
+							ui.Text(c, dir).Font(gdCodeFont()).FontSize(Typography().Section).TextColor(t.TextMuted).
+								SingleLine().Ellipsis("…").Shrink(4).MinWidth(0)
+						}
+						nameText()
+					})
+				} else {
+					// A narrow card gives the name the whole line and the
+					// folder the one below, unless a rename has its say there.
+					nameText()
+				}
+				if renamed {
 					ui.Text(c, "from "+cf.OldPath).Font(gdCodeFont()).FontSize(Typography().BodySmall).TextColor(t.TextMuted).SingleLine()
+				} else if !roomy && dir != "" {
+					ui.Text(c, dir).Font(gdCodeFont()).FontSize(Typography().BodySmall).TextColor(t.TextMuted).
+						SingleLine().Ellipsis("…").MinWidth(0)
 				}
 			})
 		})
 		// The copy button shows while the pointer is over the header; it
 		// is always built, so that the elements after it keep their state.
-		cp := gdIconButton(c, iconCopy, "Copy path")
-		if !h.Hovered() && !cp.FocusVisible() {
-			cp.Opacity(0)
-		}
-		if cp.Clicked() {
-			s.copyToClipboard(cf.Path)
-		}
-		open := gdIconButton(c, iconOpen, "Open file in editor").Disabled(cf.Status == gitworkbench.StatusDeleted)
-		if cf.Status == gitworkbench.StatusDeleted {
-			open.Tooltip("Deleted files cannot be opened")
-		}
-		if open.Clicked() {
-			s.openFileInEditor(cf.Path)
+		// A narrow card leaves both buttons to the context menu.
+		if roomy {
+			cp := gdIconButton(c, iconCopy, "Copy path")
+			if !h.Hovered() && !cp.FocusVisible() {
+				cp.Opacity(0)
+			}
+			if cp.Clicked() {
+				s.copyToClipboard(cf.Path)
+			}
+			open := gdIconButton(c, iconOpen, "Open file in editor").Disabled(cf.Status == gitworkbench.StatusDeleted)
+			if cf.Status == gitworkbench.StatusDeleted {
+				open.Tooltip("Deleted files cannot be opened")
+			}
+			if open.Clicked() {
+				s.openFileInEditor(cf.Path)
+			}
 		}
 		if adds, dels := f.sideCounts(); gdCountable(cf) && (adds > 0 || dels > 0) {
 			ui.Row(c).Gap(8).Padding(4, 9).Radius(14).Background(pal.pill).Shrink(0).
@@ -408,16 +449,24 @@ func (s *Shell) gdFileHeader(c *ui.Context, pal *gdPalette, idx int, f *gdFile) 
 			ui.Text(c, "Generated").FontSize(Typography().BodySmall).FontWeight(WeightSemibold).Padding(4, 9).Radius(14).
 				Background(pal.ref.Alpha(0.15)).TextColor(pal.ref).Shrink(0)
 		}
-		s.gdViewedButton(c, pal, f, viewed)
+		s.gdViewedButton(c, pal, f, viewed, roomy)
 	})
 }
 
-// gdViewedButton marks a file viewed, which collapses it.
-func (s *Shell) gdViewedButton(c *ui.Context, pal *gdPalette, f *gdFile, viewed bool) {
+// gdViewedButton marks a file viewed, which collapses it. Without room it
+// is the box alone.
+func (s *Shell) gdViewedButton(c *ui.Context, pal *gdPalette, f *gdFile, viewed, labeled bool) {
 	t := c.Theme()
 	on := viewed
-	b := ui.CheckboxBase(c, &on).Gap(7).Height(30).Padding(0, 11).Radius(14).Shrink(0).
+	padding := float32(11)
+	if !labeled {
+		padding = 7
+	}
+	b := ui.CheckboxBase(c, &on).Gap(7).Height(30).Padding(0, padding).Radius(14).Shrink(0).
 		Border(1, ui.RGBA(127, 127, 127, 0.22)).Label("Viewed")
+	if !labeled {
+		b.Tooltip("Mark as viewed")
+	}
 	if b.Changed() {
 		s.gdSetViewed(f, on)
 	}
@@ -436,7 +485,9 @@ func (s *Shell) gdViewedButton(c *ui.Context, pal *gdPalette, f *gdFile, viewed 
 		} else {
 			box.Border(1.5, ui.RGBA(127, 127, 127, 0.45))
 		}
-		ui.Text(c, "Viewed").FontSize(Typography().Body).FontWeight(WeightSemibold).TextColor(map[bool]ui.Color{true: pal.viewed, false: t.Text}[viewed])
+		if labeled {
+			ui.Text(c, "Viewed").FontSize(Typography().Body).FontWeight(WeightSemibold).TextColor(map[bool]ui.Color{true: pal.viewed, false: t.Text}[viewed])
+		}
 	})
 }
 

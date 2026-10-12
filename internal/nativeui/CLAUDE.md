@@ -52,13 +52,14 @@ page_providers.go: Agents 设置页——单一分组列表，每个 Agent 一�
 providers_ui.go: Providers 统一状态机（经 herdr.RunCLI 取 integration 状态；失败只显示人话——integrationErrorText，细节进日志；一次审计同时覆盖两面、进入/刷新/动作后审计、hook 主导 + fallback 修复动作门控、在途防重、一次性 toast、两面状态→语义色映射）
 workspace.go: Terminal/Chat/Diff/Commit 唯一主表面，Changes 主内容采用上下可调 Git Review，Chat 保持 Agent 身份门禁
 chat_ui.go: Chat Timeline/Composer 和身份消失时的安全空态，不得泄漏旧 transcript；bindChatWindow（Tail 窗口）供 Workspace 历史绑定与 Sessions 详情只读绑定共用，releaseHistoryChat 保证只读绑定不外泄给窗格/Inspector
-gd_surface.go: 下方 Git Diff、无仓库/无变更/无匹配状态，clean 时直达 All Commits 或 Terminal；历史模式只读，工作树工具栏单一调用点；大 diff 为一行占位（Large diff · Show/Retry），点 Show 才按需读取
+gd_surface.go: 下方 Git Diff、无仓库/无变更/无匹配状态，clean 时直达 All Commits 或 Terminal；历史模式只读，工作树工具栏单一调用点；大 diff 为一行占位（Large diff · Show/Retry），点 Show 才按需读取；卡片头按 gdCardWidth（窗口−侧栏−文件导航−边距，与 gitFilePaneLimits 同源）分档，窄卡让出复制/打开按钮与 Viewed 文案、文件夹退到第二行，保证文件名完整
+gd_header_test.go: 卡片头响应式回归——900 宽（双栏全开）文件名不被压成省略桩、宽窗口保留全部控件、gdCardWidth 随侧栏/导航拖拽变化
 gd_perf_test.go: Diff 大文件基线（行模型构建/帧耗时 benchmark）与惰性计算结构性回归——词级 diff 按需、度量只算一次、快照刷新保留缓存、就近优先加载
 gd_large_test.go: 大 diff 占位→Show→按需读取→渲染 端到端回归（真实仓库）；失败重试、过大无动作、刷新保留/失效语义、不预读颜色
 git_workbench_actions.go: Git 视图操作条（Stage/Unstage All、Fetch/Pull/Push 图标、始终可见 Split/Unified、Git actions 下拉）；仓库 Refresh 唯一入口在 Git 侧栏，按 Diff 实际宽度折叠批量操作
 git_sidebar_tree.go: 左侧 Git 引用导航，Worktrees/Branches/Remotes/Tags/Stashes 共用 sidebarTreeRow；分区悬停 "+" 与右键菜单承载创建动作，无 "···"
 git_ref_tree.go: Git 引用按斜线构树、目录键稳定、筛选时独立折叠/再次展开、行经 sidebarTreeRow（网格+导向线）、右键菜单，不执行 Git IO
-git_review_split.go: Changes 双模式主工作台，Local Changes 文件树+Diff+底部 Commit 分离按钮（经 Pi 只填 Subject）；All Commits 为图谱上层+只读文件树/Diff 下层
+git_review_split.go: Changes 双模式主工作台，Local Changes 文件树+Diff+底部 Commit 分离按钮（经 Pi 只填 Subject）；All Commits 为图谱上层+只读文件树/Diff 下层；文件导航宽度及上限唯一来源 gitFilePaneLimits
 git_review_split_test.go: Git 双模式分栏、960 DIP 几何、拖拽、历史只读与底部草稿统一 Commit Modal 测试
 git_tree_interaction_test.go: 所有 Git 引用组反复折叠/展开、筛选后目录折叠与恢复回归
 git_file_tree_fold_test.go: Local Changes/All Commits 中重复点击相同文件目录的折叠与再展开回归

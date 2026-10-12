@@ -20,6 +20,7 @@ const (
 	gitSplitDefaultTop      float32 = 420
 	gitFilePaneDefaultWidth float32 = 292
 	gitFilePaneMinWidth     float32 = 205
+	gitFileSplitterWidth    float32 = 6
 )
 
 // gitSplitReviewSurface intentionally has two different spatial hierarchies:
@@ -69,22 +70,28 @@ func (s *Shell) gitLocalChangesReview(c *ui.Context) {
 	_ = t
 }
 
+// gitFilePaneLimits is the navigator's width in a window this wide, and the
+// widest it may be: the user's drag, kept clear of the sidebar and the diff.
+func (s *Shell) gitFilePaneLimits(windowW float32) (width, maxWidth float32) {
+	width = s.gitFilePaneWidth
+	if width == 0 {
+		width = gitFilePaneDefaultWidth
+	}
+	maxWidth = windowW - sidebarWidth - 270
+	if maxWidth < gitFilePaneMinWidth {
+		maxWidth = gitFilePaneMinWidth
+	}
+	return clampF(width, gitFilePaneMinWidth, maxWidth), maxWidth
+}
+
 // gitFileNavigationColumn is the reusable resize seam for the middle-left
 // file tree. It does not reuse (or compete with) the app's Git reference rail.
 func (s *Shell) gitFileNavigationColumn(c *ui.Context, body func()) {
 	t := c.Theme()
-	width := s.gitFilePaneWidth
-	if width == 0 {
-		width = gitFilePaneDefaultWidth
-	}
 	windowW, _ := c.Size()
-	maxWidth := windowW - sidebarWidth - 270
-	if maxWidth < gitFilePaneMinWidth {
-		maxWidth = gitFilePaneMinWidth
-	}
-	width = clampF(width, gitFilePaneMinWidth, maxWidth)
+	width, maxWidth := s.gitFilePaneLimits(windowW)
 	ui.Column(c).Width(width).FillHeight().Shrink(0).MinHeight(0).Children(body)
-	handle := ui.Box(c).Width(6).Shrink(0).Cursor(ui.CursorResizeEW).
+	handle := ui.Box(c).Width(gitFileSplitterWidth).Shrink(0).Cursor(ui.CursorResizeEW).
 		Label("Resize Git file navigator").Children(func() {
 		ui.Box(c).Width(1).FillHeight().Background(t.Border)
 	})
