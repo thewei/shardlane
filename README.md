@@ -44,6 +44,8 @@ Presentation is componentized rather than page-styled ad hoc: `internal/nativeui
 
 Structured JSON logs are written to MyGo `PathLogs` (macOS: `~/Library/Logs/Shardlane/shardlane.log`). The active file is capped at 2 MiB with three backups. `SHARDLANE_LOG_LEVEL=debug` enables diagnostic detail. Terminal output, prompt/conversation bodies, credentials and provider secrets are intentionally not logged.
 
+Unpackaged runs (`go run`, and the temporary binary `mygo build` / `mygo dev` start to write the TypeScript client) take the fixed name `Shardlane-dev`, so they keep one data directory (`~/Library/Application Support/Shardlane-dev`) and one log directory instead of a pair per run, and never touch the installed app's. The app `mygo dev` launches is MyGo's separate `Shardlane Dev` bundle.
+
 ## Architecture
 
 Ownership is intentionally narrow (full contract: [`docs/client-product-architecture.md`](docs/client-product-architecture.md)):

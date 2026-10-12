@@ -29,7 +29,24 @@ import (
 // followUpLedgerFileName mirrors app.LaunchService's durable ledger name.
 const followUpLedgerFileName = "follow-up-ledger.json"
 
+// devAppName is the one name every unpackaged run takes, which keeps its
+// data and logs apart from the installed app's.
+const devAppName = "Shardlane-dev"
+
+// nameUnpackagedRun gives an unpackaged run (go run, or the temporary binary
+// that `mygo build` and `mygo dev` start to write the TypeScript client) a
+// fixed name. MyGo names it after its executable, which carries a process
+// id for those temporary binaries, so each build left a data and a log
+// directory behind. A packaged app keeps its bundle's name.
+func nameUnpackagedRun() {
+	if !mygo.App.IsPackaged() {
+		mygo.App.SetName(devAppName)
+	}
+}
+
 func main() {
+	nameUnpackagedRun()
+
 	// `mygo generate` runs the app just far enough to write the TypeScript
 	// client and returns from App.Run without opening windows; it must
 	// reach App.Run even while the real app holds the single-instance lock.
