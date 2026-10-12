@@ -81,7 +81,9 @@ func TestFilesNavigationKeepsLeftTreeAtNarrowWidth(t *testing.T) {
 	s.showViewFiles()
 	tt := ui.NewTester(s.View, 960, 640)
 	tt.SetPreferences(ui.Preferences{ReduceMotion: true})
-	if s.router.Path() != routeFiles || s.sidebarCollapsed || !tt.HasText("Select a file to preview") {
+	// Headless runs have no window, so the WebView preview cannot exist;
+	// the center must still render its truthful state beside the tree.
+	if s.router.Path() != routeFiles || s.sidebarCollapsed || !tt.HasText("Preview unavailable") {
 		t.Fatalf("Files should show directory tree and central preview: %q", tt.Texts())
 	}
 }

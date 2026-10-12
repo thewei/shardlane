@@ -125,6 +125,39 @@ MyGo Native UI
     route enter/leave with live streams, IME/keyboard/focus/shortcuts,
     theme sync, memory/process cleanup on close, startup/idle/resize cost
     against the Native baseline.
+- **Decision 2026-10-13: the Files preview moves to the official
+  `ui.WebView`, and the Files tree gains ignore rules and bounded file
+  operations.** The `/files` page adopts the WebView contract N19
+  established for Chat; the tree, the header and every mutation stay
+  Native:
+  - Presentation only, strictly read-only page. The preview page pulls
+    content through one bound service (`filesPreview.Current/Open` over
+    `filesview.ReadPreview`'s 1 MiB cap and symlink-escape guard) and hears
+    the tree selection through a typed event (`files:preview`); the page
+    has no mutation channel. Create/rename/delete stay native over the
+    `internal/filesview` domain — root-anchored path guards with a
+    symlink-canonicalized parent chain, overwrite refused, explicit
+    destructive confirm. Plain local filesystem capabilities of the
+    client: no second Git runner, no new Herdr method, no page-side write.
+  - The tree hides a fixed set of heavy/generated names (node_modules,
+    .git, dist, …) plus the repository's own ignored paths fetched from
+    git itself (one bounded `git ls-files -o -i --exclude-standard
+    --directory` per root; git owns ignore semantics, the client never
+    parses ignore files). "Show ignored files" reveals everything; the
+    tree stays lazily expanded per directory, so a dependency-heavy root
+    performs no bulk scan.
+  - The page is served from the app content origin (embedded under
+    `mygo build`, `devUrl` under `mygo dev`), exactly like Chat. No
+    localhost HTTP backend, `TrustedOrigins` stays empty, no private
+    AppKit embedding.
+  - Acceptance gates (real app, isolated HOME + dedicated Herdr session;
+    run 2026-10-13): route enter/leave with live preview loads, file
+    operation round-trip with confirms, ignore toggle, keyboard/focus/
+    shortcuts over the page, theme sync, cleanup on close, startup/idle/
+    resize cost against the Native baseline, and a node_modules-bearing
+    root expanding without perceptible lag. The native preview renderer
+    is retired; `General.WebViewFilesPreview` (Settings → Compatibility)
+    stays as the escape hatch and renders truthful states when off.
 - Daily development of the new desktop path must not require compiling the
   Rust GUI. Current `shardlane-host`, `shardlane-history` and
   `shardlane-remote` remain compatibility/parity references until each domain
@@ -189,8 +222,10 @@ Normative boundaries for this milestone:
   Herdr RPC, filesystem scan, Git/network command or transcript parse when it
   opens.
 - Files and local Git facts follow the currently selected **Tab cwd**. The
-  Project does not gain a second client-owned cwd. Files are read-only in this
-  milestone; Script definitions remain Shardlane-owned only while Herdr lacks a
+  Project does not gain a second client-owned cwd. Files were read-only in
+  this milestone (amended 2026-10-13: bounded explicit file operations and
+  the WebView preview — see the 2026-10-13 Files decision above);
+  Script definitions remain Shardlane-owned only while Herdr lacks a
   native Script resource, while Script Tabs/Panes/processes remain Herdr-owned.
 - Lazygit retains the existing bounded auxiliary-tool exception: at most one
   auxiliary tool process/PTY per window, visibility/project scoped, never a
@@ -278,7 +313,10 @@ Normative 0.10 boundaries:
 - **As built 2026-10-09: the persistent right sidebar is removed.** The
   Header's Files action navigates to a dedicated `/files` page, whose left
   sidebar browses the selected Herdr Tab's CWD and whose center owns the
-  bounded, read-only preview. Changes uses the left Git-reference tree and a Fork-style center: Local Changes places staged/unstaged files beside Diff with a bottom commit composer; All Commits places the ancestry-aware history graph above a changed-file tree and read-only Diff.
+  bounded, read-only preview. (Amended 2026-10-13: the center preview
+  renders in the official `ui.WebView` with CodeMirror 6 and the tree
+  carries ignore rules plus bounded file operations — see the 2026-10-13
+  Files decision.) Changes uses the left Git-reference tree and a Fork-style center: Local Changes places staged/unstaged files beside Diff with a bottom commit composer; All Commits places the ancestry-aware history graph above a changed-file tree and read-only Diff.
   The existing Header/tray Agent activity flyout (a MyGo Flyout, shown as a
   system popover on macOS) has an Agents /
   Services switch: Services displays the active Tab's configured Scripts and

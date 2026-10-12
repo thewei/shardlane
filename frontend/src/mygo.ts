@@ -99,6 +99,28 @@ export interface ChatBridgeTurn {
   steps?: ChatBridgeStep[];
 }
 
+/** FilesPreviewContent is one read-only file the page renders. */
+export interface FilesPreviewContent {
+  path: string;
+  name: string;
+  sizeBytes: number;
+  isBinary: boolean;
+  truncated: boolean;
+  theme: string;
+  content: string;
+}
+
+/**
+ * FilesPreviewTarget is the selection metadata the page hears through the
+ * files:preview event. An empty Path clears the preview. Content is
+ * deliberately absent: events stay small, the page pulls through Open.
+ */
+export interface FilesPreviewTarget {
+  path: string;
+  name?: string;
+  theme: string;
+}
+
 // ---- Services ----
 
 /**
@@ -203,6 +225,32 @@ export const chat = {
   },
 } as const;
 
+/**
+ * FilesPreviewBridge is the bound service of the WebView Files preview.
+ * Bound methods run on their own goroutines; every Shell-state read
+ * marshals onto the window UI lane first. Strictly read-only: the page has
+ * no mutation channel — file operations stay native.
+ */
+export const filesPreview = {
+  /**
+   * Current returns the tree's current selection metadata (empty when no
+   * file is selected). The page calls it once on mount.
+   */
+  current(): Promise<FilesPreviewTarget> {
+    return call("filesPreview.Current");
+  },
+  /**
+   * Open reads one file for preview. The request must still match the live
+   * selection — a stale page request after the user clicked elsewhere is
+   * refused instead of answering with content the tree no longer shows.
+   * The read (up to PreviewCap, symlink-guarded) runs on this bound
+   * goroutine; theme resolution marshals back onto the UI lane.
+   */
+  open(path: string): Promise<FilesPreviewContent> {
+    return call("filesPreview.Open", path);
+  },
+} as const;
+
 // ---- Events ----
 
 /** Events sent by the Go side. Subscribe with `events.name.on(listener)`. */
@@ -213,4 +261,10 @@ export const events = {
    * also starts from Snapshot and stays current through this event alone.
    */
   chatUpdated: event<ChatBridgeState>("chat:updated"),
+  /**
+   * filesPreviewSelected fires whenever the tree selection changes. Events
+   * emitted before the page is ready are replayed by the runtime, so the
+   * page also starts from Current and stays current through this event alone.
+   */
+  filesPreview: event<FilesPreviewTarget>("files:preview"),
 } as const;

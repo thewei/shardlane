@@ -2,6 +2,7 @@ package settings
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -179,5 +180,37 @@ func TestDefaultCommitPromptCarriesStyleOnly(t *testing.T) {
 		if strings.Contains(DefaultCommitPrompt, guardrail) {
 			t.Fatalf("default commit rules leak the guardrail %q: %q", guardrail, DefaultCommitPrompt)
 		}
+	}
+}
+
+// TestWebviewTogglesPersistExplicitOff pins the escape hatches: both
+// WebView toggles default on, and an explicit off must survive a JSON
+// round-trip — omitempty would erase the false and resurrect it on the
+// next launch (found in the N20 review).
+func TestWebviewTogglesPersistExplicitOff(t *testing.T) {
+	off := Default()
+	off.General.WebViewChat = false
+	off.General.WebViewFilesPreview = false
+
+	raw, err := json.Marshal(off)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var loaded Settings
+	if err := json.Unmarshal(raw, &loaded); err != nil {
+		t.Fatal(err)
+	}
+	if loaded.General.WebViewChat || loaded.General.WebViewFilesPreview {
+		t.Fatal("explicit off lost in round-trip")
+	}
+
+	// A legacy file without the keys keeps the on defaults (FileStore
+	// unmarshals over Default(), so absent keys keep the default values).
+	legacy := Default()
+	if err := json.Unmarshal([]byte(`{"schema_version":1}`), &legacy); err != nil {
+		t.Fatal(err)
+	}
+	if !legacy.General.WebViewChat || !legacy.General.WebViewFilesPreview {
+		t.Fatal("missing keys must fall back to the on defaults")
 	}
 }

@@ -106,6 +106,11 @@ func main() {
 	// App.Run so `mygo generate` sees the service and writes the client.
 	mygo.BindAs("chat", nativeui.NewChatBridge(shell))
 
+	// The WebView Files preview page (product decision 2026-10-13) reads
+	// files only through this strictly read-only bridge; file operations
+	// stay native. Binding before App.Run keeps `mygo generate` complete.
+	mygo.BindAs("filesPreview", nativeui.NewFilesPreviewBridge(shell))
+
 	// Notification clicks route back to the Agent's owning pane, including
 	// clicks on notifications left over from a previous run (MyGo hands
 	// back the stable notification ID across launches).

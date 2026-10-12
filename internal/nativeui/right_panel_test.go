@@ -51,10 +51,7 @@ func TestFilesHeaderOpensDedicatedRouteAndInlinePreview(t *testing.T) {
 	}
 	tester := ui.NewTester(s.View, 1200, 800)
 	tester.Frame() // headless directory read fills the cache for the next frame
-	for _, want := range []string{"Files view", "Filter", "README.md", "docs", "Select a file to preview"} {
-		if want == "Filter" {
-			continue
-		}
+	for _, want := range []string{"Files view", "README.md", "docs"} {
 		if !tester.HasText(want) {
 			t.Fatalf("missing %q on Files route: %q", want, tester.Texts())
 		}
@@ -62,13 +59,19 @@ func TestFilesHeaderOpensDedicatedRouteAndInlinePreview(t *testing.T) {
 	if tester.HasText("Show Workspace Tools") || tester.HasText("History details") {
 		t.Fatalf("old right panel should not render: %q", tester.Texts())
 	}
+	readme := filepath.Join(root, "README.md")
 	if err := tester.Click("README.md"); err != nil {
 		t.Fatal(err)
 	}
 	tester.Frame()
-	for _, want := range []string{"Files preview is in the center.", "Copy Path", "Reveal in Finder"} {
+	// The preview content itself renders in the WebView page; the native
+	// side records the selection and exposes its header actions.
+	if s.rightPanel.selectedFilePath != readme {
+		t.Fatalf("selection = %q, want README", s.rightPanel.selectedFilePath)
+	}
+	for _, want := range []string{"Copy Path", "Reveal in Finder"} {
 		if !tester.HasText(want) {
-			t.Fatalf("inline preview missing %q: %q", want, tester.Texts())
+			t.Fatalf("selection actions missing %q: %q", want, tester.Texts())
 		}
 	}
 	if err := tester.Click("docs"); err != nil {
@@ -82,8 +85,8 @@ func TestFilesHeaderOpensDedicatedRouteAndInlinePreview(t *testing.T) {
 		t.Fatal(err)
 	}
 	tester.Frame()
-	if !tester.HasText("nested guide") {
-		t.Fatalf("nested file preview not shown: %q", tester.Texts())
+	if s.rightPanel.selectedFilePath != filepath.Join(root, "docs", "guide.txt") {
+		t.Fatalf("nested selection = %q", s.rightPanel.selectedFilePath)
 	}
 	s.showViewFiles()
 	if s.router.Path() != routeWorkspace {
@@ -109,20 +112,21 @@ func TestFilesSelectionClearsOnTabRootChange(t *testing.T) {
 	s.showViewFiles()
 	tester := ui.NewTester(s.View, 1200, 800)
 	tester.Frame()
+	private := filepath.Join(root1, "private.txt")
 	if err := tester.Click("private.txt"); err != nil {
 		t.Fatal(err)
 	}
 	tester.Frame()
-	if !tester.HasText("private project 1") {
-		t.Fatal("first file preview not displayed")
+	if s.rightPanel.selectedFilePath != private {
+		t.Fatalf("selection = %q, want the clicked file", s.rightPanel.selectedFilePath)
 	}
 	s.selectTab("t2")
 	tester.Frame()
 	tester.Frame() // show the newly cached root directory
-	if s.rightPanel.currentRoot != root2 || s.rightPanel.preview != nil || s.rightPanel.selectedFilePath != "" {
+	if s.rightPanel.currentRoot != root2 || s.rightPanel.selectedFilePath != "" {
 		t.Fatal("Files root change leaked previous Tab file")
 	}
-	if tester.HasText("private project 1") || !tester.HasText("other.txt") {
+	if tester.HasText("private.txt") || !tester.HasText("other.txt") {
 		t.Fatalf("old project file leaked after Tab change: %q", tester.Texts())
 	}
 }

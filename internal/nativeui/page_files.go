@@ -1,19 +1,14 @@
 package nativeui
 
 /**
- * [INPUT]: selected Herdr Tab working directory, cached directory snapshots and bounded filesview.Preview
- * [OUTPUT]: standalone native Files page with sidebar tree and central read-only file preview
- * [POS]: header Files destination, never creates a right rail, PTY, or filesystem authority
- * [PROTOCOL]: update this header and check CLAUDE.md
+ * [INPUT]: selected Herdr Tab working directory、rightPanel.selectedFilePath、General.WebViewFilesPreview 与 filesWebview
+ * [OUTPUT]: /files 独立页面：中央预览由 filesPreview WebView 接管（2026-10-13 产品决策），偏好关闭或创建失败时给出真实空态
+ * [POS]: 左树与头部（Copy Path / Reveal in Finder）保持原生；原生预览渲染器已按 2026-10-13 产品决策退役，页面内容只经只读桥，偏好关闭或创建失败时给出真实空态
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 
 import (
-	"fmt"
-	"path/filepath"
-	"strings"
-
 	"github.com/egoist/mygo/ui"
-	"github.com/wh-studio/herdr-client/internal/filesview"
 )
 
 // showViewFiles toggles the Files workbench; the active Tab CWD is the
@@ -31,8 +26,9 @@ func (s *Shell) showViewFiles() {
 	s.router.Push(routeFiles)
 }
 
-// filesPage owns only read-only preview presentation. The shared left
-// sidebar renders directory navigation and sends selected files here.
+// filesPage owns the preview center's chrome. The shared left sidebar
+// renders directory navigation and sends selected files to the WebView
+// page through the filesPreview bridge; this page never reads file content.
 func (s *Shell) filesPage(c *ui.Context) {
 	s.syncRightPanelRoot()
 	t := c.Theme()
@@ -40,7 +36,6 @@ func (s *Shell) filesPage(c *ui.Context) {
 	tokens := designTokens(t.Dark)
 	root := s.rightPanel.currentRoot
 	selected := s.rightPanel.selectedFilePath
-	preview := s.rightPanel.preview
 	ui.Column(c).FillWidth().Grow(1).MinWidth(0).MinHeight(0).Children(func() {
 		ui.Row(c).FillWidth().Padding(sp.M, sp.L).Gap(sp.S).AlignItems(ui.Center).
 			BorderWidth(0, 0, 1, 0).BorderColor(tokens.BorderSubtle).Children(func() {
@@ -52,7 +47,7 @@ func (s *Shell) filesPage(c *ui.Context) {
 						TextColor(t.TextMuted).SingleLine().Tooltip(root)
 				}
 			})
-			if selected != "" && preview != nil {
+			if selected != "" {
 				if ui.Button(c, "Copy Path").Clicked() {
 					s.copyToClipboard(selected)
 				}
@@ -67,45 +62,22 @@ func (s *Shell) filesPage(c *ui.Context) {
 			})
 			return
 		}
-		if selected == "" || preview == nil || preview.Path != selected {
-			ui.Column(c).Grow(1).Center().Gap(sp.S).Children(func() {
-				ui.Icon(c, iconFile).Size(28, 28).TextColor(t.TextMuted)
-				ui.Text(c, "Select a file to preview").FontSize(Typography().Section).FontWeight(WeightSemibold)
-			})
+		if s.filesWebviewBody(c) {
 			return
 		}
-		ui.Row(c).FillWidth().Padding(sp.S, sp.L).Gap(sp.M).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, filepath.Base(selected)).FontSize(Typography().Body).FontWeight(WeightSemibold).
-				Grow(1).SingleLine().Tooltip(selected)
-			ui.Text(c, filesview.FormatFileSize(preview.SizeBytes)).
-				FontSize(Typography().Caption).TextColor(t.TextMuted)
-			if preview.Truncated {
-				statusPill(c, "Preview limited to 1 MiB", ToneAttention)
-			}
-		})
-		if preview.IsBinary {
+		// Truthful fallbacks: the WebView page is the preview (the native
+		// renderer retired with the 2026-10-13 decision), so the off and
+		// broken states say exactly that instead of a lesser preview.
+		if !s.useWebviewPreview() {
 			ui.Column(c).Grow(1).Center().Children(func() {
-				emptyState(c, "Can't preview this file", "It isn't a text file. Reveal it in Finder to open it.")
+				emptyState(c, "Rich preview is off",
+					"Turn on “Rich file preview” in Settings → General to preview files here.")
 			})
 			return
 		}
-		// Don't create thousands of MyGo accessibility text runs for a
-		// huge one-line generated asset; the preview remains read-only.
-		display := preview.Content
-		if len(display) > 120*1024 {
-			display = display[:120*1024]
-			display = strings.ToValidUTF8(display, "")
-			display += "\n\n[Large file: showing the first 120 KiB of the preview]"
-		}
-		ui.Scroll(c).Grow(1).MinHeight(0).Children(func() {
-			ui.Column(c).FillWidth().Padding(sp.L).Gap(sp.S).Children(func() {
-				ui.Text(c, display).Font(gdCodeFont()).FontSize(Typography().BodySmall).
-					TextColor(t.Text)
-				if preview.Truncated {
-					ui.Text(c, fmt.Sprintf("Showing a limited preview of %s.", filesview.FormatFileSize(preview.SizeBytes))).
-						FontSize(Typography().Caption).TextColor(t.TextMuted)
-				}
-			})
+		ui.Column(c).Grow(1).Center().Children(func() {
+			emptyState(c, "Preview unavailable",
+				"The embedded preview could not start. Copy Path and Reveal in Finder still work.")
 		})
 	})
 }

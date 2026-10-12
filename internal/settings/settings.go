@@ -41,8 +41,16 @@ type GeneralSettings struct {
 	// WebViewChat renders the /workspace Chat surface in the official MyGo
 	// ui.WebView over the presentation-only chat bridge (N19, product
 	// decision 2026-10-11). Off keeps the Native chat surface; the native
-	// implementation retires only at WebView acceptance parity.
-	WebViewChat bool `json:"webview_chat,omitempty"`
+	// implementation retires only at WebView acceptance parity. Always
+	// persisted (no omitempty): the default is true, so an omitted key
+	// could never represent an explicit off.
+	WebViewChat bool `json:"webview_chat"`
+	// WebViewFilesPreview renders the /files preview center in the official
+	// MyGo ui.WebView over the read-only filesPreview bridge (product
+	// decision 2026-10-13). The native preview renderer is retired; off
+	// shows the truthful "preview off" states instead. Always persisted,
+	// same reason as WebViewChat.
+	WebViewFilesPreview bool `json:"webview_files_preview"`
 	// Opacity controls the transparency of the application window shell
 	// (0.50 to 1.00). An unset (0) or out-of-range value defaults to 1.00 (opaque).
 	Opacity float64 `json:"opacity,omitempty"`
@@ -144,12 +152,13 @@ func Default() Settings {
 	return Settings{
 		SchemaVersion: CurrentSchemaVersion,
 		General: GeneralSettings{
-			Appearance:    "system",
-			RestoreWindow: true,
-			Density:       "default",
-			HighContrast:  false,
-			WebViewChat:   true,
-			Opacity:       1.0,
+			Appearance:          "system",
+			RestoreWindow:       true,
+			Density:             "default",
+			HighContrast:        false,
+			WebViewChat:         true,
+			WebViewFilesPreview: true,
+			Opacity:             1.0,
 		},
 		Voice: VoiceSettings{
 			EndpointURL: "https://api.openai.com/v1",

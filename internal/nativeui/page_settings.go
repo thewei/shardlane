@@ -314,8 +314,22 @@ func (s *Shell) settingsDiagnostics(c *ui.Context) {
 	settingsGroup(c, "Compatibility",
 		row("Rich chat view", "Turn off to use the classic chat view.", func() {
 			if useWeb, changed := settingSwitch(c, "Rich chat view", s.settings.General.WebViewChat); changed {
+				if useWeb {
+					s.chatWebviewBroken = false // re-arm a latched creation failure
+				}
 				s.applySettings(func(v *settings.Settings) error {
 					v.General.WebViewChat = useWeb
+					return nil
+				})
+			}
+		}),
+		row("Rich file preview", "CodeMirror-highlighted preview on the Files page.", func() {
+			if useWeb, changed := settingSwitch(c, "Rich file preview", s.settings.General.WebViewFilesPreview); changed {
+				if useWeb {
+					s.filesWebviewBroken = false // re-arm a latched creation failure
+				}
+				s.applySettings(func(v *settings.Settings) error {
+					v.General.WebViewFilesPreview = useWeb
 					return nil
 				})
 			}

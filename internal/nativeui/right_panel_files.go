@@ -1,31 +1,85 @@
 package nativeui
 
+/**
+ * [INPUT]: selected Herdr Tab CWD、cachedDirEntries/filesGen 缓存围栏、filesview 忽略规则（固定名单 + git 集合）
+ * [OUTPUT]: /files 左侧目录树（惰性展开、忽略过滤、"显示忽略项"开关、新建/重命名/删除右键菜单与工具条）及选中文件 → filesPreview 桥事件
+ * [POS]: 树只调用 internal/filesview 域服务，渲染零 IO（GWB-003）；预览内容仅经 WebView 桥（2026-10-13 产品决策），此处不再读取文件正文
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
+
 import (
+	"context"
+	"path/filepath"
+
 	"github.com/egoist/mygo/ui"
 	"github.com/wh-studio/herdr-client/internal/filesview"
 )
 
-// filesToolView renders the Files tool from background directory snapshots
-// only — ListDirect never runs during render (GWB-003). The sidebar head
-// above it (project, branch, refresh) is shared with the Git sidebar.
+// filesToolView renders the Files tree from background directory snapshots
+// only — ListDirect never runs during render (GWB-003). The shared project
+// header above it (root path, refresh) lives in the sidebar.
 func (s *Shell) filesToolView(c *ui.Context) {
 	root := s.rightPanel.currentRoot
-
 	if root == "" {
 		emptyState(c, "No Active Directory", "Select a project tab or pane with a valid working directory.")
 		return
 	}
-
-	ui.Scroll(c).Grow(1).MinHeight(0).Children(func() {
-		ui.Column(c).FillWidth().Padding(4, sidebarGutter, 12).Children(func() {
-			s.renderDirectoryLevel(c, root, 0)
+	s.requestIgnoreSet()
+	ui.Column(c).FillWidth().Grow(1).MinHeight(0).Children(func() {
+		s.filesTreeToolbar(c)
+		ui.Scroll(c).Grow(1).MinHeight(0).Children(func() {
+			ui.Column(c).FillWidth().Padding(4, sidebarGutter, 12).Children(func() {
+				s.renderDirectoryLevel(c, root, 0)
+			})
 		})
 	})
 }
 
-// refreshFiles drops the cached directory snapshots and rereads the root.
+// filesTreeToolbar is the tree's compact action strip: creation at the
+// tree root and the ignored-visibility toggle.
+func (s *Shell) filesTreeToolbar(c *ui.Context) {
+	ui.Row(c).FillWidth().Padding(4, sidebarGutter).Gap(4).AlignItems(ui.Center).Children(func() {
+		if filesToolButton(c, iconPlus, "New File", false).Clicked() {
+			s.filesNewFile(s.rightPanel.currentRoot)
+		}
+		if filesToolButton(c, iconFolder, "New Folder", false).Clicked() {
+			s.filesNewFolder(s.rightPanel.currentRoot)
+		}
+		ui.Spacer(c)
+		if filesToolButton(c, iconEyeOff, "Show ignored files", s.rightPanel.showIgnored).Clicked() {
+			s.rightPanel.showIgnored = !s.rightPanel.showIgnored
+		}
+	})
+}
+
+// filesToolButton is the tree toolbar's ghost icon button; active tints it
+// the accent way (the toggle's on state).
+func filesToolButton(c *ui.Context, glyph *ui.SVG, label string, active bool) ui.Element {
+	t := c.Theme()
+	b := ui.ButtonBase(c).Size(24, 24).Radius(5).Label(label).Tooltip(label)
+	color := t.TextMuted
+	if active {
+		b.Background(t.Accent.Alpha(.14))
+		color = t.Accent
+	} else if b.Hovered() {
+		b.Background(t.SurfaceHover)
+	}
+	b.Children(func() {
+		ui.Icon(c, glyph).Size(14, 14).TextColor(color)
+	})
+	return b
+}
+
+// refreshFiles drops the cached snapshots, the ignore set, and every
+// in-flight read (a generation bump invalidates them; clearing loadingDirs
+// keeps their abandoned slots from blocking reloads), then rereads the
+// root — a new .gitignore must re-arm the git lookup too.
 func (s *Shell) refreshFiles() {
+	s.rightPanel.filesGen.Add(1)
 	s.rightPanel.cachedDirEntries = make(map[string][]filesview.Entry)
+	s.rightPanel.loadingDirs = make(map[string]bool)
+	s.rightPanel.ignoredRoot = ""
+	s.rightPanel.ignoredSet = filesview.NewIgnoreSet(nil)
 	if root := s.rightPanel.currentRoot; root != "" {
 		s.requestDirectory(root)
 	}
@@ -81,9 +135,63 @@ func (s *Shell) beginDirectoryLoad(dir, root string, gen uint64) {
 	}()
 }
 
-// renderDirectoryLevel renders cached entries on the shared tree grid; a
-// cache miss schedules the background read and shows a loading marker
-// instead of blocking (GWB-003).
+// requestIgnoreSet loads the git-owned ignored paths for the root once.
+// The fixed-name set applies immediately; the git set merges in when the
+// lookup lands. A non-repository settles with its error and no re-spam.
+func (s *Shell) requestIgnoreSet() {
+	st := &s.rightPanel
+	root := st.currentRoot
+	if root == "" || st.ignoredRoot == root {
+		return
+	}
+	st.ignoredRoot = root
+	gen := st.filesGen.Load()
+	apply := func(paths []string) {
+		if st.currentRoot != root || gen != st.filesGen.Load() {
+			return
+		}
+		st.ignoredSet = filesview.NewIgnoreSet(paths)
+		// The selection predates the set: an entry picked during the
+		// lookup window may now be hidden — drop it and clear the page.
+		if sel := st.selectedFilePath; sel != "" && !st.showIgnored {
+			if rel, err := filepath.Rel(root, sel); err == nil {
+				if st.ignoredSet.Ignored(filepath.Base(sel), rel) {
+					st.selectedFilePath = ""
+					s.publishFilesPreview()
+				}
+			}
+		}
+	}
+	if s.win == nil {
+		paths, err := filesview.GitIgnorePaths(context.Background(), root)
+		if err == nil {
+			apply(paths)
+		}
+		return
+	}
+	go func() {
+		paths, err := filesview.GitIgnorePaths(context.Background(), root)
+		s.applyGuarded(s.rightPanel.filesGen.Load, gen, func() {
+			if err != nil {
+				return // keep the fixed-name set; never toast a probe failure
+			}
+			apply(paths)
+		})
+	}()
+}
+
+// filesIgnored reports whether the tree hides this entry (render-time only:
+// pure lookups, no IO).
+func (s *Shell) filesIgnored(e filesview.Entry) bool {
+	if s.rightPanel.showIgnored {
+		return false
+	}
+	return s.rightPanel.ignoredSet.Ignored(e.Name, e.RelPath)
+}
+
+// renderDirectoryLevel renders cached, filtered entries on the shared tree
+// grid; a cache miss schedules the background read and shows a loading
+// marker instead of blocking (GWB-003).
 func (s *Shell) renderDirectoryLevel(c *ui.Context, dir string, level int) {
 	entries, ok := s.rightPanel.cachedDirEntries[dir]
 	if !ok {
@@ -98,11 +206,18 @@ func (s *Shell) renderDirectoryLevel(c *ui.Context, dir string, level int) {
 
 	t := c.Theme()
 
+	switch visible := countVisible(entries, func(e filesview.Entry) bool { return s.filesIgnored(e) }); {
+	case len(entries) == 0:
+		filesMutedRow(c, "Empty", level)
+		return
+	case visible == 0:
+		filesMutedRow(c, "Hidden by ignore rules", level)
+		return
+	}
+
 	for _, entry := range entries {
 		e := entry
-		// .git is plumbing, not user content (F115): every other dotdir
-		// stays visible; the object database does not belong in a file tree.
-		if e.Name == ".git" && e.IsDir {
+		if s.filesIgnored(e) {
 			continue
 		}
 		// Symlinks to directories must not be recursively expanded (P1-05).
@@ -117,6 +232,7 @@ func (s *Shell) renderDirectoryLevel(c *ui.Context, dir string, level int) {
 			Key: "file:" + e.Path, Title: e.Name, Label: kind + " " + e.Name, Tooltip: e.Path, Level: level,
 			Folder: isDir, Expanded: isExpanded, Glyph: glyph,
 			Current: !isDir && s.rightPanel.selectedFilePath == e.Path, Dim: e.IsSymlink,
+			Menu: func(m *ui.Menu) { s.filesRowMenu(m, e) },
 			Trailing: func() {
 				// The size right-aligned, as the changes list puts its counts.
 				if !isDir && e.SizeBytes > 0 {
@@ -146,16 +262,35 @@ func (s *Shell) renderDirectoryLevel(c *ui.Context, dir string, level int) {
 	}
 }
 
-// openFilePreview loads file content up to 1 MiB and presents the preview
-// modal. Click-driven IO stays in the interaction handler (not render).
+// countVisible is a tiny filter counter so the empty states can distinguish
+// a truly empty directory from one whose entries all hide.
+func countVisible(entries []filesview.Entry, hidden func(filesview.Entry) bool) int {
+	n := 0
+	for _, e := range entries {
+		if !hidden(e) {
+			n++
+		}
+	}
+	return n
+}
+
+// filesMutedRow is the tree's quiet single-line state ("Empty").
+func filesMutedRow(c *ui.Context, text string, level int) {
+	t := c.Theme()
+	ui.Row(c).FillWidth().Padding(2, 0, 2, treeGlyphX(level)).Children(func() {
+		ui.Text(c, text).FontSize(Typography().Micro).TextColor(t.TextMuted)
+	})
+}
+
+// openFilePreview records the tree selection and pushes it to the preview
+// bridge. Content never loads here: the WebView page pulls it through the
+// bound service (2026-10-13 product decision).
 func (s *Shell) openFilePreview(path string) {
-	preview, err := filesview.ReadPreview(path, s.rightPanel.currentRoot)
-	if err != nil {
+	if s.rightPanel.selectedFilePath == path {
 		return
 	}
-	s.rightPanel.preview = &preview
 	s.rightPanel.selectedFilePath = path
-	s.rightPanel.previewOpen = true
+	s.publishFilesPreview()
 }
 
 // copyToClipboard is shared by the dedicated Files page and other native views.

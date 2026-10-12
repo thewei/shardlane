@@ -1,6 +1,7 @@
-// Package filesview owns the read-only Files tool of the Native Right Panel
-// (0.9 P4 / WIX-050..055): lazy direct-directory listing, directories-first
-// stable sort, symlink no-recursive-follow, 1 MiB preview cap, text/binary
+// Package filesview owns the Files tool of the /files page (0.9 P4, N20):
+// lazy direct-directory listing, directories-first stable sort, symlink
+// no-recursive-follow, ignore semantics (fixed names + git-owned paths),
+// bounded local file operations, the 1 MiB preview cap with text/binary
 // classification, and copy-path/reveal helpers. Opening the panel performs
 // zero repository-wide recursive scans.
 package filesview
@@ -155,7 +156,7 @@ func ReadPreview(path string, root ...string) (Preview, error) {
 		canonicalPath, err2 := filepath.EvalSymlinks(path)
 		if err1 == nil && err2 == nil {
 			rel, err := filepath.Rel(canonicalRoot, canonicalPath)
-			if err != nil || strings.HasPrefix(rel, "..") {
+			if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 				return Preview{}, fmt.Errorf("preview path %q escapes root %q", path, root[0])
 			}
 		}

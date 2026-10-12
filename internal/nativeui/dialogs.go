@@ -158,6 +158,8 @@ func (s *Shell) submitTextDialog(kind, target, value string) {
 		} else {
 			s.createTag(value)
 		}
+	case "files-new-file", "files-new-dir", "files-rename":
+		s.runFilesMutation(kind, target, value)
 	}
 }
 
@@ -179,6 +181,8 @@ func (s *Shell) submitConfirm(kind, target string) {
 		s.mutate(func() (herdr.Projection, error) { return s.runtime.ClosePane(s.activeInstance, target) })
 	case "history-continue":
 		s.runContinue(target)
+	case "files-delete":
+		s.runFilesDelete(target)
 	default:
 		s.runGitConfirm(kind, target)
 	}

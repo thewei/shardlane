@@ -400,6 +400,17 @@ type Shell struct {
 	// chatWebviewBroken latches a failed creation so the native chat stays.
 	chatWebview       *mygo.WebView
 	chatWebviewBroken bool
+	// filesWebview is the Files preview page's embedded WebView (product
+	// decision 2026-10-13); nil until the first /files build with
+	// General.WebViewFilesPreview on, and filesWebviewBroken latches a
+	// failed creation so the page shows truthful empty states.
+	filesWebview       *mygo.WebView
+	filesWebviewBroken bool
+	// filesPublish serializes preview-target emits so rapid selections
+	// reach the page in order (files_bridge.go).
+	filesPublishMu      sync.Mutex
+	filesPublishing     bool
+	filesPublishPending bool
 	// chatLiveCommitted is the committed live projection length at the last	// applied sync — the pending-echo baseline coordinate (0.6 §12).
 	chatLiveCommitted int
 	// chatPendingEcho is the unconsumed pending submission echo; nil once
@@ -579,12 +590,15 @@ func (s *Shell) AttachWindow(win *mygo.Window) {
 	// event spool for backward compatibility.
 	s.AttachHookServer()
 	// Appearance changes (system or Settings) re-publish the chat
-	// projection, whose theme field carries the resolved appearance to the
-	// WebView chat page.
+	// projection and the Files preview target, whose theme fields carry
+	// the resolved appearance to their WebView pages.
 	s.syncThemeSource()
 	s.syncWindowOpacity()
 	mygo.Theme.OnUpdated(func() {
-		s.applyOnWindow(func() { s.publishChatBridge() })
+		s.applyOnWindow(func() {
+			s.publishChatBridge()
+			s.publishFilesPreview()
+		})
 	})
 	if s.launch != nil {
 		// The follow-up delivery worker owns the queue's state machine for

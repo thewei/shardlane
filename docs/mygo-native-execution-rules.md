@@ -55,6 +55,8 @@ Web presentation may be reconsidered only when:
 
 Even then, Web presentation may call only the same Go application/domain services through official MyGo bindings/plugins and may never own runtime truth.
 
+Unfrozen so far by explicit product decisions: Chat (2026-10-11, roadmap N19) and the `/files` preview pane (2026-10-13, roadmap N20 — strictly read-only bridge; file operations stay native over `internal/filesview`).
+
 ## 4. File and package boundaries
 
 Target dependency direction:

@@ -182,3 +182,23 @@ func TestFormatFileSize(t *testing.T) {
 		}
 	}
 }
+
+// TestReadPreviewAllowsDotDotPrefixedNames pins the escape guard's exact
+// form: a file NAMED "..data" is inside the root and previews fine; only
+// real parent segments ("../x") are escapes (sibling of mutate.go's guard).
+func TestReadPreviewAllowsDotDotPrefixedNames(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "..data"), []byte("ok"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	preview, err := ReadPreview(filepath.Join(root, "..data"), root)
+	if err != nil {
+		t.Fatalf("dot-dot-prefixed name refused: %v", err)
+	}
+	if preview.Content != "ok" {
+		t.Fatalf("content = %q", preview.Content)
+	}
+	if _, err := ReadPreview(filepath.Join(root, "..", "outside"), root); err == nil {
+		t.Error("real parent escape must still be refused")
+	}
+}

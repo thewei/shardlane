@@ -44,9 +44,13 @@ type rightPanelState struct {
 	loadingDirs      map[string]bool
 	currentRoot      string
 	selectedFilePath string
-	preview          *filesview.Preview
-	previewOpen      bool // legacy; inline Files preview does not create a modal
 	filesGen         atomic.Uint64
+
+	// Ignore state (FILES-01): the merged fixed-name + git set applies per
+	// root; showIgnored reveals everything the rules hide.
+	showIgnored bool
+	ignoredRoot string
+	ignoredSet  *filesview.IgnoreSet
 }
 
 func defaultRightPanelState() rightPanelState {
@@ -56,6 +60,7 @@ func defaultRightPanelState() rightPanelState {
 		expandedDirs:     make(map[string]bool),
 		cachedDirEntries: make(map[string][]filesview.Entry),
 		loadingDirs:      make(map[string]bool),
+		ignoredSet:       filesview.NewIgnoreSet(nil),
 	}
 }
 
@@ -69,11 +74,13 @@ func (s *Shell) syncRightPanelRoot() {
 	s.rightPanel.currentRoot = root
 	s.rightPanel.filesGen.Add(1)
 	s.rightPanel.selectedFilePath = ""
-	s.rightPanel.preview = nil
-	s.rightPanel.previewOpen = false
 	s.rightPanel.expandedDirs = make(map[string]bool)
 	s.rightPanel.cachedDirEntries = make(map[string][]filesview.Entry)
 	s.rightPanel.loadingDirs = make(map[string]bool)
+	s.rightPanel.ignoredRoot = ""
+	s.rightPanel.ignoredSet = filesview.NewIgnoreSet(nil)
+	// The preview page must drop the previous root's selection too.
+	s.publishFilesPreview()
 }
 
 // previewManager owns persistent preview window controllers keyed by target

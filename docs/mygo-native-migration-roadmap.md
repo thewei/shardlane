@@ -46,6 +46,8 @@ Current decision: **Native UI only**.
 
 WebView work for History or Chat is frozen until MyGo provides an official supported native-tree WebView capability and a later explicit product decision enables it.
 
+(Superseded where later decisions unfroze it: Chat by N19 (2026-10-11) and the `/files` preview pane by N20 (2026-10-13). The paragraphs above are the original freeze baseline.)
+
 ## 2. Target Go package shape
 
 ```text
@@ -721,6 +723,47 @@ InteractionBroker.
   TUI screen scraping (`pane.read` parsing + `send_keys` arrow navigation);
   porting that stays rejected pending a product call — a source means
   structured agent questions/approvals in the Herdr runtime.
+
+## N20 — Files panel: ignore-aware tree, file operations, WebView preview (2026-10-13, product decision)
+
+The product owner approved moving the `/files` preview center onto MyGo
+v0.4.1's official `ui.WebView` (a CodeMirror 6 read-only viewer) and, in
+the same decision, hardening the native tree: fixed-name plus git-owned
+ignore rules with a "Show ignored files" toggle, and bounded local file
+operations (new file/folder, rename, delete with explicit confirm). The
+2026-10-11 WebView constraints bind unchanged: presentation-only bridge,
+app-content origin, no localhost HTTP backend, no private embedding.
+Architecture decision: "Decision 2026-10-13" in
+`docs/client-product-architecture.md`.
+
+| Task | Capability | Landing |
+|---|---|---|
+| FILES-01 | Ignore rules: `DefaultIgnored` fixed set + `GitIgnorePaths` (one bounded `git ls-files -o -i --exclude-standard --directory` per root — git owns ignore semantics) merged into `IgnoreSet`; render-time filter, "Show ignored files" toggle, per-root git set cached behind the filesGen fence, non-repository settles silently | `internal/filesview/ignore.go`, `nativeui/right_panel_files.go`, `right_panel.go` |
+| FILES-02 | Bounded file-operations domain: `ValidateName` + `resolveWithin` (symlink-canonicalized parent chain), `CreateFile/CreateDir/Rename/Delete` — overwrite refused, root refused, symlinks unlinked not followed | `internal/filesview/mutate.go` |
+| FILES-03 | Native wiring: tree toolbar (New File / New Folder / Show ignored), row context menus, shared text/confirm dialog kinds, background execution channel with cache invalidation, selection migration and toast errors | `nativeui/files_ops.go`, `right_panel_files.go`, `dialogs.go` |
+| FILES-04 | Read-only preview bridge: `filesPreview.Current/Open` + `files:preview` typed event (metadata only; the page pulls content); stale requests refused against the live selection; `mygo generate` TS client | `nativeui/files_bridge.go`, `main.go` |
+| FILES-05 | Frontend `/files-viewer`: lazy React route over the embedded SPA, CodeMirror 6 read-only viewer (line numbers, ⌘F search, themed highlight classes; the 13 `lang-*` packages import dynamically per extension, the three tiny legacy grammars — shell/toml/properties — are static), binary/truncated/empty states, bridge theme sync | `frontend/src/FilesViewer.tsx`, `frontend/src/files-viewer.css`, `frontend/src/main.tsx` |
+| FILES-06 | Route swap + retirement: `General.WebViewFilesPreview` (default on) with lazy WebView creation and failure latch; native preview renderer removed — off/broken states are truthful | `nativeui/files_webview.go`, `nativeui/page_files.go`, `nativeui/page_settings.go`, `internal/settings` |
+
+Fast verification: `GOTOOLCHAIN=go1.27.1 go test ./internal/filesview ./internal/nativeui ./internal/settings`;
+`GOTOOLCHAIN=auto go tool mygo vet .`; `GOTOOLCHAIN=auto go tool mygo build`.
+
+Real-app acceptance (isolated HOME + dedicated `herdr` session, run
+2026-10-13, all PASS): ignore filter + toggle, create/rename/delete
+round-trip through the real dialogs, CodeMirror Go/TS highlighting with
+theme follow, binary and 1 MiB truncation states, cold-start route/session
+restore, node_modules absent by default and revealed on toggle.
+
+Deferred: Markdown rendered view (source highlight only), git-status
+decorations in the tree, Trash-instead-of-delete, per-root filesystem
+watcher.
+
+Known limitation (review finding, accepted for N20): MyGo's bound-method
+dispatch is per-window, not per-page — any trusted app-origin page can call
+any bound service, and events fan out to every WebView in the window. The
+enforced boundary is `filesPreview.Open`'s selection gate (path must equal
+the live selection) plus the strictly read-only method set; page-scoped
+service binding would tighten this and stays with upstream MyGo.
 
 # M7 — Remote / Mobile API v2
 
