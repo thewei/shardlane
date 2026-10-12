@@ -10,7 +10,7 @@ import (
 
 /**
  * [INPUT]: MyGo Tester, Settings routes, Git workbench snapshot and Workspace Chat gate
- * [OUTPUT]: Regression coverage for uniform Settings structure, compact Git clean surface and Terminal return
+ * [OUTPUT]: Regression coverage for uniform Settings structure, compact Git clean surface (readable when narrow) and Terminal return
  * [POS]: UI-007/UI-008 implementation acceptance without touching live Herdr sessions
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -74,6 +74,42 @@ func TestGitFilterEmptyStateCanRecover(t *testing.T) {
 	tester.Frame()
 	if s.changes.filter != "" || !tester.HasText("src/main.go") {
 		t.Fatalf("clearing file filter did not restore diff: %q", tester.Texts())
+	}
+}
+
+// With both rails open at ~900 px the clean surface's column is ~350 px: the
+// message must keep reading as words and the actions drop below it, instead of
+// the text being squeezed into a column of single letters beside the buttons.
+func TestCleanGitSurfaceKeepsItsMessageReadableWhenNarrow(t *testing.T) {
+	s := gitSurfaceTestShell(t, t.TempDir())
+	s.git.rootOf[s.git.root] = s.git.root
+	s.git.snapshot = &gitworkbench.ChangesSnapshot{
+		Root: s.git.root, Branch: "main", Signature: "clean", Files: nil,
+	}
+	s.showSurface(WorkspaceSurfaceDiff)
+	s.rebuildDiffRows()
+
+	narrow := ui.NewTester(s.View, 900, 800)
+	narrow.Frame()
+	title, ok := narrow.Find("No local changes")
+	if !ok {
+		t.Fatalf("narrow clean surface lost its message: %q", narrow.Texts())
+	}
+	if title.W < 90 || title.H > 30 {
+		t.Fatalf("message squeezed to %.0f x %.0f px at 900 px wide, want one readable line", title.W, title.H)
+	}
+	for _, want := range []string{"View Commits", "Open Terminal"} {
+		if !narrow.HasText(want) {
+			t.Fatalf("narrow clean surface lost %q: %q", want, narrow.Texts())
+		}
+	}
+
+	// Room to spare keeps the actions beside the message.
+	wide := ui.NewTester(s.View, 1700, 800)
+	wide.Frame()
+	title, _ = wide.Find("No local changes")
+	if open, ok := wide.Find("Open Terminal"); !ok || open.Y > title.Y+title.H {
+		t.Errorf("a wide clean surface keeps the actions on the message's row: title=%v open=%v (found %v)", title, open, ok)
 	}
 }
 

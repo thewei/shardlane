@@ -178,15 +178,19 @@ func emptyState(c *ui.Context, title, detail string) {
 // Terminal-adjacent Chat/Diff surfaces. It uses the same layout and tokens
 // everywhere, instead of a centered modal-like card in the main canvas.
 func workspaceEmptyBanner(c *ui.Context, glyph *ui.SVG, title, detail string, actions func()) {
+	const emptyBannerMessageBasis float32 = 200 // the least width the message keeps before the actions wrap below it
 	t := c.Theme()
 	tokens := designTokens(t.Dark)
 	sp := Spacing()
 	ui.Column(c).Grow(1).MinWidth(0).Padding(sp.XL).Children(func() {
-		ui.Row(c).FillWidth().Gap(sp.L).Padding(sp.L).
+		// Wrap + Basis: Grow alone starts the message from no width, so the
+		// row never wrapped and a narrow column squeezed it into single
+		// letters beside the actions. With a basis the actions drop below it.
+		ui.Row(c).FillWidth().Gap(sp.L).Padding(sp.L).Wrap().
 			BorderWidth(0, 0, 1, 0).BorderColor(tokens.BorderSubtle).
 			AlignItems(ui.Center).Children(func() {
 			ui.Icon(c, glyph).Size(18, 18).TextColor(t.TextMuted).Shrink(0)
-			ui.Column(c).Grow(1).MinWidth(0).Gap(sp.XS).Children(func() {
+			ui.Column(c).Grow(1).Basis(emptyBannerMessageBasis).MinWidth(0).Gap(sp.XS).Children(func() {
 				ui.Text(c, title).FontSize(Typography().Section).FontWeight(WeightSemibold)
 				if detail != "" {
 					ui.Text(c, detail).FontSize(Typography().BodySmall).TextColor(t.TextMuted)
