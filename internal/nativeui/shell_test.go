@@ -159,8 +159,8 @@ func TestRouterMovesBetweenNativePages(t *testing.T) {
 	if got := s.router.Path(); got != routeHistory {
 		t.Fatalf("history route = %q", got)
 	}
-	if !tester.HasText("History") {
-		t.Fatalf("history page did not render; texts=%q", tester.Texts())
+	if !tester.HasText("Sessions") {
+		t.Fatalf("sessions page did not render; texts=%q", tester.Texts())
 	}
 
 	s.router.Back()

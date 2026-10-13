@@ -205,7 +205,7 @@ func (s *Shell) titlebarViewSwitch(c *ui.Context, k *gorexColors) {
 	if gorexIconButton(c, k, iconChanges, "Changes view", "Changes", onChanges, gorexIconBtn, gorexIconGlyph).Clicked() {
 		s.showViewChanges()
 	}
-	historyTip := "History"
+	historyTip := "Sessions"
 	switch s.router.Path() {
 	case routeHistory:
 		historyTip = "Back to Terminal"

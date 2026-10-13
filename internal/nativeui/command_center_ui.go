@@ -109,19 +109,22 @@ func (s *Shell) buildCommandCenterActions() []commandcenter.Action {
 	// Recent History from the already-loaded management cache (no IO).
 
 	// App actions.
+	// One Sessions entry: /history-projects serves the same page for
+	// decode compatibility, so a second palette command only duplicated it
+	// (F162, same shape as the F16 Settings pair).
 	actions = append(actions,
-		commandcenter.Action{ID: "app.history", Title: "History", Section: "App",
-			Kind: commandcenter.TargetRoute, TargetID: "/history", Available: true},
-		commandcenter.Action{ID: "app.history-projects", Title: "History by Project", Section: "App",
-			Keywords: []string{"projects"}, Kind: commandcenter.TargetRoute, TargetID: "/history-projects", Available: true},
+		commandcenter.Action{ID: "app.history", Title: "Sessions", Section: "App",
+			Keywords: []string{"history", "conversations"}, Kind: commandcenter.TargetRoute, TargetID: "/history", Available: true},
+		commandcenter.Action{ID: "app.hosts", Title: "Hosts", Section: "App",
+			Keywords: []string{"ssh", "machines", "servers"}, Kind: commandcenter.TargetRoute, TargetID: "/hosts", Available: true},
 		// One Settings entry: the old Appearance/General pair both pushed
 		// /settings/general and read as two identical commands (F16).
 		commandcenter.Action{ID: "app.settings", Title: "Settings", Section: "App",
 			Keywords: []string{"preferences", "appearance", "theme", "density", "language"}, Kind: commandcenter.TargetSetting, TargetID: "/settings/general", Available: true},
 		commandcenter.Action{ID: "app.hook-doctor", Title: "Set Up Agents", Section: "App",
 			Keywords: []string{"agents", "hooks", "integration", "install", "update", "claude", "antigravity"}, Kind: commandcenter.TargetRoute, TargetID: "/settings/providers", Available: true},
-		commandcenter.Action{ID: "app.open-files", Title: "Browse Files", Section: "App",
-			Keywords: []string{"directory", "tree", "file preview"}, Kind: commandcenter.TargetRoute, TargetID: "action:open-files", Available: true},
+		commandcenter.Action{ID: "app.open-files", Title: "Files", Section: "App",
+			Keywords: []string{"browse files", "directory", "tree", "file preview"}, Kind: commandcenter.TargetRoute, TargetID: "action:open-files", Available: true},
 	)
 	return actions
 }

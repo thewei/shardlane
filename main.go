@@ -212,8 +212,8 @@ func main() {
 				}},
 				{Label: "Go", Submenu: []*mygo.MenuItem{
 					nav("Workspace", "CmdOrCtrl+1", "/workspace"),
-					nav("History", "", "/history"),
-					nav("History by Project", "", "/history-projects"),
+					nav("Sessions", "", "/history"),
+					nav("Hosts", "", "/hosts"),
 					mygo.Separator(),
 					// ⌘W belongs to the tab model, not the window (F103):
 					// the stock Window role bound it to closing the whole
@@ -222,9 +222,10 @@ func main() {
 					{Label: "Close Tab", Accelerator: "CmdOrCtrl+W", Click: func(*mygo.MenuItem, *mygo.Window) {
 						shell.CloseTabFromMenu()
 					}},
-					{Label: "Browse Files", Click: func(*mygo.MenuItem, *mygo.Window) {
+					{Label: "Files", Click: func(*mygo.MenuItem, *mygo.Window) {
 						shell.ToggleRightPanelFromMenu()
 					}},
+					nav("Set Up Agents", "", "/settings/providers"),
 					{Label: "Command Center", Accelerator: "CmdOrCtrl+Shift+P", Click: func(*mygo.MenuItem, *mygo.Window) {
 						shell.OpenCommandCenterFromMenu()
 					}},

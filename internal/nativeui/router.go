@@ -52,7 +52,7 @@ func (s *Shell) routeView(c *ui.Context) {
 			r.Title("Sessions")
 			gorexContentCard(c, gorexColorsOf(c.Theme().Dark), func() { s.historyPage(c) })
 		case r.Match("/history/{id}"):
-			r.Title("History Detail")
+			r.Title("Session Detail")
 			gorexContentCard(c, gorexColorsOf(c.Theme().Dark), func() { s.historyDetailPage(c, r.Param("id")) })
 		case r.Match("/inspector/{pane}"):
 			r.Title("Agent Inspector")
@@ -90,7 +90,7 @@ func (s *Shell) currentRouteTitle() string {
 	case path == routeHosts:
 		return "Hosts"
 	case strings.HasPrefix(path, "/history/"):
-		return "History Detail"
+		return "Session Detail"
 	case path == "/history-projects":
 		return "Sessions"
 	case strings.HasPrefix(path, "/inspector/"):
