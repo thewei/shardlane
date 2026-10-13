@@ -1,7 +1,6 @@
 package nativeui
 
 import (
-
 	"github.com/egoist/mygo/ui"
 	"github.com/wh-studio/herdr-client/internal/agent"
 )

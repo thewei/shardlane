@@ -49,9 +49,7 @@ func (s *Shell) sidebar(c *ui.Context) {
 			s.sidebarInnerNav(c)
 		} else if ui.Sidebar(c, &s.selected, func() {
 			// The Agents/Pin/Workspace sections share one header builder so
-			// every section title reads at the same compact scale
-			// (2026-10-06: Agents previously used mygo's larger
-			// SidebarSection title and disagreed with Workspace below it).
+			// every section title reads at the same compact scale.
 			sidebarSection(c, "Agents", &s.agentsOpen, true, nil, func() {
 				s.agentItems(c)
 			})

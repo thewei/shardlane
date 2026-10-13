@@ -19,14 +19,12 @@ import (
  */
 
 // attachConn runs `herdr terminal attach` on a local pty and is the MyGo
-// terminal's Conn, with real-terminal semantics (2026-10-06 F144,
-// user-approved): what the daemon renders is passed through byte-exact —
-// including its forced mouse-tracking sets, which are now legitimate
-// because the view reports pointer events back. What is typed goes to the
-// child unchanged, and SGR mouse sequences are split out of the write
-// stream and handed to onMouse (the daemon's attach input drops mouse
-// bytes; the client routes them itself — attach_mouse.go). Resize follows
-// the view grid so the daemon sizes the pane to match.
+// terminal's Conn with F144 real-terminal semantics (narrative in
+// attach_mouse.go): daemon output passes through byte-exact including its
+// forced mouse-tracking sets; typed bytes reach the child unchanged; SGR
+// mouse sequences split out of the write stream and hand to onMouse
+// because the daemon's attach input drops mouse bytes. Resize follows the
+// view grid so the daemon sizes the pane to match.
 type attachConn struct {
 	proc      *os.Process
 	master    *os.File

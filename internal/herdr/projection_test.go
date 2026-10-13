@@ -116,4 +116,3 @@ func TestProjectSnapshotMapsAgentSessionIdentity(t *testing.T) {
 		t.Fatalf("identity must stay absent without agent_session: %#v", plain.Agents[0].AgentSession)
 	}
 }
-

@@ -136,9 +136,9 @@ func (s *Shell) gdDiffSurface(c *ui.Context) {
 // gdDiffList shows the files' cards, building the rows in view only.
 func (s *Shell) gdDiffList(c *ui.Context, pal *gdPalette) {
 	s.ensureGdListKeys()
-	// The sheet is gone (2026-10-06): the files' cards sit on the gorex
-	// card that hosts the surface; only the bands above file headers keep
-	// the paper color, masking the lines that scroll under them.
+	// The files' cards sit directly on the gorex card hosting the surface;
+	// only the bands above file headers keep the paper color, masking the
+	// lines that scroll under them.
 	ui.List(c, &s.git.gdList, len(s.git.gdRows), func(i int) { s.gdDiffRow(c, pal, i) }).
 		Grow(1).MinHeight(0).Padding(0, gdListMargin, 24).Label("Changes")
 

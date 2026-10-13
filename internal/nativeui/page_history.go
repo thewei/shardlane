@@ -685,4 +685,3 @@ func (s *Shell) copySessionResume(meta history.SessionMeta) {
 func historyFiltersActive(query, provider string) bool {
 	return strings.TrimSpace(query) != "" || provider != ""
 }
-

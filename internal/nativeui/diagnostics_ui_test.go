@@ -27,13 +27,17 @@ func TestSettingsDiagnosticsSnapshotView(t *testing.T) {
 		// Unpackaged test builds report the dev fallback instead of a
 		// hardcoded version (diagnostics.BuildSnapshot).
 		"dev",
-		"protocol 22",
 		"Logs",
 		"Copy Diagnostics",
 	} {
 		if !tester.HasText(want) {
 			t.Fatalf("diagnostics view missing %q; texts=%q", want, tester.Texts())
 		}
+	}
+	// The About panel reads user language: the wire protocol version is an
+	// implementation fact and only ships in the diagnostics export (F173).
+	if tester.HasText("protocol") {
+		t.Fatalf("About panel leaks the wire protocol; texts=%q", tester.Texts())
 	}
 }
 

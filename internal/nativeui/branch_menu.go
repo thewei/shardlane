@@ -43,4 +43,3 @@ func (s *Shell) confirmSwitchBranch(name string) {
 func (s *Shell) confirmCreateBranch(name string) {
 	s.createBranch(name)
 }
-

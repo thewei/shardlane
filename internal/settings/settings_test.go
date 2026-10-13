@@ -70,4 +70,3 @@ func TestFileStoreRoundTripAtomically(t *testing.T) {
 		t.Fatalf("temp files left behind: %v", matches)
 	}
 }
-

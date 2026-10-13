@@ -139,14 +139,14 @@ type Shell struct {
 
 	// settingsService owns persistence; settings is the presentation snapshot
 	// refreshed after every successful update.
-	settingsService        *app.SettingsService
-	settings               settings.Settings
-	settingsFontDraft      string
+	settingsService            *app.SettingsService
+	settings                   settings.Settings
+	settingsFontDraft          string
 	settingsVoiceEndpointDraft string
-	settingsVoiceKeyDraft        string
+	settingsVoiceKeyDraft      string
 	settingsVoiceModelDraft    string
-	settingsGitPromptDraft string
-	settingsPiBinaryDraft  string
+	settingsGitPromptDraft     string
+	settingsPiBinaryDraft      string
 
 	// hist owns the Native History presentation state over the read-only
 	// HistoryService.
@@ -380,11 +380,11 @@ type Shell struct {
 	chatSourcelessPaneID string
 	// paneSurfaceMemo remembers the surface each pane was last used on, so
 	// a sidebar Agent click lands where the user left it (N19 #4).
-	paneSurfaceMemo map[string]WorkspaceSurfaceKind
-	chatDraft          string
-	chatQueuedText     string
-	chatOutcome        string
-	chatLastRequestID  string
+	paneSurfaceMemo   map[string]WorkspaceSurfaceKind
+	chatDraft         string
+	chatQueuedText    string
+	chatOutcome       string
+	chatLastRequestID string
 	// Per-turn disclosure state keyed "index:part": one shared boolean made
 	// every Thinking/Tools collapsible open and close together (F94).
 	chatTurnExpanded map[string]bool
@@ -447,6 +447,12 @@ func WithSettings(service *app.SettingsService) ShellOption {
 			// on the main loop, which does not exist before the window).
 			s.settingsGitPromptDraft = commitPromptPreference(s.settings.Workbench.CommitPrompt)
 			s.settingsPiBinaryDraft = s.settings.Workbench.PiExecutable
+			// A corrupt or unreadable store silently runs on defaults —
+			// surface it once through the status toast (F154) so the user
+			// knows why their preferences did not stick.
+			if err := service.LoadError(); err != nil {
+				s.status = "Settings could not be loaded — defaults are in use. Re-saving Settings will overwrite the unreadable file."
+			}
 		}
 	}
 }
@@ -477,7 +483,7 @@ func NewShell(opts ...ShellOption) *Shell {
 		statusShown:      "Loading Herdr workspaces…",
 		terminals:        make(map[string]*terminalSurface),
 
-		rightPanel:             defaultRightPanelState(),
+		rightPanel: defaultRightPanelState(),
 	}
 	// The agent activity panel opens on All: the bucket enum's zero value
 	// is NeedsAttention, so the zero filter would land users on an empty

@@ -59,6 +59,10 @@ func cleanTitleCandidate(raw string) string {
 	text := stripTagBlock(raw, "system-reminder")
 	text = stripTagBlock(text, "local-command-caveat")
 	text = stripTagBlock(text, "local-command-stdout")
+	// Skill invocations are injected directives, not user prose; their
+	// attribute-carrying open tag also overruns the generic tag scan below
+	// and used to leak verbatim into titles (F166).
+	text = stripTagBlockWithAttributes(text, "skill")
 
 	args := extractTag(text, "command-args")
 	name := extractTag(text, "command-name")
@@ -109,6 +113,34 @@ func stripTagBlock(text, tag string) string {
 		end := start + endRelative + len(closeTag)
 		text = text[:start] + " " + text[end:]
 	}
+}
+
+// stripTagBlockWithAttributes removes one <tag attrs>…</tag> block (or, when
+// the close tag is missing, just the open tag) — the attribute-tolerant twin
+// of stripTagBlock for tags like <skill name="…">.
+func stripTagBlockWithAttributes(text, tag string) string {
+	open := "<" + tag
+	closeTag := "</" + tag + ">"
+	for {
+		start := strings.Index(text, open)
+		if start < 0 || start+len(open) < len(text) && !isTagBoundary(text[start+len(open)]) {
+			return text
+		}
+		openEnd := strings.IndexByte(text[start:], '>')
+		if openEnd < 0 {
+			return text[:start]
+		}
+		rest := text[start+openEnd+1:]
+		end := strings.Index(rest, closeTag)
+		if end < 0 {
+			return text[:start] + " " + rest
+		}
+		text = text[:start] + " " + rest[end+len(closeTag):]
+	}
+}
+
+func isTagBoundary(c byte) bool {
+	return c == '>' || c == ' ' || c == '\t' || c == '\n' || c == '\r'
 }
 
 func extractTag(text, tag string) string {

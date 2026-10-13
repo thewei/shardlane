@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"math"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/egoist/mygo/plugins/terminal"
@@ -492,15 +493,12 @@ func (s *Shell) paneCard(c *ui.Context, k *gorexColors, surface *terminalSurface
 		s.paneCardHeader(c, k, surface, focused, hovered)
 		body := ui.Box(c).Grow(1).MinHeight(0).Padding(0, 5, 6, 5)
 		body.Children(func() {
-			// Real-terminal semantics (2026-10-06 F144, user-approved): the
-			// view owns every pointer event — no overlay child. With the
-			// daemon's forced tracking intact (mouseModeFilter retired) it
-			// reports clicks, wheel and drags back through the conn, where
-			// routeAttachMouse gives them Herdr's meanings; Shift+drag
-			// selects locally (⌘C copies), and plain input forwards exactly
-			// like any terminal hosting Herdr. Right click is a program
-			// event; the pane menu lives on the card header, the sidebar
-			// rows and the title-bar Actions menu.
+			// Real-terminal semantics (F144, routing in attach_mouse.go):
+			// the view owns every pointer event — no overlay child. It
+			// reports clicks, wheel and drags back through the conn;
+			// Shift+drag selects locally (⌘C copies). Right click is a
+			// program event; the pane menu lives on the card header, the
+			// sidebar rows and the title-bar Actions menu.
 			view := terminal.View(c, surface.term).Fill()
 			if surface.focused {
 				view.AutoFocus()
@@ -562,6 +560,11 @@ func (s *Shell) paneHeaderVisuals(surface *terminalSurface, dark bool) (visualMa
 		title = "Terminal"
 	}
 	detail := shortDir(surface.cwd)
+	// Shell labels are already "host:cwd" — repeating the same path in the
+	// dim slot only doubles the truncation (F168).
+	if detail != "" && strings.Contains(title, detail) {
+		detail = ""
+	}
 	return visualMark{svg: iconTerminal}, title, detail
 }
 

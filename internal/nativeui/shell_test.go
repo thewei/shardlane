@@ -228,10 +228,15 @@ func TestSettingsUsesNestedRoute(t *testing.T) {
 	s.projection = herdr.Projection{Protocol: 22}
 
 	tester := ui.NewTester(s.View, 1200, 800)
-	for _, want := range []string{"Settings", "General", "Terminal", "Diagnostics", "protocol 22"} {
+	for _, want := range []string{"Settings", "General", "Terminal", "Diagnostics"} {
 		if !tester.HasText(want) {
 			t.Fatalf("settings missing %q; texts=%q", want, tester.Texts())
 		}
+	}
+	// The About row shows the connection in user language; the wire
+	// protocol only ships in the diagnostics export (F173).
+	if tester.HasText("protocol") {
+		t.Fatalf("settings leak the wire protocol; texts=%q", tester.Texts())
 	}
 }
 

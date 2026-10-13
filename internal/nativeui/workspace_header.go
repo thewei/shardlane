@@ -4,12 +4,11 @@ import (
 	"github.com/wh-studio/herdr-client/internal/settings"
 )
 
-// The content header bar was removed in the 2026-10-05 round-two review:
-// identity moved into the title bar (breadcrumb + muted path line), the
-// Terminal/Changes switch became icon tabs in the title bar, and the
-// surface actions moved into the title-bar Actions menu (header_overflow.go).
+// Identity and surface actions live in the title bar (breadcrumb + muted
+// path line, icon tabs, header_overflow.go's Actions menu); the shell keeps
+// no second header row.
 
-// workspaceTitle remains for callers that need the display name.
+// workspaceTitle is the display name for surfaces without a breadcrumb.
 func (s *Shell) workspaceTitle() string {
 	if project := s.selectedProject(); project != nil && project.Label != "" {
 		return project.Label

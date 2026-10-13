@@ -72,9 +72,9 @@ func (s *Shell) filesPage(c *ui.Context) {
 		if s.filesWebviewBody(c) {
 			return
 		}
-		// Truthful fallbacks: the WebView page is the preview (the native
-		// renderer retired with the 2026-10-13 decision), so the off and
-		// broken states say exactly that instead of a lesser preview.
+		// Truthful fallbacks: the WebView page is the preview, so the off
+		// and broken states say exactly that instead of offering a lesser
+		// native preview.
 		if !s.useWebviewPreview() {
 			ui.Column(c).Grow(1).Center().Children(func() {
 				emptyState(c, "Rich preview is off",

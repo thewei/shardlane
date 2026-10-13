@@ -196,9 +196,9 @@ func (s *Shell) openTerminalFind() {
 func (s *Shell) runShortcut(action shortcutAction) {
 	switch action {
 	case shortcutSearch:
-		// The standalone Search page was removed (2026-10-06 product
-		// decision): ⌘K is the unified search palette, which jumps to the
-		// matching project/tab/pane/agent/history destination.
+		// ⌘K is the one search surface: the palette jumps to the matching
+		// project/tab/pane/agent/session destination; there is no
+		// standalone search page to route to.
 		s.openCommandCenter(commandcenter.ScopeAll)
 	case shortcutSettings:
 		if s.holdCommitNavigation() {

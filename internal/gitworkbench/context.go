@@ -49,4 +49,3 @@ func (r *Runner) FileLines(ctx context.Context, root, relPath string, start, cou
 	}
 	return lines[start-1 : end], nil
 }
-

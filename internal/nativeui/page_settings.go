@@ -301,7 +301,7 @@ func (s *Shell) settingsDiagnostics(c *ui.Context) {
 		row("Shardlane", "", func() { valueText(c, snap.ShardlaneVersion) }),
 		row("System", "", func() { valueText(c, fmt.Sprintf("%s · %s", systemName(snap.OS), snap.Arch)) }),
 		row("Herdr", "", func() {
-			valueText(c, fmt.Sprintf("%s · protocol %d", fallbackText(snap.HerdrVersion, "connected"), snap.HerdrProtocol))
+			valueText(c, fallbackText(snap.HerdrVersion, "connected"))
 		}),
 		row("Session", "", func() { valueText(c, fallbackText(snap.ActiveInstance, "none")) }),
 		row("Log file", compactSearchPath(snap.LogPath), func() {

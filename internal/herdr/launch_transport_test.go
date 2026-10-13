@@ -278,13 +278,13 @@ func TestReadPaneDecodesTypedResult(t *testing.T) {
 		}
 		return json.RawMessage(`{"type":"pane_read","read":{"pane_id":"p1","revision":7,"format":"text","source":"visible","text":"Enter to select"}}`), nil
 	})
-defer server.close()
-manager := NewManager()
-text, err := manager.ReadPane(context.Background(), "default", "p1", "visible")
-if err != nil {
-t.Fatal(err)
-}
-if text != "Enter to select" {
-t.Fatalf("read text = %q", text)
-}
+	defer server.close()
+	manager := NewManager()
+	text, err := manager.ReadPane(context.Background(), "default", "p1", "visible")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if text != "Enter to select" {
+		t.Fatalf("read text = %q", text)
+	}
 }

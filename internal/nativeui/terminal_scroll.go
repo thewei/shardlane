@@ -13,14 +13,12 @@ import (
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 
-// Wheel scrolling over an attached pane follows real-terminal semantics
-// (2026-10-06 F144, user-approved): the terminal view reports the wheel as
-// SGR mouse events through the attach conn (the daemon's forced tracking is
-// legitimate now), and routeAttachMouse hands them to the dispatch lanes
-// below — pane.scroll for ordinary panes (Herdr owns the viewport; the
-// attach stream re-renders the moved viewport and the next projection
-// reconciles), pane.send_text for Agent TUI panes (the program tracks the
-// mouse; the attach channel drops mouse bytes, probed 2026-10-06).
+// Wheel scrolling over an attached pane follows the real-terminal split
+// decided in F144 (full narrative in attach_mouse.go): the view reports the
+// wheel as SGR mouse events through the attach conn, routeAttachMouse
+// classifies them, and the dispatch lanes below apply the result —
+// pane.scroll for scrollback-backed panes, pane.send_text for alt-screen
+// Agent TUIs.
 
 // paneScrollDispatch serializes pane.scroll mutations for one pane: at most
 // one RPC in flight, the newest absolute offset wins, and intermediates are

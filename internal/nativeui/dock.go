@@ -59,4 +59,3 @@ func (s *Shell) updateDockBadge() {
 	}
 	s.dock.update(s.BuildStatusCenterSnapshot())
 }
-

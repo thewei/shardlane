@@ -36,14 +36,14 @@ func (m *Manager) ResizePane(session, paneID, direction string, amount float64) 
 // PaneMoveDestination models the destination payload for the Protocol 22
 // pane.move wire method.
 type PaneMoveDestination struct {
-	Type         string   `json:"type"`                    // "tab", "new_tab", "new_workspace"
-	TabID        string   `json:"tab_id,omitempty"`        // required when Type == "tab"
-	Split        string   `json:"split,omitempty"`         // "right" | "down" (required when Type == "tab")
+	Type         string   `json:"type"`                     // "tab", "new_tab", "new_workspace"
+	TabID        string   `json:"tab_id,omitempty"`         // required when Type == "tab"
+	Split        string   `json:"split,omitempty"`          // "right" | "down" (required when Type == "tab")
 	TargetPaneID string   `json:"target_pane_id,omitempty"` // optional target pane within tab
-	Ratio        *float64 `json:"ratio,omitempty"`         // optional split ratio
-	WorkspaceID  string   `json:"workspace_id,omitempty"`  // optional when Type == "new_tab"
-	Label        string   `json:"label,omitempty"`         // optional
-	TabLabel     string   `json:"tab_label,omitempty"`     // optional when Type == "new_workspace"
+	Ratio        *float64 `json:"ratio,omitempty"`          // optional split ratio
+	WorkspaceID  string   `json:"workspace_id,omitempty"`   // optional when Type == "new_tab"
+	Label        string   `json:"label,omitempty"`          // optional
+	TabLabel     string   `json:"tab_label,omitempty"`      // optional when Type == "new_workspace"
 }
 
 // MovePane relocates one Pane to a destination: another Tab (split right/down against an optional target pane),

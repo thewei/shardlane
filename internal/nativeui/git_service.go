@@ -21,8 +21,8 @@ import (
 // background lanes deliver through guarded applies with operation-specific
 // generations (P0-04): unrelated operations never cancel each other.
 type gitService struct {
-	runner      *gitworkbench.Runner
-	cache       *gitworkbench.Cache
+	runner *gitworkbench.Runner
+	cache  *gitworkbench.Cache
 
 	// Operation-specific async generations (P0-04).
 	rootGen      atomic.Uint64

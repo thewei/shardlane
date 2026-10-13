@@ -85,63 +85,71 @@ func (s *Shell) reconcileBlockedInteractions() {
 
 // handleAppHookStatus applies a directly reported agent status event onto
 // the shell projection and interaction broker (UI lane).
+// upsertProjectionAgent locates the projection agent bound to a pane, or
+// creates one from the pane's row when the hook event arrived first; the
+// mutation applies in place and always bumps the revision. The two app-hook
+// handlers used to inline this locate-or-create twice (F171).
+func (s *Shell) upsertProjectionAgent(paneID string, mutate func(*herdr.Agent)) {
+	for i := range s.projection.Agents {
+		agent := &s.projection.Agents[i]
+		if agent.PaneID == paneID {
+			mutate(agent)
+			agent.Revision++
+			return
+		}
+	}
+	var termID, projID, tabID string
+	for _, p := range s.projection.Panes {
+		if p.ID == paneID {
+			termID = p.TerminalID
+			projID = p.ProjectID
+			tabID = p.TabID
+			break
+		}
+	}
+	created := herdr.Agent{
+		TerminalID: termID,
+		ProjectID:  projID,
+		TabID:      tabID,
+		PaneID:     paneID,
+		Revision:   1,
+	}
+	mutate(&created)
+	s.projection.Agents = append(s.projection.Agents, created)
+}
+
+// chatSessionIdentity builds the apphook-sourced session identity carried
+// by status and session events.
+func chatSessionIdentity(appAgent, sessionID string) *herdr.AgentSessionIdentity {
+	if sessionID == "" {
+		return nil
+	}
+	return &herdr.AgentSessionIdentity{
+		Agent:  appAgent,
+		Kind:   "id",
+		Source: "apphook",
+		Value:  sessionID,
+	}
+}
+
 func (s *Shell) handleAppHookStatus(evt apphook.StatusEvent) {
 	if evt.PaneID == "" {
 		return
 	}
 	slog.Debug("hook status event", "pane", evt.PaneID, "status", evt.Status, "agent", evt.Agent)
 
-	// 1. Direct update to in-memory projection
-	found := false
-	for i := range s.projection.Agents {
-		agent := &s.projection.Agents[i]
-		if agent.PaneID == evt.PaneID {
-			agent.Status = evt.Status
-			if agent.Kind == "" && evt.Agent != "" {
-				agent.Kind = evt.Agent
-			}
-			if agent.AgentSession == nil && evt.SessionID != "" {
-				agent.AgentSession = &herdr.AgentSessionIdentity{
-					Agent:  evt.Agent,
-					Kind:   "id",
-					Source: "apphook",
-					Value:  evt.SessionID,
-				}
-			}
-			agent.Revision++
-			found = true
-			break
+	// Direct update to the in-memory projection (locate-or-create in one
+	// place; see upsertProjectionAgent).
+	session := chatSessionIdentity(evt.Agent, evt.SessionID)
+	s.upsertProjectionAgent(evt.PaneID, func(agent *herdr.Agent) {
+		agent.Status = evt.Status
+		if agent.Kind == "" && evt.Agent != "" {
+			agent.Kind = evt.Agent
 		}
-	}
-	if !found {
-		var termID, projID, tabID string
-		for _, p := range s.projection.Panes {
-			if p.ID == evt.PaneID {
-				termID = p.TerminalID
-				projID = p.ProjectID
-				tabID = p.TabID
-				break
-			}
+		if agent.AgentSession == nil {
+			agent.AgentSession = session
 		}
-		newAgent := herdr.Agent{
-			TerminalID: termID,
-			ProjectID:  projID,
-			TabID:      tabID,
-			PaneID:     evt.PaneID,
-			Kind:       evt.Agent,
-			Status:     evt.Status,
-			Revision:   1,
-		}
-		if evt.SessionID != "" {
-			newAgent.AgentSession = &herdr.AgentSessionIdentity{
-				Agent:  evt.Agent,
-				Kind:   "id",
-				Source: "apphook",
-				Value:  evt.SessionID,
-			}
-		}
-		s.projection.Agents = append(s.projection.Agents, newAgent)
-	}
+	})
 
 	for i := range s.projection.Panes {
 		if s.projection.Panes[i].ID == evt.PaneID {
@@ -187,40 +195,15 @@ func (s *Shell) handleAppHookSession(evt apphook.SessionEvent) {
 		Value:  val,
 	}
 
-	found := false
-	for i := range s.projection.Agents {
-		agent := &s.projection.Agents[i]
-		if agent.PaneID == evt.PaneID {
-			agent.AgentSession = sessionIdentity
-			if agent.Kind == "" && evt.Agent != "" {
-				agent.Kind = evt.Agent
-			}
-			agent.Revision++
-			found = true
-			break
+	s.upsertProjectionAgent(evt.PaneID, func(agent *herdr.Agent) {
+		agent.AgentSession = sessionIdentity
+		if agent.Kind == "" && evt.Agent != "" {
+			agent.Kind = evt.Agent
 		}
-	}
-	if !found {
-		var termID, projID, tabID string
-		for _, p := range s.projection.Panes {
-			if p.ID == evt.PaneID {
-				termID = p.TerminalID
-				projID = p.ProjectID
-				tabID = p.TabID
-				break
-			}
+		if agent.Status == "" {
+			agent.Status = "idle"
 		}
-		s.projection.Agents = append(s.projection.Agents, herdr.Agent{
-			TerminalID:   termID,
-			ProjectID:    projID,
-			TabID:        tabID,
-			PaneID:       evt.PaneID,
-			Kind:         evt.Agent,
-			Status:       "idle",
-			Revision:     1,
-			AgentSession: sessionIdentity,
-		})
-	}
+	})
 
 	s.publishChatBridge()
 }

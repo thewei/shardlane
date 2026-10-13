@@ -52,7 +52,7 @@ const quickPanelAgentHeight = 328
 
 // QuickPanelHeightFor returns the content-driven panel height: chrome plus
 // one row per listed agent, clamped between the minimum and the fixed cap
-// (2026-10-07: the panel is no longer a fixed-height window).
+// (the panel sizes to content, it is not a fixed-height window).
 func QuickPanelHeightFor(rows int) int {
 	budget := quickPanelChromeHeight + rows*quickPanelRowHeight
 	if rows == 0 {

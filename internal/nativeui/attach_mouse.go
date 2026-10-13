@@ -90,19 +90,20 @@ func parseSGRMouse(seq string) (button int, wheel bool, ok bool) {
 }
 
 // routeAttachMouse gives one SGR mouse event reported by the terminal view
-// its real-terminal meaning (2026-10-06 F144, user-approved): the client
-// behaves like any terminal hosting Herdr. The wheel follows Herdr's own
-// scroll reality, not the agent label: a pane whose projection reports
-// scrollback range (shells, and scrollback-backed TUIs like agy — probed
-// live: agy carries max_offset_from_bottom 82–221 and the Herdr TUI only
-// ever scrolls its viewport, never forwarding wheel) moves the
-// authoritative viewport one row per event (pane.scroll); an Agent TUI
-// with no scrollback range is a true alt-screen program (pi) and gets
-// every mouse event verbatim via pane.send_text — the attach channel
-// drops such bytes, probed 2026-10-06. Presses and drags follow the same
-// split: only alt-screen Agent TUIs consume them client-side, and the
-// client does not fabricate pane semantics for ordinary panes. Runs on
-// the window's UI lane.
+// its real-terminal meaning (F144, user-approved): the client behaves like
+// any terminal hosting Herdr. This function is the single narrative home
+// for the probe evidence; docs/herdr-attach-mouse-forwarding.md records the
+// Herdr-side spec. The wheel follows Herdr's own scroll reality, not the
+// agent label: a pane whose projection reports scrollback range (shells,
+// and scrollback-backed TUIs like agy — probed live: agy carries
+// max_offset_from_bottom 82–221 and the Herdr TUI only ever scrolls its
+// viewport, never forwarding wheel) moves the authoritative viewport one
+// row per event (pane.scroll); an Agent TUI with no scrollback range is a
+// true alt-screen program (pi) and gets every mouse event verbatim via
+// pane.send_text — the attach channel drops such bytes. Presses and drags
+// follow the same split: only alt-screen Agent TUIs consume them
+// client-side, and the client does not fabricate pane semantics for
+// ordinary panes. Runs on the window's UI lane.
 func (s *Shell) routeAttachMouse(surface *terminalSurface, seq string) {
 	if surface == nil || surface.paneID == "" || s.activeInstance == "" {
 		return

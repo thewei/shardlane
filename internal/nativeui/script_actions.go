@@ -141,7 +141,11 @@ func (s *Shell) copyTextToClipboard(text string) {
 	}
 }
 
-// openExternalPathParent reveals a path in the platform file manager.
+// openExternalPathParent reveals a path in the platform file manager,
+// reporting failure through the same status channel as its clipboard
+// sibling instead of silently doing nothing (F175).
 func (s *Shell) openExternalPathParent(path string) {
-	_ = platform.RevealFile(path)
+	if err := platform.RevealFile(path); err != nil {
+		s.status = "Could not reveal the file in Finder"
+	}
 }
