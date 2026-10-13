@@ -757,9 +757,7 @@ round-trip through the real dialogs, CodeMirror Go/TS highlighting with
 theme follow, binary and 1 MiB truncation states, cold-start route/session
 restore, node_modules absent by default and revealed on toggle.
 
-Deferred: Markdown rendered view (source highlight only), git-status
-decorations in the tree, Trash-instead-of-delete, per-root filesystem
-watcher.
+Deferred: git-status decorations in the tree, Trash-instead-of-delete, per-root filesystem watcher.
 
 Known limitation (review finding, accepted for N20): MyGo's bound-method
 dispatch is per-window, not per-page — any trusted app-origin page can call
@@ -836,6 +834,27 @@ Status: DONE (2026-10-13)
 Notes: hardening included — option-like host tokens (leading "-") are
   unconnectable and unwritable as form headers, and a dirty raw-editor
   buffer over the same file blocks a form save instead of racing it.
+```
+
+## RUNCONTROL-01 — Pane header project command run control (2026-10-13)
+
+```text
+Task: RUNCONTROL-01 (commit a5ce17a)
+Objective: hover/focus pane-header control that runs the project's own
+  commands (package-manager scripts via lockfile detection, Makefile and
+  justfile targets, user Scripts) into the pane, with busy truth from the
+  service index and a persisted last-used list.
+Inputs/owners: internal/scripts Detect + MergeCommands (bounded scans);
+  the script-launch transaction primitives (ShellReady + SendPaneText,
+  Stop via 0x03 only when a shell is ready); lastUsedStore persistence.
+Output: nativeui/run_command_button.go, terminal.go paneRunCommandControl,
+  internal/scripts lastused store (+tests).
+Non-goals: no output interpretation — run feedback stays the pane's own
+  terminal surface; no remote-pane command detection (Detect guards to
+  local directories, the control simply does not render there).
+Fast verification: go test ./internal/scripts ./internal/nativeui ;
+  go tool mygo vet . ; go tool mygo build.
+Status: DONE (2026-10-13)
 ```
 
 ## API-01 DTO package
