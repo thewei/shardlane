@@ -67,20 +67,23 @@
   color: var(--text);
 }
 
-/* Markdown rendered view: the chat page's .md styles plus a reading
-   column. scroll container covers the whole body under the bar. */
+/* Markdown rendered view: GitHub's own markdown-body stylesheet (scoped
+   per theme in FilesViewer.tsx) provides type and content colors; the
+   column itself stays full-width and transparent so the app canvas shows
+   through, exactly like the editor behind the other surfaces. The override
+   out-specifies the package's themed `[data-theme] .markdown-body` rules. */
 .viewer-scroll {
   position: absolute;
   inset: 0;
   overflow: auto;
 }
 
-.viewer-md {
-  max-width: 760px;
-  margin: 0 auto;
-  padding: 18px 24px 32px;
-  font-size: 13.5px;
-  line-height: 1.65;
+.viewer-scroll .markdown-body.viewer-md {
+  max-width: none;
+  background: transparent;
+  padding: 24px 32px 40px;
+  min-height: 100%;
+  box-sizing: border-box;
 }
 
 /* Image view: centered, contained, no upscale. */

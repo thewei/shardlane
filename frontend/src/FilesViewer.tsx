@@ -22,6 +22,9 @@ import { tags as t } from "@lezer/highlight";
 import ReactMarkdown from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
 import remarkGfm from "remark-gfm";
+import githubMarkdownDark from "github-markdown-css/github-markdown-dark.css?raw";
+import githubMarkdownLight from "github-markdown-css/github-markdown-light.css?raw";
+import hljsGithubDark from "highlight.js/styles/github-dark.css?raw";
 import { filesPreview, events, type FilesPreviewContent, type FilesPreviewTarget } from "./mygo";
 import "./files-viewer.css";
 
@@ -135,14 +138,42 @@ function languageFor(name: string): Promise<Extension | null> {
   return loader().catch(() => null);
 }
 
-// Markdown markdown renders with the chat page's exact stack and `.md`
-// styles (GFM tables, fenced-code highlighting); raw HTML never passes
+// GitHub's own markdown stylesheet, scoped to the page's data-theme: the
+// light and dark variants are static stylesheets, so each one's selectors
+// are prefixed to answer only under its theme attribute (the preview
+// follows the app's appearance setting, not the system preference). The
+// dark highlight tokens come from highlight.js's github-dark theme, scoped
+// the same way — the global github.css light tokens keep covering light.
+let markdownStylesInjected = false;
+function injectGitHubMarkdownStyles() {
+  if (markdownStylesInjected) return;
+  markdownStylesInjected = true;
+  const style = document.createElement("style");
+  style.dataset.for = "viewer-github-markdown";
+  style.textContent =
+    githubMarkdownLight.replaceAll(
+      ".markdown-body",
+      '[data-theme="light"] .markdown-body',
+    ) +
+    "\n" +
+    githubMarkdownDark.replaceAll(
+      ".markdown-body",
+      '[data-theme="dark"] .markdown-body',
+    ) +
+    "\n" +
+    hljsGithubDark.replaceAll(".hljs", '[data-theme="dark"] .viewer-md .hljs');
+  document.head.appendChild(style);
+}
+injectGitHubMarkdownStyles();
+
+// Markdown renders with GitHub's own stylesheet and reading layout (GFM
+// tables, task lists, fenced-code highlighting); raw HTML never passes
 // through (react-markdown skips it). http(s) links leave through the
 // bridge's OpenExternal gate; everything else stays inert.
 function RenderedMarkdown({ content }: { content: FilesPreviewContent }) {
   return (
     <div className="viewer-scroll">
-      <div className="md viewer-md">
+      <div className="markdown-body viewer-md">
         <ReactMarkdown
           remarkPlugins={[remarkGfm]}
           rehypePlugins={[rehypeHighlight]}
@@ -211,6 +242,9 @@ export function FilesViewer() {
     media.addEventListener("change", apply);
     return () => media.removeEventListener("change", apply);
   }, []);
+  useEffect(() => {
+    if (target?.theme) document.documentElement.dataset.theme = target.theme;
+  }, [target?.theme]);
 
   const path = target?.path ?? "";
   useEffect(() => {
