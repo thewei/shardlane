@@ -19,6 +19,9 @@ import { properties } from "@codemirror/legacy-modes/mode/properties";
 import { shell } from "@codemirror/legacy-modes/mode/shell";
 import { toml } from "@codemirror/legacy-modes/mode/toml";
 import { tags as t } from "@lezer/highlight";
+import ReactMarkdown from "react-markdown";
+import rehypeHighlight from "rehype-highlight";
+import remarkGfm from "remark-gfm";
 import { filesPreview, events, type FilesPreviewContent, type FilesPreviewTarget } from "./mygo";
 import "./files-viewer.css";
 
@@ -27,6 +30,9 @@ import "./files-viewer.css";
  * inside ui.WebView (product decision 2026-10-13). Strictly read-only: the
  * page pulls content through the filesPreview bridge and has no mutation
  * channel — create/rename/delete stay native, over the filesview domain.
+ * Markdown renders by default (chat's markdown stack) with a source
+ * toggle; images render from the bridge's data URL. Files the WebView tier
+ * cannot take preview natively and never reach this page.
  */
 
 // Read-only highlight vocabulary, themed through CSS classes so both
@@ -129,15 +135,58 @@ function languageFor(name: string): Promise<Extension | null> {
   return loader().catch(() => null);
 }
 
+// Markdown markdown renders with the chat page's exact stack and `.md`
+// styles (GFM tables, fenced-code highlighting); raw HTML never passes
+// through (react-markdown skips it). http(s) links leave through the
+// bridge's OpenExternal gate; everything else stays inert.
+function RenderedMarkdown({ content }: { content: FilesPreviewContent }) {
+  return (
+    <div className="viewer-scroll">
+      <div className="md viewer-md">
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm]}
+          rehypePlugins={[rehypeHighlight]}
+          components={{
+            a: ({ href, children }) => (
+              <a
+                href={href}
+                onClick={(event) => {
+                  event.preventDefault();
+                  if (href && /^https?:\/\//i.test(href)) {
+                    void filesPreview.openExternal(href).catch(() => {});
+                  }
+                }}
+              >
+                {children}
+              </a>
+            ),
+          }}
+        >
+          {content.content}
+        </ReactMarkdown>
+      </div>
+    </div>
+  );
+}
+
 export function FilesViewer() {
   const [target, setTarget] = useState<FilesPreviewTarget | null>(null);
   const [content, setContent] = useState<FilesPreviewContent | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  // Markdown defaults to the rendered view; the toggle is a page-level
+  // preference and stays sticky across files.
+  const [markdownRendered, setMarkdownRendered] = useState(true);
+  const [imageFailed, setImageFailed] = useState(false);
   const generation = useRef(0);
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
-  const showEditor = Boolean(content && !content.isBinary);
+  const showEditor = Boolean(
+    content &&
+      !content.isBinary &&
+      content.flavor !== "image" &&
+      (content.flavor !== "markdown" || !markdownRendered),
+  );
 
   // The tree selection arrives through the bridge event; the page starts
   // from Current so a reload keeps showing what the tree shows.
@@ -202,7 +251,7 @@ export function FilesViewer() {
 
   useEffect(() => {
     const view = viewRef.current;
-    if (!view || !content || content.isBinary) return;
+    if (!view || !content || content.isBinary || content.flavor === "image") return;
     let cancelled = false;
     void languageFor(content.name).then((lang) => {
       if (cancelled || viewRef.current !== view) return;
@@ -216,7 +265,20 @@ export function FilesViewer() {
     return () => {
       cancelled = true;
     };
-  }, [content]);
+  }, [content, showEditor]);
+
+  const flavor = content?.flavor ?? "";
+  const showMarkdown = Boolean(
+    content && !content.isBinary && flavor === "markdown" && markdownRendered,
+  );
+  const showImage = Boolean(content && flavor === "image" && content.dataUrl && !imageFailed);
+  const showImageFailed = Boolean(content && flavor === "image" && imageFailed);
+
+  // A corrupt or WKWebView-unsupported image breaks the <img> load; the
+  // truthful state replaces the browser's broken-image glyph.
+  useEffect(() => {
+    setImageFailed(false);
+  }, [content?.dataUrl]);
 
   return (
     <div className="viewer">
@@ -229,8 +291,28 @@ export function FilesViewer() {
             {content && content.sizeBytes > 0 ? (
               <span className="viewer-size">{formatSize(content.sizeBytes)}</span>
             ) : null}
-            {content?.truncated ? <span className="pill">Preview limited to 1 MiB</span> : null}
+            {content?.truncated && flavor !== "image" ? (
+              <span className="pill">Preview limited to 1 MiB</span>
+            ) : null}
             {loading ? <span className="viewer-loading">Loading…</span> : null}
+            {content && !content.isBinary && flavor === "markdown" ? (
+              <span className="viewer-seg" role="tablist" aria-label="Markdown view">
+                <button
+                  type="button"
+                  className={markdownRendered ? "pick" : ""}
+                  onClick={() => setMarkdownRendered(true)}
+                >
+                  Rendered
+                </button>
+                <button
+                  type="button"
+                  className={!markdownRendered ? "pick" : ""}
+                  onClick={() => setMarkdownRendered(false)}
+                >
+                  Source
+                </button>
+              </span>
+            ) : null}
           </>
         ) : (
           <span className="viewer-muted">No file selected</span>
@@ -238,7 +320,25 @@ export function FilesViewer() {
       </div>
       <div className="viewer-body">
         {showEditor ? <div className="viewer-editor" ref={hostRef} /> : null}
-        {!showEditor ? (
+        {showMarkdown ? <RenderedMarkdown content={content!} /> : null}
+        {showImage ? (
+          <div className="viewer-image">
+            <img
+              src={content!.dataUrl}
+              alt={content!.name}
+              onError={() => setImageFailed(true)}
+            />
+          </div>
+        ) : null}
+        {showImageFailed ? (
+          <div className="viewer-state">
+            <p className="viewer-title">Can’t show this image</p>
+            <p className="viewer-hint">
+              {target?.name} can’t be rendered here. Use “Reveal in Finder” above to open it.
+            </p>
+          </div>
+        ) : null}
+        {!showEditor && !showMarkdown && !showImage && !showImageFailed ? (
           <div className="viewer-state">
             {loading && !target?.name ? (
               <p className="viewer-hint">Loading…</p>
