@@ -988,7 +988,7 @@ Planning review notes (2026-10-05, post-0.4 closure increment):
 | INT-01..07 Integration health | ✅ | strategy registry + `herdr integration status` adapter + `IntegrationHealthService`; Providers Settings page with strategy-gated actions, spinner/reconcile/Toast; route-entry/refresh/post-action cadence only; 2026-10-12 hook-led single mechanism: the direct status hook leads covered providers (session-identity relay → `pane.report_agent_session`), Herdr integration demoted to a fallback lane whose repair action only surfaces while the hook cannot serve |
 | LAUNCH-01..03 transaction + harness | 🟡 | phase machine + uncertain-delivery fake-runtime harness ported and tested; Herdr transport adapter (agent.start/prompt/readiness) NOT ported — needs live protocol verification |
 | LAUNCH-04 New Task picker | ✅ | capability + integration-health driven Ready/Setup/Updating/Deferred; `TestNewTaskProviderPickerStates` |
-| LAUNCH-05 Start Agent | ❌ NOT DONE (by gate) | stays disabled with truthful copy until the verified transport lands |
+| LAUNCH-05 Start Agent | ❌ NOT DONE (by gate) | stays disabled with truthful copy until the verified transport lands; the history-continuation path already routes through the launch registry (2026-10-13, F149: `LaunchRegistry.SubmitAttempt` in-flight collapse), so enabling Start Agent behind `Submit` is the remaining work |
 | RENDER-01/02/03/06 | ✅ | `ui.List` virtualization; no render-path IO (audited); hidden-route behavior unchanged; render frames for all required states |
 
 Deferred by plan: Chat (0.5), Remote/Mobile, Windows/Linux, Gemini adapter.

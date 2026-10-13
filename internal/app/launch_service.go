@@ -417,5 +417,44 @@ func (s *LaunchService) ExecuteHistoryContinuation(ctx context.Context, session 
 		}
 		instructionField.Briefing = agent.BuildTransferBriefing(plan.Session, plan.Target, window.Messages, limits)
 	}
-	return agent.ExecuteContinuation(ctx, s.RuntimeFor(session), Preparer{}, plan, instructionField)
+	return s.executeContinuationAttempt(ctx, s.RuntimeFor(session), plan, instructionField)
+}
+
+// continuationAttemptKey is the registry key for one continuation intent:
+// strategy-qualified by session id, so an in-flight ContextTransfer and an
+// in-flight NativeResume for the same session never collapse onto each
+// other; the live-pane variant also pins the pane.
+func continuationAttemptKey(plan agent.ContinuationPlan) string {
+	if plan.Strategy == agent.StrategyAlreadyLive {
+		return "continuation:live:" + plan.Session.ID + ":" + plan.PaneID
+	}
+	return "continuation:" + string(plan.Strategy) + ":" + plan.Session.ID
+}
+
+// executeContinuationAttempt routes one continuation through the launch
+// registry (F149): the UI's continuing flag stays the first gate, the
+// registry is the service-level one — concurrent duplicates of the same
+// intent execute the transaction exactly once, while a deliberate retry
+// (after success or failure) always runs again.
+func (s *LaunchService) executeContinuationAttempt(ctx context.Context, runtime agent.LaunchRuntime, plan agent.ContinuationPlan, instruction agent.ContinuationInstruction) (agent.ContinuationOutcome, error) {
+	if s.registry == nil {
+		return agent.ExecuteContinuation(ctx, runtime, Preparer{}, plan, instruction)
+	}
+	record, err := s.registry.SubmitAttempt(ctx, continuationAttemptKey(plan), func(ctx context.Context) (agent.LaunchOutcomeRecord, error) {
+		outcome, err := agent.ExecuteContinuation(ctx, runtime, Preparer{}, plan, instruction)
+		if err != nil {
+			return agent.LaunchOutcomeRecord{}, err
+		}
+		return agent.LaunchOutcomeRecord{Launched: !outcome.ReusedLive, AgentKey: outcome.PaneID}, nil
+	})
+	if err != nil {
+		return agent.ContinuationOutcome{}, err
+	}
+	// Mirror ExecuteContinuation's own shapes: AlreadyLive reports
+	// ReusedLive without a strategy, launched continuations carry theirs.
+	outcome := agent.ContinuationOutcome{ReusedLive: !record.Launched, PaneID: record.AgentKey}
+	if !outcome.ReusedLive {
+		outcome.Strategy = plan.Strategy
+	}
+	return outcome, nil
 }

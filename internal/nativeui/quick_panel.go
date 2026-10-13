@@ -6,6 +6,7 @@ import (
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
+	"github.com/wh-studio/herdr-client/internal/agent"
 )
 
 /**
@@ -129,11 +130,16 @@ func (s *Shell) QuickPanelView(c *ui.Context) {
 					emptyState(c, "No active agents", "")
 					return
 				}
+				entryCards := make([]agent.AgentCardModel, len(entries))
+				for i, entry := range entries {
+					entryCards[i] = entry.Card
+				}
+				dupProjects := duplicateAgentProjectLabels(entryCards)
 				for _, entry := range entries {
 					entry := entry
 					var row ui.Element
 					ui.Box(c).Children(func() {
-						row = s.agentCardRow(c, entry.Card, false)
+						row = s.agentCardRow(c, entry.Card, false, dupProjects)
 						// §17.2: the usage caption renders under the card
 						// when the cached History-meta projection has facts.
 						if usage := s.usageLineFor(entry.Card.Key); usage != "" {

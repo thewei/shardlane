@@ -517,14 +517,13 @@ func (s *Shell) agentItems(c *ui.Context) {
 	}
 	// Two-line Agent cards (2026-10-05 round two) via the shared card
 	// builder (2026-10-07): the same rows the agent activity panel shows.
-	for _, card := range s.workbenchCards() {
+	cards := s.workbenchCards()
+	dupProjects := duplicateAgentProjectLabels(cards)
+	for _, card := range cards {
 		card := card
-		label := card.ProjectName
-		if label == "" {
-			label = card.Title
-		}
+		label, _ := agentCardLabel(card, dupProjects)
 		selected := card.PaneID != "" && card.PaneID == s.selectedPaneID
-		row := s.agentCardRow(c, card, selected)
+		row := s.agentCardRow(c, card, selected, dupProjects)
 		if row.Clicked() {
 			// N19 #4: a sidebar Agent click jumps straight to the pane's
 			// remembered surface (Chat or Terminal) instead of the detail

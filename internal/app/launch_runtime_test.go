@@ -2,8 +2,11 @@ package app
 
 import (
 	"context"
+	"errors"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/wh-studio/herdr-client/internal/agent"
 	"github.com/wh-studio/herdr-client/internal/history"
@@ -123,5 +126,99 @@ func executeHistoryContinuationForTest(ctx context.Context, service *LaunchServi
 		limits := agent.DefaultTransferBriefingLimits()
 		instructionField.Briefing = agent.BuildTransferBriefing(plan.Session, plan.Target, window.Messages, limits)
 	}
-	return agent.ExecuteContinuation(ctx, runtime, Preparer{}, plan, instructionField)
+	return service.executeContinuationAttempt(ctx, runtime, plan, instructionField)
+}
+
+// gatedPromptRuntime holds every transaction inside PromptAgentUntil the
+// test releases it, so all concurrent callers observe the in-flight window.
+type gatedPromptRuntime struct {
+	fakeAppRuntime
+	release chan struct{}
+}
+
+func (g *gatedPromptRuntime) PromptAgentOnce(ctx context.Context, paneID string, text string) error {
+	<-g.release
+	return g.fakeAppRuntime.PromptAgentOnce(ctx, paneID, text)
+}
+
+// TestExecuteHistoryContinuationCollapsesConcurrentDuplicates pins the F149
+// wiring: two concurrent Continue executions of the same intent run the
+// transaction once at the service layer, even before the UI's continuing
+// flag could serialize them.
+func TestExecuteHistoryContinuationCollapsesConcurrentDuplicates(t *testing.T) {
+	service := NewLaunchService(nil)
+	runtime := &gatedPromptRuntime{release: make(chan struct{})}
+	plan := agent.ContinuationPlan{
+		Strategy: agent.StrategyAlreadyLive,
+		PaneID:   "pane-live",
+		Session:  agent.ContinuationSource{Agent: history.AgentClaudeCode, ID: "s-live", ProjectPath: "/work/demo"},
+	}
+	instruction := agent.ContinuationInstruction{Instruction: "carry on"}
+
+	const callers = 4
+	outcomes := make([]agent.ContinuationOutcome, callers)
+	var wg sync.WaitGroup
+	for i := 0; i < callers; i++ {
+		wg.Add(1)
+		go func(slot int) {
+			defer wg.Done()
+			outcome, err := service.executeContinuationAttempt(ctxOf(t), runtime, plan, instruction)
+			if err != nil {
+				t.Errorf("caller %d: %v", slot, err)
+				return
+			}
+			outcomes[slot] = outcome
+		}(i)
+	}
+	// Every caller must observe the in-flight window before the owner
+	// finishes: hold the transaction, give the spawn storm time to pile up,
+	// then release (same discipline as the registry-level duplicate test).
+	time.Sleep(100 * time.Millisecond)
+	close(runtime.release)
+	wg.Wait()
+
+	if len(runtime.prompts) != 1 {
+		t.Fatalf("prompts = %d, want exactly 1", len(runtime.prompts))
+	}
+	for slot, outcome := range outcomes {
+		if outcome != (agent.ContinuationOutcome{ReusedLive: true, PaneID: "pane-live"}) {
+			t.Fatalf("caller %d outcome = %+v", slot, outcome)
+		}
+	}
+}
+
+// TestExecuteHistoryContinuationRetryAfterFailureReruns pins the honest
+// retry: a failed continuation is not memoized, the next attempt executes
+// the transaction again.
+func TestExecuteHistoryContinuationRetryAfterFailureReruns(t *testing.T) {
+	service := NewLaunchService(nil)
+	runtime := &fakeAppRuntime{}
+	plan := agent.ContinuationPlan{
+		Strategy: agent.StrategyAlreadyLive,
+		PaneID:   "pane-live",
+		Session:  agent.ContinuationSource{Agent: history.AgentClaudeCode, ID: "s-live", ProjectPath: "/work/demo"},
+	}
+	instruction := agent.ContinuationInstruction{Instruction: "carry on"}
+
+	if _, err := service.executeContinuationAttempt(ctxOf(t), &failingPromptRuntime{}, plan, instruction); err == nil {
+		t.Fatal("first attempt must fail")
+	}
+	outcome, err := service.executeContinuationAttempt(ctxOf(t), runtime, plan, instruction)
+	if err != nil {
+		t.Fatalf("retry must rerun: %v", err)
+	}
+	if outcome.PaneID != "pane-live" || !outcome.ReusedLive {
+		t.Fatalf("retry outcome = %+v", outcome)
+	}
+	if len(runtime.prompts) != 1 {
+		t.Fatalf("retry prompts = %d, want 1", len(runtime.prompts))
+	}
+}
+
+type failingPromptRuntime struct {
+	fakeAppRuntime
+}
+
+func (failingPromptRuntime) PromptAgentOnce(ctx context.Context, paneID string, text string) error {
+	return errors.New("pane went away")
 }

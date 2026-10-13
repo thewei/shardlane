@@ -363,8 +363,8 @@
 - **✅ 已修（c0a9cf3，文案/行为/注释）**：F154（LoadError 接 status toast）、F166（skill XML 剥离 + 回归测试；实机复核首条会话标题已显示真实 prompt）、F168（pane 头重复路径抑制；实机复核）、F171（chat_hooks 抽 upsertProjectionAgent）、F172（变更日志注释改约束句式）、F173（About 去 protocol；实机复核 NONE）、F174（F144 叙事收敛至 attach_mouse.go 单点+docs 指针）、F175（RevealFile 报错上 status；headless 解码丢弃改赋值形态）。
 - **✅ 已修（aecb4ef，docs）**：F177（roadmap Deferred 删已交付项）、F178（补 RUNCONTROL-01 小节）。
 - **F156 就此消解**：Enter 方向相反的主体就是 F152 删除的旧 paneFindBar；活着的 ⌘F 查找条无此问题。
-- **F149 复核修正**：roadmap Next queue 已有 LAUNCH-05（enable Start Agent behind LaunchRegistry），wiring 属计划内，维持记录不改代码。
-- **保留记录**：F169（同项目多 agent 卡同名，产品取舍）、F176（单实现 seam 属地道 Go 惯用法）、F164 的 ←/↑↓ 部分、F179（远程 pane 无 Run 控件说明）。**F167 已取消（用户裁定：详情 verbatim 是有意行为，原生 markdown 渲染器不在产品计划内）**。
+- **F149 复核修正**：roadmap Next queue 已有 LAUNCH-05（enable Start Agent behind LaunchRegistry），wiring 属计划内，维持记录不改代码。→ **（同日稍后已修）**`LaunchRegistry.SubmitAttempt`（in-flight-only 塌缩语义：并发重复只执行一次，完成后即遗忘、重试永远重跑）落地，`ExecuteHistoryContinuation` 全部四种策略经 registry 执行，服务层防护成立；`-race` 并发/重试/取消三测试 + service 层两测试钉住。
+- **保留记录**：F176（单实现 seam 属地道 Go 惯用法）、F164 的 ←/↑↓ 部分、F179（远程 pane 无 Run 控件说明）。→ **F169 同日已修**：同项目多卡时标签拼接 agent 名（"项目 · Agent"），caption 不再重复标题；侧栏、快速面板、行 AX Label 与右键菜单标题四处一致，纯函数+渲染双测试钉住。**F167 已取消（用户裁定：详情 verbatim 是有意行为，原生 markdown 渲染器不在产品计划内）**。
 - gofmt 注意：仓库存在少量**既有** EOF 空行偏差（PATH gofmt 1.25.9 与 pin 的 1.27.1 并存）；本批只清理了本会话触碰的文件，未夹带无关重排。
 
-> 台账现共 **179 项**，Round 8 的 31 项中 27 项已修复闭环、F167 经用户裁定取消（非需求）、其余 3 项保留记录（F149 计划内/F169/F176）+ F164/F179 部分保留。
+> 台账现共 **179 项**，Round 8 的 31 项中 29 项已修复闭环（F149/F169 于同日第二批修复）、F167 经用户裁定取消（非需求）、其余 2 项保留记录（F176/F164 部分/F179 部分）。

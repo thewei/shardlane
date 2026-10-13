@@ -159,6 +159,49 @@ func (r *LaunchRegistry) await(ctx context.Context, call *launchCall) (LaunchOut
 	}
 }
 
+// SubmitAttempt collapses one logical attempt's concurrent duplicates onto a
+// single launch: the first caller with a requestID runs launch, later callers
+// with the same id while it is in flight await and receive the same outcome.
+// A completed attempt is forgotten — the next SubmitAttempt for the id runs
+// again — so a deliberate retry never replays a stale result, successful or
+// failed; only the in-flight window is deduplicated, which is exactly the
+// CLOSURE-02 "single in-flight owner" guarantee. The continuation path
+// routes through this; durable request-level idempotency (Start Agent,
+// LAUNCH-05) stays with Submit.
+func (r *LaunchRegistry) SubmitAttempt(ctx context.Context, requestID string, launch func(context.Context) (LaunchOutcomeRecord, error)) (LaunchOutcomeRecord, error) {
+	if strings.TrimSpace(requestID) == "" {
+		return LaunchOutcomeRecord{}, fmt.Errorf("request id is required")
+	}
+	r.mu.Lock()
+	call, awaiting := r.calls[requestID]
+	if awaiting {
+		select {
+		case <-call.done:
+			awaiting = false
+		default:
+		}
+	}
+	if !awaiting {
+		call = &launchCall{done: make(chan struct{})}
+		r.calls[requestID] = call
+		r.mu.Unlock()
+		outcome, err := launch(ctx)
+		r.mu.Lock()
+		call.outcome, call.err = outcome, err
+		if outcome.RequestID == "" {
+			call.outcome.RequestID = requestID
+		}
+		r.mu.Unlock()
+		close(call.done)
+		if err != nil {
+			return LaunchOutcomeRecord{}, err
+		}
+		return call.outcome, nil
+	}
+	r.mu.Unlock()
+	return r.await(ctx, call)
+}
+
 // Outcome reports the recorded outcome for a completed request id, if any.
 func (r *LaunchRegistry) Outcome(requestID string) (LaunchOutcomeRecord, bool) {
 	r.mu.Lock()

@@ -12,6 +12,41 @@ import (
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 
+// agentCardLabel builds the card's visible title. The project is the title
+// (F118); when several visible cards share one project, the project name
+// alone cannot tell them apart, so the agent's own title is appended
+// ("Project · Agent", F169). The second result reports whether the label
+// already carries the agent title, so callers skip the duplicate caption.
+func agentCardLabel(card agent.AgentCardModel, dupProjects map[string]bool) (string, bool) {
+	label := card.ProjectName
+	if label == "" {
+		label = card.Title
+		return label, false
+	}
+	if dupProjects[card.ProjectName] && card.Title != "" && card.Title != label {
+		return label + " · " + card.Title, true
+	}
+	return label, false
+}
+
+// duplicateAgentProjectLabels reports project labels shared by more than
+// one of the visible cards — the set agentCardLabel disambiguates against.
+func duplicateAgentProjectLabels(cards []agent.AgentCardModel) map[string]bool {
+	counts := map[string]int{}
+	for _, card := range cards {
+		if card.ProjectName != "" {
+			counts[card.ProjectName]++
+		}
+	}
+	dups := map[string]bool{}
+	for name, count := range counts {
+		if count > 1 {
+			dups[name] = true
+		}
+	}
+	return dups
+}
+
 // agentCardRow is the two-line Agent card shared by the sidebar's Agents
 // section and the floating agent activity panel (2026-10-07): the brand
 // mark with the operational state as a corner dot, the project (or agent
@@ -20,14 +55,11 @@ import (
 // and a working agent spins at the row's trailing edge so mid-flight work
 // reads at a glance. Click handling stays with the caller; the returned
 // element carries the Clicked/ContextMenu surface.
-func (s *Shell) agentCardRow(c *ui.Context, card agent.AgentCardModel, selected bool) ui.Element {
+func (s *Shell) agentCardRow(c *ui.Context, card agent.AgentCardModel, selected bool, dupProjects map[string]bool) ui.Element {
 	t := c.Theme()
 	tokens := designTokens(t.Dark)
 	mark := agentMark(card.Provider, t.Dark)
-	label := card.ProjectName
-	if label == "" {
-		label = card.Title
-	}
+	label, labelIncludesTitle := agentCardLabel(card, dupProjects)
 	var row ui.Element
 	ui.Box(c.Key("agent:" + card.PaneID)).Children(func() {
 		row = ui.ButtonBase(c).
@@ -51,7 +83,9 @@ func (s *Shell) agentCardRow(c *ui.Context, card agent.AgentCardModel, selected 
 			})
 			ui.Column(c).Grow(1).MinWidth(0).Gap(0).Children(func() {
 				ui.Text(c, label).FontSize(Typography().Body).SingleLine().Tooltip(label)
-				if !s.agentFactsView(c, card) && card.Title != label {
+				// The caption repeats the agent title only when the label
+				// does not already carry it (a disambiguated label does).
+				if !labelIncludesTitle && !s.agentFactsView(c, card) && card.Title != label {
 					ui.Text(c, card.Title).FontSize(Typography().Micro).TextColor(t.TextMuted).SingleLine().Tooltip(card.Title)
 				}
 			})

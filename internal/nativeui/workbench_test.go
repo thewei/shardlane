@@ -37,10 +37,11 @@ func workbenchTestShell(t *testing.T) *Shell {
 func TestWorkbenchSidebarShowsSharedCardRows(t *testing.T) {
 	shell := workbenchTestShell(t)
 	tester := ui.NewTester(shell.View, 1200, 800)
-	// Compact rows (2026-10-05): one row per agent showing the project as
-	// the label and the agent title as the caption; state is the corner
-	// dot, so status words no longer appear in the sidebar.
-	for _, want := range []string{"Scout", "Ranger", "Demo"} {
+	// Compact rows (2026-10-05): one row per agent, project as the label.
+	// Both seeded agents share project "Demo", so the labels carry the
+	// agent title to stay distinguishable (F169) and the caption does not
+	// repeat it; state is the corner dot, so status words no longer appear.
+	for _, want := range []string{"Demo · Scout", "Demo · Ranger"} {
 		if !tester.HasText(want) {
 			t.Fatalf("sidebar missing %q; texts=%q", want, tester.Texts())
 		}
@@ -63,7 +64,7 @@ func TestWorkbenchBlockedActionOpensTerminalLocally(t *testing.T) {
 	shell := workbenchTestShell(t)
 	tester := ui.NewTester(shell.QuickPanelView, QuickPanelWidth, QuickPanelHeight)
 
-	if err := tester.Click("Ranger"); err != nil {
+	if err := tester.Click("Demo · Ranger"); err != nil {
 		t.Fatal(err)
 	}
 	tester.Frame()

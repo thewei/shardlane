@@ -193,3 +193,114 @@ func TestLaunchRegistryOwnerErrorIsReplayed(t *testing.T) {
 		t.Fatalf("replay = (%+v, %v, %d launches)", second, err, launches.Load())
 	}
 }
+
+// TestSubmitAttemptConcurrentDuplicatesRunOnce pins F149: concurrent
+// duplicates of one attempt id collapse onto a single launch and every
+// caller receives the same outcome.
+func TestSubmitAttemptConcurrentDuplicatesRunOnce(t *testing.T) {
+	registry := NewLaunchRegistry()
+	release := make(chan struct{})
+	var launches atomic.Int32
+	const callers = 8
+	var wg sync.WaitGroup
+	outcomes := make([]LaunchOutcomeRecord, callers)
+	for i := 0; i < callers; i++ {
+		wg.Add(1)
+		go func(slot int) {
+			defer wg.Done()
+			outcome, err := registry.SubmitAttempt(context.Background(), "continuation:s1", func(ctx context.Context) (LaunchOutcomeRecord, error) {
+				launches.Add(1)
+				<-release
+				return LaunchOutcomeRecord{Launched: true, AgentKey: "pane-1"}, nil
+			})
+			if err != nil {
+				t.Errorf("caller %d: %v", slot, err)
+				return
+			}
+			outcomes[slot] = outcome
+		}(i)
+	}
+	// Give the callers a moment to pile up on the in-flight call, then let
+	// the owner finish.
+	time.Sleep(50 * time.Millisecond)
+	close(release)
+	wg.Wait()
+	if got := launches.Load(); got != 1 {
+		t.Fatalf("launches = %d, want exactly 1", got)
+	}
+	for slot, outcome := range outcomes {
+		if outcome != (LaunchOutcomeRecord{RequestID: "continuation:s1", Launched: true, AgentKey: "pane-1"}) {
+			t.Fatalf("caller %d outcome = %+v", slot, outcome)
+		}
+	}
+}
+
+// TestSubmitAttemptRetryRunsAgain pins the in-flight-only contract: a
+// completed attempt (failed or successful) is forgotten, so the next
+// SubmitAttempt for the same id executes again instead of replaying the
+// stale result.
+func TestSubmitAttemptRetryRunsAgain(t *testing.T) {
+	registry := NewLaunchRegistry()
+	var launches atomic.Int32
+	launch := func(ctx context.Context) (LaunchOutcomeRecord, error) {
+		launches.Add(1)
+		if launches.Load() == 1 {
+			return LaunchOutcomeRecord{}, errors.New("transport unavailable")
+		}
+		return LaunchOutcomeRecord{Launched: true, AgentKey: "pane-2"}, nil
+	}
+	if _, err := registry.SubmitAttempt(context.Background(), "continuation:s2", launch); err == nil {
+		t.Fatal("first attempt must fail")
+	}
+	outcome, err := registry.SubmitAttempt(context.Background(), "continuation:s2", launch)
+	if err != nil {
+		t.Fatalf("retry must rerun, not replay the failure: %v", err)
+	}
+	if !outcome.Launched || outcome.AgentKey != "pane-2" {
+		t.Fatalf("retry outcome = %+v", outcome)
+	}
+	if got := launches.Load(); got != 2 {
+		t.Fatalf("launches = %d, want 2", got)
+	}
+}
+
+// TestSubmitAttemptWaiterCancelDoesNotCancelOwner mirrors the Submit
+// contract: a cancelled waiter returns early while the owner keeps running
+// and the in-flight id still collapses later duplicates onto it.
+func TestSubmitAttemptWaiterCancelDoesNotCancelOwner(t *testing.T) {
+	registry := NewLaunchRegistry()
+	release := make(chan struct{})
+	entered := make(chan struct{})
+	ownerDone := make(chan struct{})
+	go func() {
+		defer close(ownerDone)
+		_, err := registry.SubmitAttempt(context.Background(), "continuation:s3", func(ctx context.Context) (LaunchOutcomeRecord, error) {
+			close(entered)
+			<-release
+			return LaunchOutcomeRecord{Launched: true, AgentKey: "pane-3"}, nil
+		})
+		if err != nil {
+			t.Errorf("owner: %v", err)
+		}
+	}()
+	<-entered // the owner has claimed the id and is inside launch
+	waiterCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := registry.SubmitAttempt(waiterCtx, "continuation:s3", func(ctx context.Context) (LaunchOutcomeRecord, error) {
+		t.Error("cancelled waiter must not become the owner")
+		return LaunchOutcomeRecord{}, nil
+	}); !errors.Is(err, context.Canceled) {
+		t.Fatalf("waiter err = %v, want context.Canceled", err)
+	}
+	close(release)
+	<-ownerDone
+	// In-flight-only: the completed attempt is forgotten, so a late caller
+	// reruns instead of replaying the finished result (TestSubmitAttempt-
+	// RetryRunsAgain pins the same contract for failures).
+	outcome, err := registry.SubmitAttempt(context.Background(), "continuation:s3", func(ctx context.Context) (LaunchOutcomeRecord, error) {
+		return LaunchOutcomeRecord{Launched: true, AgentKey: "pane-3b"}, nil
+	})
+	if err != nil || outcome.AgentKey != "pane-3b" {
+		t.Fatalf("late caller outcome = %+v err = %v", outcome, err)
+	}
+}
