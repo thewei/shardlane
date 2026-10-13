@@ -44,13 +44,6 @@ var defaultIgnoredNames = map[string]struct{}{
 	"venv":          {},
 }
 
-// DefaultIgnored reports whether the entry name is hidden by the fixed
-// default set. .git is part of it: plumbing does not belong in a file tree.
-func DefaultIgnored(name string) bool {
-	_, ok := defaultIgnoredNames[name]
-	return ok
-}
-
 // IgnoreSet answers one question for the tree renderer: is this entry
 // hidden? It merges the fixed names with git's ignored paths for the root.
 type IgnoreSet struct {

@@ -221,26 +221,6 @@ func TestCodexMakePreview(t *testing.T) {
 	}
 }
 
-func TestPathOwns(t *testing.T) {
-	cases := []struct {
-		root string
-		path string
-		want bool
-	}{
-		{"/tmp/codex", "/tmp/codex/a.jsonl", true},
-		{"/tmp/codex", "/tmp/codex", true},
-		{"/tmp/codex", "/tmp/codex-other/a.jsonl", false},
-		{"/tmp/codex/", "/tmp/codex/a.jsonl", true},
-		{"", "/tmp/x", false},
-		{"/tmp/codex", "sqlite:/other", false},
-	}
-	for _, tc := range cases {
-		if got := pathOwns(tc.root, tc.path); got != tc.want {
-			t.Fatalf("pathOwns(%q, %q) = %v, want %v", tc.root, tc.path, got, tc.want)
-		}
-	}
-}
-
 func TestListJSONLRefsMissingRootIsEmpty(t *testing.T) {
 	references, err := listJSONLRefs(filepath.Join(t.TempDir(), "missing"), AgentCodex, rolloutNativeID)
 	if err != nil {

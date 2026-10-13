@@ -68,12 +68,6 @@ func (w *workspaceSurfaceState) current() WorkspaceSurfaceKind {
 	return w.kind
 }
 
-func (w *workspaceSurfaceState) activeContext() WorkspaceContextKey {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	return w.context
-}
-
 // resetToTerminal applies the "startup / workspace selection / Project/Tab/
 // Pane click → Terminal" family of transitions. A Tab/repo context change
 // always lands on Terminal (plan §6 last row) and drops prior diff state.

@@ -169,16 +169,6 @@ func (m *Manager) Diagnose() []Diagnosis {
 	return rows
 }
 
-// DiagnoseProvider reconciles one provider.
-func (m *Manager) DiagnoseProvider(id ProviderID) (Diagnosis, error) {
-	switch id {
-	case ProviderClaude, ProviderAntigravity:
-		return m.diagnoseProvider(id), nil
-	default:
-		return Diagnosis{}, fmt.Errorf("unsupported provider %q", id)
-	}
-}
-
 func (m *Manager) diagnoseProvider(id ProviderID) Diagnosis {
 	if _, ok := m.spec(id); !ok {
 		return Diagnosis{Provider: id, State: StateUnsupported, Detail: "Unsupported provider"}

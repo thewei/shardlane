@@ -85,17 +85,6 @@ func TestCatalogListOrderingAndDescription(t *testing.T) {
 	}
 }
 
-func TestCatalogProjectScopingUsesNormalizedKey(t *testing.T) {
-	catalog := NewCatalog()
-	catalog.Put(catalogTestSession("in", "In", "/w/in.jsonl", "/Users/me/work/project"), 1000, "")
-	catalog.Put(catalogTestSession("out", "Out", "/w/out.jsonl", "/Users/me/other"), 2000, "")
-
-	total, sessions := catalog.SessionsForProject("/Users/me/work/./project", 10)
-	if total != 1 || len(sessions) != 1 || sessions[0].Meta.Key != "in" {
-		t.Fatalf("scoped = (%d, %+v)", total, sessions)
-	}
-}
-
 func TestCatalogSearchMetadataTermsAndScopes(t *testing.T) {
 	catalog := NewCatalog()
 	alpha := catalogTestSession("alpha", "Alpha Release Notes", "/w/a.jsonl", "/work/alpha")

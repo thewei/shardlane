@@ -44,10 +44,3 @@ func (s *Shell) confirmCreateBranch(name string) {
 	s.createBranch(name)
 }
 
-// branchStatusTone exposes the busy state to the header.
-func (s *Shell) branchStatusTone() StatusTone {
-	if s.git != nil && s.git.branchBusy {
-		return ToneWorking
-	}
-	return ToneNeutral
-}

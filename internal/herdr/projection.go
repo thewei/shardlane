@@ -122,27 +122,6 @@ type Projection struct {
 	Agents           []Agent   `json:"agents"`
 }
 
-// FocusedTerminalID returns the Herdr terminal owned by the currently focused
-// Pane. Empty means the runtime has no attachable selected Pane yet.
-func (p Projection) FocusedTerminalID() string {
-	for _, pane := range p.Panes {
-		if pane.ID == p.FocusedPaneID {
-			return pane.TerminalID
-		}
-	}
-	return ""
-}
-
-// FocusedLayout returns Herdr's authoritative layout for the selected Tab.
-func (p Projection) FocusedLayout() (Layout, bool) {
-	for _, layout := range p.Layouts {
-		if layout.TabID == p.FocusedTabID {
-			return layout, true
-		}
-	}
-	return Layout{}, false
-}
-
 type sessionSnapshotResult struct {
 	Type     string          `json:"type"`
 	Snapshot sessionSnapshot `json:"snapshot"`

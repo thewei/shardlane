@@ -14,8 +14,6 @@ type SessionSourceLocator struct {
 	Identity string
 }
 
-func (l SessionSourceLocator) NativeIdentity() string { return l.Identity }
-
 // ResolveSessionSourceLocator mirrors the measured Herdr live protocol:
 // kind=path is an exact source path; kind=id is usable only for providers with
 // an authoritative live semantic source. Unknown kinds are never guessed.

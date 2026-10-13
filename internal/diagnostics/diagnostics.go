@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"regexp"
 	"runtime"
 	"strings"
@@ -215,18 +214,6 @@ func BuildExportArchive(snapshot Snapshot, logs []LogEntry, home string) (string
 		return "", err
 	}
 	return string(data), nil
-}
-
-// ExportToFile writes the sanitized bundle to a destination path.
-func ExportToFile(destPath string, snapshot Snapshot, logs []LogEntry, home string) error {
-	content, err := BuildExportArchive(snapshot, logs, home)
-	if err != nil {
-		return err
-	}
-	if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
-		return err
-	}
-	return os.WriteFile(destPath, []byte(content), 0o600)
 }
 
 // FormatSnapshotSummary creates a brief human-readable diagnostics overview.

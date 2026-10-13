@@ -1,7 +1,6 @@
 package nativeui
 
 import (
-	"fmt"
 	"strconv"
 )
 
@@ -61,11 +60,3 @@ func (s *Shell) updateDockBadge() {
 	s.dock.update(s.BuildStatusCenterSnapshot())
 }
 
-// FormatDockAttentionMessage returns an optional formatted console/log label.
-func FormatDockAttentionMessage(snapshot StatusCenterSnapshot) string {
-	badge := DockBadgeText(snapshot)
-	if badge == "" {
-		return "Dock: Clear"
-	}
-	return fmt.Sprintf("Dock Badge: %s (Attention: %d, Review: %d)", badge, snapshot.NeedsAttention, snapshot.ReviewPending)
-}

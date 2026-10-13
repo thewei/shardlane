@@ -117,15 +117,3 @@ func TestProjectSnapshotMapsAgentSessionIdentity(t *testing.T) {
 	}
 }
 
-func TestFocusedTerminalID(t *testing.T) {
-	projection := Projection{
-		FocusedPaneID: "p2",
-		Panes: []Pane{
-			{ID: "p1", TerminalID: "term-1"},
-			{ID: "p2", TerminalID: "term-2"},
-		},
-	}
-	if got := projection.FocusedTerminalID(); got != "term-2" {
-		t.Fatalf("FocusedTerminalID = %q", got)
-	}
-}

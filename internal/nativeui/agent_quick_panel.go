@@ -3,7 +3,6 @@ package nativeui
 import (
 	"fmt"
 
-	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 	"github.com/wh-studio/herdr-client/internal/agent"
 )
@@ -48,30 +47,6 @@ func (s *Shell) quickPanelStat(c *ui.Context, label string, count int, tone Stat
 		s.workbench.setFilterChoice(filter)
 		s.fitQuickPanel()
 	}
-}
-
-// openAgentQuickPanel anchors the existing status/tray flyout beside the
-// selected sidebar card — ui.Element.Bounds is already the content-area
-// rectangle the flyout anchor wants; a second click on the same card
-// closes it. The headless/native-unavailable fallback retains the existing
-// Open Agent behavior, without creating a second window.
-func (s *Shell) openAgentQuickPanel(anchor ui.Element, card agent.AgentCardModel) {
-	if s.win == nil {
-		s.openAgentCard(card)
-		return
-	}
-	if s.quickPanel != nil && s.quickPanelAgent != nil && *s.quickPanelAgent == card.Key {
-		s.closeQuickPanel()
-		return
-	}
-	key := card.Key
-	s.quickPanelAgent = &key
-	s.openQuickPanelFlyout(mygo.FlyoutOptions{
-		Parent:    s.win,
-		Anchor:    quickAnchorRect(anchor.Bounds()),
-		Placement: mygo.PlacementBottom,
-		Gap:       quickPanelGap,
-	})
 }
 
 // agentQuickPanelDetail uses an identity fence on every paint. If the Agent

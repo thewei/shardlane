@@ -1,7 +1,6 @@
 package nativeui
 
 import (
-	"strings"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/wh-studio/herdr-client/internal/gitworkbench"
@@ -12,66 +11,6 @@ import (
 type changesPanelState struct {
 	filter      string
 	filterFocus bool
-}
-
-// changesToolView renders the Right Panel Changes surface: a Godiff-style
-// changed-file tree and footer — it never renders code diff lines
-// (plan §10.3).
-func (s *Shell) changesToolView(c *ui.Context) {
-	t := c.Theme()
-	pal := gdPaletteFor(t)
-
-	if s.git == nil || s.git.root == "" {
-		if s.git != nil && s.git.rootBusy {
-			ui.Column(c).Grow(1).Center().Gap(6).Children(func() {
-				ui.Spinner(c).Size(16, 16)
-				ui.Text(c, "Resolving repository…").FontSize(Typography().Caption).TextColor(t.TextMuted)
-			})
-			return
-		}
-		s.gdEmptyPanel(c, pal, "No Git Repository", "The selected tab's directory is not inside a Git repository.", nil)
-		return
-	}
-
-	snap := s.gitSnapshot()
-	if snap == nil {
-		ui.Column(c).Grow(1).Center().Gap(6).Children(func() {
-			if s.git.refreshing {
-				ui.Spinner(c).Size(16, 16)
-			}
-			ui.Text(c, "Reading changes…").FontSize(Typography().Caption).TextColor(t.TextMuted)
-		})
-		return
-	}
-
-	ui.Column(c).Grow(1).MinHeight(0).Children(func() {
-		// Filter field, as macOS search fields (GWB-140).
-		ui.Row(c).FillWidth().Padding(6, 10, 2).Children(func() {
-			if gdSearchInput(c, &s.changes.filter, "Filter files", &s.changes.filterFocus, &s.git.gdTyping) {
-				s.changesTree = nil // rebuilt below on this pass
-				s.git.gdRowsDirty = true
-			}
-		})
-
-		// Changed-file tree (GWB-141..145). List selection drives
-		// dir-collapse/file-open through changesClick. The combined tree
-		// chooses no rows beyond the opened file, so no multi-selection.
-		tree := s.currentChangesTree(snap)
-		rows := gitworkbench.Flatten(tree, s.git.collapsedDirs)
-		list := s.gdChangedTreeList(c, pal, rows, &s.changesList, &s.changesSelected,
-			nil, gdViewCombined, s.changesClick)
-		list.Children(func() {
-			if len(rows) == 0 {
-				msg := "No changed files"
-				if strings.TrimSpace(s.changes.filter) != "" {
-					msg = "No matching files"
-				}
-				ui.Text(c, msg).FontSize(Typography().Body).TextColor(t.TextMuted).Padding(12)
-			}
-		})
-
-		s.gdChangesFooter(c, pal, snap)
-	})
 }
 
 // gdChangedTreeList renders one Godiff-style changed-file tree list over the

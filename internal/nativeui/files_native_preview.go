@@ -139,16 +139,22 @@ func (s *Shell) beginNativeImage(path string) {
 	if s.win == nil {
 		// Headless (tests): decode inline; the Bitmap wrap needs the GPU,
 		// so headless state carries only the outcome.
-		img, err := filesview.DecodeImageBounded(path)
+		// The decode result is intentionally discarded: headless state
+		// carries only the outcome, never the bitmap.
+		if _, err := filesview.DecodeImageBounded(path); err != nil {
+			st := &s.rightPanel
+			if gen != st.filesGen.Load() || st.currentRoot != root || st.selectedFilePath != path {
+				return
+			}
+			st.nativeImageLoading = false
+			st.nativeImageFailed = err.Error()
+			return
+		}
 		st := &s.rightPanel
 		if gen != st.filesGen.Load() || st.currentRoot != root || st.selectedFilePath != path {
 			return
 		}
 		st.nativeImageLoading = false
-		if err != nil {
-			st.nativeImageFailed = err.Error()
-		}
-		_ = img
 		return
 	}
 	go func() {

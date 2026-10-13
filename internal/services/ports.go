@@ -70,14 +70,6 @@ func NewPortProbe() *PortProbe {
 	}
 }
 
-// NewPortProbeWithRunner allows testing with mock lsof output.
-func NewPortProbeWithRunner(runner func(ctx context.Context) (string, error)) *PortProbe {
-	return &PortProbe{
-		cachedPorts: make(map[int][]uint16),
-		runner:      runner,
-	}
-}
-
 // SetCWDRunner configures the cwd lookup runner for testing.
 func (p *PortProbe) SetCWDRunner(fn func(ctx context.Context, pids []int) (map[int]string, error)) {
 	p.mu.Lock()

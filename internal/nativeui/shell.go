@@ -381,17 +381,6 @@ type Shell struct {
 	// paneSurfaceMemo remembers the surface each pane was last used on, so
 	// a sidebar Agent click lands where the user left it (N19 #4).
 	paneSurfaceMemo map[string]WorkspaceSurfaceKind
-	// find* owns the terminal card's find bar (herdr pane.copy_search);
-	// findPaneID scopes the bar to one card, findMatch continues searches
-	// while the pane's content revision still matches.
-	findPaneID     string
-	findQuery      string
-	findBusy       bool
-	findError      string
-	findTotal      int64
-	findCurrent    int64
-	findHasCurrent bool
-	findMatch      *herdr.PaneMatch
 	chatDraft          string
 	chatQueuedText     string
 	chatOutcome        string
@@ -533,7 +522,6 @@ func NewShell(opts ...ShellOption) *Shell {
 	for _, opt := range opts {
 		opt(s)
 	}
-	s.setHighlightStyle(s.settings.General.Appearance == "dark")
 	s.restoreSession()
 	return s
 }

@@ -19,10 +19,6 @@ func NewFileStore(dir string) *FileStore {
 	return &FileStore{path: filepath.Join(dir, FileName)}
 }
 
-func NewFileStoreAt(path string) *FileStore {
-	return &FileStore{path: path}
-}
-
 func (s *FileStore) Path() string { return s.path }
 
 func (s *FileStore) Load(ctx context.Context) (Settings, error) {

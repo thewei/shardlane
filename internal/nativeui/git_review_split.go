@@ -61,7 +61,6 @@ func (s *Shell) gitSplitReviewSurface(c *ui.Context) {
 }
 
 func (s *Shell) gitLocalChangesReview(c *ui.Context) {
-	t := c.Theme()
 	ui.Row(c).Grow(1).MinHeight(0).MinWidth(0).AlignItems(ui.Stretch).Children(func() {
 		s.gitFileNavigationColumn(c, func() { s.sidebarFilesView(c) })
 		ui.Column(c).Grow(1).MinHeight(0).MinWidth(0).Children(func() {
@@ -71,7 +70,6 @@ func (s *Shell) gitLocalChangesReview(c *ui.Context) {
 			s.gitQuickCommitComposer(c)
 		})
 	})
-	_ = t
 }
 
 // gitFilePaneLimits is the navigator's width in a window this wide, and the

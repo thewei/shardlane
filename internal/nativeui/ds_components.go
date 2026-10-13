@@ -8,14 +8,6 @@ import (
 // Design System v2 shared page primitives (DS-03). Every surface composes
 // these instead of restating sizes, radii, spacing and status colors.
 
-// appPage is the standard content page: tokenized header plus body.
-func appPage(c *ui.Context, title, subtitle string, body func()) {
-	ui.Column(c).Grow(1).MinWidth(0).Background(designTokens(c.Theme().Dark).Content).Children(func() {
-		pageHeader(c, title, subtitle)
-		body()
-	})
-}
-
 // Readable column widths. A page's content never stretches past its cap: a
 // wide window grows equal margins on both sides instead of long lines or a
 // one-sided gap. The caps live here, once.
@@ -266,21 +258,6 @@ func statusPill(c *ui.Context, text string, tone StatusTone) {
 // providerBadge shows the provider display name with a stable neutral pill.
 func providerBadge(c *ui.Context, agent history.AgentID) {
 	statusPill(c, agent.DisplayName(), ToneNeutral)
-}
-
-// agentRow is the shared Agent row: label plus derived status pill.
-func agentRow(c *ui.Context, label string, status string) ui.Element {
-	sp := Spacing()
-	typ := Typography()
-	tone := operationalTone(normalizeRuntimeStatus(status))
-	var view ui.Element
-	ui.Box(c).Children(func() {
-		view = ui.Row(c).FillWidth().Padding(sp.XS, sp.S).Gap(sp.S).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, fallbackText(label, "Agent")).FontSize(typ.Body).Grow(1).SingleLine()
-			statusPill(c, operationalLabel(normalizeRuntimeStatus(status)), tone)
-		})
-	})
-	return view
 }
 
 // toolCard is the shared tool call/result card, reusable by History detail

@@ -324,19 +324,6 @@ func TestCommitSurfaceFlow(t *testing.T) {
 
 // TestFileDropGuardOnHiddenTerminal pins GWB-020 (file drop surface rule):
 // a drop while Diff is visible never falls through to the hidden terminal.
-func TestFileDropGuardOnHiddenTerminal(t *testing.T) {
-	shell := gitSurfaceTestShell(t, t.TempDir())
-	shell.showSurface(WorkspaceSurfaceDiff)
-
-	err := shell.HandleFileDrop([]string{"/tmp/a.txt"}, "p1")
-	if err != nil {
-		t.Fatalf("guarded drop must not error, got %v", err)
-	}
-	if shell.surface.current() != WorkspaceSurfaceDiff {
-		t.Fatal("drop must not change the visible surface")
-	}
-}
-
 // TestChangesPanelClicksOpenDiff pins GWB-145: the changes tree row
 // activation opens the center diff for the file.
 func TestChangesPanelClicksOpenDiff(t *testing.T) {

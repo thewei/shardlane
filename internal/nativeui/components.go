@@ -98,18 +98,6 @@ func sectionLabel(c *ui.Context, label string) {
 		TextColor(c.Theme().TextMuted)
 }
 
-func panelCard(c *ui.Context, children func()) ui.Element {
-	t := c.Theme()
-	tokens := designTokens(t.Dark)
-	return ui.Column(c).
-		Radius(8).
-		Background(tokens.Panel).
-		Border(1, tokens.BorderSubtle).
-		Padding(12).
-		Gap(8).
-		Children(children)
-}
-
 // treeRowAction is a row's hover icon button.
 type treeRowAction struct {
 	Label string

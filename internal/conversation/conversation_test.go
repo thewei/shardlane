@@ -9,23 +9,6 @@ import (
 	"github.com/wh-studio/herdr-client/internal/agent"
 )
 
-func TestConversationIDRoundTrip(t *testing.T) {
-	id, err := NewConversationID(LocatorHistory, "claude-code", "sess-1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	kind, provider, key, err := ParseConversationID(id)
-	if err != nil || kind != LocatorHistory || provider != "claude-code" || key != "sess-1" {
-		t.Fatalf("round trip = (%v, %q, %q, %v)", kind, provider, key, err)
-	}
-	if _, err := NewConversationID(LocatorHistory, "", "k"); err == nil {
-		t.Fatal("empty provider must fail")
-	}
-	if _, _, _, err := ParseConversationID("bogus"); err == nil {
-		t.Fatal("malformed id must fail closed")
-	}
-}
-
 func TestSessionFingerprintIsStableAndDistinct(t *testing.T) {
 	a := SessionIdentity{Provider: "claude-code", Kind: "id", Source: "provider", Value: "sess-1"}
 	b := SessionIdentity{Provider: "claude-code", Kind: "id", Source: "provider", Value: "sess-1"}
@@ -35,18 +18,6 @@ func TestSessionFingerprintIsStableAndDistinct(t *testing.T) {
 	}
 	if a.Fingerprint() == c.Fingerprint() {
 		t.Fatal("different provider must fingerprint differently")
-	}
-}
-
-func TestClampWindowBounds(t *testing.T) {
-	if b, a := ClampWindowBounds(0, 0); b != DefaultHalfWindow || a != DefaultHalfWindow {
-		t.Fatalf("zero clamp = %d/%d", b, a)
-	}
-	if b, _ := ClampWindowBounds(5000, 0); b != MaxBeforeAfter {
-		t.Fatalf("max clamp = %d", b)
-	}
-	if b, a := ClampWindowBounds(10, 20); b != 10 || a != 20 {
-		t.Fatalf("passthrough = %d/%d", b, a)
 	}
 }
 

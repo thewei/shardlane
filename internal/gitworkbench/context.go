@@ -50,11 +50,3 @@ func (r *Runner) FileLines(ctx context.Context, root, relPath string, start, cou
 	return lines[start-1 : end], nil
 }
 
-// FileLineCount reports the working-tree line count for expansion bounds.
-func (r *Runner) FileLineCount(root, relPath string) (int, error) {
-	lines, err := r.FileLines(context.Background(), root, relPath, 1, 1<<30/2)
-	if err != nil {
-		return 0, err
-	}
-	return len(lines), nil
-}

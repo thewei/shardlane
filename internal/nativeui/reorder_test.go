@@ -72,16 +72,12 @@ func TestReorderOnlyWithinAuthoritativeParentAndSession(t *testing.T) {
 			t.Errorf("canReorderTree(%+v, %+v)=%v, want %v", tc.from, tc.to, got, tc.ok)
 		}
 	}
-	if !s.canSwapCard(paneCardDrag{"local-1", "t1", "p1"}, "p2", "t1") {
-		t.Fatal("same-tab canvas card swap rejected")
-	}
 	if !s.canDropOnPaneCard(treeNodeDrag{"local-1", "pane", "t1", "p1"}, "p3", "t2") {
 		t.Fatal("cross-tab canvas card drop rejected")
 	}
 	s.projection.Layouts[0].Zoomed = true
-	if s.canReorderTree(tree("pane", "t1", "p1"), tree("pane", "t1", "p2")) ||
-		s.canSwapCard(paneCardDrag{"local-1", "t1", "p1"}, "p2", "t1") {
-		t.Fatal("zoomed layout must not accept swaps")
+	if s.canReorderTree(tree("pane", "t1", "p1"), tree("pane", "t1", "p2")) {
+		t.Fatal("zoomed layout must not accept reorders")
 	}
 }
 

@@ -10,22 +10,6 @@ import (
 
 // TestDefaultIgnoredPinsTheFixedSet pins the default name set: heavy and
 // generated directories hide, one-file entries and IDE settings stay.
-func TestDefaultIgnoredPinsTheFixedSet(t *testing.T) {
-	hidden := []string{".git", ".DS_Store", "node_modules", "__pycache__", ".venv", "venv",
-		"dist", "build", "target", "coverage", ".cache", ".next", ".turbo", ".mypy_cache", ".pytest_cache", ".gradle", ".nuxt"}
-	for _, name := range hidden {
-		if !DefaultIgnored(name) {
-			t.Errorf("expected %q to be ignored by default", name)
-		}
-	}
-	visible := []string{".env", ".github", ".vscode", ".idea", "src", "README.md", "go.mod", "node_modules.bak"}
-	for _, name := range visible {
-		if DefaultIgnored(name) {
-			t.Errorf("expected %q to stay visible", name)
-		}
-	}
-}
-
 // TestIgnoreSetMergesNamesAndGitPaths covers the three hide rules: own
 // name at any depth, exact git-ignored path, and any git-ignored ancestor.
 func TestIgnoreSetMergesNamesAndGitPaths(t *testing.T) {

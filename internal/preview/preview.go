@@ -139,12 +139,6 @@ func (c *WindowController) OpenPreviewWindow(targetURL string) (*mygo.Window, er
 	return win, nil
 }
 
-func (c *WindowController) CurrentWindow() *mygo.Window {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.win
-}
-
 func openExternalBrowser(rawURL string) error {
 	return platform.OpenURL(rawURL)
 }

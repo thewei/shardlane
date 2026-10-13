@@ -16,24 +16,6 @@ import (
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 
-func TestGitToolbarCompactsWithCenterWidth(t *testing.T) {
-	for _, tc := range []struct {
-		window             float32
-		sidebar, inspector bool
-		compact            bool
-	}{
-		{960, true, false, true},
-		{1200, true, false, false},
-		{1280, true, true, true},
-		{1512, true, true, false},
-		{960, false, true, true},
-	} {
-		if got := gitActionBarCompact(tc.window, tc.sidebar, tc.inspector, DefaultRightPanelWidth); got != tc.compact {
-			t.Errorf("window %v sidebar %v inspector %v: compact=%v, want %v", tc.window, tc.sidebar, tc.inspector, got, tc.compact)
-		}
-	}
-}
-
 func TestGitToolbarCompactKeepsPrimaryActions(t *testing.T) {
 	s := gitSurfaceTestShell(t, t.TempDir())
 	s.showSurface(WorkspaceSurfaceDiff)

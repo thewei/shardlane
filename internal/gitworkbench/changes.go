@@ -104,9 +104,6 @@ func (s *ChangesSnapshot) ByPath(path string) (ChangeFile, bool) {
 	return ChangeFile{}, false
 }
 
-// Healthy reports whether the snapshot carries usable facts.
-func (s *ChangesSnapshot) Healthy() bool { return s.Err == "" && s.Root != "" }
-
 // Fingerprint derives a per-file staleness identity: status + paths + line
 // stats + patch digest. A changed fingerprint means the visible diff no
 // longer describes the file and the commit fence must fail closed.

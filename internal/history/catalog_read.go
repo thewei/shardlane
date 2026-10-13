@@ -107,16 +107,6 @@ func (c *Catalog) ListFilteredSessions(projectPath string, provider AgentID, lim
 	}), limit)
 }
 
-// SessionsForProject returns (total, page) for one normalized project scope.
-func (c *Catalog) SessionsForProject(projectPath string, limit int) (int, []SessionSummary) {
-	projectKey := NormalizedProjectKey(projectPath)
-	if projectKey == "" {
-		return 0, []SessionSummary{}
-	}
-	rows := c.rows(func(e *catalogEntry) bool { return e.projectKey == projectKey })
-	return len(rows), summaries(rows, limit)
-}
-
 // Session fetches one session by key regardless of archived state.
 func (c *Catalog) Session(key string) *SessionMeta {
 	c.mu.RLock()

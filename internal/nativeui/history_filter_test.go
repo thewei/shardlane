@@ -15,26 +15,7 @@ import (
 	"github.com/wh-studio/herdr-client/internal/history"
 )
 
-func TestHistoryResultLabelDescribesBoundedView(t *testing.T) {
-	tests := []struct {
-		loading, loaded bool
-		errText         string
-		count           int
-		want            string
-	}{
-		{loading: true, want: "Searching…"},
-		{errText: "offline", want: "Unable to load results"},
-		{want: "Results not loaded"},
-		{loaded: true, count: 0, want: "0 results · Newest first"},
-		{loaded: true, count: 1, want: "1 result · Newest first"},
-		{loaded: true, count: HistoryListLimit, want: "Latest 100 results · Newest first"},
-	}
-	for _, tc := range tests {
-		got := historyResultLabel(tc.loading, tc.loaded, tc.errText, tc.count)
-		if got != tc.want {
-			t.Errorf("label = %q, want %q", got, tc.want)
-		}
-	}
+func TestHistoryFiltersActiveDetection(t *testing.T) {
 	if !historyFiltersActive(" fix ", "") || !historyFiltersActive("", string(history.AgentCodex)) {
 		t.Fatal("search and provider scopes must both register as active")
 	}
@@ -42,7 +23,6 @@ func TestHistoryResultLabelDescribesBoundedView(t *testing.T) {
 		t.Fatal("whitespace-only search must not count as an active filter")
 	}
 }
-
 func TestHistoryNoResultsCanClearFilters(t *testing.T) {
 	shell, _, _ := newHistoryTestShell(t)
 	shell.router.Replace(routeHistory)

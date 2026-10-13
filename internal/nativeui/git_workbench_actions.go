@@ -17,20 +17,6 @@ import (
 // moving actions to a menu never changes Git semantics or stored state.
 const gitActionBarMinExpandedCenterWidth float32 = 760
 
-func gitActionBarCompact(windowWidth float32, sidebarVisible, inspectorVisible bool, inspectorWidth int) bool {
-	if windowWidth <= 0 {
-		return false // no geometry established yet
-	}
-	center := windowWidth
-	if sidebarVisible {
-		center -= sidebarWidth
-	}
-	if inspectorVisible {
-		center -= float32(inspectorWidth)
-	}
-	return center < gitActionBarMinExpandedCenterWidth
-}
-
 // gitWorkbenchActionBar keeps common actions reachable without moving the
 // user out of the main Diff Review. Less common actions live in a native
 // menu, preserving keyboard focus and reducing visual clutter.

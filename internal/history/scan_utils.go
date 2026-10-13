@@ -31,25 +31,6 @@ func titleFromMessages(messages []TranscriptMessage) string {
 	return ""
 }
 
-// pathOwns reports whether path lives under root, respecting separator
-// boundaries — the shared roster/cleanup ownership predicate.
-func pathOwns(root, path string) bool {
-	if root == "" {
-		return false
-	}
-	if strings.HasSuffix(root, "/") || strings.HasSuffix(root, "\\") {
-		return strings.HasPrefix(path, root)
-	}
-	rest, ok := strings.CutPrefix(path, root)
-	if !ok {
-		return false
-	}
-	if rest == "" {
-		return true
-	}
-	return strings.HasPrefix(rest, "/") || strings.HasPrefix(rest, "\\") || strings.HasPrefix(rest, "#")
-}
-
 // listJSONLRefs walks dir recursively and returns one reference per non-empty
 // .jsonl file. A missing root is a legitimate empty source, not an error;
 // a walk failure is, because contents cannot be confirmed.

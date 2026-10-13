@@ -23,7 +23,6 @@ import (
 type gitService struct {
 	runner      *gitworkbench.Runner
 	cache       *gitworkbench.Cache
-	highlighter *gitworkbench.ChromaHighlighter
 
 	// Operation-specific async generations (P0-04).
 	rootGen      atomic.Uint64
@@ -140,7 +139,6 @@ func newGitService() *gitService {
 	return &gitService{
 		runner:        runner,
 		cache:         gitworkbench.NewCache(runner),
-		highlighter:   gitworkbench.NewChromaHighlighter("github"),
 		rootOf:        map[string]string{},
 		collapsedDirs: map[string]bool{},
 		gdViewed:      map[string]string{},
@@ -329,18 +327,6 @@ func (s *Shell) resetGitContextState() {
 	s.git.preflight = nil
 	s.git.preflightSnap = nil
 	s.changesTree = nil
-}
-
-// setHighlightStyle follows the app theme (light/dark).
-func (s *Shell) setHighlightStyle(dark bool) {
-	if s.git == nil {
-		return
-	}
-	if dark {
-		s.git.highlighter.SetStyle("github-dark")
-	} else {
-		s.git.highlighter.SetStyle("github")
-	}
 }
 
 // workspaceContext derives the current WorkspaceContextKey.

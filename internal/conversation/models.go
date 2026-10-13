@@ -77,28 +77,6 @@ type ConversationWindow struct {
 	HasNewer       bool               `json:"has_newer"`
 }
 
-// ClampWindowBounds normalizes a caller's pagination request to the service
-// bounds: at most MaxBeforeAfter items in either direction, at least one
-// side non-zero.
-func ClampWindowBounds(before, after int) (int, int) {
-	if before < 0 {
-		before = 0
-	}
-	if after < 0 {
-		after = 0
-	}
-	if before > MaxBeforeAfter {
-		before = MaxBeforeAfter
-	}
-	if after > MaxBeforeAfter {
-		after = MaxBeforeAfter
-	}
-	if before == 0 && after == 0 {
-		before, after = DefaultHalfWindow, DefaultHalfWindow
-	}
-	return before, after
-}
-
 // PromptDisposition is the SSOT prompt disposition derived from the 0.5
 // sendability classifier (0.6 §10). The composer label is presentation
 // only; the service decides again at commit time.

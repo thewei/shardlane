@@ -208,15 +208,6 @@ func (s *Shell) canDropOnPaneCard(from treeNodeDrag, toPaneID, tabID string) boo
 		paneBelongsToTab(s.projection, toPaneID, tabID)
 }
 
-func (s *Shell) canSwapCard(from paneCardDrag, toPaneID, tabID string) bool {
-	return s.canDropOnPaneCard(treeNodeDrag{
-		Instance: from.Instance,
-		Kind:     "pane",
-		ParentID: from.TabID,
-		ID:       from.PaneID,
-	}, toPaneID, tabID)
-}
-
 type paneCardDropAction int
 
 const (

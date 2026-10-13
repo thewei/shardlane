@@ -65,17 +65,6 @@ func LiveCapabilityFor(agent AgentID) (LiveCapability, bool) {
 	return capability, ok
 }
 
-// LiveCapableAgents lists providers with any live semantic source.
-func LiveCapableAgents() []AgentID {
-	agents := make([]AgentID, 0, len(liveRegistry))
-	for _, agent := range AllAgents {
-		if liveRegistry[agent].Mode != LiveModeNone {
-			agents = append(agents, agent)
-		}
-	}
-	return agents
-}
-
 // ErrLiveDecoderUnavailable is returned by NewLiveDecoder for providers
 // whose Go line decoder has not been ported yet; callers must fail closed.
 var ErrLiveDecoderUnavailable = errors.New("live decoder unavailable for provider")

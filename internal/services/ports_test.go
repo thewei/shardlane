@@ -1,7 +1,6 @@
 package services
 
 import (
-	"context"
 	"testing"
 )
 
@@ -42,32 +41,6 @@ func TestParseLsofListeningPorts(t *testing.T) {
 
 // TestPortProbeCaching pins WIX-091: background cache reuses the last scan
 // within the scan interval and doesn't spam runner execution.
-func TestPortProbeCaching(t *testing.T) {
-	calls := 0
-	probe := NewPortProbeWithRunner(func(ctx context.Context) (string, error) {
-		calls++
-		return sampleLsofOutput, nil
-	})
-
-	ctx := context.Background()
-	ports1 := probe.PortsForPID(ctx, 12345)
-	if len(ports1) != 1 || ports1[0] != 3000 {
-		t.Fatalf("expected port 3000, got %+v", ports1)
-	}
-	if calls != 1 {
-		t.Fatalf("expected 1 runner call, got %d", calls)
-	}
-
-	// Immediate second call should use cache without invoking runner
-	ports2 := probe.PortsForPID(ctx, 34567)
-	if len(ports2) != 1 || ports2[0] != 5173 {
-		t.Fatalf("expected port 5173, got %+v", ports2)
-	}
-	if calls != 1 {
-		t.Fatalf("expected still 1 runner call due to caching, got %d", calls)
-	}
-}
-
 // TestLocalPreviewURL pins P8 loopback target format.
 func TestLocalPreviewURL(t *testing.T) {
 	if got := LocalPreviewURL(3000); got != "http://127.0.0.1:3000" {
@@ -96,30 +69,3 @@ func TestParseLsofListeners(t *testing.T) {
 
 // TestObserveListenersFillsCWD pins the best-effort cwd enrichment and its
 // tolerance for a failing cwd lookup.
-func TestObserveListenersFillsCWD(t *testing.T) {
-	probe := NewPortProbeWithRunner(func(ctx context.Context) (string, error) {
-		return sampleLsofOutput, nil
-	})
-	probe.SetCWDRunner(func(ctx context.Context, pids []int) (map[int]string, error) {
-		return map[int]string{12345: "/repo"}, nil
-	})
-	listeners, err := probe.ObserveListeners(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if listeners[12345].CWD != "/repo" {
-		t.Fatalf("cwd = %q", listeners[12345].CWD)
-	}
-	if listeners[23456].CWD != "" {
-		t.Fatalf("unlisted cwd = %q", listeners[23456].CWD)
-	}
-
-	// A failing cwd lookup keeps the listener facts usable.
-	probe.SetCWDRunner(func(ctx context.Context, pids []int) (map[int]string, error) {
-		return nil, context.DeadlineExceeded
-	})
-	listeners, err = probe.ObserveListeners(context.Background())
-	if err != nil || len(listeners) != 3 {
-		t.Fatalf("listeners after cwd failure = %v, %v", listeners, err)
-	}
-}

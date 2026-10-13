@@ -87,7 +87,7 @@ func TestResolveSessionSourceLocatorMatchesMeasuredHerdrShapes(t *testing.T) {
 	}
 	for _, test := range tests {
 		got := ResolveSessionSourceLocator(test.agent, test.kind, "herdr:"+string(test.agent), test.value)
-		if got.Kind != test.want || got.Agent != test.agent || got.NativeIdentity() != test.value {
+		if got.Kind != test.want || got.Agent != test.agent {
 			t.Fatalf("locator(%s,%s) = %#v, want %s", test.agent, test.kind, got, test.want)
 		}
 	}

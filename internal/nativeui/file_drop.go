@@ -88,43 +88,6 @@ func quoteSingle(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
-// HandleFileDrop safely converts dropped paths into quoted text and pastes
-// them into the target pane terminal without trailing newline execution
-// (GWB-008/009). Drops only reach terminals while the Terminal surface is
-// the visible primary surface — never a hidden one.
-func (s *Shell) HandleFileDrop(paths []string, targetPaneID string) error {
-	quotedText, err := SafeShellQuote(paths)
-	if err != nil {
-		s.status = "File drop rejected: " + err.Error()
-		return err
-	}
-	if quotedText == "" {
-		return nil
-	}
-	if s.surface.current() != WorkspaceSurfaceTerminal {
-		s.status = "File drop ignored: Terminal is not the visible surface"
-		return nil
-	}
-
-	pane := s.selectedPane()
-	if targetPaneID != "" {
-		pane = paneByID(s.projection, targetPaneID)
-	}
-	if pane == nil || pane.TerminalID == "" {
-		s.status = "File drop: no target terminal pane available"
-		return errors.New("no target terminal available")
-	}
-	surface := s.terminals[pane.TerminalID]
-	if surface == nil {
-		s.status = "File drop: terminal not attached"
-		return errors.New("terminal not attached")
-	}
-
-	surface.term.Paste(quotedText)
-	s.status = fmt.Sprintf("Dropped %d path%s to terminal", len(paths), pluralS(len(paths)))
-	return nil
-}
-
 // HandleFileDropAt resolves the visible terminal under the drop point
 // (window CSS pixels) and pastes there (GWB-009 exact-hit-target rule).
 // Fails closed if no visible terminal is under the pointer (P1-10).
