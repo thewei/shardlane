@@ -1,19 +1,23 @@
 package nativeui
 
 /**
- * [INPUT]: rightPanel.selectedFilePath/currentRoot、filesview.ReadPreview（1 MiB 上限 + symlink 守卫）、mygo Bind 事件
- * [OUTPUT]: FilesPreviewBridge 绑定服务（Current/Open）与 files:preview 事件、Shell.publishFilesPreview
- * [POS]: Files 预览 WebView（产品决策 2026-10-13）唯一表现层桥：只读——页面没有任何写通道，文件操作仍走原生对话框 + filesview 域服务；不新增 Herdr 方法，无 localhost HTTP
+ * [INPUT]: rightPanel.selectedFilePath/currentRoot、filesview.ReadPreview/ReadImageDataURL（flavor 上限 + symlink 守卫）、platform.OpenURL、mygo Bind 事件
+ * [OUTPUT]: FilesPreviewBridge 绑定服务（Current/Open/OpenExternal）与 files:preview 事件、Shell.publishFilesPreview（有序发布）
+ * [POS]: Files 预览 WebView（产品决策 2026-10-13）唯一表现层桥：只读——页面没有任何写通道（OpenExternal 仅放行 http/https 出站），文件操作仍走原生对话框 + filesview 域服务；WebView 兜不住的文件由 Native 兜底层接管，不经此桥；不新增 Herdr 方法，无 localhost HTTP
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 
 import (
 	"context"
 	"errors"
+	"net/url"
+	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/egoist/mygo"
 	"github.com/wh-studio/herdr-client/internal/filesview"
+	"github.com/wh-studio/herdr-client/internal/platform"
 )
 
 // FilesPreviewTarget is the selection metadata the page hears through the
@@ -30,15 +34,19 @@ type FilesPreviewTarget struct {
 // page also starts from Current and stays current through this event alone.
 var filesPreviewSelected = mygo.NewEvent[FilesPreviewTarget]("files:preview")
 
-// FilesPreviewContent is one read-only file the page renders.
+// FilesPreviewContent is one read-only file the page renders. Flavor tells
+// the page which view to take: "text" (CodeMirror), "markdown" (rendered
+// or source, the page's toggle), or "image" (DataURL).
 type FilesPreviewContent struct {
 	Path      string `json:"path"`
 	Name      string `json:"name"`
 	SizeBytes int64  `json:"sizeBytes"`
+	Flavor    string `json:"flavor"`
 	IsBinary  bool   `json:"isBinary"`
 	Truncated bool   `json:"truncated"`
 	Theme     string `json:"theme"`
 	Content   string `json:"content"`
+	DataURL   string `json:"dataUrl,omitempty"`
 }
 
 // FilesPreviewBridge is the bound service of the WebView Files preview.
@@ -67,8 +75,11 @@ func (b *FilesPreviewBridge) Current(ctx context.Context) (FilesPreviewTarget, e
 // Open reads one file for preview. The request must still match the live
 // selection — a stale page request after the user clicked elsewhere is
 // refused instead of answering with content the tree no longer shows.
-// The read (up to PreviewCap, symlink-guarded) runs on this bound
-// goroutine; theme resolution marshals back onto the UI lane.
+// The flavor routes the read: text and Markdown pull through ReadPreview
+// (1 MiB cap, symlink-guarded); images become a data URL (24 MiB cap).
+// Files the WebView tier cannot take are never selected into the page —
+// the Native UI tier owns them — so an error here is a stale race, not a
+// user-facing state.
 func (b *FilesPreviewBridge) Open(ctx context.Context, path string) (FilesPreviewContent, error) {
 	var root string
 	var selected bool
@@ -79,22 +90,50 @@ func (b *FilesPreviewBridge) Open(ctx context.Context, path string) (FilesPrevie
 	if !selected {
 		return FilesPreviewContent{}, errors.New("the file is no longer selected")
 	}
-	preview, err := filesview.ReadPreview(path, root)
-	if err != nil {
-		return FilesPreviewContent{}, err
-	}
-	content := FilesPreviewContent{
-		Path:      preview.Path,
-		Name:      filepath.Base(preview.Path),
-		SizeBytes: preview.SizeBytes,
-		IsBinary:  preview.IsBinary,
-		Truncated: preview.Truncated,
-		Content:   preview.Content,
+	content := FilesPreviewContent{Path: path, Name: filepath.Base(path)}
+	switch flavor := filesview.PreviewFlavor(path); flavor {
+	case filesview.FlavorImage:
+		url, err := filesview.ReadImageDataURL(path)
+		if err != nil {
+			return FilesPreviewContent{}, err
+		}
+		content.Flavor = string(flavor)
+		content.DataURL = url
+		if info, err := os.Stat(path); err == nil {
+			content.SizeBytes = info.Size()
+		}
+	default:
+		preview, err := filesview.ReadPreview(path, root)
+		if err != nil {
+			return FilesPreviewContent{}, err
+		}
+		content.Flavor = string(flavor)
+		content.SizeBytes = preview.SizeBytes
+		content.IsBinary = preview.IsBinary
+		content.Truncated = preview.Truncated
+		content.Content = preview.Content
 	}
 	b.shell.callOnWindow(func() {
 		content.Theme = b.shell.chatBridgeTheme()
 	})
 	return content, nil
+}
+
+// OpenExternal hands an http(s) link from the page to the system browser.
+// The scheme is the whole gate: file:, javascript:, data: and everything
+// else are refused — the read-only page gets no filesystem or protocol
+// surface beyond this one door.
+func (b *FilesPreviewBridge) OpenExternal(ctx context.Context, rawURL string) error {
+	parsed, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
+		return errors.New("only http(s) links open in the browser")
+	}
+	target := parsed.String()
+	var openErr error
+	b.shell.callOnWindow(func() {
+		openErr = platform.OpenURL(target)
+	})
+	return openErr
 }
 
 // filesPreviewTargetState projects the selection for the page (UI lane).

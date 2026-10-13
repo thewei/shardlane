@@ -209,8 +209,9 @@ func (s *Shell) runFilesOp(op string, run func() (string, error), refreshDir, ol
 }
 
 // migrateFilesSelection keeps the preview coherent across mutations: a
-// renamed selection follows its file; a selection inside a removed path
-// clears. The preview bridge hears both.
+// renamed selection follows its file (the native tier's content moves with
+// it — a rename changes neither flavor nor size); a selection inside a
+// removed path clears. The preview bridge hears both.
 func (s *Shell) migrateFilesSelection(oldPath, newPath string) {
 	st := &s.rightPanel
 	if st.selectedFilePath == "" || oldPath == "" {
@@ -219,9 +220,14 @@ func (s *Shell) migrateFilesSelection(oldPath, newPath string) {
 	switch {
 	case st.selectedFilePath == oldPath && newPath != "":
 		st.selectedFilePath = newPath
+		if st.nativePreviewPath == oldPath {
+			st.nativePreviewPath = newPath
+			return
+		}
 		s.publishFilesPreview()
 	case st.selectedFilePath == oldPath || strings.HasPrefix(st.selectedFilePath, oldPath+string(filepath.Separator)):
 		st.selectedFilePath = ""
+		s.clearNativeFilesPreview()
 		s.publishFilesPreview()
 	}
 }

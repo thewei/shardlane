@@ -8,6 +8,7 @@ package nativeui
  */
 
 import (
+	"github.com/egoist/mygo/ui"
 	"github.com/wh-studio/herdr-client/internal/filesview"
 	"github.com/wh-studio/herdr-client/internal/platform"
 	"github.com/wh-studio/herdr-client/internal/preview"
@@ -51,6 +52,18 @@ type rightPanelState struct {
 	showIgnored bool
 	ignoredRoot string
 	ignoredSet  *filesview.IgnoreSet
+
+	// Native fallback tier (FILES-09): files the WebView tier cannot take —
+	// oversized text heads, oversized images — render natively instead of
+	// dead-ending. nativePreviewPath is set only while the native tier owns
+	// the current selection; the WebView page is not published for it.
+	nativePreviewPath  string
+	nativeText         *filesview.Preview
+	nativeTextLoading  bool
+	nativeTextFailed   string
+	nativeImage        *ui.Bitmap
+	nativeImageLoading bool
+	nativeImageFailed  string
 }
 
 func defaultRightPanelState() rightPanelState {
@@ -79,6 +92,7 @@ func (s *Shell) syncRightPanelRoot() {
 	s.rightPanel.loadingDirs = make(map[string]bool)
 	s.rightPanel.ignoredRoot = ""
 	s.rightPanel.ignoredSet = filesview.NewIgnoreSet(nil)
+	s.clearNativeFilesPreview()
 	// The preview page must drop the previous root's selection too.
 	s.publishFilesPreview()
 }

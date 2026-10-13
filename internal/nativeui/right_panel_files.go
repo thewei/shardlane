@@ -282,16 +282,5 @@ func filesMutedRow(c *ui.Context, text string, level int) {
 	})
 }
 
-// openFilePreview records the tree selection and pushes it to the preview
-// bridge. Content never loads here: the WebView page pulls it through the
-// bound service (2026-10-13 product decision).
-func (s *Shell) openFilePreview(path string) {
-	if s.rightPanel.selectedFilePath == path {
-		return
-	}
-	s.rightPanel.selectedFilePath = path
-	s.publishFilesPreview()
-}
-
 // copyToClipboard is shared by the dedicated Files page and other native views.
 func (s *Shell) copyToClipboard(text string) { s.copyTextToClipboard(text) }

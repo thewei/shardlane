@@ -62,6 +62,13 @@ func (s *Shell) filesPage(c *ui.Context) {
 			})
 			return
 		}
+		// The native tier renders what the WebView tier cannot take
+		// (oversized text heads, oversized images) before the page is
+		// considered at all (FILES-09).
+		if selected != "" && s.rightPanel.nativePreviewPath == selected {
+			s.nativePreviewBody(c, selected)
+			return
+		}
 		if s.filesWebviewBody(c) {
 			return
 		}

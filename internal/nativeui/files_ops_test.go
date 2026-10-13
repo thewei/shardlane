@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/egoist/mygo/ui"
+	"github.com/wh-studio/herdr-client/internal/filesview"
 )
 
 func filesOpsTestShell(t *testing.T) (*Shell, *ui.Tester, string) {
@@ -147,5 +148,64 @@ func TestFilesDeleteFolderConfirmCarriesTheDirectoryCopy(t *testing.T) {
 	submitDialogConfirm(s, "files-delete", dir)
 	if _, err := os.Stat(dir); !os.IsNotExist(err) {
 		t.Fatal("folder survived confirmed delete")
+	}
+}
+
+// TestNativePreviewTierTakesOversizedFiles pins the FILES-09 fallback: a
+// markdown file past the 1 MiB web cap previews natively as its bounded
+// head, an oversized SVG reads as text source, an oversized undecodable
+// image states the truth, and a web-sized markdown never enters the tier.
+func TestNativePreviewTierTakesOversizedFiles(t *testing.T) {
+	s, tester, root := filesOpsTestShell(t)
+
+	bigMD := filepath.Join(root, "big.md")
+	if err := os.WriteFile(bigMD, []byte(strings.Repeat("# x\n", 1<<19)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	smallMD := filepath.Join(root, "small.md")
+	if err := os.WriteFile(smallMD, []byte("# hello\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	bigSVG := filepath.Join(root, "big.svg")
+	if err := os.WriteFile(bigSVG, make([]byte, filesview.ImagePreviewCap+1), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	bigAVIF := filepath.Join(root, "big.avif")
+	if err := os.WriteFile(bigAVIF, make([]byte, filesview.ImagePreviewCap+1), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Web-sized markdown stays on the WebView tier.
+	s.openFilePreview(smallMD)
+	if s.rightPanel.nativePreviewPath != "" {
+		t.Fatal("web-sized markdown must not enter the native tier")
+	}
+
+	// Oversized markdown: the native head, truncated truthfully.
+	s.openFilePreview(bigMD)
+	if s.rightPanel.nativePreviewPath != bigMD || s.rightPanel.nativeText == nil {
+		t.Fatalf("native tier state = path:%q text:%v", s.rightPanel.nativePreviewPath, s.rightPanel.nativeText != nil)
+	}
+	if !s.rightPanel.nativeText.Truncated {
+		t.Fatal("native head must report truncation")
+	}
+
+	// Oversized SVG reads as XML source text.
+	s.openFilePreview(bigSVG)
+	if s.rightPanel.nativePreviewPath != bigSVG || s.rightPanel.nativeText == nil {
+		t.Fatalf("oversized svg state = path:%q text:%v", s.rightPanel.nativePreviewPath, s.rightPanel.nativeText != nil)
+	}
+
+	// Oversized AVIF: neither tier decodes it — a truthful state, no lie.
+	s.openFilePreview(bigAVIF)
+	if s.rightPanel.nativeImageFailed == "" {
+		t.Fatal("oversized avif must surface the too-large state")
+	}
+	tester.Frame()
+
+	// Back to a web-sized file: the native tier releases the center.
+	s.openFilePreview(smallMD)
+	if s.rightPanel.nativePreviewPath != "" || s.rightPanel.nativeImageFailed != "" {
+		t.Fatal("native tier must release for a web-sized file")
 	}
 }
