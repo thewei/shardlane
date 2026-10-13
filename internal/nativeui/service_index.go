@@ -174,6 +174,51 @@ func firstText(values ...string) string {
 	return ""
 }
 
+// paneBusyInfo records one Pane's foreground state beyond its shell: the
+// process names of whatever currently runs in the foreground group (an
+// agent, a build, a dev server), capped for presentation. It is the pane
+// header's run control's busy fact — the same measurement ShellReady uses.
+type paneBusyInfo struct {
+	Procs []string
+}
+
+// maxPaneBusyProcs caps the names one pane's busy state carries.
+const maxPaneBusyProcs = 3
+
+// computePaneBusy crosses the projection's panes with their measured
+// pane.process_info: a pane is busy when any foreground process is not its
+// own shell (a zsh at the prompt lists itself — the verified protocol-22
+// fact behind ShellReady).
+func computePaneBusy(panes []herdr.Pane, infos map[string]*herdr.PaneProcessInfo) map[string]paneBusyInfo {
+	busy := make(map[string]paneBusyInfo)
+	for _, pane := range panes {
+		info := infos[pane.ID]
+		if info == nil || info.ShellPID == 0 {
+			continue
+		}
+		var procs []string
+		for _, fg := range info.ForegroundProcesses {
+			if fg.PID == info.ShellPID || fg.Name == "" {
+				continue
+			}
+			procs = append(procs, fg.Name)
+			if len(procs) >= maxPaneBusyProcs {
+				break
+			}
+		}
+		if len(procs) > 0 {
+			busy[pane.ID] = paneBusyInfo{Procs: procs}
+		}
+	}
+	return busy
+}
+
+// paneBusyState reports one pane's busy fact for the run control.
+func (s *Shell) paneBusyState(paneID string) (paneBusyInfo, bool) {
+	info, ok := s.paneBusyIndex[paneID]
+	return info, ok
+}
+
 // sidebarActivity is the rollup marker behind a tree row's icon-corner dot:
 // something is running in this row or below it.
 type sidebarActivity struct {
@@ -377,6 +422,7 @@ func (s *Shell) scanPaneServices(instance string, panes []herdr.Pane, generation
 	wg.Wait()
 
 	next := computeSidebarServices(herdr.Projection{Panes: panes}, listeners, infos)
+	busy := computePaneBusy(panes, infos)
 	if s.win == nil {
 		return
 	}
@@ -385,5 +431,6 @@ func (s *Shell) scanPaneServices(instance string, panes []herdr.Pane, generation
 			return
 		}
 		s.serviceIndex = next
+		s.paneBusyIndex = busy
 	})
 }

@@ -105,6 +105,7 @@ func (s *Shell) openInstanceAsync(name string, generation uint64) {
 				s.closeAllTerminals()
 				// Service activity is per-instance; the next scan rebuilds it.
 				s.serviceIndex = sidebarServiceIndex{}
+				s.paneBusyIndex = make(map[string]paneBusyInfo)
 			}
 			s.activeInstance = name
 			s.errText = ""

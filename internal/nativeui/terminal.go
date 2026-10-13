@@ -687,6 +687,10 @@ func (s *Shell) paneCardHeader(c *ui.Context, k *gorexColors, surface *terminalS
 			if !show {
 				return
 			}
+			// The project command control leads the row: the pane's own
+			// Run/Stop for project-defined commands, before the pane
+			// chrome actions.
+			s.paneRunCommandControl(c, k, surface)
 			if s.paneAgent(surface.paneID) != nil {
 				// N19 #7: the single Terminal⇄Chat switch lives here, in the
 				// card header, not in the window header.

@@ -9,6 +9,8 @@ agent_visual.go: Agent 品牌矢量回退图标字典、窗格 Agent 绑定与�
 brands_test.go: Agent 品牌位图资产检索、Antigravity 及其它 Provider 标识与 agentProvider 回退回归
 gorex_style.go: 扁平视觉系统：卡片/配色、图标按钮度量（gorexIconBtn·Glyph、gorexPaneBtn·Glyph 为唯一尺寸来源）、gorexPulldown 图标+下拉箭头（标题栏 Actions）与 shortDir/samePath 路径处理；无渐变、无投影
 terminal.go: 终端画布与 Gorex 窗格卡片渲染器，Pane 标题双击最大化/恢复、最大化 Tab 的窗格 Logo 数量角标（Tab 内面板数，无重叠堆叠画）、窗格标题取 Agent 名（Shardlane 生成的短名 <kind>-<6hex> 不当标题，回落到 Agent 品牌名）、标题原生拖动放置（跨窗格/跨 Tab 移动、拆分与交换）与 split 分隔条拖拽调宽高（解析为 Herdr pane.resize，双击回到 50/50；布局权威在 Herdr）
+run_command_button.go: 窗格卡片头的项目命令运行控件：嗅探命令（package.json/Makefile/justfile + 手写 Script 合并）经 root 键缓存读盘外构建；Run 直跑最后使用命令、菜单全量列出（last-used 置顶）；忙碌（pane.process_info 扫描事实）非 Agent 窗格变 Stop（pane.send_text 写 ETX=Ctrl+C）；事务走 ShellReady 探测 + pane.send_text 字面写入（agent.send_keys 只认 Agent 目标，2026-10-13 隔离探针验证；headless 按 mutate 规则丢弃），无新 Herdr 方法
+run_command_button_test.go: 运行控件状态机回归（命令菜单内容、last-used 置顶、忙碌换 Stop、Agent 繁忙隐藏、无命令隐藏、headless 点击安全丢弃）与 computePaneBusy 纯函数、合并形状测试
 breadcrumb_switcher.go: 标题栏面包屑与快速切换弹层所有者，Pane 顺序与 Herdr 实际布局对齐并展示品牌图标
 titlebar.go: 内容列标题栏（面包屑与工具区）、整高侧栏上的红绿灯带与侧栏切换钮（sidebarBand/sidebarToggle）、视图切换（History 内页先返回根）与 Windows 平台窗口控件支持
 router.go: 单一 Router 的页面归属、精确 History 路径分类与窗口标题路由语义

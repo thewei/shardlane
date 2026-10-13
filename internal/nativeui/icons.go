@@ -58,4 +58,7 @@ var (
 	iconPanel  = icon(`<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/>`)
 	iconMinus  = icon(`<path d="M5 12h14"/>`)
 	iconSquare = icon(`<rect width="18" height="18" x="3" y="3" rx="2"/>`)
+	// iconPlay runs the pane header's project command control: the Lucide
+	// outline play triangle in the shared light stroke.
+	iconPlay = icon(`<polygon points="6 3 20 12 6 21"/>`)
 )

@@ -233,6 +233,16 @@ type Shell struct {
 	scriptStore *scripts.Store
 	// scriptBusy marks running script launches by name.
 	scriptBusy map[string]bool
+	// lastUsedStore persists each root's last-run command name for the pane
+	// header's run control (last-commands.json in production).
+	lastUsedStore *scripts.LastUsedStore
+	// runBusy marks in-flight run/stop transactions by pane.
+	runBusy map[string]bool
+	// cmdCache caches the merged project command menu per root, built off
+	// the render path; render reads the list only.
+	cmdCacheRoot string
+	cmdCacheList []scripts.CommandEntry
+	cmdCacheAt   time.Time
 	// portProbe owns the listening port observer.
 	portProbe *services.PortProbe
 	// portsState caches the observed ports snapshot for the Services view.
@@ -245,6 +255,10 @@ type Shell struct {
 	serviceIndex      sidebarServiceIndex
 	servicesScannedAt time.Time
 	serviceScanCancel context.CancelFunc
+	// paneBusyIndex caches per-Pane foreground-busy facts from the same
+	// scan (any foreground process beyond the pane's shell); the pane
+	// header's run control reads it to swap Run for Stop.
+	paneBusyIndex map[string]paneBusyInfo
 	// previews owns persistent preview window controllers (GWB-007).
 	previews *previewManager
 	// git owns the 0.10 Git Workbench orchestration (single cache).
@@ -495,6 +509,8 @@ func NewShell(opts ...ShellOption) *Shell {
 	// Preview external-open failures surface as the shell's status toast.
 	s.previews.report = func(msg string) { s.status = msg }
 	s.scriptBusy = make(map[string]bool)
+	s.runBusy = make(map[string]bool)
+	s.paneBusyIndex = make(map[string]paneBusyInfo)
 	s.changesSelected = -1
 	s.changesList.Selected = &s.changesSelected
 	s.unstagedSelected = -1
@@ -512,6 +528,7 @@ func NewShell(opts ...ShellOption) *Shell {
 	// Stores fall back to memory when no user-data dir is injected
 	// (headless tests); production wires scripts.json through WithUserDataDir.
 	s.scriptStore, _ = scripts.NewStore("")
+	s.lastUsedStore, _ = scripts.NewLastUsedStore("")
 	s.diagLogLevelFilter = "ALL"
 	for _, opt := range opts {
 		opt(s)
@@ -531,6 +548,9 @@ func WithUserDataDir(dir string) ShellOption {
 		s.userDataDir = dir
 		if store, err := scripts.NewStore(filepath.Join(dir, "scripts.json")); err == nil {
 			s.scriptStore = store
+		}
+		if store, err := scripts.NewLastUsedStore(filepath.Join(dir, "last-commands.json")); err == nil {
+			s.lastUsedStore = store
 		}
 	}
 }
