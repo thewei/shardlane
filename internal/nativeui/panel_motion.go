@@ -47,7 +47,9 @@ const (
 	// column: the drag cap is the window less this floor.
 	sidebarCenterFloor = float32(480)
 	// sidebarResizeHit is the drag handle's width at the sidebar's trailing
-	// edge; its leading 1px is the visible border line.
+	// edge; its trailing 1px is the visible border line, so the sidebar's
+	// surface ends exactly at the line and nothing sidebar-colored shows
+	// on the content side (2026-10-13 user report).
 	sidebarResizeHit = float32(6)
 )
 
@@ -108,8 +110,11 @@ func (s *Shell) sidebarSlide(c *ui.Context) {
 				s.sidebarBand(c)
 				s.sidebar(c)
 			})
+			// The line is the handle's trailing pixel: the border sits
+			// flush against the content column, never with sidebar
+			// material to its right (2026-10-13 user report).
 			handle := ui.Box(c).Width(sidebarResizeHit).Shrink(0).Cursor(ui.CursorResizeEW).
-				Label("Resize sidebar").Children(func() {
+				AlignItems(ui.End).Label("Resize sidebar").Children(func() {
 				ui.Box(c).Width(1).FillHeight().Background(s.tokens(c.Theme().Dark).BorderSubtle)
 			})
 			dx, _, held := handle.Dragged()

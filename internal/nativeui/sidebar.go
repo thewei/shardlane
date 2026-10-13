@@ -63,8 +63,12 @@ func (s *Shell) sidebar(c *ui.Context) {
 			s.workspaceSection(c)
 			// The widget's own Surface fill is dropped (2026-10-06): the
 			// Agents/Workspace blocks sit on the window gradient like the
-			// rest of the chrome.
-		}).Background(ui.Transparent).Grow(1).Label("Shardlane sidebar").Changed() {
+			// rest of the chrome. Of the widget's uniform inset only the
+			// top is zeroed (2026-10-13 user report): the sections start
+			// flush under the band, while the sides and the foot keep the
+			// framework spacing.
+		}).Background(ui.Transparent).Padding(0, t.Space(2.5), t.Space(2.5)).
+			Grow(1).Label("Shardlane sidebar").Changed() {
 			s.handleSidebarSelection(s.selected)
 		}
 
