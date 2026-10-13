@@ -272,3 +272,99 @@
 - 探针：scratch herdr 会话 ui-audit-probe（split → 非激活 pane zoom live probe）用后即 `session stop` 删除，用户 default 实例零触碰。
 - 并发：并行批次（Chat surface / panel_motion / right_panel）同期写入 shell.go、titlebar.go（surfaceTabs Chat 项）等；本会话改动与其无区冲突，共存验证于最终树。
 - F143② 复核工具已入二进制：pane 共享动作的 slog.Info 点击路径日志（shardlane.log）。
+
+---
+
+# Round 8 — 全仓库四维审计（静态 4 agent + cua-driver 实机，2026-10-13）
+
+方法：①4 个并行只读审计 agent（链路断点 / 交互不一致 / AI 味 / 近期提交接线验证），全部 finding 经 grep 调用方交叉验证；②cua-driver 实机巡检（新构建 9d4ecf5 部署 pid 44728，graceful quit 无 F133 悬挂）。运行时真值以代码 grep 为准。
+
+## 链路断点（生产代码 grep 验证）
+
+| # | 严重度 | 界面 | 问题（现象+证据） | 处置 |
+|---|--------|------|------------------|------|
+| F149 | P2 | Agents/继续会话 | CLOSURE-02 宣称的 LaunchRegistry 幂等层生产未接线：`agent/launch.go:100 Submit`/`Outcome`/`Registry()` 全仓库 0 生产调用方；生产链路 history_continue.go:37 → ExecuteContinuation → RunLaunchTransaction 绕过 registry，防重复拉起仅靠 UI 层 `s.hist.continuing` 布尔（history_continue.go:66/197/200） | 记录（服务层防护缺失，台账声明与实际不符） |
+| F150 | P2 | Diff 高亮 | ChromaHighlighter 死子系统：git_service.go:26 构造 + :143/:340 主题切换 SetStyle，但 `HighlightLine`/`HighlightRegion`/`HighlightSpan` 0 生产调用方；真实 diff 高亮走 internal/codehl（gd_state.go:559）——带 chroma 依赖的 inert 子系统 | 记录（删除或接线，二选一） |
+| F151 | P2 | Usage | 0.8 里程碑「per-account UsageAggregator」整层未构造：usage_ledger.go:135 NewUsageAggregator / :190 RefreshIfDue / :162 LoadCache / :304 FormatTokensToday / MaskAccountLabel 全部 0 生产调用方；UI 实际消费 BuildAgentUsageSnapshot（usage_rows.go:85） | 记录（里程碑特性实为死代码，接线或降级 deferred） |
+| F152 | P2 | 终端查找 | 旧 per-pane 查找条整套不可达（与 GWB-010 ⌘F 是两套系统）：surface_header.go:117 `openPaneFind` 全仓库 0 调用方 → findPaneID 永空 → terminal.go:493 paneFindBar 家族 + Shell 上 8 个 find* 字段构成 ~90 行死 UI——F19 terminalFindBar 孤儿函数的同型残留 | 记录（建议删除） |
+| F153 | P3 | 多处 | 孤儿层/函数批（各已验证 0 生产调用方）：operational.go OperationalSummary 汇总层（titlebar/sidebar 实际消费 status_center_model cardAttentionOf）；agent_quick_panel.go:58 openAgentQuickPanel（侧栏卡片锚定弹层，实际卡片走 openAgentCard）；changes_panel.go:20 changesToolView（docked 右栏退役残留）；diagnostics.go:221 ExportToFile（导出走剪贴板）；agenthooks.go:173 DiagnoseProvider；另 ~20 个 P3 孤儿（herdr/projection.go FocusedTerminalID/FocusedLayout、history live.go LiveCapableAgents、conversation identity 构造器群、ds_components appPage/agentRow、file_drop.go HandleFileDrop、settings_service.go LoadError——加载失败静默回退 UI 无感知等） | 记录（重构残留清理批） |
+| F154 | P3 | 设置 | settings 加载失败静默：settings_service.go:40 LoadError 0 调用方，损坏配置回退默认时用户无感知 | 记录 |
+
+## 交互/设计不一致（grep 对照 + 实机证实）
+
+| # | 严重度 | 界面 | 问题（现象+证据） | 处置 |
+|---|--------|------|------------------|------|
+| F155 | P2 | 全局选中态 | 「选中列表行」三套高亮并存：共享 rowTint token（components.go:36-44，treeRow/agent 卡/pins 用）vs All Commits/Changes 文件行硬编码 RGBA(127,127,127,0.2)（sidebar.go:288、changes_panel.go:168）vs ⌘K/Ctrl-Tab 当前 行 ToneInfo 蓝（command_center_ui.go:250、switcher.go:105）——实机三处均见，视觉语言割裂 | 记录（P2 统一选中色 token） |
+| F156 | P2 | 查找条 | 两个内建查找条 Enter 方向相反：终端查找 Enter=向上一个/Alt+Enter 向前（surface_header.go:143-146）vs diff 查找（框架 FindBar）Enter=next/Shift+Enter=previous——肌肉记忆必然出错 | 记录（P2：终端查找对齐框架契约） |
+| F157 | P3 | ⌘K/侧栏 | Tooltip 缺口新表面：⌘K 结果行标题截断无 Tooltip（command_center_ui.go:244）；agentCardRow label/Title/branch 三处 SingleLine 全无 Tooltip（agent_card.go:53,55,94，侧栏与快速面板同卡）——同屏 Scripts 行却有 Tooltip（quick_panel_services.go:56） | 记录（F47/F113 同病新表面） |
+| F158 | P3 | 确认框 | 确认框标题大小写两派 + 名称引号三种：Title Case（project_tree.go:193/204、header_overflow.go:79、session_selector.go:183）vs sentence case+裸拼（git_operations.go:188/303、branch_menu.go:38）vs 弯引号（files_ops.go:47） | 记录 |
+| F159 | P3 | Merge 对话框 | Merge 对话框偏离自家家族：标题 "Merge branch" 小写 b（dialogs.go:52）、主按钮 "Review merge" 全库唯一小写主按钮（:64）、按钮行 Gap(Spacing().M)（:51）vs 同文件文本对话框 Gap(8)（:101） | 记录 |
+| F160 | P3 | /files 工具条 | New File/New Folder 工具条按钮无 "…"（right_panel_files.go:42,45）而右键菜单同名项有（files_ops.go:55,58），git 侧栏同类入口全带——HIG 违例自相矛盾（实机 AX help="New File" 证实） | 记录 |
+| F161 | P3 | /files 入口 | 同一目的地三个名字：标题栏 "Files view"（titlebar.go:115）/ 菜单+⌘K "Browse Files"（main.go、command_center_ui.go:123）/ 窗口标题 "Files"（router.go:46）——实机三处均见 | 记录 |
+| F162 | P2 | ⌘K/Go 菜单 | 三启动器命令集互不一致：⌘K 缺 Hosts、Go 菜单缺 Set Up Agents；History 与 History by Project 两条目同指一页（/history-projects 已合并进 sessions 页，F16 同型复发）。复审修正：Status Center 与 New Task 页面已按 2026-10-07 产品决策整体移除（router.go:38-39 注释），不在 ⌘K 是产品现状而非缺口——首轮审计此处误报 | ✅ 已修（88c4332）：⌘K 补 Hosts、菜单补 Hosts+Set Up Agents、删除 History by Project 重复条目；实机复核 ⌘K APP 区=Files/Hosts/Sessions/Set Up Agents/Settings |
+| F163 | P3 | 空态 | 空态两套体系+句号混乱：共享 emptyState 组件（ds_components.go:165）vs 侧栏裸 ui.Text "No active agents"（sidebar.go:514）；带句号（quick_panel_services.go:46,79）vs 不带（sidebar.go:206,223,345）vs hosts 裸小字第四种（hosts_nav.go:64,70）；emptyState 有的一步引导有的死路（history_detail.go:49 detail=""） | 记录 |
+| F164 | P3 | 图标 | 图标体系混入文本字符：删行数 U+2212（agent_card.go:104）vs ASCII "-"（changes_panel.go:123 等 3 处）；快速面板返回 "← All Agents"（agent_quick_panel.go:86）vs 侧栏 SVG iconArrowLeft（sidebar.go:123）；gd 内部 ↑↓ 文本（gd_surface.go:166,169）vs hunk 展开 SVG 箭头（:540-550） | 记录 |
+
+## 命名分裂（实机发现）
+
+| # | 严重度 | 界面 | 问题（现象+证据） | 处置 |
+|---|--------|------|------------------|------|
+| F165 | P2 | Sessions/History | History 页已在 UI 层改名 Sessions（page_history.go:46,58、router.go:52/63/87/95、窗口标题实机 "Shardlane — Sessions"）但三个入口仍叫 History：Go 菜单（main.go:215）、⌘K（command_center_ui.go:113）、标题栏 tooltip（titlebar.go:208）；且 /history/{id} 路由标题仍 "History Detail"（router.go:58，实机证实）——菜单说 History、落地页说 Sessions | 记录（P2：入口与页面名对齐） |
+| F166 | P3 | Sessions | 会话标题/预览泄漏原始 skill XML：首条消息以 `<skill name="think" location="...">` 开头的会话，列表标题、内联预览正文、详情页头部三处原样裸露 XML 标记（实机三处截图证实）——标题提取可剥壳 | 记录 |
+| F167 | P3 | History Detail | 详情页用户消息不渲染 markdown：`##`/`**`/表格管道符全部裸露（实机截图证实），Chat 页同内容走 react-markdown 渲染——双标准 | 记录 |
+| F168 | P3 | Workspace pane 头 | shell pane 头同一路径显示两遍各截一半：title=surface.label（host:cwd 全称，terminal.go:564）+ detail=shortDir(cwd)（:567）——实机 "wilson@Wilson-MacBook-Pro:~/Wo… --/Wo…" 双截断 | 记录（title 已含 cwd 时抑制 detail） |
+| F169 | P3 | 侧栏 Agents 区 | 同项目多 agent 卡同名不可分辨：三张卡同标题 "herdr-client" 仅小 caption（keytest/test-claude）可辨（实机 AX [2][3][4] 三连同名）——F118 项目名优先策略的副产品 | 记录（标题去重或 caption 卖相提升） |
+
+## AI 味 / 代码卫生
+
+| # | 严重度 | 界面 | 问题（现象+证据） | 处置 |
+|---|--------|------|------------------|------|
+| F170 | P2 | 代码 | git_review_split.go:64,74 取 Theme 后 `_ = t` 显式丢弃（同文件其余 8 处 t 均在用）——重构残渣 | 记录（删两行） |
+| F171 | P2 | 代码 | chat_hooks.go:95-143 与 :190-217 同一 ~30 行投影合并块（按 PaneID 找 agent→反查 Panes→append herdr.Agent）复制两份，仅差一个字段 | 记录（抽 upsertAgentIdentity） |
+| F172 | P2 | 代码 | 变更日志式注释群（向 reviewer 复述已删实现，全仓库非测试约 12 处）：workspace_header.go:7-12、shortcuts.go:199-201、gd_surface.go:139-141、quick_panel.go:53-55、sidebar.go:53-56、page_files.go:76 等——注意：日期戳注释本身是仓库惯例（224 处中 ~90% 为约束型，合理），该清的是「was removed/is gone/previously」叙事型 | 记录（改写为纯约束句式） |
+| F173 | P3 | 代码/设置 | About 面板线协议版本直出："0.9.3 · protocol 22"（page_settings.go:304，实机 Diagnostics 证实）——F107-F112 先例的实现词汇泄漏漏网处 | 记录 |
+| F174 | P3 | 代码 | F144 真终端语义论证块近逐字复制 5+ 份（attach_mouse.go:88-102、terminal.go:494/630/784、terminal_scroll.go:16-24、attach_conn.go:20-26）——应收敛为一句引用 docs/herdr-attach-mouse-forwarding.md | 记录 |
+| F175 | P3 | 代码 | files_native_preview.go:141-151 headless 分支完整有界解码后 `_ = img` 丢弃（只要 err 却为解码买单）；script_actions.go:135-147 相邻平台操作一报一吞（clipboard 失败设 status vs RevealFile `_ =` 静默） | 记录 |
+| F176 | P3 | 代码 | 单实现 seam 过细分：history_state.go:31-60 四个只差一方法的 History 接口 + continuationRuntime（生产实现两行转发）+ tray/dock seam——地道 Go 测试惯例但可合并 | 记录 |
+
+## 文档滞后
+
+| # | 严重度 | 界面 | 问题（现象+证据） | 处置 |
+|---|--------|------|------------------|------|
+| F177 | P3 | roadmap | roadmap :760 N20 Deferred 仍列 "Markdown rendered view (source highlight only)"，但 :748 FILES-08 行与提交 4fff89e/15c9d57 已交付 rendered markdown——同文件自相矛盾 | 记录（从 Deferred 删该项） |
+| F178 | P3 | roadmap | a5ce17a pane 头项目命令 Run 控件在 roadmap 零记载（仅 internal/nativeui/CLAUDE.md） | 记录（补 N21 小节） |
+| F179 | P3 | /files | 远程机 pane 无 Run 控件且无解释：Detect 本地目录守卫致远程菜单永空、控件不渲染（run_command_button.go:110-112），用户得不到「此处无命令」说明 | 记录 |
+
+## 已排查排除（防重复调查）
+
+- `Host ForwardAgent` ×2 出现在 /hosts 侧栏：用户 ~/.ssh/config 真实存在两处 `Host ForwardAgent` 块（grep 证实 :5/:10），客户端如实展示，非解析 bug（可建议的 UX 增强：标记无 Hostname 的可疑 Host 块）。
+- settings.Shortcuts 已被 shortcutBindings() 消费（shortcuts.go:40/129，F11 修复健在）；s.status 71 处写有 shell.go:729 toast 消费者（F62 修复健在）。
+- ChatBridge 11 方法经 frontend/src/App.tsx 全部调用；herdr Manager 45 方法全部有调用方；路由表除已知 F73 外全有入口；nativeui 空 handler 扫描 0 命中；TODO/stub 扫描仅类型化状态与平台边界。
+- 破坏性动作确认覆盖完整（close-tab/pane/project、delete session/workspace、files-delete、discard、drop-stash、delete branch/tag、revert、undo-commit 全走 openConfirm）。
+- 近期提交接线验证全部闭环：a5ce17a Run 控件（入口→scripts.Detect→SendPaneText→状态反馈+last-used 持久化）、FILES-08 markdown 预览（frontend/dist 已嵌、桥接三方法+事件、实机渲染 ✓）、HOSTS-02（表单→sshconfig 原子写→Connect 链路，实机 ✓）、shardlane-install 脚本路径与产物一致。
+- 9d4ecf5 侧栏边框贴齐修复实机放大复核 ✓（边线即内容列起点，无 sidebar 色溢出）。
+
+## Round 8 验证基线
+
+- 门禁：`GOTOOLCHAIN=go1.27.1 go test ./...` 全绿；`go tool mygo vet .` 干净；`git diff --check` 干净；`go tool mygo build` ✅。
+- 部署：替换 ~/Applications 二进制（md5 0b887064 双向一致）→ graceful quit（exit 0，F133 未复现）→ open，pid 44728。
+- 实机走查：⌘K 空查询/过滤/Enter 导航 ✓；/files 树+ignore+"…"AX 证据 ✓、AGENTS.md markdown 预览（github-markdown-css、Rendered/Source）✓；Sessions 列表/行展开预览（Open/Continue/Hide）/详情 ✓；/hosts 空态+orb 表单（Directives/included 徽章）✓；Settings 五区+Diagnostics（224 entries 日志查看器）✓；Go 菜单导航 ✓；窗口标题随路由 ✓。
+- 测量限制：Chat 卡头切换按钮 hover 才渲染（AX 不可达）+ 无活跃可绑定会话，Chat 深测沿 F74 挂起；Thinking 折叠行仅 AXShowMenu/AXScrollToVisible 无 AXPress（F125 同族，补记）。
+
+> 台账现共 **179 项**（F1–F179）。本轮为纯审计批次：0 修复、新增 31 项记录（其中 P2×8：F149/F150/F151/F152/F155/F156/F162/F165；其余 P3）、排除项 5 组。
+
+## Round 8 处置回写（修复批次 2026-10-13）
+
+五个提交落地（aecb4ef / 8f32912 / 88c4332 / 96904c0 / c0a9cf3），`go test ./...` 全绿、`go tool mygo vet .` 干净、`go tool mygo build` ✅，新构建（md5 与 ~/Applications 双向一致，pid 61083）实机复核：
+
+- **✅ 已修（8f32912，死代码 -2690 行）**：F150 ChromaHighlighter、F151 UsageAggregator、F152 旧 per-pane 查找条（连带 herdr PaneFind 数据面）、F153 孤儿层与孤儿函数批（OperationalSummary/openAgentQuickPanel/changesToolView/ExportToFile/DiagnoseProvider + ~20 小项，roadmap OPS 行证据同步修正）、F170 `_ = t`。
+- **✅ 已修（88c4332，入口/命名）**：F161（Browse Files→Files）、F162（见上表修正）、F165（菜单/⌘K/tooltip 改说 Sessions，详情标题 Session Detail）；实机复核 ⌘K 与 Go 菜单。
+- **✅ 已修（96904c0，交互一致性）**：F155（选中态统一 SidebarSelect/SidebarHover token）、F157（⌘K 行+agent 卡 tooltip）、F158（git 确认框 Title Case+弯引号）、F159（Merge 对话框对齐家族）、F160（工具条 "…"）、F163（空态句号统一+No messages 死路给提示）、F164 部分（− 号统一；←/↑↓ 文本箭头因布局成本保留记录）；测试更新至新契约（Review Merge、diagnostics 反向断言 protocol 不出现）。
+- **✅ 已修（c0a9cf3，文案/行为/注释）**：F154（LoadError 接 status toast）、F166（skill XML 剥离 + 回归测试；实机复核首条会话标题已显示真实 prompt）、F168（pane 头重复路径抑制；实机复核）、F171（chat_hooks 抽 upsertProjectionAgent）、F172（变更日志注释改约束句式）、F173（About 去 protocol；实机复核 NONE）、F174（F144 叙事收敛至 attach_mouse.go 单点+docs 指针）、F175（RevealFile 报错上 status；headless 解码丢弃改赋值形态）。
+- **✅ 已修（aecb4ef，docs）**：F177（roadmap Deferred 删已交付项）、F178（补 RUNCONTROL-01 小节）。
+- **F156 就此消解**：Enter 方向相反的主体就是 F152 删除的旧 paneFindBar；活着的 ⌘F 查找条无此问题。
+- **F149 复核修正**：roadmap Next queue 已有 LAUNCH-05（enable Start Agent behind LaunchRegistry），wiring 属计划内，维持记录不改代码。
+- **保留记录**：F167（History 详情原生渲染 markdown 需立项）、F169（同项目多 agent 卡同名，产品取舍）、F176（单实现 seam 属地道 Go 惯用法）、F164 的 ←/↑↓ 部分、F179（远程 pane 无 Run 控件说明）。
+- gofmt 注意：仓库存在少量**既有** EOF 空行偏差（PATH gofmt 1.25.9 与 pin 的 1.27.1 并存）；本批只清理了本会话触碰的文件，未夹带无关重排。
+
+> 台账现共 **179 项**，Round 8 的 31 项中 27 项已修复闭环、4 项保留记录（F149 计划内/F167/F169/F176）+ F164/F179 部分保留。
