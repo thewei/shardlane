@@ -104,15 +104,15 @@ func (s *Shell) renderChangesRow(c *ui.Context, pal *gdPalette, row gitworkbench
 		textColor = t.AccentText
 		muted = t.AccentText.Alpha(0.8)
 	case chosen:
-		r.Background(ui.RGBA(127, 127, 127, 0.2))
+		r.Background(designTokens(t.Dark).SidebarSelect)
 	case selected && focused:
 		r.Background(t.Accent)
 		textColor = t.AccentText
 		muted = t.AccentText.Alpha(0.8)
 	case selected:
-		r.Background(ui.RGBA(127, 127, 127, 0.2))
+		r.Background(designTokens(t.Dark).SidebarSelect)
 	case r.Hovered():
-		r.Background(ui.RGBA(127, 127, 127, 0.08))
+		r.Background(designTokens(t.Dark).SidebarHover)
 	}
 	treeGuides(r, row.Depth, designTokens(t.Dark).TreeLine)
 	r.TextColor(textColor).Children(func() {

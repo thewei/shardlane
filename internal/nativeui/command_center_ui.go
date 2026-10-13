@@ -244,7 +244,10 @@ func (s *Shell) commandCenterRow(c *ui.Context, i int, result commandcenter.Resu
 	row := ui.Row(c).FillWidth().Padding(sp.S, sp.M).Gap(sp.S).AlignItems(ui.Center).
 		Radius(Radius().Control)
 	row.Children(func() {
-		ui.Text(c, result.Action.Title).FontSize(Typography().Body).Grow(1).SingleLine()
+		// Truncated titles stay recoverable via tooltip (F157, same
+		// contract as the commits list).
+		ui.Text(c, result.Action.Title).FontSize(Typography().Body).Grow(1).SingleLine().
+			Tooltip(result.Action.Title)
 		if result.Action.Shortcut != "" {
 			ui.Text(c, result.Action.Shortcut).FontSize(Typography().Caption).TextColor(c.Theme().TextMuted)
 		}

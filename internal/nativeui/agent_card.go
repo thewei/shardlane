@@ -50,9 +50,9 @@ func (s *Shell) agentCardRow(c *ui.Context, card agent.AgentCardModel, selected 
 				})
 			})
 			ui.Column(c).Grow(1).MinWidth(0).Gap(0).Children(func() {
-				ui.Text(c, label).FontSize(Typography().Body).SingleLine()
+				ui.Text(c, label).FontSize(Typography().Body).SingleLine().Tooltip(label)
 				if !s.agentFactsView(c, card) && card.Title != label {
-					ui.Text(c, card.Title).FontSize(Typography().Micro).TextColor(t.TextMuted).SingleLine()
+					ui.Text(c, card.Title).FontSize(Typography().Micro).TextColor(t.TextMuted).SingleLine().Tooltip(card.Title)
 				}
 			})
 			// A working (or launching) agent spins at the trailing edge:
@@ -91,7 +91,7 @@ func (s *Shell) agentFactsView(c *ui.Context, card agent.AgentCardModel) bool {
 	ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
 		if branch != "" {
 			ui.Icon(c, iconBranch).Size(9, 9).TextColor(t.TextMuted)
-			ui.Text(c, branch).FontSize(Typography().Micro).TextColor(t.TextMuted).SingleLine()
+			ui.Text(c, branch).FontSize(Typography().Micro).TextColor(t.TextMuted).SingleLine().Tooltip(branch)
 		}
 		if files != 0 {
 			ui.Icon(c, iconFile).Size(9, 9).TextColor(t.TextMuted)
@@ -101,7 +101,7 @@ func (s *Shell) agentFactsView(c *ui.Context, card agent.AgentCardModel) bool {
 			ui.Text(c, "+"+itoa(adds)).FontSize(Typography().Micro).TextColor(t.Success)
 		}
 		if dels != 0 {
-			ui.Text(c, "−"+itoa(dels)).FontSize(Typography().Micro).TextColor(t.Danger)
+			ui.Text(c, "-"+itoa(dels)).FontSize(Typography().Micro).TextColor(t.Danger)
 		}
 	})
 	return true

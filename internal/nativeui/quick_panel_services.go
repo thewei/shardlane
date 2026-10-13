@@ -43,7 +43,7 @@ func (s *Shell) quickPanelServices(c *ui.Context) {
 					ui.Textf(c, "%d", len(defs)).FontSize(Typography().Caption).TextColor(t.TextMuted)
 				})
 				if len(defs) == 0 {
-					ui.Text(c, "No scripts.").
+					ui.Text(c, "No scripts").
 						FontSize(Typography().Caption).TextColor(t.TextMuted)
 				}
 				for _, def := range defs {
@@ -76,7 +76,7 @@ func (s *Shell) quickPanelServices(c *ui.Context) {
 					ui.Textf(c, "%d", len(ports)).FontSize(Typography().Caption).TextColor(t.TextMuted)
 				})
 				if len(ports) == 0 {
-					ui.Text(c, "No open ports.").
+					ui.Text(c, "No open ports").
 						FontSize(Typography().Caption).TextColor(t.TextMuted)
 				}
 				for _, port := range ports {

@@ -39,10 +39,12 @@ func (s *Shell) filesToolView(c *ui.Context) {
 // tree root and the ignored-visibility toggle.
 func (s *Shell) filesTreeToolbar(c *ui.Context) {
 	ui.Row(c).FillWidth().Padding(4, sidebarGutter).Gap(4).AlignItems(ui.Center).Children(func() {
-		if filesToolButton(c, iconPlus, "New File", false).Clicked() {
+		// The ellipsis follows the context-menu twins (HIG: buttons that
+		// open a naming dialog advertise it) — F160.
+		if filesToolButton(c, iconPlus, "New File…", false).Clicked() {
 			s.filesNewFile(s.rightPanel.currentRoot)
 		}
-		if filesToolButton(c, iconFolder, "New Folder", false).Clicked() {
+		if filesToolButton(c, iconFolder, "New Folder…", false).Clicked() {
 			s.filesNewFolder(s.rightPanel.currentRoot)
 		}
 		ui.Spacer(c)

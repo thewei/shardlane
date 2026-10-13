@@ -376,7 +376,7 @@ func (s *Shell) settingsDiagnostics(c *ui.Context) {
 		ui.Scroll(c).Height(300).Background(designTokens(t.Dark).Content).
 			Radius(Radius().Control).Padding(sp.S).Children(func() {
 			if len(filtered) == 0 {
-				ui.Text(c, "No matching entries.").FontSize(Typography().Caption).TextColor(t.TextMuted)
+				ui.Text(c, "No matching entries").FontSize(Typography().Caption).TextColor(t.TextMuted)
 				return
 			}
 			ui.Column(c).FillWidth().Gap(2).Children(func() {

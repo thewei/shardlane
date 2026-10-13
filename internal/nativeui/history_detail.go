@@ -46,7 +46,7 @@ func (s *Shell) historyDetailPage(c *ui.Context, key string) {
 				}
 			})
 		case len(s.chatTurns) == 0:
-			emptyState(c, "No messages", "")
+			emptyState(c, "No messages", "The transcript could not be parsed into messages. Open the source file to read it in full.")
 		default:
 			if s.chatWebviewBody(c) {
 				return

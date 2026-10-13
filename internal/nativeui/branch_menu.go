@@ -35,7 +35,7 @@ func (s *Shell) confirmSwitchBranch(name string) {
 		s.switchBranch(name)
 		return
 	}
-	s.openConfirm("git-switch-branch", name, "Switch branch with local changes?",
+	s.openConfirm("git-switch-branch", name, "Switch Branch With Local Changes?",
 		"Your uncommitted changes come along to "+name+". Git refuses if they conflict.")
 }
 

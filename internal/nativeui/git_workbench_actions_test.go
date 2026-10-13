@@ -251,7 +251,7 @@ func TestGitBranchMergeAsksBeforeMutation(t *testing.T) {
 	if !tester.HasText("Fast-forward only") || !tester.HasText("Create merge commit") {
 		t.Fatalf("merge dialog missing strategy choices: %q", tester.Texts())
 	}
-	if err := tester.Click("Review merge"); err != nil {
+	if err := tester.Click("Review Merge"); err != nil {
 		t.Fatal(err)
 	}
 	if !s.confirmOpen || s.confirmKind != "git-merge-ff" || s.confirmTarget != "topic" {
@@ -261,7 +261,7 @@ func TestGitBranchMergeAsksBeforeMutation(t *testing.T) {
 	s.openMergeDialog("topic")
 	s.mergeStrategy = 1
 	tester.Frame()
-	if err := tester.Click("Review merge"); err != nil {
+	if err := tester.Click("Review Merge"); err != nil {
 		t.Fatal(err)
 	}
 	if !s.confirmOpen || s.confirmKind != "git-merge-no-ff" || s.confirmTarget != "topic" {

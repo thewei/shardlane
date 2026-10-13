@@ -49,7 +49,7 @@ func (s *Shell) dialogs(c *ui.Context) {
 	if s.mergeDialogOpen {
 		ui.Modal(c, &s.mergeDialogOpen, func() {
 			ui.Column(c).Width(430).MaxWidth(480).Gap(Spacing().M).Children(func() {
-				ui.Text(c, "Merge branch").FontSize(Typography().Title).FontWeight(WeightSemibold)
+				ui.Text(c, "Merge Branch").FontSize(Typography().Title).FontWeight(WeightSemibold)
 				ui.Text(c, s.mergeTarget).FontSize(Typography().Body).FontWeight(WeightSemibold).SingleLine().Tooltip(s.mergeTarget)
 				ui.Segmented(c, &s.mergeStrategy, "Fast-forward only", "Create merge commit").FillWidth()
 				if s.mergeStrategy == 0 {
@@ -61,7 +61,7 @@ func (s *Shell) dialogs(c *ui.Context) {
 					if ui.Button(c, "Cancel Merge").Clicked() {
 						s.mergeDialogOpen = false
 					}
-					if ui.PrimaryButton(c, "Review merge").Clicked() {
+					if ui.PrimaryButton(c, "Review Merge").Clicked() {
 						target, strategy := s.mergeTarget, s.mergeStrategy
 						s.mergeDialogOpen = false
 						if strategy == 1 {
@@ -98,7 +98,7 @@ func (s *Shell) dialogs(c *ui.Context) {
 			ui.Text(c, s.dialogTitle).FontWeight(WeightSemibold).FontSize(Typography().Heading)
 			field := ui.TextInput(c, &s.dialogValue).Label(s.dialogLabel).AutoFocus().Width(360)
 			submit := field.Submitted()
-			ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
+			ui.Row(c).Gap(Spacing().M).Justify(ui.End).Children(func() {
 				if ui.Button(c, "Cancel").Clicked() {
 					s.dialogOpen = false
 				}

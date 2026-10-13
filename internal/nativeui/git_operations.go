@@ -108,7 +108,7 @@ func (s *Shell) discardChanges(paths []string) {
 	tracked, untracked := s.splitTrackedUntracked(paths)
 	if len(tracked) > 0 {
 		s.openConfirm("git-discard", joinPathsTarget(tracked),
-			"Discard changes in "+pluralFiles(len(tracked))+"?",
+			"Discard Changes in "+pluralFiles(len(tracked))+"?",
 			"This can't be undone.")
 	}
 	if len(untracked) > 0 {
@@ -180,12 +180,12 @@ func (s *Shell) popStash(ref string) {
 }
 
 func (s *Shell) dropStash(ref string) {
-	s.openConfirm("git-drop-stash", ref, "Drop "+ref+"?",
+	s.openConfirm("git-drop-stash", ref, "Drop Stash “"+ref+"”?",
 		"The stashed changes are deleted permanently.")
 }
 
 func (s *Shell) deleteBranch(name string) {
-	s.openConfirm("git-delete-branch", name, "Delete branch "+name+"?",
+	s.openConfirm("git-delete-branch", name, "Delete Branch “"+name+"”?",
 		"Git refuses if it has unmerged commits.")
 }
 
@@ -195,7 +195,7 @@ func (s *Shell) confirmMergeBranch(target string) {
 	if s.git == nil || s.git.root == "" || target == "" || target == s.currentBranchName() {
 		return
 	}
-	s.openConfirm("git-merge-ff", target, "Fast-forward merge "+target+"?",
+	s.openConfirm("git-merge-ff", target, "Fast-Forward Merge “"+target+"”?",
 		"Moves the current branch forward to "+target+". Refused if the branches have diverged or the working tree is dirty.")
 }
 
@@ -217,7 +217,7 @@ func (s *Shell) confirmMergeNoFFBranch(target string) {
 	if s.git == nil || s.git.root == "" || target == "" || target == s.currentBranchName() {
 		return
 	}
-	s.openConfirm("git-merge-no-ff", target, "Create merge commit with "+target+"?",
+	s.openConfirm("git-merge-no-ff", target, "Create Merge Commit With “"+target+"”?",
 		"Merges "+target+" into the current branch. If files conflict, resolve them in Local Changes, then continue or abort.")
 }
 
@@ -225,7 +225,7 @@ func (s *Shell) confirmCherryPickCommit(hash, subject string) {
 	if s.git == nil || s.git.root == "" || !gitworkbenchFullHash(hash) {
 		return
 	}
-	s.openConfirm("git-cherry-pick", hash, "Cherry-pick commit?",
+	s.openConfirm("git-cherry-pick", hash, "Cherry-pick Commit?",
 		"Applies "+subject+" to the current branch. Requires a clean working tree.")
 }
 
@@ -245,6 +245,16 @@ func (s *Shell) continueSequencer() {
 	})
 }
 
+// sequencerTitle capitalizes the sequencer kind for the confirm title, so
+// dialog titles share the Title Case of the confirm family (F158).
+func sequencerTitle(kind gitworkbench.SequencerKind) string {
+	if kind == "" {
+		return ""
+	}
+	s := string(kind)
+	return strings.ToUpper(s[:1]) + s[1:]
+}
+
 func (s *Shell) confirmAbortSequencer() {
 	if s.git == nil || !s.git.sequencerChecked {
 		return
@@ -253,7 +263,7 @@ func (s *Shell) confirmAbortSequencer() {
 	if kind == gitworkbench.SequencerNone || kind == gitworkbench.SequencerUnsupported {
 		return
 	}
-	s.openConfirm("git-sequencer-abort", string(kind), "Abort "+string(kind)+"?",
+	s.openConfirm("git-sequencer-abort", string(kind), "Abort "+sequencerTitle(kind)+"?",
 		"Returns to the state before the operation. Edits made while resolving conflicts are lost.")
 }
 
@@ -261,7 +271,7 @@ func (s *Shell) confirmRevertCommit(hash, subject string) {
 	if s.git == nil || s.git.root == "" || !gitworkbenchFullHash(hash) {
 		return
 	}
-	s.openConfirm("git-revert-commit", hash, "Revert commit?",
+	s.openConfirm("git-revert-commit", hash, "Revert Commit?",
 		"Creates a commit that reverses: "+subject+". Requires a clean working tree.")
 }
 

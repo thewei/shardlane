@@ -285,9 +285,12 @@ func (s *Shell) commitsPane(c *ui.Context, pal *gdPalette) {
 			row.Background(t.Accent).TextColor(t.AccentText)
 			muted, ref = t.AccentText.Alpha(0.75), t.AccentText
 		case current:
-			row.Background(ui.RGBA(127, 127, 127, 0.2))
+			// Unfocused selection shares the sidebar's token so the same
+			// "this row is selected" tint reads identically across the
+			// tree, the commits list and the changes tree (F155).
+			row.Background(designTokens(t.Dark).SidebarSelect)
 		case row.Hovered():
-			row.Background(ui.RGBA(127, 127, 127, 0.08))
+			row.Background(designTokens(t.Dark).SidebarHover)
 		}
 		if row.Clicked() {
 			s.reviewCommit(cm.Hash)
