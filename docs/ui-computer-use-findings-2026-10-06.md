@@ -311,7 +311,7 @@
 |---|--------|------|------------------|------|
 | F165 | P2 | Sessions/History | History 页已在 UI 层改名 Sessions（page_history.go:46,58、router.go:52/63/87/95、窗口标题实机 "Shardlane — Sessions"）但三个入口仍叫 History：Go 菜单（main.go:215）、⌘K（command_center_ui.go:113）、标题栏 tooltip（titlebar.go:208）；且 /history/{id} 路由标题仍 "History Detail"（router.go:58，实机证实）——菜单说 History、落地页说 Sessions | 记录（P2：入口与页面名对齐） |
 | F166 | P3 | Sessions | 会话标题/预览泄漏原始 skill XML：首条消息以 `<skill name="think" location="...">` 开头的会话，列表标题、内联预览正文、详情页头部三处原样裸露 XML 标记（实机三处截图证实）——标题提取可剥壳 | 记录 |
-| F167 | P3 | History Detail | 详情页用户消息不渲染 markdown：`##`/`**`/表格管道符全部裸露（实机截图证实），Chat 页同内容走 react-markdown 渲染——双标准 | 记录 |
+| F167 | P3 | History Detail | 详情页用户消息不渲染 markdown：`##`/`**`/表格管道符全部裸露（实机截图证实），Chat 页同内容走 react-markdown 渲染——双标准 | ✅ 已取消（用户裁定 2026-10-13）：从未立项原生 markdown 渲染器，详情保持 verbatim 是有意行为；Chat 走 WebView 渲染属介质差异，不构成双标准缺陷 |
 | F168 | P3 | Workspace pane 头 | shell pane 头同一路径显示两遍各截一半：title=surface.label（host:cwd 全称，terminal.go:564）+ detail=shortDir(cwd)（:567）——实机 "wilson@Wilson-MacBook-Pro:~/Wo… --/Wo…" 双截断 | 记录（title 已含 cwd 时抑制 detail） |
 | F169 | P3 | 侧栏 Agents 区 | 同项目多 agent 卡同名不可分辨：三张卡同标题 "herdr-client" 仅小 caption（keytest/test-claude）可辨（实机 AX [2][3][4] 三连同名）——F118 项目名优先策略的副产品 | 记录（标题去重或 caption 卖相提升） |
 
@@ -364,7 +364,7 @@
 - **✅ 已修（aecb4ef，docs）**：F177（roadmap Deferred 删已交付项）、F178（补 RUNCONTROL-01 小节）。
 - **F156 就此消解**：Enter 方向相反的主体就是 F152 删除的旧 paneFindBar；活着的 ⌘F 查找条无此问题。
 - **F149 复核修正**：roadmap Next queue 已有 LAUNCH-05（enable Start Agent behind LaunchRegistry），wiring 属计划内，维持记录不改代码。
-- **保留记录**：F167（History 详情原生渲染 markdown 需立项）、F169（同项目多 agent 卡同名，产品取舍）、F176（单实现 seam 属地道 Go 惯用法）、F164 的 ←/↑↓ 部分、F179（远程 pane 无 Run 控件说明）。
+- **保留记录**：F169（同项目多 agent 卡同名，产品取舍）、F176（单实现 seam 属地道 Go 惯用法）、F164 的 ←/↑↓ 部分、F179（远程 pane 无 Run 控件说明）。**F167 已取消（用户裁定：详情 verbatim 是有意行为，原生 markdown 渲染器不在产品计划内）**。
 - gofmt 注意：仓库存在少量**既有** EOF 空行偏差（PATH gofmt 1.25.9 与 pin 的 1.27.1 并存）；本批只清理了本会话触碰的文件，未夹带无关重排。
 
-> 台账现共 **179 项**，Round 8 的 31 项中 27 项已修复闭环、4 项保留记录（F149 计划内/F167/F169/F176）+ F164/F179 部分保留。
+> 台账现共 **179 项**，Round 8 的 31 项中 27 项已修复闭环、F167 经用户裁定取消（非需求）、其余 3 项保留记录（F149 计划内/F169/F176）+ F164/F179 部分保留。
