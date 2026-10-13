@@ -806,6 +806,38 @@ Notes: connecting requires an active workspace and selected Project (same
   display-only by design.
 ```
 
+## HOSTS-02 — Structured host form + sidebar scroll fix (2026-10-13)
+
+```text
+Task: HOSTS-02
+Objective: structured editing for single-literal Host blocks beside the
+  retained raw editor, and the /hosts sidebar list must scroll instead of
+  overflowing.
+Inputs/owners: internal/sshconfig EditHostBlock (new: single-block directed
+  rewrite with a stale-block fence); the hosts page detail view; the
+  quick-panel ui.Scroll pattern for the sidebar nav.
+Output: internal/sshconfig/edit.go (+tests); nativeui hosts_form.go (alias
+  + HostName/User/Port/ProxyJump draft, delta against indexed facts,
+  single-block save through SaveFile); hostsNav wrapped in ui.Scroll.
+Non-goals: no serialized whole-file rewrites (comments, unknown directives
+  and lines outside the block survive byte for byte); no form for
+  multi-pattern/wildcard/Match entries; no second raw path — Edit File
+  stays the full-fidelity editor.
+Dependencies: HOSTS-01.
+Fast verification: go test ./internal/sshconfig/... ; go test
+  ./internal/nativeui ; go tool mygo vet . ; go test ./...
+Completion evidence: EditHostBlock table tests (in-place replace with
+  indentation/comment preservation, append-before-trailing-blank,
+  remove-all-occurrences, header rename, stale fence, `=` syntax, Match
+  neighbor untouched, bad-header rejection); nativeui hosts tests
+  (sshCommandLine quoting, safeAlias, form delta + validation) pass; full
+  go test ./... green.
+Status: DONE (2026-10-13)
+Notes: hardening included — option-like host tokens (leading "-") are
+  unconnectable and unwritable as form headers, and a dirty raw-editor
+  buffer over the same file blocks a form save instead of racing it.
+```
+
 ## API-01 DTO package
 ## API-02 `/hello`
 ## API-03 `/bootstrap`

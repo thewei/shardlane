@@ -43,6 +43,10 @@ type hostsPageState struct {
 	effErr  string
 	effFor  string
 	eff     []sshconfig.KV
+
+	// form is the structured single-host draft (hosts_form.go); the raw
+	// editor above stays the full-fidelity editing path.
+	form hostsFormState
 }
 
 const hostMachineKeyPrefix = "machine:"
@@ -185,6 +189,8 @@ func (s *Shell) hostEntryDetail(c *ui.Context, entry sshconfig.Entry) {
 						s.openHostEditor(entry.File, false)
 					}
 				})
+
+				s.hostsFormSection(c, entry)
 
 				settingsCard(c, "Directives", func() {
 					facts := entry.Facts()

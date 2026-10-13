@@ -399,9 +399,15 @@ config contents or private keys. Saved Herdr machines stay Herdr-owned
 profiles (internal/herdr machine CLI state) rendered read-only with
 registration going through the existing interactive `herdr machine add`
 flow; they are never mirrored into a Shardlane-side registry. Structured
-form editing is deliberately deferred: the leading Go ssh_config library
-does not support Match blocks, so any serialized write-back would risk
-the user file the raw editor protects.
+editing (HOSTS-02, 2026-10-13) is a bounded single-host form — the alias
+plus HostName/User/Port/ProxyJump — offered only to single-literal Host
+blocks: a save is a single-block directed rewrite in which comments,
+unknown directives and every line outside the block pass through byte for
+byte, fenced against a file that changed since the index loaded, and
+persisted through the same backup + atomic write. It deliberately does not
+adopt a serializing ssh_config library (the leading Go library does not
+support Match blocks), and the raw editor remains the full-fidelity
+editing path beside it.
 
 Detailed execution/audit documents:
 

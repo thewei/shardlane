@@ -15,30 +15,40 @@ import (
 )
 
 // hostsNav is the Hosts page's sidebar body: the config index above, the
-// saved Herdr machines below, one refresh action at the foot.
+// saved Herdr machines below, one refresh action at the foot. The listing
+// scrolls (quick-panel pattern) — a long config must never overflow the
+// sidebar column.
 func (s *Shell) hostsNav(c *ui.Context) {
-	t := c.Theme()
 	ui.Column(c).Grow(1).MinHeight(0).Padding(14, 9, 9).Gap(3).Children(func() {
-		sectionLabel(c, "SSH Config")
-		s.hostsNavEntries(c)
-		sectionLabel(c, "Herdr Machines")
-		machines := s.machineInstances()
-		if len(machines) == 0 {
-			ui.Text(c, "None saved").FontSize(Typography().BodySmall).TextColor(t.TextMuted).Padding(6, 8)
-		}
-		for _, inst := range machines {
-			inst := inst
-			key := hostMachineKeyPrefix + inst.Machine.ID
-			b := navButton(c, iconGlobe, s.machineNavLabel(inst), "", s.hosts.selected == key)
-			if b.Clicked() {
-				s.hosts.selected = key
-			}
-		}
+		ui.Scroll(c).Grow(1).MinHeight(0).Children(func() {
+			sectionLabel(c, "SSH Config")
+			s.hostsNavEntries(c)
+			sectionLabel(c, "Herdr Machines")
+			s.hostsNavMachines(c)
+		})
 		if navButton(c, iconRefresh, "Refresh", "", false).Clicked() {
 			s.refreshHostsIndex(true)
 			s.refreshMachineStatus(true)
 		}
 	})
+}
+
+// hostsNavMachines renders the saved Herdr machines below the config list.
+func (s *Shell) hostsNavMachines(c *ui.Context) {
+	t := c.Theme()
+	machines := s.machineInstances()
+	if len(machines) == 0 {
+		ui.Text(c, "None saved").FontSize(Typography().BodySmall).TextColor(t.TextMuted).Padding(6, 8)
+		return
+	}
+	for _, inst := range machines {
+		inst := inst
+		key := hostMachineKeyPrefix + inst.Machine.ID
+		b := navButton(c, iconGlobe, s.machineNavLabel(inst), "", s.hosts.selected == key)
+		if b.Clicked() {
+			s.hosts.selected = key
+		}
+	}
 }
 
 func (s *Shell) hostsNavEntries(c *ui.Context) {

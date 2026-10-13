@@ -52,14 +52,15 @@ type Entry struct {
 }
 
 // Alias returns the one literal connectable name of a host entry, or ""
-// when the entry is a Match block, carries several patterns, or uses
-// wildcard/negation syntax that only the ssh client itself can resolve.
+// when the entry is a Match block, carries several patterns, uses
+// wildcard/negation syntax that only the ssh client itself can resolve, or
+// begins with "-" (an option-like token must never reach an ssh argv).
 func (e Entry) Alias() string {
 	if e.Kind != KindHost || len(e.Patterns) != 1 {
 		return ""
 	}
 	pattern := e.Patterns[0]
-	if strings.ContainsAny(pattern, "*?!") {
+	if strings.ContainsAny(pattern, "*?!") || strings.HasPrefix(pattern, "-") {
 		return ""
 	}
 	return pattern

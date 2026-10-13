@@ -95,6 +95,12 @@ func (s *Shell) connectHost(alias string) {
 	if alias == "" {
 		return
 	}
+	// Option-like tokens never reach an ssh argv (ssh_command would quote
+	// them, and quoting does not stop flag parsing).
+	if strings.HasPrefix(alias, "-") {
+		s.status = "That host name looks like an ssh option and cannot be connected"
+		return
+	}
 	if s.activeInstance == "" || s.selectedProjectID == "" {
 		s.status = "Connecting needs an active workspace and project"
 		return
@@ -177,7 +183,7 @@ func sshCommandLine(alias string) string {
 }
 
 func safeAlias(alias string) bool {
-	if alias == "" {
+	if alias == "" || strings.HasPrefix(alias, "-") {
 		return false
 	}
 	for _, r := range alias {
@@ -295,7 +301,8 @@ func (s *Shell) loadHostEffective(alias string) {
 // to the existing Herdr machine flow (interactive `herdr machine add` in
 // Terminal). The profile stays Herdr-owned end to end.
 func (s *Shell) registerHostMachine(alias string) {
-	if alias == "" {
+	alias = strings.TrimSpace(alias)
+	if alias == "" || strings.HasPrefix(alias, "-") {
 		return
 	}
 	s.status = "Resolving ssh target…"
