@@ -418,12 +418,9 @@ func (s *Shell) sessionRow(c *ui.Context, summary history.SessionSummary) {
 	case row.Hovered(), !selecting && s.hist.preview.key == key:
 		row.Background(tokens.PanelHover)
 	}
-	// The inline preview is the row's fold: l opens it, h closes it, and
+	// The inline preview is the row's fold: → opens it, ← closes it, and
 	// while selecting (or in the Trash) a row is a plain leaf that ticks.
 	activated := s.nav.sessions.row(c, row, navRow{Key: key, Folder: !selecting, Expanded: !selecting && s.hist.preview.key == key})
-	if s.nav.sessions.showsCursor(row) {
-		s.sessionRowKeys(c, row, summary.Meta)
-	}
 	row.Children(func() {
 		if selecting {
 			selectionMark(c, selected)
@@ -500,29 +497,6 @@ func (s *Shell) sessionMenu(m *ui.Menu, meta history.SessionMeta, withOpen bool)
 		if m.Item("Move to Trash").Chosen() {
 			s.moveSessionsToTrash([]history.SessionMeta{meta})
 		}
-	}
-}
-
-// sessionRowKeys are the row menu's reversible actions on the cursor row's
-// keys, as the Files tree spells its own: d moves a session to the Trash; in
-// the Trash, u puts it back and d deletes it for good — after the same
-// confirm. The cursor steps onto the neighbouring row first, so it keeps its
-// place when the row leaves.
-func (s *Shell) sessionRowKeys(c *ui.Context, row ui.Element, meta history.SessionMeta) {
-	remove := row.Shortcut(0, ui.KeyD)
-	if s.hist.showTrash {
-		switch putBack := row.Shortcut(0, ui.KeyU); {
-		case putBack:
-			s.nav.sessions.stay(c, meta.Key)
-			s.restoreFromTrash([]string{meta.Key})
-		case remove:
-			s.confirmDeleteForever([]string{meta.Key})
-		}
-		return
-	}
-	if remove && s.hist.trash != nil {
-		s.nav.sessions.stay(c, meta.Key)
-		s.moveSessionsToTrash([]history.SessionMeta{meta})
 	}
 }
 

@@ -216,7 +216,7 @@ func (s *Shell) renderDirectoryLevel(c *ui.Context, dir string, level int) {
 		if isDir {
 			glyph, kind = iconFolder, "Folder"
 		}
-		row, clicked := s.sidebarTreeRow(c, sidebarTreeSpec{
+		_, clicked := s.sidebarTreeRow(c, sidebarTreeSpec{
 			Key: "file:" + e.Path, Title: e.Name, Label: kind + " " + e.Name, Tooltip: e.Path, Level: level,
 			Folder: isDir, Expanded: isExpanded, Glyph: glyph,
 			Current: !isDir && s.rightPanel.selectedFilePath == e.Path, Dim: e.IsSymlink,
@@ -233,9 +233,6 @@ func (s *Shell) renderDirectoryLevel(c *ui.Context, dir string, level int) {
 			},
 		})
 
-		if s.nav.files.showsCursor(row) {
-			s.filesRowKeys(row, e, isDir)
-		}
 		if isDir {
 			if clicked {
 				s.rightPanel.expandedDirs[e.Path] = !isExpanded

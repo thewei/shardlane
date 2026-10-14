@@ -32,7 +32,7 @@ navigation_semantics_test.go: UI-009 顶栏/侧栏同级返回、重复点击、
 panel_motion.go: 整高侧栏（macOS vibrancy 材质、无 vibrancy 时不透明回退）的收起/展开动画与尾缘拖拽调宽（sidebarLimits 钳制，宽度会话持久化）；无右栏布局宿主
 panel_motion_test.go: Reduce Motion 下左导航收起/恢复，以及各窗口宽度无右栏回归
 right_panel.go: 旧会话设置兼容字段及 Files 缓存、根目录 identity fence、URL Preview 管理；**不绘制右栏**
-right_panel_files.go: /files 左侧目录缓存/树（共用侧栏网格行与项目/分支头部；工具条用共用 gorexIconButton，开关态与全 App 同一枚中性芯片，无私有 accent 底；整棵树是 listNav 焦点组，进页即聚焦打开的文件/首行，光标行上 Vim 键见 list_nav.go，a/A/r/d/y 经 files_ops.go 的 filesRowKeys 直通新建/重命名/删除/复制路径）及点击加载预览的适配器
+right_panel_files.go: /files 左侧目录缓存/树（共用侧栏网格行与项目/分支头部；工具条用共用 gorexIconButton，开关态与全 App 同一枚中性芯片，无私有 accent 底；整棵树是 listNav 焦点组，进页即聚焦打开的文件/首行，方向键/Enter 见 list_nav.go；新建/重命名/删除/复制路径只走右键菜单）及点击加载预览的适配器
 page_files.go: Header Files 独立页面：左树/中预览（查看条 + 分级预览体）、当前 Tab CWD 归属和空态；页面只画内容，标题/根路径/文件动作在标题栏（route_header.go）
 files_native_preview.go: Files 预览分级计划与原生层——选中后离 UI lane 探测 size×flavor×偏好：文本/代码/Markdown 源码进只读 editor.View（Buffer 离 UI lane 构建，8 MiB 上限、截断胶囊、散文自动换行），Markdown 渲染与网页图片交 WebView 页，解码得了的图片原生位图，其余给真实失败态；查看条（名称/大小/截断/Rendered⇄Source 分段）横跨所有层级；重命名、偏好切换、Source 切换都重新计划
 code_theme.go: codeEditorTheme——把 Git 评审的语法色/代码色/行号色（gd_palette 调色板，经 codehl.KindClasses 这张 token→类表）穿到框架 editor 上，同一份代码在 Files 与 Git 评审里同色
@@ -52,7 +52,7 @@ reorder.go: 作用域隔离的拖放语义与目标插入索引、跨 Tab/Projec
 reorder_test.go: Drag/Drop 真正鼠标事件、插入索引、跨 Tab/Project 移动校验、窗格卡片放置动作推导和投影排序回归
 components.go: 共用导航树行与视觉组件（treeRow 悬停图标动作 Action）、sidebarRowHeight 密度令牌，拖动时提供原生浮动预览、同级插入占位条、容器高亮、动画及命中目标
 workbench.go: 桌面工作台状态中枢，Agent 目录与运行时事件分发
-page_history.go: Sessions 中心列表布局（参照 magpie 会话历史）：Agent 标签条（All + 各 Provider，带会话数；回收站里按回收站内容计数）、搜索/Select/Trash（+Empty Trash）工具簇（刷新不在这里：侧栏项目头里唯一一个；窄窗口整体换行；Select 与 Trash 只在挂了回收站时出现，Trash 有内容或视图打开才显示）、项目分组卡片（默认只展开最近一个项目，头部在卡内，chevron 取树侧栏同一枚 treeChevron）与行（标题/事实行/Token 列/日期↔悬停菜单固定占位，点行内展开预览；回收站视图复用同一列表，行键是条目 id、选择常开）、行菜单 Move to Trash（无回收站则无此项）、listNav 键盘（进页聚焦开场行；j/k 跨项目头、h/l 折叠项目与行内预览、o 切换预览；光标亮时 d 移入回收站，回收站里 u 放回、d 永久删除——先确认；行离开后光标让位邻行）、有界结果计数文案、扫描未结束时的 Updating 提示（分批渐进加载）
+page_history.go: Sessions 中心列表布局（参照 magpie 会话历史）：Agent 标签条（All + 各 Provider，带会话数；回收站里按回收站内容计数）、搜索/Select/Trash（+Empty Trash）工具簇（刷新不在这里：侧栏项目头里唯一一个；窄窗口整体换行；Select 与 Trash 只在挂了回收站时出现，Trash 有内容或视图打开才显示）、项目分组卡片（默认只展开最近一个项目，头部在卡内，chevron 取树侧栏同一枚 treeChevron）与行（标题/事实行/Token 列/日期↔悬停菜单固定占位，点行内展开预览；回收站视图复用同一列表，行键是条目 id、选择常开）、行菜单 Move to Trash（无回收站则无此项）、listNav 键盘（进页聚焦开场行；↓/↑ 跨项目头、←/→ 折叠项目与行内预览、Enter/Space 切换预览或勾选；移入回收站/放回/永久删除只走行菜单与工具条）、有界结果计数文案、扫描未结束时的 Updating 提示（分批渐进加载）
 history_state.go: HistoryService 列表查询的生成代际隔离，筛选清空旧可选行/预览/多选；范围状态（scopeAll/scopeRoot/projectTotal/allTotal；请求带 ProjectPath，只有无范围且无筛选的加载才喂 Recent）；Provider 元数据选择与各 Provider 总数（可选 HistoryProviderCountView / HistoryProjectCountView，标签计数取当前范围）、扫描分批上报（可选 HistoryScanProgressView：每批约 100 个来源在窗口线程刷新一次可见列表，数千个单会话文件夹不再把页面按在 Loading 态）；分组展开、多选、行内预览与详情页帧戳（只读 Chat 绑定的空闲释放）状态；回收站条目缓存与视图开关（trashItems/showTrash，trashGen 代际防过期）
 history_select.go: Sessions 多选：行/项目头勾选标记、底部批量栏（会话视图：Move to Trash；回收站：Put Back / Delete Forever…，有勾选才出现）；选择只是 UI 状态，文件搬动全在 history_trash.go
 history_preview.go: 行内会话预览：点行懒读原始会话末尾若干条（Tail 窗口，代际防过期），只读展示，带 Open/Continue/Move to Trash；不缓存任何会话内容
@@ -64,7 +64,7 @@ text_clip.go: Inspector 摘要与工具输出预览共用的按字节/行数 Uni
 history_test.go: History 页面真实 Catalog 场景回归
 history_select_test.go: 多选模式机制（Select 进出、行点击勾选而非展开、项目头勾选不折叠、筛选/回收站切换清空选择）、最近项目默认单开回归；删除/放回的真实文件语义在 history_trash_test.go
 history_trash_test.go: Sessions 回收站回归（真实 Provider 夹具文件 + 真实 HistoryService/sessiontrash.Store）：行菜单 Move to Trash 搬文件/摘行/Undo 提示、Undo 放回、回收站列表读回标题与放回、Agent 标签与搜索、永久删除/清空先确认（取消不动）、批量移入、刚写入/运行中会话拒绝、放回冲突不覆盖、详情页与预览里的移入、无回收站不出现删除入口；含内存替身 fakeTrash 与已变异验证过的守卫
-history_nav_test.go: Sessions 列表键盘回归——进页聚焦且不亮、j/k 跨项目头与边界、h/l 折叠项目与预览（l 只开不关）、o 切换、选择模式里行是叶子、d 移入回收站（不亮不响应、光标让位邻行、最后一行上移）、会话在用拒绝、回收站里 Ctrl-d 不是删除/d 先确认并把键盘还给光标/u 放回、搜索框里字母仍是文字
+history_nav_test.go: Sessions 列表键盘回归——进页聚焦且不亮、↓/↑ 跨项目头与边界、←/→ 折叠项目与预览（→ 只开不关）、Enter 切换预览、选择模式里行是叶子（Enter/Space 勾选、→ 不动）、确认框收起后键盘回到光标、搜索框里字母仍是文字
 history_preview_test.go: 行内预览懒读、代际防过期、阻塞读取与 Open 跳转回归
 history_continue_test.go: Continue 先确认再动、同 Agent 续接/跨 Agent 交接（简报取自原文最新窗口）、已在运行只定位窗格、无项目目录的说明、失败分类与已创建窗格的定位、行菜单/预览入口与禁用态回归（假体，不启动真实 Agent）
 history_detail_test.go: 详情共享 Chat 只读绑定、最新消息优先与向上分页、切换重绑/离开释放、不可读来源恢复态回归
@@ -107,8 +107,8 @@ panel_motion.go: Git/Terminal 左栏统一宽度（默认 252 DIP，可拖拽 20
 repo_bar.go: 仅保留变更文件点击与 toggleMenu popover 辅助函数；仓库菜单见 git_sidebar_tree 与 sidebar_switchers
 branch_menu.go: 当前分支优先的搜索过滤与受保护的切换/创建入口，弹层由 sidebar_switchers 持有
 sidebar_tree.go: 侧栏层级唯一对齐网格（行圆角 treeRowRadius，chevron 槽·图标·标题、首层对齐分区标题）、导向线、统一行构建器 sidebarTreeRow（Selected 选中脸、键盘光标同脸 SidebarSelect、Action 悬停行内图标）、可折叠分组头 sidebarSectionHeader（Spec.Trailing 放头部尾端的文字动作如 Stage/Unstage，sectionTextAction 是它的唯一脸；Workspace/Agents/Pin、Git 引用、Changes 面板、Hosts 分组全走这一个头：前置旋转 chevron·半粗体标题·计数）与行高令牌 treeRowHeight；两个构建器返回 (行, clicked)（clicked 兼收鼠标点击与键盘激活），经 Spec.Nav 注册进 listNav；Git 引用、Files 树与 Hosts 列表共用
-list_nav.go: 侧栏列表/树与 Sessions 列表唯一的键盘模型 listNav——真焦点即光标（FocusGroup 单 Tab 停靠点，方向键由它认领故不回绕），j/k·↓/↑ 移动、h/l·←/→ 折叠展开或进出层级、o 打开、gg/G·Home/End 首尾、Ctrl-d/u 跳十行，Enter/Space 本就是行点击；进页聚焦开场行但光标不亮——键盘用过它才亮（Tab 进入自带亮；离开列表/重进页面复暗；点击不亮），会改东西的行键（Files 的 a/A/r/d/y，Sessions 的 d/u）等光标亮了才响应；Git 引用树不抢进页焦点（窗口级 j/k 归 Diff）；对话框关闭后 navTrackDialogs 把焦点还给光标行（MyGo 对 AutoFocus 对话框的焦点恢复缺口，应用侧补）；Hosts 光标移动即选中；Sessions 的项目卡头与会话行自行注册（行内预览当作该行的折叠），stay 让删除/放回后光标落到邻行（优先下一行，其次上一行，不落在项目头）；虚拟化 ui.List（Changes）不走这里
-list_nav_test.go: Files/Git 引用/Hosts 的真键盘回归（Sessions 见 history_nav_test.go）——移动与不回绕、gg/G/Ctrl-d/u、h/l/o 层级、单 Tab 停靠点与记忆、进页聚焦（含列表晚到）、对话框后焦点回到光标行、Files 行键 a/A/r/d/y、Hosts 选中跟随与机器行不属于末组、光标脸（键盘用过才亮、Tab 进入即亮、离开/重进复暗、点击不亮）
+list_nav.go: 侧栏列表/树与 Sessions 列表唯一的键盘模型 listNav——真焦点即光标（FocusGroup 单 Tab 停靠点，方向键由它认领故不回绕），↓/↑ 移动、←/→ 折叠展开或进出层级（叶子上 → 不动）、Home/End 首尾，Enter/Space 本就是行点击；**不绑任何字母键**（没有 Vim 层，没有模式要进，过滤框里字母照常是文字；守卫 TestSidebarListsBindNoLetters 扫源码）；进页聚焦开场行但光标不亮——键盘用过它才亮（Tab 进入自带亮；离开列表/重进页面复暗；点击不亮）；Git 引用树不抢进页焦点（窗口级 j/k 归 Diff 视图，那是 godiff 参照的唯一保留字母键）；对话框关闭后 navTrackDialogs 把焦点还给光标行（MyGo 对 AutoFocus 对话框的焦点恢复缺口，应用侧补）；Hosts 光标移动即选中；Sessions 的项目卡头与会话行自行注册（行内预览当作该行的折叠）；虚拟化 ui.List（Changes）不走这里
+list_nav_test.go: Files/Git 引用/Hosts 的真键盘回归（Sessions 见 history_nav_test.go）——方向键移动与不回绕、Home/End、←/→ 层级（叶子上 → 不开）、Enter/Space 打开文件、单 Tab 停靠点与记忆、进页聚焦（含列表晚到）、对话框后焦点回到光标行、Hosts 选中跟随与机器行不属于末组、光标脸（键盘用过才亮、Tab 进入即亮、离开/重进复暗、点击不亮）、TestSidebarListsBindNoLetters（非 Cmd/Super/Alt 的单字母键只许出现在 Diff 视图的 j/k）
 session_selector.go: 左栏页脚的会话选择器，以及 Workspace 树的分区壳 Shell.sidebarSection（共享树头 + 折叠状态归调用方；Workspace 分区的 + 是悬停动作与右键菜单项，标题自带项目数）
 sidebar_switchers.go: Git/Files/Sessions 侧栏共用头部：项目名与分支名各自是可搜索的 pull-down 快速切换，外加刷新图标
 sidebar_tree_test.go: 网格对齐、导向线连续、分区无 "···"、悬停 "+"、创建对话框、项目/分支快速切换、Workspace 行无 "…" 与标题栏 Actions 回归；折叠头同一语法（TestSectionHeadersWearOneGrammar）与唯一 disclosure chevron（TestOneDisclosureChevron，禁止折叠头自行互换 chevron 图标）

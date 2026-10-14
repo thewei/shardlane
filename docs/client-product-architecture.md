@@ -177,15 +177,14 @@ MyGo Native UI
     tree, the Git reference tree, the Hosts list and the Sessions list share
     one keyboard model
     (`internal/nativeui/list_nav.go`): the row holding MyGo's real keyboard
-    focus is the cursor, each tree is one Tab stop, and Vim-style keys
-    (`j/k`, `h/l`, `o`, `gg/G`, `Ctrl-d/u`) or the arrows move, fold and open
-    without wrapping; Enter/Space stay ordinary row clicks. A cursor parked
-    on a freshly opened list stays unlit until the keyboard has used it, so a
-    list opened with the mouse looks as it always did. On Files the
-    cursor row also answers `a/A/r/d/y` with the same create / rename /
-    delete-with-confirm / copy-path actions as its context menu; on Sessions
-    the cursor row answers `d` (Move to Trash) and, in the Trash, `u` (Put
-    Back) / `d` (Delete Forever, after its confirm).
+    focus is the cursor, each tree is one Tab stop, and the arrows move
+    (↓/↑, Home/End, without wrapping) and fold / unfold or climb (←/→);
+    Enter/Space stay ordinary row clicks. There is no Vim layer and no mode
+    to enter: no list binds a letter key (a source scan guards it), so a
+    filter field above a list types normally. A cursor parked on a freshly
+    opened list stays unlit until the keyboard has used it, so a list opened
+    with the mouse looks as it always did. Row actions (new / rename /
+    delete, Move to Trash / Put Back) live in the row menus and toolbars.
     Presentation only: no new runtime path, no Herdr method, and the tree
     data, folding and file operations keep their owners.
 - Daily development of the new desktop path must not require compiling the

@@ -2,23 +2,15 @@ package nativeui
 
 /**
  * [INPUT]: 侧栏列表/树这一帧画出的可见行（key、层级、折叠态）与 MyGo 的真焦点、Element.Shortcut、ScrollIntoView、FocusGroup
- * [OUTPUT]: listNav —— 侧栏列表与树唯一的键盘模型：真焦点就是光标；j/k·↓/↑ 移动，h/l·←/→ 折叠展开或进出层级，o 打开，gg/G·Home/End 首尾，Ctrl-d/u 跳十行；进页时光标停在开场行但不亮，键盘用过它才亮（Tab 进入除外，MyGo 自带 FocusVisible）
- * [POS]: Files 树、Git 引用树、Hosts 列表（行经 sidebarTreeRow/sidebarSectionHeader 注册）与 Sessions 列表（项目卡头与会话行自行注册）共用；折叠、选择与动作仍归各列表——nav 只移动焦点，并把 o/l/h 翻译成该行的"点击"（Enter/Space 本来就是点击）
+ * [OUTPUT]: listNav —— 侧栏列表与树唯一的键盘模型：真焦点就是光标；↓/↑ 移动，←/→ 折叠展开或进出层级，Home/End 首尾，Enter/Space 是行点击；没有 Vim 层（字母键不绑定）；进页时光标停在开场行但不亮，键盘用过它才亮（Tab 进入除外，MyGo 自带 FocusVisible）
+ * [POS]: Files 树、Git 引用树、Hosts 列表（行经 sidebarTreeRow/sidebarSectionHeader 注册）与 Sessions 列表（项目卡头与会话行自行注册）共用；折叠、选择与动作仍归各列表——nav 只移动焦点，并把 →/← 翻译成该行的"点击"（Enter/Space 本来就是点击）
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 
 import (
 	"slices"
-	"time"
 
 	"github.com/egoist/mygo/ui"
-)
-
-const (
-	// navStep is how far Ctrl-D / Ctrl-U move: about half a sidebar.
-	navStep = 10
-	// navChord is how long the first g of gg waits for the second.
-	navChord = 700 * time.Millisecond
 )
 
 type navAction uint8
@@ -28,31 +20,22 @@ const (
 	navUp
 	navLeft
 	navRight
-	navOpen
-	navChordG
 	navTop
 	navBottom
-	navHalfDown
-	navHalfUp
 )
 
-// navBindings are the keys a focused row answers. Arrows, Home and End are
-// claimed too, so MyGo's own focus group (which wraps round) leaves them to
-// this model; PageUp/PageDown stay with the scroll container.
+// navBindings are the keys a focused row answers: the arrows, Home and End —
+// no letters, so there is no mode to enter and a filter field above the list
+// types normally. They are claimed so MyGo's own focus group (which wraps
+// round) leaves them to this model; PageUp/PageDown stay with the scroll
+// container, Enter/Space with the row's own click.
 var navBindings = []struct {
-	mods ui.Modifiers
-	key  ui.Key
-	act  navAction
+	key ui.Key
+	act navAction
 }{
-	{0, ui.KeyJ, navDown}, {0, ui.KeyDown, navDown},
-	{0, ui.KeyK, navUp}, {0, ui.KeyUp, navUp},
-	{0, ui.KeyH, navLeft}, {0, ui.KeyLeft, navLeft},
-	{0, ui.KeyL, navRight}, {0, ui.KeyRight, navRight},
-	{0, ui.KeyO, navOpen},
-	{0, ui.KeyG, navChordG},
-	{ui.Shift, ui.KeyG, navBottom}, {0, ui.KeyEnd, navBottom},
-	{0, ui.KeyHome, navTop},
-	{ui.Ctrl, ui.KeyD, navHalfDown}, {ui.Ctrl, ui.KeyU, navHalfUp},
+	{ui.KeyDown, navDown}, {ui.KeyUp, navUp},
+	{ui.KeyLeft, navLeft}, {ui.KeyRight, navRight},
+	{ui.KeyHome, navTop}, {ui.KeyEnd, navBottom},
 }
 
 // navRow is one visible row of a list or tree as the keyboard sees it.
@@ -75,9 +58,9 @@ type navRow struct {
 // is the cursor — real MyGo focus, so Tab, clicks and these keys all agree —
 // and a row answers the keys only while it holds the focus, which keeps a
 // filter field above the tree typing normally. The list owns no fold or
-// selection state: moving only focuses a row, and o / l / h on a row whose
-// state asks for it come out as that row's click, which the tree already
-// handles for the mouse. A cursor parked on a list the mouse just opened
+// selection state: moving only focuses a row, and → / ← on a row whose state
+// asks for it come out as that row's click, which the tree already handles
+// for the mouse. A cursor parked on a list the mouse just opened
 // stays invisible — no row looks selected that is not — until a key of the
 // list has moved it.
 type listNav struct {
@@ -94,7 +77,6 @@ type listNav struct {
 	seen        uint64   // last pass that built the list
 	entry       bool     // focus the opening row once the list is built
 	shown       bool     // the keyboard has used the cursor: it wears its face
-	chordAt     time.Time
 }
 
 // begin opens one build of the list. pass is the Shell's per-View counter: a
@@ -181,8 +163,7 @@ func (n *listNav) row(c *ui.Context, e ui.Element, r navRow) bool {
 
 // showsCursor reports whether e, a row of this list, is the cursor and
 // should look it: the keyboard has moved it, or MyGo says the focus arrived
-// by Tab. Row keys that change things wait for it, so nothing acts on a
-// cursor the user cannot see.
+// by Tab. A cursor parked on a list the mouse just opened stays dark.
 func (n *listNav) showsCursor(e ui.Element) bool {
 	return e.Focused() && (n != nil && n.shown || e.FocusVisible())
 }
@@ -192,36 +173,22 @@ func (n *listNav) showsCursor(e ui.Element) bool {
 func (n *listNav) keys(c *ui.Context, e ui.Element, r navRow) (activate bool) {
 	var act navAction
 	for _, b := range navBindings {
-		if e.Shortcut(b.mods, b.key) && act == 0 {
+		if e.Shortcut(0, b.key) && act == 0 {
 			act = b.act
 		}
 	}
 	if act != 0 {
 		n.shown = true
 	}
-	if act != 0 && act != navChordG {
-		n.chordAt = time.Time{}
-	}
 	switch act {
 	case navDown:
 		n.move(c, r.Key, 1)
 	case navUp:
 		n.move(c, r.Key, -1)
-	case navHalfDown:
-		n.move(c, r.Key, navStep)
-	case navHalfUp:
-		n.move(c, r.Key, -navStep)
 	case navTop:
 		n.edge(c, r.Key, false)
 	case navBottom:
 		n.edge(c, r.Key, true)
-	case navChordG:
-		if now := time.Now(); !n.chordAt.IsZero() && now.Sub(n.chordAt) < navChord {
-			n.chordAt = time.Time{}
-			n.edge(c, r.Key, false)
-		} else {
-			n.chordAt = now
-		}
 	case navLeft:
 		if r.Folder && r.Expanded {
 			return true // fold it
@@ -231,15 +198,15 @@ func (n *listNav) keys(c *ui.Context, e ui.Element, r navRow) (activate bool) {
 		}
 	case navRight:
 		switch {
-		case !r.Folder, !r.Expanded:
-			return true // open the leaf, or unfold the folder
+		case !r.Folder:
+			// A leaf has nothing to unfold: Enter opens it.
+		case !r.Expanded:
+			return true // unfold the folder
 		default:
 			if i := n.index(r.Key); i >= 0 && i+1 < len(n.prev) && n.prev[i+1].parent == r.Key {
 				n.to(c, n.prev[i+1].Key)
 			}
 		}
-	case navOpen:
-		return true
 	}
 	return false
 }
@@ -275,31 +242,6 @@ func (n *listNav) edge(c *ui.Context, from string, last bool) {
 	}
 }
 
-// stay asks for the cursor to land next to key in the next pass — on the row
-// below, else the one above, never a bare group header — for an action that
-// is about to take the row under the cursor away, so the keyboard keeps its
-// place instead of losing the focus with the row.
-func (n *listNav) stay(c *ui.Context, key string) {
-	i := n.index(key)
-	if i < 0 {
-		return
-	}
-	for j := i + 1; j < len(n.prev); j++ {
-		if !n.prev[j].Section {
-			n.want = n.prev[j].Key
-			c.AnimationFrame()
-			return
-		}
-	}
-	for j := i - 1; j >= 0; j-- {
-		if !n.prev[j].Section {
-			n.want = n.prev[j].Key
-			c.AnimationFrame()
-			return
-		}
-	}
-}
-
 // to asks for the cursor on key in the next pass and, for lists whose
 // selection follows the cursor, selects it.
 func (n *listNav) to(c *ui.Context, key string) {
@@ -319,7 +261,8 @@ type listNavs struct {
 // dialog's autofocused field takes the keyboard from the row that opened it,
 // and MyGo hands focus back only to an element that is still there — so a
 // list notes its cursor as the dialog opens and returns to it as it closes,
-// and `a`, `r`, `d` do not end the keyboard's visit to the tree.
+// so a dialog opened from a row's menu does not end the keyboard's visit to
+// the tree.
 func (ns *listNavs) dialog(open bool, pass uint64) {
 	for _, n := range []*listNav{&ns.files, &ns.gitRefs, &ns.hosts, &ns.sessions} {
 		switch {
