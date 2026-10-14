@@ -62,34 +62,45 @@ func TestHistoryViewNestedFirstReturnsIndexThenTerminal(t *testing.T) {
 	}
 }
 
-func TestSidebarBackToTerminalDoesNotRestoreDiff(t *testing.T) {
-	s := NewShell()
-	s.loading = false
-	s.surface.openDiff(s.workspaceContext(), "example.go")
-	s.router.Replace("/settings/general")
-	tester := ui.NewTester(s.View, 1200, 800)
-	if err := tester.Click("Back"); err != nil {
-		t.Fatal(err)
-	}
-	if got := s.router.Path(); got != routeWorkspace {
-		t.Fatalf("sidebar back went to %q", got)
-	}
-	if got := s.surface.current(); got != WorkspaceSurfaceTerminal {
-		t.Fatalf("Back restored %q instead of the Terminal", got)
+// Settings' Back and every other page's Terminal tab land the Terminal, not
+// the Diff/Chat/Commit surface that was open before the page.
+func TestSidebarWayHomeDoesNotRestoreDiff(t *testing.T) {
+	for _, tc := range []struct{ route, label string }{
+		{"/settings/general", "Back"},
+		{routeHistory, "Terminal view"},
+	} {
+		t.Run(tc.route, func(t *testing.T) {
+			s := NewShell()
+			s.loading = false
+			s.surface.openDiff(s.workspaceContext(), "example.go")
+			s.router.Replace(tc.route)
+			tester := ui.NewTester(s.View, 1200, 800)
+			if err := tester.Click(tc.label); err != nil {
+				t.Fatal(err)
+			}
+			if got := s.router.Path(); got != routeWorkspace {
+				t.Fatalf("%s went to %q", tc.label, got)
+			}
+			if got := s.surface.current(); got != WorkspaceSurfaceTerminal {
+				t.Fatalf("%s restored %q instead of the Terminal", tc.label, got)
+			}
+		})
 	}
 }
 
-func TestHistoryDeepLinkBackTargetsParentNotPreviousPage(t *testing.T) {
+// A session detail has no Back foot; the Sessions tab is its parent step and
+// goes to the index, not to whatever page was open before.
+func TestHistoryDeepLinkSessionsTabTargetsParentNotPreviousPage(t *testing.T) {
 	s := NewShell()
 	s.loading = false
 	s.router.Replace("/settings/general")
 	s.router.Push("/history/session-direct")
 	tester := ui.NewTester(s.View, 1200, 800)
-	if err := tester.Click("Back"); err != nil {
+	if err := tester.Click("History view"); err != nil {
 		t.Fatal(err)
 	}
 	if got := s.router.Path(); got != routeHistory {
-		t.Fatalf("History detail Back went to %q, want History index", got)
+		t.Fatalf("History detail's Sessions tab went to %q, want History index", got)
 	}
 }
 

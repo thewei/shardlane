@@ -70,7 +70,7 @@ history_detail_test.go: 详情共享 Chat 只读绑定、最新消息优先与�
 text_clip_test.go: 截断的 Unicode 边界、行/字符上限与截断标记回归
 history_filter_test.go: History 筛选空态、结果计数、Provider 选项与旧行不可点击的 headless 验证
 history_layout_test.go: Sessions 页 Agent 标签（含数量）、行 Token 列与悬停占位、有界计数文案、Trash 开关出现规则与窄窗口工具条换行回归
-sidebar.go: 唯一左栏宿主——栏顶四个等宽图标视图标签（sidebarViewTabs：Changes/Sessions/Files/Hosts，每条路由同位置，点亮页再点回 Terminal）、Workspace/Agent/Pin 树、Git 引用导航、内页（Settings/History/Files）自有导航；内页返回控件统一固定在侧栏页脚、一律叫 Back（取代 Workspace 切换页脚；tooltip 写去向：会话详情→Sessions，其余→Terminal）
+sidebar.go: 唯一左栏宿主——栏顶五个等宽图标视图标签（sidebarViewTabs：Terminal/Changes/Sessions/Files/Hosts，每条路由同位置；Terminal 标签是回 Workspace 的唯一入口之一，点亮的其他页再点也回 Terminal；Changes 用 Git 分叉图标 iconGit）、Workspace/Agent/Pin 树、Git 引用导航、内页（Settings/History/Files）自有导航；**只有 Settings 保留页脚 Back**（它不是视图标签的目的地；取代 Workspace 切换页脚，tooltip 写去向 Terminal），其余内页与 Git 视图没有页脚，经 Terminal 标签离开
 sidebar_test.go: 内页侧栏导航与页脚 Back 的位置/文案、栏顶四个视图标签的位置/等宽/同位置/点击语义、Settings 导航、Pin 区块回归
 detail_fact.go: Agent 详情复用的只读字段样式，从退役 Inspector 解耦
 shell.go: 核心 Shell 宿主，协调 Router/Window/Titlebar；首次 Herdr 加载独占中心展示并淡入工作区，Git sidebar 与双模式分栏展示态仅本地持有；WithSessionTrash 挂 Sessions 回收站，pendingToastAction 在 View 里发带按钮（Undo）的提示条；原生窗口标题经 setWindowTitle 接缝（AttachWindow 绑到窗口、headless 换记录器）由 window_actions.go 每帧幂等同步，恢复到内页的启动也会带上路由名

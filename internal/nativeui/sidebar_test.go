@@ -8,102 +8,96 @@ import (
 	"github.com/wh-studio/herdr-client/internal/herdr"
 )
 
-// TestInnerPageBackPinnedToSidebarFoot pins the unified inner-page chrome:
-// every inner page carries its one way back at the foot of the sidebar,
-// below the page navigation and in place of the Workspace switch, which only
-// the workspace sidebar keeps. A session detail's Back names the Sessions
-// list; the other pages name the Terminal.
-func TestInnerPageBackPinnedToSidebarFoot(t *testing.T) {
+// TestOnlySettingsKeepsABackFoot pins the unified inner-page chrome: the
+// strip's Terminal tab is every page's way home, so Sessions, Files, Hosts,
+// the Git views and the legacy Chat page end without a foot, while Settings —
+// which is not a strip destination — keeps its one Back at the sidebar foot,
+// below its navigation and in place of the Workspace switch. Only the
+// workspace sidebar keeps the Workspace switch.
+func TestOnlySettingsKeepsABackFoot(t *testing.T) {
 	const height = 800
 	s := NewShell()
 	s.loading = false
-
 	s.router.Replace(routeWorkspace)
 	tester := ui.NewTester(s.View, 1200, height)
 	if !tester.HasText("Choose Session") || tester.HasText("Back") {
 		t.Fatalf("workspace sidebar must keep its Workspace switch and no back control; texts=%q", tester.Texts())
 	}
 
-	s.router.Replace("/settings/general")
-	backEntries := countTextExact(ui.NewTester(s.View, 1200, height).Texts(), "Back")
-	if backEntries == 0 {
-		t.Fatal("the Settings sidebar shows no Back control")
-	}
-	for _, tc := range []struct{ route, nav string }{
-		{"/settings/general", "General"},
-		{routeHistory, "All sessions"},
-		{"/history-projects", "All sessions"},
-		{"/history/codex:abc", "All sessions"},
-	} {
-		s.router.Replace(tc.route)
-		tester := ui.NewTester(s.View, 1200, height)
-		back, ok := tester.Find("Back")
-		if !ok {
-			t.Fatalf("%s: sidebar missing Back; texts=%q", tc.route, tester.Texts())
+	for _, route := range headerRoutes() {
+		tester := ui.NewTester(route.setup(t).View, 1200, height)
+		settleFrames(tester, 3)
+		back, hasBack := tester.Find("Back")
+		if route.name != "settings" {
+			if hasBack {
+				t.Errorf("%s: the sidebar still has a Back foot at %+v; the Terminal tab is the way out", route.name, back)
+			}
+			if _, ok := tester.Find("Terminal view"); !ok {
+				t.Errorf("%s: no Terminal tab to leave by; texts=%q", route.name, tester.Texts())
+			}
+			continue
 		}
-		if back.X > sidebarWidth || back.Y < height-60 {
-			t.Fatalf("%s: back control at %+v, want the sidebar foot", tc.route, back)
+		if !hasBack || back.X > sidebarWidth || back.Y < height-60 {
+			t.Fatalf("settings: Back at %+v (found=%v), want the sidebar foot", back, hasBack)
 		}
-		if nav, ok := tester.Find(tc.nav); !ok || nav.Y >= back.Y {
-			t.Fatalf("%s: page navigation %q at %+v must sit above Back %+v", tc.route, tc.nav, nav, back)
+		if nav, ok := tester.Find("General"); !ok || nav.Y >= back.Y {
+			t.Fatalf("settings: page navigation at %+v must sit above Back %+v", nav, back)
 		}
 		if tester.HasText("Choose Session") {
-			t.Fatalf("%s: inner page kept the Workspace switch; texts=%q", tc.route, tester.Texts())
+			t.Fatalf("settings kept the Workspace switch; texts=%q", tester.Texts())
 		}
-		// One control, one name: the destination is the tooltip's job.
-		if got := countTextExact(tester.Texts(), "Back"); got != backEntries {
-			t.Fatalf("%s: %d Back entries, want the %d of one control; texts=%q", tc.route, got, backEntries, tester.Texts())
+	}
+
+	// A session detail and the by-project page are Sessions pages too.
+	for _, path := range []string{"/history-projects", "/history/codex:abc"} {
+		s := newMultiAgentHistoryShell(t)
+		s.router.Replace(path)
+		tester := ui.NewTester(s.View, 1200, height)
+		settleFrames(tester, 3)
+		if countTextExact(tester.Texts(), "Back") > 0 || tester.HasText("Choose Session") {
+			t.Errorf("%s: a Sessions page must end without a foot; texts=%q", path, tester.Texts())
 		}
 	}
 }
 
 // The Diff/Commit sidebar is a Git navigator, not the Workspace tree: like
-// every inner view it ends in the one way back to the Terminal, in place of
-// the Workspace switch.
-func TestDiffSidebarFootIsBackToTerminal(t *testing.T) {
+// every inner view it has no foot — the Terminal tab above returns.
+func TestDiffSidebarHasNoFootAndTheTerminalTabReturns(t *testing.T) {
 	const height = 800
 	s := gitSurfaceTestShell(t, t.TempDir())
 	s.loading = false
 	s.showSurface(WorkspaceSurfaceDiff)
 	tester := ui.NewTester(s.View, 1200, height)
 	tester.Frame()
-	back, ok := tester.Find("Back")
-	if !ok {
-		t.Fatalf("Diff sidebar missing Back; texts=%q", tester.Texts())
+	if countTextExact(tester.Texts(), "Back") > 0 || tester.HasText("Choose Session") {
+		t.Fatalf("Diff sidebar kept a foot; texts=%q", tester.Texts())
 	}
-	if back.X > sidebarWidth || back.Y < height-60 {
-		t.Fatalf("back control at %+v, want the sidebar foot", back)
-	}
-	if tester.HasText("Choose Session") {
-		t.Fatalf("Diff sidebar kept the Workspace switch; texts=%q", tester.Texts())
-	}
-	if err := tester.Click("Back"); err != nil {
+	if err := tester.Click("Terminal view"); err != nil {
 		t.Fatal(err)
 	}
 	if s.surface.current() != WorkspaceSurfaceTerminal || s.router.Path() != routeWorkspace {
-		t.Fatalf("back landed on surface %v at %s, want the workspace Terminal", s.surface.current(), s.router.Path())
+		t.Fatalf("the Terminal tab landed on surface %v at %s, want the workspace Terminal", s.surface.current(), s.router.Path())
 	}
 }
 
-// TestInnerPageSidebarPinsPageNavAndBack pins the inner-page style: on
-// Settings and History the app sidebar swaps the runtime navigator for
-// the page's own navigation over a Back control, and Back returns to the
-// workspace sidebar with its Terminal view.
-func TestInnerPageSidebarPinsPageNavAndBack(t *testing.T) {
-	s := NewShell()
-	s.loading = false
-
-	for _, route := range []string{"/settings/general", "/history", "/history-projects"} {
-		s.router.Replace(route)
+// TestEveryInnerPageLeavesByTheTerminalTab pins the way out of the pages that
+// lost their Back foot: the Terminal tab lands the workspace Terminal from
+// each of them, and Settings still returns through its own Back.
+func TestEveryInnerPageLeavesByTheTerminalTab(t *testing.T) {
+	for _, route := range headerRoutes() {
+		s := route.setup(t)
 		tester := ui.NewTester(s.View, 1200, 800)
-		if _, ok := tester.Find("Back"); !ok {
-			t.Fatalf("%s: sidebar missing the back control; texts=%q", route, tester.Texts())
+		settleFrames(tester, 3)
+		label := "Terminal view"
+		if route.name == "settings" {
+			label = "Back"
 		}
-		if err := tester.Click("Back"); err != nil {
-			t.Fatalf("%s: back click failed: %v", route, err)
+		if err := tester.Click(label); err != nil {
+			t.Fatalf("%s: %v", route.name, err)
 		}
-		if got := s.router.Path(); got != "/workspace" {
-			t.Fatalf("%s: back route = %q, want /workspace", route, got)
+		settleFrames(tester, 3)
+		if got := s.router.Path(); got != routeWorkspace || s.surface.current() != WorkspaceSurfaceTerminal {
+			t.Fatalf("%s: %q landed on %s showing %v, want the workspace Terminal", route.name, label, got, s.surface.current())
 		}
 	}
 }
@@ -234,11 +228,12 @@ func TestProjectAndTabExpansionArePresentationState(t *testing.T) {
 	}
 }
 
-// sidebarViewTabLabels are the four view tabs' stable accessible names.
-var sidebarViewTabLabels = []string{"Changes view", "History view", "Files view", "Hosts view"}
+// sidebarViewTabLabels are the five view tabs' stable accessible names, the
+// Terminal first.
+var sidebarViewTabLabels = []string{"Terminal view", "Changes view", "History view", "Files view", "Hosts view"}
 
 // TestSidebarViewTabsSitAtTheTopInEqualShares pins the 2026-10-14 move of the
-// four view buttons out of the title bar: on every route they are the first
+// view buttons out of the title bar: on every route they are the first
 // row under the traffic-light band, equal in width, on one line, at the same
 // place whichever page is open — and they are no longer in the title bar.
 func TestSidebarViewTabsSitAtTheTopInEqualShares(t *testing.T) {

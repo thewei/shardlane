@@ -2,8 +2,8 @@ package nativeui
 
 /**
  * [INPUT]: 依赖 Shell 当前 Router/Workspace/Agent 投影、共享 agentCardRow 和 native Quick Panel
- * [OUTPUT]: 提供 Sidebar 的顶部视图标签条（Changes/Sessions/Files/Hosts 四个等宽图标标签）、Workspace 树、Git 引用导航、History/Settings 导航、内页底部返回控件（取代 Workspace 切换页脚）与 Agent 行点击/右键动作
- * [POS]: 唯一左栏宿主，Git 引用树由 git_sidebar_tree 负责，Agent 详情复用 Quick Panel；视图切换在栏顶，内页返回统一落在页脚
+ * [OUTPUT]: 提供 Sidebar 的顶部视图标签条（Terminal/Changes/Sessions/Files/Hosts 五个等宽图标标签）、Workspace 树、Git 引用导航、History/Settings 导航、仅 Settings 保留的底部返回控件（取代 Workspace 切换页脚）与 Agent 行点击/右键动作
+ * [POS]: 唯一左栏宿主，Git 引用树由 git_sidebar_tree 负责，Agent 详情复用 Quick Panel；视图切换与回 Terminal 都在栏顶标签条，其余内页与 Git 视图没有页脚
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 
@@ -71,22 +71,28 @@ func (s *Shell) sidebar(c *ui.Context) {
 			s.handleSidebarSelection(s.selected)
 		}
 
-		// The sidebar foot. Inner pages and the Git views (Diff/Commit) put
-		// their one way back here — the same spot everywhere — in place of the
-		// Workspace switch. On the workspace sidebar the Workspace is the
+		// The sidebar foot. On the workspace sidebar the Workspace is the
 		// bound Herdr instance, so switching belongs in the footer rather
-		// than nesting Projects under a Workspace tree.
-		ui.Row(c).Height(42).Padding(5, 8).Gap(6).AlignItems(ui.Center).
-			BorderWidth(1, 0, 0, 0).BorderColor(tokens.BorderSubtle).Children(func() {
-			if s.sidebarInnerPage() || s.sidebarInDiffMode() {
-				s.sidebarBackRow(c)
-				return
-			}
-			s.sessionSelector(c)
-			if gorexIconButton(c, gorexColorsOf(t.Dark), iconSettings, "Settings", "Settings", false, gorexIconBtn, gorexIconGlyph).Clicked() {
-				s.router.Push(routeSettings)
-			}
-		})
+		// than nesting Projects under a Workspace tree. Settings is not one
+		// of the strip's destinations, so it keeps its one way back here; the
+		// other inner pages and the Git views (Diff/Commit) have no foot —
+		// the strip's Terminal tab, one row up, is their way out.
+		foot := func(content func()) {
+			ui.Row(c).Height(42).Padding(5, 8).Gap(6).AlignItems(ui.Center).
+				BorderWidth(1, 0, 0, 0).BorderColor(tokens.BorderSubtle).Children(content)
+		}
+		switch {
+		case s.sidebarInSettings():
+			foot(func() { s.sidebarBackRow(c) })
+		case s.sidebarInnerPage() || s.sidebarInDiffMode():
+		default:
+			foot(func() {
+				s.sessionSelector(c)
+				if gorexIconButton(c, gorexColorsOf(t.Dark), iconSettings, "Settings", "Settings", false, gorexIconBtn, gorexIconGlyph).Clicked() {
+					s.router.Push(routeSettings)
+				}
+			})
+		}
 	})
 }
 
@@ -105,24 +111,30 @@ func (s *Shell) sidebarInDiffMode() bool {
 
 // sidebarInnerPage reports whether the current route is an inner page:
 // Settings, History (list, detail, by-project), Files or Hosts. Inner pages
-// swap the sidebar body for their own navigation and pin the back control
-// to the sidebar foot.
+// swap the sidebar body for their own navigation.
 func (s *Shell) sidebarInnerPage() bool {
 	path := s.router.Path()
-	return isHistoryRoute(path) || path == routeFiles || path == routeHosts ||
-		strings.HasPrefix(path, "/settings/")
+	return isHistoryRoute(path) || path == routeFiles || path == routeHosts || s.sidebarInSettings()
 }
 
-// sidebarViewTabs is the sidebar's first row: the four app-level views —
-// Changes, Sessions, Files, Hosts — as equal-width icon tabs, on every route
-// (they were the title bar's trailing buttons until 2026-10-14). The lit tab
-// is the page on screen; pressing it again leaves for the Terminal (from a
-// nested Sessions page, first back to the list), so a view is always one
-// click away and one click out. Accessible labels stay stable for shortcuts
-// and assistive technologies; tooltips describe the action that will happen.
+// sidebarInSettings reports whether the route is a Settings page — the one
+// inner page whose sidebar keeps a Back foot.
+func (s *Shell) sidebarInSettings() bool {
+	return strings.HasPrefix(s.router.Path(), "/settings/")
+}
+
+// sidebarViewTabs is the sidebar's first row: the five app-level views —
+// Terminal, Changes, Sessions, Files, Hosts — as equal-width icon tabs, on
+// every route (they were the title bar's trailing buttons until 2026-10-14).
+// The lit tab is the page on screen. The Terminal tab is the way home from
+// any page (and from the Chat face); pressing another lit tab again leaves
+// for the Terminal too (from a nested Sessions page, first back to the
+// list), so a view is always one click away and one click out. Accessible
+// labels stay stable for shortcuts and assistive technologies; tooltips
+// describe the action that will happen.
 func (s *Shell) sidebarViewTabs(c *ui.Context) {
 	k := gorexColorsOf(c.Theme().Dark)
-	_, _, onChanges, onHistory := s.viewSwitchActive()
+	onTerminal, onChat, onChanges, onHistory := s.viewSwitchActive()
 	historyTip := "Sessions"
 	switch s.router.Path() {
 	case routeHistory:
@@ -134,7 +146,10 @@ func (s *Shell) sidebarViewTabs(c *ui.Context) {
 	}
 	sp := Spacing()
 	ui.Row(c).FillWidth().Padding(0, sidebarGutter, sp.S).Gap(sp.XS).Children(func() {
-		if gorexIconTab(c, k, iconChanges, "Changes view", "Changes", onChanges).Clicked() {
+		if gorexIconTab(c, k, iconTerminal, "Terminal view", "Terminal", onTerminal || onChat).Clicked() {
+			s.showViewTerminal()
+		}
+		if gorexIconTab(c, k, iconGit, "Changes view", "Changes", onChanges).Clicked() {
 			s.showViewChanges()
 		}
 		if gorexIconTab(c, k, iconHistory, "History view", historyTip, onHistory).Clicked() {
@@ -149,18 +164,11 @@ func (s *Shell) sidebarViewTabs(c *ui.Context) {
 	})
 }
 
-// sidebarBackRow is the one way back, always labelled Back; its tooltip
-// names the destination. A session detail returns to the Sessions list;
-// every other inner page returns to the Workspace's Terminal, not the last
-// visible Diff/Chat/Commit surface. The global router history shortcut
-// remains independent of this explicit product navigation.
+// sidebarBackRow is Settings' one way back, labelled Back; its tooltip names
+// the destination: the Workspace's Terminal, not the last visible
+// Diff/Chat/Commit surface. The global router history shortcut remains
+// independent of this explicit product navigation.
 func (s *Shell) sidebarBackRow(c *ui.Context) {
-	if strings.HasPrefix(s.router.Path(), routeHistory+"/") {
-		if navButton(c, iconArrowLeft, "Back", "", false).Tooltip("Back to Sessions").Clicked() {
-			s.showHistoryIndex()
-		}
-		return
-	}
 	if navButton(c, iconArrowLeft, "Back", "", false).Tooltip("Back to Terminal").Clicked() {
 		s.showViewTerminal()
 	}

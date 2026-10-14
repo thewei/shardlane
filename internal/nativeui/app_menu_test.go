@@ -108,8 +108,15 @@ func TestMenuBarFollowsTheMacConventions(t *testing.T) {
 	}
 }
 
-// viewDestinations pairs each sidebar view tab with the name the other two
-// launchers — the ⌘P palette and the Go menu — give the same page.
+// homeDestination pairs the strip's Terminal tab with the name the other two
+// launchers give the same page: the Go menu and the palette say Workspace, the
+// tab (icon and tooltip) says Terminal. The naming is an open product
+// decision (docs/ui-computer-use-findings: F196–F198); this pins that all
+// three reach one destination meanwhile.
+var homeDestination = struct{ tab, name string }{"Terminal view", "Workspace"}
+
+// viewDestinations pairs each other sidebar view tab with the name the other
+// two launchers — the ⌘P palette and the Go menu — give the same page.
 var viewDestinations = []struct{ tab, name string }{
 	{"Changes view", "Changes"},
 	{"History view", "Sessions"},
@@ -124,14 +131,14 @@ var viewDestinations = []struct{ tab, name string }{
 // order after Workspace; the palette lists a section alphabetically, so only
 // its names are pinned.
 func TestLaunchersAgreeOnViewDestinations(t *testing.T) {
-	var tabs []string
+	tabs := []string{homeDestination.tab}
 	for _, d := range viewDestinations {
 		tabs = append(tabs, d.tab)
 	}
 	if !slices.Equal(tabs, sidebarViewTabLabels) {
 		t.Fatalf("destinations %q must cover the sidebar tabs %q, in order", tabs, sidebarViewTabLabels)
 	}
-	want := []string{"Workspace"}
+	want := []string{homeDestination.name}
 	for _, d := range viewDestinations {
 		want = append(want, d.name)
 	}
