@@ -297,13 +297,13 @@ func (s *Shell) commitsPane(c *ui.Context, pal *gdPalette) {
 		row.Tooltip(cm.Subject + "\n" + cm.Author + " · " +
 			cm.Time.Format("2006-01-02 15:04") + "\n" + cm.Hash)
 		row.ContextMenu(func(m *ui.Menu) {
-			if m.Item("Cherry-pick commit…").Chosen() {
+			if m.Item("Cherry-pick Commit…").Chosen() {
 				s.confirmCherryPickCommit(cm.Hash, cm.Subject)
 			}
-			if m.Item("Revert commit…").Chosen() {
+			if m.Item("Revert Commit…").Chosen() {
 				s.confirmRevertCommit(cm.Hash, cm.Subject)
 			}
-			if m.Item("Copy commit hash").Chosen() {
+			if m.Item("Copy Commit Hash").Chosen() {
 				s.copyToClipboard(cm.Hash)
 			}
 		})

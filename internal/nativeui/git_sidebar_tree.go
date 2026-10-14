@@ -80,10 +80,10 @@ func (s *Shell) gitRepositorySidebar(c *ui.Context) {
 								s.openExternalPath(worktree.Path)
 							}
 						}, func(m *ui.Menu) {
-							if m.Item("Copy path").Chosen() {
+							if m.Item("Copy Path").Chosen() {
 								s.copyToClipboard(worktree.Path)
 							}
-							if !worktree.Bare && m.Item("Open in Finder").Chosen() {
+							if !worktree.Bare && m.Item("Reveal in Finder").Chosen() {
 								s.openExternalPath(worktree.Path)
 							}
 						})
@@ -114,17 +114,17 @@ func (s *Shell) gitRepositorySidebar(c *ui.Context) {
 							}
 						}
 						if !current {
-							if m.Item("Switch to branch").Chosen() {
+							if m.Item("Switch to Branch").Chosen() {
 								s.confirmSwitchBranch(full)
 							}
-							if m.Item("Merge into current…").Chosen() {
+							if m.Item("Merge into Current…").Chosen() {
 								s.openMergeDialog(full)
 							}
-							if m.Item("Delete branch…").Chosen() {
+							if m.Item("Delete Branch…").Chosen() {
 								s.deleteBranch(full)
 							}
 						}
-						if m.Item("Copy branch name").Chosen() {
+						if m.Item("Copy Branch Name").Chosen() {
 							s.copyToClipboard(full)
 						}
 					})
@@ -138,7 +138,7 @@ func (s *Shell) gitRepositorySidebar(c *ui.Context) {
 						s.copyToClipboard(full)
 						s.pendingToast = "Copied remote-tracking ref"
 					}, func(full string, m *ui.Menu) {
-						if m.Item("Copy remote-tracking ref").Chosen() {
+						if m.Item("Copy Remote-Tracking Ref").Chosen() {
 							s.copyToClipboard(full)
 						}
 					})
@@ -154,10 +154,10 @@ func (s *Shell) gitRepositorySidebar(c *ui.Context) {
 					s.gitRenderRefTree(c, "tag", gitRefTree(refs, s.gitRefsFilter), 0, func(full string) {
 						s.copyToClipboard(full)
 					}, func(full string, m *ui.Menu) {
-						if m.Item("Copy tag name").Chosen() {
+						if m.Item("Copy Tag Name").Chosen() {
 							s.copyToClipboard(full)
 						}
-						if m.Item("Delete tag…").Chosen() {
+						if m.Item("Delete Tag…").Chosen() {
 							s.deleteTagConfirm(full)
 						}
 					})
@@ -176,13 +176,13 @@ func (s *Shell) gitRepositorySidebar(c *ui.Context) {
 						s.gitTreeRow(c, gitTreeItem{title: st.Ref + "  " + st.Subject, tooltip: st.Subject, kind: "Stash", glyph: iconBranch}, func() {
 							s.copyToClipboard(st.Ref)
 						}, func(m *ui.Menu) {
-							if m.Item("Pop stash").Chosen() {
+							if m.Item("Pop Stash").Chosen() {
 								s.popStash(st.Ref)
 							}
-							if m.Item("Drop stash…").Chosen() {
+							if m.Item("Drop Stash…").Chosen() {
 								s.dropStash(st.Ref)
 							}
-							if m.Item("Copy stash ref").Chosen() {
+							if m.Item("Copy Stash Ref").Chosen() {
 								s.copyToClipboard(st.Ref)
 							}
 						})

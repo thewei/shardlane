@@ -153,7 +153,7 @@ func (s *Shell) gitRenderRefTree(c *ui.Context, scope string, roots []*gitRefNod
 			if n.leaf {
 				menu(value, m)
 			}
-			if folder && m.Item("Collapse folder").Chosen() {
+			if folder && m.Item("Collapse Folder").Chosen() {
 				s.gitTreeClosed[key] = true
 			}
 		})

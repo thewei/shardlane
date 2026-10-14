@@ -203,7 +203,7 @@ func (s *Shell) gitQuickCommitForm(c *ui.Context, snap *gitworkbench.ChangesSnap
 				Label("Commit options").Tooltip("Commit options")
 			dropdown.Children(func() { ui.Icon(c, iconChevronDown).FontSize(13) })
 			dropdown.Menu(func(m *ui.Menu) {
-				if m.Item("Draft subject with Pi").Disabled(blocked || s.piQuickRunning).Chosen() {
+				if m.Item("Draft Subject with Pi").Disabled(blocked || s.piQuickRunning).Chosen() {
 					s.startQuickAICommit()
 				}
 			})

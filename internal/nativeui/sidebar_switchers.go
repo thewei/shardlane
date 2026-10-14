@@ -192,11 +192,11 @@ func (s *Shell) branchSwitcherPanel(c *ui.Context) {
 					}
 					if !b.Current {
 						row.ContextMenu(func(m *ui.Menu) {
-							if m.Item("Merge into current…").Chosen() {
+							if m.Item("Merge into Current…").Chosen() {
 								s.branchMenuOpen = false
 								s.openMergeDialog(b.Name)
 							}
-							if m.Item("Delete branch…").Chosen() {
+							if m.Item("Delete Branch…").Chosen() {
 								s.branchMenuOpen = false
 								s.deleteBranch(b.Name)
 							}

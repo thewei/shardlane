@@ -21,7 +21,7 @@ import (
 func (s *Shell) filesToolView(c *ui.Context) {
 	root := s.rightPanel.currentRoot
 	if root == "" {
-		emptyState(c, "No Active Directory", "Select a project tab or pane with a valid working directory.")
+		emptyState(c, "No active directory", "Select a project tab or pane with a valid working directory.")
 		return
 	}
 	s.requestIgnoreSet()

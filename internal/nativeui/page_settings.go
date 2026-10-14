@@ -309,7 +309,7 @@ func (s *Shell) settingsDiagnostics(c *ui.Context) {
 		}),
 		row("Session", "", func() { valueText(c, fallbackText(snap.ActiveInstance, "none")) }),
 		row("Log file", compactSearchPath(snap.LogPath), func() {
-			if snap.LogPath != "" && ui.Button(c, "Show in Finder").Clicked() {
+			if snap.LogPath != "" && ui.Button(c, "Reveal in Finder").Clicked() {
 				mygo.Shell.ShowItemInFolder(snap.LogPath)
 			}
 		}),

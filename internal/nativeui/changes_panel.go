@@ -200,15 +200,15 @@ func (s *Shell) renderChangesRow(c *ui.Context, pal *gdPalette, row gitworkbench
 	if node.Dir && !s.gdReviewingCommit() && (pane == gdViewUnstaged || pane == gdViewStaged) {
 		paths := gitDirectoryPaths(s.gitSnapshot(), node.Path, pane)
 		r.ContextMenu(func(m *ui.Menu) {
-			if choice != nil && m.Item("Select all files in folder").Disabled(len(paths) == 0).Chosen() {
+			if choice != nil && m.Item("Select All Files in Folder").Disabled(len(paths) == 0).Chosen() {
 				for _, path := range paths {
 					choice.Add(path)
 				}
 			}
-			if pane == gdViewUnstaged && m.Item("Stage folder ("+itoa(len(paths))+" files)").Disabled(len(paths) == 0 || s.git.opBusy).Chosen() {
+			if pane == gdViewUnstaged && m.Item("Stage Folder ("+itoa(len(paths))+" Files)").Disabled(len(paths) == 0 || s.git.opBusy).Chosen() {
 				s.stageFiles(paths)
 			}
-			if pane == gdViewStaged && m.Item("Unstage folder ("+itoa(len(paths))+" files)").Disabled(len(paths) == 0 || s.git.opBusy).Chosen() {
+			if pane == gdViewStaged && m.Item("Unstage Folder ("+itoa(len(paths))+" Files)").Disabled(len(paths) == 0 || s.git.opBusy).Chosen() {
 				s.unstageFiles(paths)
 			}
 		})

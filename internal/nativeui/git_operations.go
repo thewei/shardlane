@@ -291,7 +291,7 @@ func gitworkbenchFullHash(hash string) bool {
 }
 
 func (s *Shell) undoLastCommit() {
-	s.openConfirm("git-undo-commit", "", "Undo last commit?",
+	s.openConfirm("git-undo-commit", "", "Undo Last Commit?",
 		"Its changes stay staged. Nothing is discarded.")
 }
 
@@ -310,7 +310,7 @@ func (s *Shell) createTag(name string) {
 
 // deleteTagConfirm removes a tag after confirmation.
 func (s *Shell) deleteTagConfirm(name string) {
-	s.openConfirm("git-delete-tag", name, "Delete tag "+name+"?",
+	s.openConfirm("git-delete-tag", name, "Delete Tag “"+name+"”?",
 		"Commits are not affected.")
 }
 

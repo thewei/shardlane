@@ -373,10 +373,10 @@ func TestSidebarHeadBranchRowsCarryMergeAndDeleteInTheirContextMenu(t *testing.T
 	}
 	tester.Frame()
 	menu := strings.Join(tester.Menu(), "|")
-	if !strings.Contains(menu, "Merge into current…") || !strings.Contains(menu, "Delete branch…") {
+	if !strings.Contains(menu, "Merge into Current…") || !strings.Contains(menu, "Delete Branch…") {
 		t.Fatalf("branch row menu = %q", menu)
 	}
-	if err := tester.ChooseMenuItem("Merge into current…"); err != nil {
+	if err := tester.ChooseMenuItem("Merge into Current…"); err != nil {
 		t.Fatal(err)
 	}
 	tester.Frame()

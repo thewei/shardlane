@@ -24,11 +24,11 @@ func (s *Shell) commitSurface(c *ui.Context) {
 
 	snap := s.gitSnapshot()
 	if s.git == nil || s.git.root == "" {
-		emptyState(c, "No Git Repository", "The selected tab is not inside a Git repository.")
+		emptyState(c, "No Git repository", "The selected tab is not inside a Git repository.")
 		return
 	}
 	if snap == nil || len(snap.Files) == 0 {
-		emptyState(c, "Nothing to Commit", "The working tree is clean.")
+		emptyState(c, "Nothing to commit", "The working tree is clean.")
 		return
 	}
 

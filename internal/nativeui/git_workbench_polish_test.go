@@ -104,10 +104,10 @@ func TestGitFolderContextMenuSelectsAllChangedDescendants(t *testing.T) {
 		t.Fatal(err)
 	}
 	menu := strings.Join(tt.Menu(), " | ")
-	if !strings.Contains(menu, "Select all files in folder") || !strings.Contains(menu, "Stage folder (2 files)") {
+	if !strings.Contains(menu, "Select All Files in Folder") || !strings.Contains(menu, "Stage Folder (2 Files)") {
 		t.Fatalf("directory menu incomplete: %q", menu)
 	}
-	if err := tt.ChooseMenuItem("Select all files in folder"); err != nil {
+	if err := tt.ChooseMenuItem("Select All Files in Folder"); err != nil {
 		t.Fatal(err)
 	}
 	tt.Frame()
@@ -137,7 +137,7 @@ func TestGitQuickAICommitFillsSubjectButNeverCommits(t *testing.T) {
 		t.Fatal(err)
 	}
 	tt.Frame()
-	if err := tt.ChooseMenuItem("Draft subject with Pi"); err != nil {
+	if err := tt.ChooseMenuItem("Draft Subject with Pi"); err != nil {
 		t.Fatal(err)
 	}
 	if !s.piQuickRunning {

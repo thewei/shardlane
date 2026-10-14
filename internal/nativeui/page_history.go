@@ -480,7 +480,7 @@ func (s *Shell) sessionMenu(m *ui.Menu, meta history.SessionMeta, withOpen bool)
 	if m.Item("Copy Session ID").Chosen() {
 		s.copyToClipboard(meta.ID)
 	}
-	if meta.FilePath != "" && m.Item("Show Source File in Finder").Chosen() {
+	if meta.FilePath != "" && m.Item("Reveal Source File in Finder").Chosen() {
 		mygo.Shell.ShowItemInFolder(meta.FilePath)
 	}
 	if m.Item("Export as Markdown…").Chosen() {
