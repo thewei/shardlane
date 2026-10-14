@@ -110,6 +110,7 @@ rg -n 'Padding\(14, 9, 9\)' --glob '!*_test.go' .                      # 侧栏�
 - 图标按钮尺寸只来自三档（第二轮审计）：工具栏 `gorexIconBtn/Glyph` 28/16、密集 `gorexPaneBtn/Glyph` 24/14（卡头、查找条、胶囊 Dismiss）、悬停行内 `gorexRowBtn/Glyph` 20/12（树行、列表行、Changes 行、Sessions 行出现的那一枚操作）。禁止两种写法：构造后链尾 `.Size(…)`（Dismiss 曾是 22）和构造处的数字字面量（`20, 12` 曾在四处各写一遍）。行内悬停操作原有 18/20/22 三种尺寸、4/5/7.7 三种圆角、三套悬停透明度，现在是同一个 `gorexIconButton(…, gorexRowBtn, gorexRowGlyph)`；`TestIconButtonSizeComesFromTheTiers` 扫描全包，Changes/Sessions 的行测试各钉一次尺寸。
 - 圆角只来自 token（第二轮审计）：控件 `Radius().Control`、行/卡片 `Radius().Row/Card`、胶囊 `Radius().Pill`（`Radius(14)`/`Radius(16)` 是 Pill 的手写近似）；侧栏里所有可选中的行（树行、Changes 行、提交列表）共用 `treeRowRadius`（提交列表曾是 5，其余 4）。字面量圆角只剩三类合理用法：圆点/圆形（`size/2`）、小标签（ref 徽标 3）、终端拖放提示；新增字面量先问是不是这三类。
 - 对话框标题只有一个（第二轮审计）：自建对话框（Merge、Commit、文本输入）的标题用 `modalTitle`（`Heading` 16 semibold），`Title` 20 只属于标题栏的页标题——Merge/Commit 曾直接拿页标题字号；对话框内层间距取 `Spacing().L`（与 `ui.Modal` 面板默认的 12 一致），页脚按钮间距取 `Spacing().M`（与官方 `AlertDialog` 的 8 一致）；标题 Title Case（`Commit Changes`）。守卫：`modal_title_test.go`。
+- 单行输入框的高度只来自 `Controls()` 档（第二轮审计）：同一个 Commit 主题输入框在行内编辑区是 28、在 Commit 弹窗里是 30，旁边的描述输入框又是 26——三个数字都是手敲的。现在显式高度一律 `Controls().RegularHeight`，`TestFieldHeightComesFromTheTiers` 拦数字字面量（多行 TextArea 按内容定高，不在此列）。
 - 勾选框只有一张脸（第二轮审计）：Sessions 多选的标记曾是线描的 task/square 图标，提交文件列表里的官方 `ui.Checkbox` 是实心强调色盒子加白色对勾。标记本身不是控件（点击归行/表头按钮，官方控件会再添一个 Tab 停靠点、还会吞点击），所以 `selectionMark` 画官方的盒子和对勾，`TestSelectionMarkWearsTheCheckboxFace` 与官方逐像素比（深浅×选中/未选中，四个变异均 KILLED）。同一模式见分段控件：官方只给 Base，脸自己搭，就拿官方像素当真值。
 - 一个角色一个控件（第二轮审计）：搜索/筛选列表的输入框只用官方 `ui.SearchField`（放大镜 + 边框 + 清除钮 + Esc 清空）。曾同时存在三种脸——官方的、Git 面手搓的无边框灰底版（连清除钮都自绘）、无放大镜的裸 `TextInput`——改后一律官方；`search_field_test.go` 用 AST 扫描拦下「`TextInput` 链上带 Search/Filter 提示」与「手绘 Clear 钮」。注意官方控件的占位字固定为 `Search`（`.Placeholder()` 对它无效），具体名字放 `.Label(…)`；先扫「同一角色有几种实现」再动手，别只看当前文件。
 - 分隔线只用发丝线 token（第二轮审计）：`theme.Border` 是控件描边（输入框、Segmented 轨道），不透明、比 `BorderSubtle` 重数倍，不能拿来画分隔线或面板边缘——Git 工作台四处曾这样做，与侧栏边线并排一粗一细。`hairline_test.go` 拦下 `.Background(t.Border)` / `.BorderColor(t.Border)`。
@@ -134,7 +135,7 @@ rg -n 'Padding\(14, 9, 9\)' --glob '!*_test.go' .                      # 侧栏�
 
 - **终端窗格卡头保留**（N19 #7：Terminal⇄Chat 开关在卡头；去掉会改 PTY 尺寸）；只做信息去重，不做结构搬家。
 - 仍在自成一脸的小控件（同类不同脸，下一轮评估）：`gdPalette.hover/pill`（行脸）。`gdChangedPill` 的 Dismiss 已改为密集档 24/14，Changes 行与 Sessions 行的悬停操作已并入行内档 20/12（见上：图标按钮三档）。`gdLayoutControl` 与 `gdSearchInput` 已在第二轮审计并入共享脸（见上：分段控件一个 helper、搜索框一个官方控件）。
-- Commit 对话框页脚的主按钮取**默认档**而非 `compactPrimaryButton`：同排 Cancel Commit 与丢弃草稿提示（Keep Editing/Discard Draft）都是默认档，只降主按钮会比兄弟矮，整排降档则对话框里 30 高的输入框旁出现 22 高的主动作。要降档需整排一起。
+- Commit 对话框页脚的主按钮取**默认档**而非 `compactPrimaryButton`：同排 Cancel Commit 与丢弃草稿提示（Keep Editing/Discard Draft）都是默认档，只降主按钮会比兄弟矮，整排降档则对话框里 28 高的输入框旁出现 22 高的主动作。要降档需整排一起。
 - `Refresh Runtime` 菜单项保留（命令级入口，不是页面按钮）。
 - **待产品决定：命名词表**（F196–F198，影响面大，不单点改）：`Remote Machine` vs `Herdr Machine`；`Session` 既指 Herdr 运行时会话（切换器）又指 Agent 对话历史（Sessions 页）；侧栏条目叫 `Workspace` 还是 `Project`（分区头/创建入口 6 处 vs 菜单/对话框/⌘P/切换器/Files 约 20 处）。
 - **待产品决定：没有菜单孪生的图标按钮 tooltip 大小写**（F192 ②）。现状两派：与菜单项同源的命令名是 Title Case（`Split Right`/`Close Pane`/`Show Sidebar`/`New File…`，`header_overflow.go` 的菜单项复用同一串）；Git 工具条与直写 `.Tooltip(…)` 是 sentence case（`Show file list`/`Commit options`/`Pane menu`）。同一动作的两种拼写已由 `TestSameActionIsSpelledOnce` 收口；剩下的是整类约定，在决定前不要单点改。

@@ -405,5 +405,6 @@
 | F207 | P3 | 组件统一 | 圆角字面量绕过 token：`navButton`/Git「Expand all」`Radius(6)`（=Control）、快速面板外壳 `Radius(10)`（=Card）、Git 胶囊 `Radius(14/16)`（=Pill 的手写近似）；同一侧栏里提交列表行圆角 5、树行/Changes 行 4 | ✅ 前三类改引用 `Radius().Control/Card/Pill`（视觉不变，胶囊仍全圆）；侧栏可选行统一 `treeRowRadius`（4，提交列表 5→4）；剩余字面量只有圆点/圆形（size/2）、ref 小标签 3、终端拖放提示 7、侧栏切换芯片 4，均记入 skill |
 | F208 | P3 | 文案统一 | 同一个事实「提交时间」三种写法：评审元信息行 `Jan 2, 2006 15:04`、提交行 tooltip `2006-01-02 15:04`、提交详情 `time.RFC1123`（含秒与时区缩写） | ✅ `gdCommitTime` 一个 helper（元信息行的写法），三处共用；`TestCommitTimeIsSpelledOnce` 扫调用处自己 `.Time.Format(…)`（调用点计数下限 2；两个变异均 KILLED）；History 导出文件里的 ISO 时间戳是文件内容，不是标签，保留 |
 | F209 | P3 | 组件统一 | 勾选框两张脸：Sessions 多选的标记是线描 `iconTask`/`iconSquare` 图标（选中为强调色描边），提交文件列表里官方 `ui.Checkbox` 是实心强调色盒子 + 白色对勾 | ✅ `selectionMark` 改画官方的盒子与对勾（16×16、圆角 4、选中强调色填充 + 2px 对勾、未选中 1px 弱边框；不用官方控件本体：它会吞点击、给每行加 Tab 停靠点）；`TestSelectionMarkWearsTheCheckboxFace` 与官方逐像素比，四个变异（填充色/边框色/对勾宽度/圆角）均 KILLED；明暗渲染核对 |
+| F210 | P3 | 组件统一 | 单行输入框高度三个手敲数字：Commit 主题输入框行内编辑区 28、Commit 弹窗 30，描述输入框 26 | ✅ 一律 `Controls().RegularHeight`（28）；`TestFieldHeightComesFromTheTiers` 拦 `ui.TextInput` 调用链上的数字高度，两个变异（弹窗 30、编辑区 26）均 KILLED；明暗渲染核对编辑区两框等高 |
 
 已排查排除：控件无标签缺口——Workspace/Changes/Sessions/Files/Hosts/Settings 六页 AX 扫描，唯一无 label 的 AXButton 是窗口左上三个系统红绿灯；760×560/980×640 窄窗口下五页（Workspace/Sessions/Files/Hosts/Settings）无裁切、标签条与大标题均完整（无头渲染）。

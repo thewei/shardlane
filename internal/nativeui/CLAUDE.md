@@ -21,6 +21,7 @@ search_field_test.go: 搜索/筛选框只有官方 ui.SearchField 一种脸（AS
 modal_title_test.go: 对话框标题回归——Merge/Commit/文本输入三种自建对话框的标题行高一致（渲染比较）；Title 字号（20）只许 route_header.go 的页标题使用，对话框与卡片用 Heading
 hairline_test.go: 分隔线只有一种粗细——AST 扫描 .Background(x)/.BorderColor(x) 的实参，控件描边色 theme.Border（不透明、比发丝线重数倍）不得当分隔线/面板边缘的颜色，一律 BorderSubtle；扫描数下限防失效
 segmented_face_test.go: 分段控件回归——segmentedTrack/segmentFace 搭的控件选中段像素与官方 ui.Segmented 一致（深浅两套）；Git 的 Split/Unified 是 SegmentedBase 分段（轨道标签 Diff layout），真实点击切换 splitLayout
+field_tier_test.go: 单行输入框高度回归——ui.TextInput 调用链上不许键入数字高度，只认 Controls() 档（Commit 主题输入框在行内编辑区与弹窗曾是 28/30，描述框 26）
 checkbox_face_test.go: 勾选框回归——Sessions 多选的 selectionMark 与官方 ui.Checkbox 的 16×16 盒子和对勾逐像素一致（深浅×选中/未选中）
 button_tier_test.go: 按钮字号回归——扫描 ui.Button/ui.PrimaryButton 调用链上的 .FontSize(…) 字面覆盖（只许 ds_components.go 的 compact 两档），拦下同排按钮两种高度；另扫图标按钮构造（gdIconButton/gdPulldown/gorexIconButton/gorexPulldown/gorexIconTab）调用链尾的 .Size(…)，并拦下 gorexIconButton/gorexPulldown 构造处的数字字面尺寸——图标按钮尺寸只来自 gorexIconBtn/gorexPaneBtn/gorexRowBtn 三档
 main_test.go: 测试进程入口——桌面调用（剪贴板写入、Finder 定位）默认换成空实现：MyGo 的桌面 API 要等应用主循环，测试从不启动，真调用会挂住，也不该动开发者的真剪贴板；captureClipboard/captureReveal 供要看「复制/定位了什么」的用例捕获

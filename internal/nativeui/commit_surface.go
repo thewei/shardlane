@@ -68,7 +68,7 @@ func (s *Shell) commitSurface(c *ui.Context) {
 					// Height is explicit: Grow inside this intrinsic-height Column
 					// collapsed the subject input to 0px — invisible and
 					// unclickable (2026-10-06 F26).
-					ui.TextInput(c, &s.surface.commit.Subject).Grow(0).Height(30).Placeholder("Required commit summary").Label("Commit subject")
+					ui.TextInput(c, &s.surface.commit.Subject).Grow(0).Height(Controls().RegularHeight).Placeholder("Required commit summary").Label("Commit subject")
 				})
 
 				// Body.

@@ -167,9 +167,9 @@ func (s *Shell) gitQuickCommitComposer(c *ui.Context) {
 func (s *Shell) gitQuickCommitForm(c *ui.Context, snap *gitworkbench.ChangesSnapshot) {
 	t := c.Theme()
 	ui.Column(c).FillWidth().Gap(5).Children(func() {
-		ui.TextInput(c, &s.gitQuickSubject).FillWidth().Height(28).
+		ui.TextInput(c, &s.gitQuickSubject).FillWidth().Height(Controls().RegularHeight).
 			Placeholder("Commit subject").Label("Commit subject draft")
-		ui.TextInput(c, &s.gitQuickBody).FillWidth().Height(26).
+		ui.TextInput(c, &s.gitQuickBody).FillWidth().Height(Controls().RegularHeight).
 			Placeholder("Description (optional)").Label("Commit description draft")
 		ui.Row(c).FillWidth().Height(28).AlignItems(ui.Center).Gap(6).Children(func() {
 			ui.Checkbox(c, &s.gitQuickAmend, "Amend")
