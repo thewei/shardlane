@@ -27,6 +27,37 @@ func contentColumn(c *ui.Context, maxWidth float32, body func()) {
 	})
 }
 
+// segmentedTrack dresses the track of a ui.SegmentedBase in ui.Segmented's own
+// look — surface fill, 1px outline, concentric radii — and segmentFace one of
+// its segments: the chosen one a chip raised from the track (the page color on
+// the light theme's white track, the pressed surface on the dark one — what
+// ui.Segmented itself paints), the hovered one a wash. A segmented control
+// whose segments are icons or counts (ui.Segmented takes labels only) is built
+// from these two, so every segmented control in the app shares one face and
+// one height.
+func segmentedTrack(c *ui.Context, tabs ui.SegmentedParts, label string) {
+	t := c.Theme()
+	tabs.Track.Label(label).AlignItems(ui.Center).Shrink(0).Padding(t.Space(0.5)).Gap(t.Space(0.5)).
+		Radius(t.Radius).Background(t.Surface).Border(1, t.Border)
+}
+
+func segmentFace(c *ui.Context, tabs ui.SegmentedParts, i int, chosen bool, label string) ui.Element {
+	t := c.Theme()
+	seg := tabs.Segment(i).Padding(t.Space(1), t.Space(3)).Gap(Spacing().S).
+		Radius(t.Radius - t.Space(0.5)).AlignItems(ui.Center).Label(label)
+	switch {
+	case chosen:
+		chip := t.Background
+		if t.Dark {
+			chip = t.SurfacePressed
+		}
+		seg.Background(chip).Shadow(0, 1, 2, 0, ui.RGBA(0, 0, 0, 0.12))
+	case seg.Hovered():
+		seg.Background(t.SurfaceHover)
+	}
+	return seg
+}
+
 // pageTopInset is the gap between the title bar and a page's first row. The
 // title bar owns every page title, so pages start with content and share
 // this one inset instead of each spacing itself from a heading it lost.

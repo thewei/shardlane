@@ -910,32 +910,33 @@ func (s *Shell) gdChangedPill(c *ui.Context, pal *gdPalette) {
 	})
 }
 
-// gdLayoutControl switches between split and unified diffs.
-func (s *Shell) gdLayoutControl(c *ui.Context, pal *gdPalette) {
-	t := c.Theme()
-	ui.Row(c).Shrink(0).Gap(2).Padding(2).Radius(7).
-		Background(ui.RGBA(127, 127, 127, 0.1)).Label("Diff layout").Children(func() {
-		for _, mode := range []struct {
+// gdLayoutControl switches between split and unified diffs: a segmented
+// control of two icons, built as ui.Segmented's doc prescribes for icons and
+// dressed by the same segmentedTrack/segmentFace as every other one.
+func (s *Shell) gdLayoutControl(c *ui.Context) {
+	k := gorexColorsOf(c.Theme().Dark)
+	chosen := 1
+	if s.git.splitLayout {
+		chosen = 0
+	}
+	tabs := ui.SegmentedBase(c, &chosen, 2)
+	segmentedTrack(c, tabs, "Diff layout")
+	tabs.Track.Children(func() {
+		for i, mode := range []struct {
 			label string
 			svg   *ui.SVG
-			split bool
-		}{
-			{"Split", iconSplit, true}, {"Unified", iconUnified, false},
-		} {
-			selected := s.git.splitLayout == mode.split
-			button := ui.ButtonBase(c).Size(30, 24).Radius(5).Center().
-				Label(mode.label).Tooltip(mode.label).FocusRing(true)
-			if selected {
-				button.Background(pal.headerBg).TextColor(t.Text)
-			} else {
-				button.TextColor(t.TextMuted)
+		}{{"Split", iconSplit}, {"Unified", iconUnified}} {
+			seg := segmentFace(c, tabs, i, i == chosen, mode.label).Tooltip(mode.label)
+			col := k.iconMuted
+			if i == chosen || seg.Hovered() {
+				col = k.text
 			}
-			button.Children(func() { ui.Icon(c, mode.svg).FontSize(15) })
-			if button.Clicked() && !selected {
-				s.setDiffLayout(mode.split)
-			}
+			seg.Children(func() { ui.Icon(c, mode.svg).Size(gorexIconGlyph, gorexIconGlyph).TextColor(col) })
 		}
 	})
+	if tabs.Track.Changed() {
+		s.setDiffLayout(chosen == 0)
+	}
 }
 
 // gdShortcuts handles the surface's keys.

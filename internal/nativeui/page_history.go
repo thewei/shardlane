@@ -123,8 +123,7 @@ func (s *Shell) historyAgentTabs(c *ui.Context) {
 		}
 	}
 	tabs := ui.SegmentedBase(c, &chosen, len(providers)+1)
-	tabs.Track.Label("Agent").AlignItems(ui.Center).Shrink(0).Padding(t.Space(0.5)).Gap(t.Space(0.5)).
-		Radius(t.Radius).Background(t.Surface).Border(1, t.Border)
+	segmentedTrack(c, tabs, "Agent")
 	tabs.Track.Children(func() {
 		for i := 0; i <= len(providers); i++ {
 			name, count := "All", 0
@@ -137,17 +136,7 @@ func (s *Shell) historyAgentTabs(c *ui.Context) {
 				provider = providers[i-1]
 				name, count = provider.DisplayName(), s.historyTabCount(provider)
 			}
-			// Segment metrics follow ui.Segmented's own, so every segmented
-			// control in the app shares one height; the inner radius is
-			// concentric with the track's.
-			tab := tabs.Segment(i).Padding(t.Space(1), t.Space(3)).Gap(Spacing().S).
-				Radius(t.Radius - t.Space(0.5)).AlignItems(ui.Center).Label(name)
-			switch {
-			case i == chosen:
-				tab.Background(t.SurfacePressed).Shadow(0, 1, 2, 0, ui.RGBA(0, 0, 0, 0.12))
-			case tab.Hovered():
-				tab.Background(t.SurfaceHover)
-			}
+			tab := segmentFace(c, tabs, i, i == chosen, name)
 			tab.Children(func() {
 				if provider != "" {
 					markView(c, agentMark(provider, t.Dark), 14, t.TextMuted)

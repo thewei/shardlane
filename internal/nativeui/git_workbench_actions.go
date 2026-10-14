@@ -57,7 +57,7 @@ func (s *Shell) gitWorkbenchActionBar(c *ui.Context) {
 		// less-common actions live in the Git actions pull-down.
 		s.gdSyncButtons(c, gdPaletteFor(t))
 		// Split/Unified must remain reachable even when actions compact.
-		s.gdLayoutControl(c, gdPaletteFor(t))
+		s.gdLayoutControl(c)
 		// The local worktree's bottom composer is the single Commit entry.
 		// This toolbar only carries review/batch actions and the pull-down.
 		more := gdPulldown(c, iconActions, "Git actions")

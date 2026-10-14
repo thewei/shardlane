@@ -19,6 +19,7 @@ toggle_face_test.go: 开关「开」态回归——Sessions 工具栏的文字�
 copy_style_test.go: 文案大小写回归——emptyState/workspaceEmptyBanner 的字面标题一律句首大写（专有名词除外）；菜单项（.Item("…") 字面量）与按钮（ui.Button/PrimaryButton/compactButton/compactPrimaryButton 的字面量，含 `+` 链的字面部分）一律 Title Case（冠词/短介词小写），拦下两个方向的大小写漂移；openConfirm 的标题（字面量/`+` 链/Sprintf，AST 扫描）一律以 ? 结尾；生产字符串字面量不含 Please/successfully/Oops；同一动作名（菜单项/图标按钮/Tooltip）大小写只有一种拼写
 search_field_test.go: 搜索/筛选框只有官方 ui.SearchField 一种脸（AST 扫描：TextInput/TextInputBase 链上带 "Search…"/"Filter…" 提示、或手绘 "Clear" ButtonBase 即失败；ui.SearchField 调用数下限防扫描失效）；Git 面「Filter files」框收的是文字，输入时不同时触发 Alt+Z 等面上快捷键
 hairline_test.go: 分隔线只有一种粗细——AST 扫描 .Background(x)/.BorderColor(x) 的实参，控件描边色 theme.Border（不透明、比发丝线重数倍）不得当分隔线/面板边缘的颜色，一律 BorderSubtle；扫描数下限防失效
+segmented_face_test.go: 分段控件回归——segmentedTrack/segmentFace 搭的控件选中段像素与官方 ui.Segmented 一致（深浅两套）；Git 的 Split/Unified 是 SegmentedBase 分段（轨道标签 Diff layout），真实点击切换 splitLayout
 button_tier_test.go: 按钮字号回归——扫描 ui.Button/ui.PrimaryButton 调用链上的 .FontSize(…) 字面覆盖（只许 ds_components.go 的 compact 两档），拦下同排按钮两种高度
 main_test.go: 测试进程入口——桌面调用（剪贴板写入、Finder 定位）默认换成空实现：MyGo 的桌面 API 要等应用主循环，测试从不启动，真调用会挂住，也不该动开发者的真剪贴板；captureClipboard/captureReveal 供要看「复制/定位了什么」的用例捕获
 desktop_calls_test.go: 桌面动作回归——复制原样（含中文）进剪贴板、写失败进状态行、Finder 定位存在的路径、路径已不在时如实报告（F175）；扫描全部生产代码不得再 exec pbcopy 等剪贴板工具（pbcopy 子进程在 Finder 启动的 App 里没有 UTF-8 locale，中文会变乱码）
@@ -126,7 +127,7 @@ git_sequencer_ui_test.go: Merge/Revert/Cherry-pick 的 headless 冲突状态、�
 dialogs.go: Git 危险动作确认绑定打开时 repository root；Merge 策略 Modal 失效时关闭；Sessions 的 Delete Forever / Empty Trash 确认；Confirm/Cancel 保持安全默认
 branch_menu.go: 本地分支 Popover 可搜索/独立滚动/当前分支优先，Switch/More 层级；Merge FF/no-FF 策略和 dirty Branch Switch 的真实确认分发
 git_workbench_actions_test.go: Git 本地操作条、Modal、Draft Guard、Merge/Revert Confirm 的 headless 回归
-ds_components.go: 通用卡片、pageTopInset（标题栏到页面首行的唯一顶部留白令牌）、settingsGroup/formRow 分组行（控件先于标签入树，保证焦点/朗读顺序）、groupLabel、iconTile 彩色图标块、compactButton/compactPrimaryButton 紧凑按钮层级（密集工具栏/行内操作的唯一字号来源，业务代码不再对 Button 内联 FontSize）、工作区 Chat/Diff 轻量空状态组件（窄列时操作换行到消息下方，消息不被挤成单字列）
+ds_components.go: 通用卡片、pageTopInset（标题栏到页面首行的唯一顶部留白令牌）、settingsGroup/formRow 分组行（控件先于标签入树，保证焦点/朗读顺序）、groupLabel、iconTile 彩色图标块、compactButton/compactPrimaryButton 紧凑按钮层级（密集工具栏/行内操作的唯一字号来源，业务代码不再对 Button 内联 FontSize）、segmentedTrack/segmentFace（用 ui.SegmentedBase 搭图标/计数段时的唯一脸：官方 Segmented 的轨道与圆角，选中芯片浅色=页面色、深色=按下面；Sessions Agent 标签与 Git Split/Unified 共用）、工作区 Chat/Diff 轻量空状态组件（窄列时操作换行到消息下方，消息不被挤成单字列）
 unified_page_test.go: UI-007/UI-008 Settings/Git/Chat 跨页面基础回归与尺寸矩阵（headless；含窄窗口 clean 状态可读性）
 pane_header_visuals_test.go: 窗格头部视觉解析、Agent 图标与名称解析、路径格式化、标签已写出目录/单卡不复述目录的去重及最大化 Tab 窗格计数单元测试
 chat_hooks.go: Shell 钩子层：挂载原生 apphook 进程内 IPC 服务与 spool 兼容层，直接接收并更新 Agent 状态与会话绑定，驱动 blocked 交互检测
