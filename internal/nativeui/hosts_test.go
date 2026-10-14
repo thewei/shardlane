@@ -1,9 +1,13 @@
 package nativeui
 
 import (
+	"math"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/egoist/mygo/ui"
 	"github.com/wh-studio/herdr-client/internal/sshconfig"
 )
 
@@ -75,5 +79,37 @@ func TestHostFormDeltaAndValidation(t *testing.T) {
 	if err := validateHostForm(hostsFormState{alias: ""}); err == nil ||
 		!strings.Contains(err.Error(), "required") {
 		t.Fatalf("empty alias: err = %v", err)
+	}
+}
+
+// TestHostActionRowSharesOneButtonTier pins the host detail's action row: its
+// buttons are one size — "Edit File" once sat in the dense tier beside two
+// full-size buttons.
+func TestHostActionRowSharesOneButtonTier(t *testing.T) {
+	config := filepath.Join(t.TempDir(), "config")
+	if err := os.WriteFile(config, []byte("Host dev-box\n  HostName 10.0.0.12\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	index, err := sshconfig.IndexPath(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := NewShell()
+	s.hosts.loaded, s.hosts.mainPath, s.hosts.entries, s.hosts.files = true, index.MainPath, index.Entries, index.Files
+	s.hosts.selected = hostEntryKey(index.Entries[0])
+	s.router.Replace(routeHosts)
+	tester := ui.NewTester(s.View, 1200, 800)
+	settleFrames(tester, 3)
+	var height float32
+	for i, label := range []string{"Connect", "Add Herdr Machine…", "Edit File"} {
+		rect, ok := tester.Find(label)
+		if !ok {
+			t.Fatalf("%q missing from the action row; texts=%q", label, tester.Texts())
+		}
+		if i == 0 {
+			height = rect.H
+		} else if math.Abs(float64(rect.H-height)) > 0.5 {
+			t.Errorf("%q is %.1f high, Connect %.1f — one row, one button size", label, rect.H, height)
+		}
 	}
 }

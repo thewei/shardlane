@@ -27,7 +27,8 @@ func (s *Shell) inspectorPage(c *ui.Context, paneID string) {
 	s.loadInspector(paneID)
 	t := c.Theme()
 	sp := Spacing()
-	ui.Column(c).Grow(1).MinWidth(0).Background(designTokens(t.Dark).Content).Children(func() {
+	ui.Column(c).Grow(1).MinWidth(0).Children(func() {
+		// The title bar names the agent (route_header.go); the page is content.
 		card, ok := s.workbench.directory.Get(agent.AgentKey{InstanceID: s.activeInstance, TerminalID: s.inspector.agentKey.TerminalID})
 		if s.inspector.errText != "" {
 			inlineNotice(c, ToneError, s.inspector.errText, nil)

@@ -13,7 +13,7 @@ import (
 
 /**
  * [INPUT]: 依赖 github.com/egoist/mygo/plugins/terminal, github.com/egoist/mygo/ui, os, path/filepath, runtime
- * [OUTPUT]: 对外提供 gorexColors/gorexColorsOf/gorexContentCard/gorexIconButton/gorexActivityDot/gorexAttentionDot/shortDir/samePath/tildePath
+ * [OUTPUT]: 对外提供 gorexColors/gorexColorsOf/gorexContentCard/gorexToggleFace/gorexIconButton/gorexActivityDot/gorexAttentionDot/shortDir/samePath/tildePath
  * [POS]: nativeui 的窗口 chrome 与终端卡片视觉实现（扁平中性面、细线图标按钮），被 workspace/terminal/titlebar 等模块消费
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -124,6 +124,23 @@ func gorexContentCard(c *ui.Context, k *gorexColors, build func()) {
 		Background(designTokens(c.Theme().Dark).Content).Children(build)
 }
 
+// gorexToggleFace is the one set of state faces a button wears: pressed,
+// hovered and — for a toggle that is on — the quiet filled chip. Icon
+// buttons, the surface switch and text toggles all take it from here, so
+// "on" reads the same on every page (2026-10-14 highlight audit: toggles had
+// grown a blue tint, an accent tint and this chip). List and tree rows keep
+// the sidebar selection tint instead — a row is selected, a button is on.
+func gorexToggleFace(b ui.Element, k *gorexColors, on bool) {
+	switch {
+	case b.Pressed():
+		b.Background(k.pressed)
+	case b.Hovered():
+		b.Background(k.hover)
+	case on:
+		b.Background(k.tabActive)
+	}
+}
+
 // gorexIconButton is a borderless button of an icon, with a face on hover;
 // label names it for screen readers and its tooltip explains it. Selected
 // keeps a quiet filled face, as the surface switch's current side does.
@@ -132,14 +149,7 @@ func gorexIconButton(c *ui.Context, k *gorexColors, svg *ui.SVG, label, tooltip 
 	if tooltip != "" {
 		b.Tooltip(tooltip)
 	}
-	switch {
-	case b.Pressed():
-		b.Background(k.pressed)
-	case b.Hovered():
-		b.Background(k.hover)
-	case selected:
-		b.Background(k.tabActive)
-	}
+	gorexToggleFace(b, k, selected)
 	b.Transition(ui.ElementTransition{Colors: true, Duration: 120 * time.Millisecond})
 	col := k.iconMuted
 	if b.Hovered() || selected {
@@ -157,12 +167,7 @@ func gorexIconButton(c *ui.Context, k *gorexColors, svg *ui.SVG, label, tooltip 
 func gorexPulldown(c *ui.Context, k *gorexColors, svg *ui.SVG, label string, height, iconSize float32) ui.Element {
 	b := ui.Row(c).Height(height).Padding(0, 6).Gap(3).AlignItems(ui.Center).Justify(ui.Center).
 		Radius(height / 2.6).Cursor(ui.CursorPointer).Role(ui.RoleButton).Label(label).Tooltip(label)
-	switch {
-	case b.Pressed():
-		b.Background(k.pressed)
-	case b.Hovered():
-		b.Background(k.hover)
-	}
+	gorexToggleFace(b, k, false)
 	b.Transition(ui.ElementTransition{Colors: true, Duration: 120 * time.Millisecond})
 	col := k.iconMuted
 	if b.Hovered() {

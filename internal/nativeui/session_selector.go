@@ -56,7 +56,7 @@ func sidebarSection(c *ui.Context, title string, open *bool, first bool, trailin
 // folder.
 func (s *Shell) workspaceSection(c *ui.Context) {
 	sidebarSection(c, "Workspace", &s.projectsOpen, false, func() {
-		if s.projectsOpen && iconButton(c, iconPlus, "New Workspace from Folder…").Clicked() {
+		if s.projectsOpen && gorexIconButton(c, gorexColorsOf(c.Theme().Dark), iconPlus, "New Workspace from Folder…", "New Workspace from Folder…", false, gorexPaneBtn, gorexPaneGlyph).Clicked() {
 			s.createWorkspaceFromFolder()
 		}
 	}, func() {

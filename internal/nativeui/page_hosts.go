@@ -166,7 +166,7 @@ func (s *Shell) hostEntryDetail(c *ui.Context, entry sshconfig.Entry) {
 						ui.Text(c, hostsConnectHint(entry)).FontSize(Typography().Caption).
 							TextColor(t.TextMuted).Grow(1)
 					}
-					if compactButton(c, "Edit File").Clicked() {
+					if ui.Button(c, "Edit File").Clicked() {
 						s.openHostEditor(entry.File, false)
 					}
 				})

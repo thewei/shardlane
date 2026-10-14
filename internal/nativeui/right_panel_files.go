@@ -38,38 +38,24 @@ func (s *Shell) filesToolView(c *ui.Context) {
 // filesTreeToolbar is the tree's compact action strip: creation at the
 // tree root and the ignored-visibility toggle.
 func (s *Shell) filesTreeToolbar(c *ui.Context) {
+	k := gorexColorsOf(c.Theme().Dark)
 	ui.Row(c).FillWidth().Padding(4, sidebarGutter).Gap(4).AlignItems(ui.Center).Children(func() {
 		// The ellipsis follows the context-menu twins (HIG: buttons that
-		// open a naming dialog advertise it) — F160.
-		if filesToolButton(c, iconPlus, "New File…", false).Clicked() {
+		// open a naming dialog advertise it) — F160. The buttons are the
+		// shared dense icon button (2026-10-14): its on state is the same
+		// neutral chip every toggle wears, not a private accent tint.
+		if gorexIconButton(c, k, iconPlus, "New File…", "New File…", false, gorexPaneBtn, gorexPaneGlyph).Clicked() {
 			s.filesNewFile(s.rightPanel.currentRoot)
 		}
-		if filesToolButton(c, iconFolder, "New Folder…", false).Clicked() {
+		if gorexIconButton(c, k, iconFolder, "New Folder…", "New Folder…", false, gorexPaneBtn, gorexPaneGlyph).Clicked() {
 			s.filesNewFolder(s.rightPanel.currentRoot)
 		}
 		ui.Spacer(c)
-		if filesToolButton(c, iconEyeOff, "Show ignored files", s.rightPanel.showIgnored).Clicked() {
+		if gorexIconButton(c, k, iconEyeOff, "Show ignored files", "Show ignored files",
+			s.rightPanel.showIgnored, gorexPaneBtn, gorexPaneGlyph).Clicked() {
 			s.rightPanel.showIgnored = !s.rightPanel.showIgnored
 		}
 	})
-}
-
-// filesToolButton is the tree toolbar's ghost icon button; active tints it
-// the accent way (the toggle's on state).
-func filesToolButton(c *ui.Context, glyph *ui.SVG, label string, active bool) ui.Element {
-	t := c.Theme()
-	b := ui.ButtonBase(c).Size(24, 24).Radius(5).Label(label).Tooltip(label)
-	color := t.TextMuted
-	if active {
-		b.Background(t.Accent.Alpha(.14))
-		color = t.Accent
-	} else if b.Hovered() {
-		b.Background(t.SurfaceHover)
-	}
-	b.Children(func() {
-		ui.Icon(c, glyph).Size(14, 14).TextColor(color)
-	})
-	return b
 }
 
 // refreshFiles drops the cached snapshots, the ignore set, and every

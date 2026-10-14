@@ -56,7 +56,7 @@ func (s *Shell) routeView(c *ui.Context) {
 			gorexContentCard(c, gorexColorsOf(c.Theme().Dark), func() { s.historyDetailPage(c, r.Param("id")) })
 		case r.Match("/inspector/{pane}"):
 			r.Title("Agent Inspector")
-			s.inspectorPage(c, r.Param("pane"))
+			gorexContentCard(c, gorexColorsOf(c.Theme().Dark), func() { s.inspectorPage(c, r.Param("pane")) })
 		case r.Match("/history-projects"):
 			// N19 #9: the grouped view IS the sessions page now; the old
 			// route serves it for compatibility (command palette, links).

@@ -178,12 +178,9 @@ func (s *Shell) historyTabCount(provider history.AgentID) int {
 // historySelectToggle enters or leaves the multi-select mode.
 func (s *Shell) historySelectToggle(c *ui.Context) {
 	t := c.Theme()
-	tokens := designTokens(t.Dark)
 	toggle := ui.ButtonBase(c).Height(Controls().RegularHeight).Padding(0, Spacing().L).Gap(Spacing().S).
 		Radius(Radius().Control).AlignItems(ui.Center).Label("Select sessions").Tooltip("Select sessions")
-	if tint, ok := rowTint(tokens, s.hist.selecting, toggle.Hovered()); ok {
-		toggle.Background(tint)
-	}
+	gorexToggleFace(toggle, gorexColorsOf(t.Dark), s.hist.selecting)
 	toggle.Children(func() {
 		ui.Icon(c, iconTask).Size(13, 13).TextColor(t.TextMuted).PassThrough()
 		ui.Text(c, "Select").FontSize(Typography().Body).PassThrough()
@@ -197,12 +194,9 @@ func (s *Shell) historySelectToggle(c *ui.Context) {
 // the user hid, with the hidden total beside its label.
 func (s *Shell) historyHiddenToggle(c *ui.Context) {
 	t := c.Theme()
-	tokens := designTokens(t.Dark)
 	toggle := ui.ButtonBase(c).Height(Controls().RegularHeight).Padding(0, Spacing().L).Gap(Spacing().S).
 		Radius(Radius().Control).AlignItems(ui.Center).Label("Hidden sessions").Tooltip("Hidden sessions")
-	if tint, ok := rowTint(tokens, s.hist.showHidden, toggle.Hovered()); ok {
-		toggle.Background(tint)
-	}
+	gorexToggleFace(toggle, gorexColorsOf(t.Dark), s.hist.showHidden)
 	toggle.Children(func() {
 		ui.Icon(c, iconEyeOff).Size(13, 13).TextColor(t.TextMuted).PassThrough()
 		ui.Text(c, "Hidden").FontSize(Typography().Body).PassThrough()

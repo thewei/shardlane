@@ -82,7 +82,7 @@ func (s *Shell) sidebar(c *ui.Context) {
 				return
 			}
 			s.sessionSelector(c)
-			if iconButton(c, iconSettings, "Settings").Clicked() {
+			if gorexIconButton(c, gorexColorsOf(t.Dark), iconSettings, "Settings", "Settings", false, gorexIconBtn, gorexIconGlyph).Clicked() {
 				s.router.Push(routeSettings)
 			}
 		})

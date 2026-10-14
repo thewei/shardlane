@@ -14,22 +14,6 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-func iconButton(c *ui.Context, glyph *ui.SVG, label string) ui.Element {
-	t := c.Theme()
-	b := ui.ButtonBase(c).
-		Size(28, 28).
-		Radius(6).
-		Label(label).
-		Tooltip(label)
-	if b.Hovered() {
-		b.Background(t.SurfaceHover)
-	}
-	b.Children(func() {
-		ui.Icon(c, glyph).Size(14, 14).TextColor(t.TextMuted)
-	})
-	return b
-}
-
 // rowTint is the shared background policy for selectable rows: selection
 // outranks hover, and an untinted row reports ok=false so callers keep the
 // surface transparent.
