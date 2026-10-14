@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/egoist/mygo/ui"
@@ -135,6 +136,10 @@ func gdThousands(n int) string {
 	}
 	return s
 }
+
+// gdCommitTime is how a commit's time reads wherever it shows — the review
+// meta line and the commit row's tooltip spell it the same way.
+func gdCommitTime(at time.Time) string { return at.Format("Jan 2, 2006 15:04") }
 
 func gdLines(n int, what string) string {
 	if n == 1 {

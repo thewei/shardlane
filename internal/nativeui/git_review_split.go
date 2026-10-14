@@ -8,8 +8,6 @@ package nativeui
  */
 
 import (
-	"time"
-
 	"github.com/egoist/mygo/ui"
 	"github.com/wh-studio/herdr-client/internal/gitworkbench"
 )
@@ -260,7 +258,7 @@ func (s *Shell) gitCommitReview(c *ui.Context) {
 				ui.Text(c, cm.Author).FontSize(Typography().BodySmall).FontWeight(WeightSemibold)
 				ui.Text(c, cm.Short).Font(gdCodeFont()).FontSize(Typography().Micro).TextColor(t.TextMuted)
 				ui.Text(c, cm.Subject).FontSize(Typography().BodySmall).SingleLine().Grow(1).MinWidth(0)
-				ui.Text(c, cm.Time.Format("Jan 2, 2006 15:04")).FontSize(Typography().Micro).TextColor(t.TextMuted)
+				ui.Text(c, gdCommitTime(cm.Time)).FontSize(Typography().Micro).TextColor(t.TextMuted)
 			})
 		}
 		if !s.gdReviewingCommit() {
@@ -335,7 +333,7 @@ func (s *Shell) gitCommitDetails(c *ui.Context) {
 		ui.Text(c, cm.Subject).FontSize(Typography().Section).FontWeight(WeightSemibold)
 		ui.Text(c, "Author: "+cm.Author).FontSize(Typography().Body)
 		ui.Text(c, "Commit: "+cm.Hash).Font(gdCodeFont()).FontSize(Typography().BodySmall).TextColor(t.TextMuted)
-		ui.Text(c, cm.Time.Format(time.RFC1123)).FontSize(Typography().BodySmall).TextColor(t.TextMuted)
+		ui.Text(c, gdCommitTime(cm.Time)).FontSize(Typography().BodySmall).TextColor(t.TextMuted)
 		ui.Row(c).Gap(8).Children(func() {
 			if ui.Button(c, "Copy Hash").Clicked() {
 				s.copyToClipboard(cm.Hash)

@@ -332,8 +332,7 @@ func (s *Shell) commitsPane(c *ui.Context, pal *gdPalette) {
 			s.reviewCommit(cm.Hash)
 		}
 		// Long commit subjects preserve the full metadata in the tooltip.
-		row.Tooltip(cm.Subject + "\n" + cm.Author + " · " +
-			cm.Time.Format("2006-01-02 15:04") + "\n" + cm.Hash)
+		row.Tooltip(cm.Subject + "\n" + cm.Author + " · " + gdCommitTime(cm.Time) + "\n" + cm.Hash)
 		row.ContextMenu(func(m *ui.Menu) {
 			if m.Item("Cherry-pick Commit…").Chosen() {
 				s.confirmCherryPickCommit(cm.Hash, cm.Subject)

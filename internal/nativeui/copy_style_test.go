@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 /**
@@ -294,5 +295,43 @@ func TestSameActionIsSpelledOnce(t *testing.T) {
 	}
 	if seen < 100 {
 		t.Fatalf("matched only %d action labels; the patterns no longer find the call sites", seen)
+	}
+}
+
+// commitTimeFormat matches a commit's own time being formatted at a call
+// site — which is how the meta line and the row tooltip each came to spell it.
+var commitTimeFormat = regexp.MustCompile(`\.Time\.Format\(`)
+
+// TestCommitTimeIsSpelledOnce pins one spelling of a commit's time: every
+// display goes through gdCommitTime (the History export's ISO stamp is a
+// file's content, not a label, and stays).
+func TestCommitTimeIsSpelledOnce(t *testing.T) {
+	if got := gdCommitTime(time.Date(2025, 3, 4, 9, 5, 0, 0, time.UTC)); got != "Mar 4, 2025 09:05" {
+		t.Fatalf("gdCommitTime = %q", got)
+	}
+	files, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	users := 0
+	for _, name := range files {
+		if strings.HasSuffix(name, "_test.go") || name == "gd_text.go" {
+			continue
+		}
+		src, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i, line := range strings.Split(string(src), "\n") {
+			if commitTimeFormat.MatchString(line) {
+				t.Errorf("%s:%d spells a commit time itself; use gdCommitTime", name, i+1)
+			}
+			if strings.Contains(line, "gdCommitTime(") {
+				users++
+			}
+		}
+	}
+	if users < 2 {
+		t.Fatalf("only %d gdCommitTime uses; the meta line and the row tooltip should both go through it", users)
 	}
 }
