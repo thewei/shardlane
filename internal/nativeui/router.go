@@ -105,6 +105,7 @@ func (s *Shell) currentRouteTitle() string {
 }
 
 func (s *Shell) syncRouteVisibility() {
+	s.syncWindowTitle()
 	path := s.router.Path()
 	if path == s.visibleRoute {
 		return
@@ -113,7 +114,6 @@ func (s *Shell) syncRouteVisibility() {
 	nowWorkspace := path == routeWorkspace
 	slog.Debug("native route changed", "from", s.visibleRoute, "to", path)
 	s.visibleRoute = path
-	s.syncWindowTitle()
 	if wasWorkspace && !nowWorkspace {
 		s.closeAllTerminals()
 		return

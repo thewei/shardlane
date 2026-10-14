@@ -41,6 +41,11 @@ type Shell struct {
 	win     *mygo.Window
 	runtime *herdr.Manager
 	router  *ui.Router
+	// setWindowTitle titles the native window: AttachWindow binds it, and
+	// until then (and in headless tests, which swap in a recorder) there is
+	// no window to title. windowTitleShown is the title last handed to it.
+	setWindowTitle   func(string)
+	windowTitleShown string
 
 	searchQuery  string
 	visibleRoute string
@@ -612,6 +617,7 @@ func (s *Shell) Launch() *app.LaunchService { return s.launch }
 
 func (s *Shell) AttachWindow(win *mygo.Window) {
 	s.win = win
+	s.setWindowTitle = win.SetTitle
 	s.bootstrapPending = true
 	s.bootstrapFailed = false
 	slog.Debug("native shell attached", "window_id", win.ID())
