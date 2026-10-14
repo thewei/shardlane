@@ -24,6 +24,19 @@ description: Use when polishing or unifying the Shardlane MyGo client's UI/UX �
 | 4 | **高亮只有两类，各一种脸**：*按钮*处于开（开关/视图工具/模式）= 中性芯片；*行*被选中（导航/树/列表/Agent 卡）= `SidebarSelect`。业务代码不再自涂 Accent 底 | `gorexToggleFace(b,k,on)`（按下 `k.pressed` / 悬停 `k.hover` / 开 `k.tabActive`）；行走 `rowTint`；"当前分支/当前引用"是状态标记（accent 字 + 0.11 底），不是选中 | `toggle_face_test.go` |
 | 5 | **同一组件同一尺寸**：图标按钮只有两档——工具栏 28/16（`gorexIconBtn/Glyph`）、密集 24/14（`gorexPaneBtn/Glyph`），全走 `gorexIconButton`（等分一行的标签条走同脸的 `gorexIconTab`）；文字按钮只有 regular 与 `compactButton`（Micro 10）；"…" 文本按钮一律换图标按钮/`gorexPulldown`；空态 `emptyState`/`workspaceEmptyBanner`、加载 `loadingState`、提示 `inlineNotice`、分组 `settingsGroup/formRow`、内页列宽 `contentColumn(760 表单 / 1040 列表)` | 见左 | `copy_style_test.go`（空态标题）+ 下方扫描 |
 
+## 键盘模型（一类列表一套手感）
+
+侧栏的树/列表只有一个键盘实现——`list_nav.go` 的 `listNav`。新树/新列表**接入它，不要自己写 `Shortcut` 或焦点环**。
+
+- **真焦点即光标**：当前行就是 MyGo 的键盘焦点，脸 = 选中同脸 `SidebarSelect`（统一画在 `sidebarTreeRow`/`sidebarSectionHeader` 里，经 `listNav.showsCursor`）；整棵树是一个 `FocusGroup(ui.Vertical)` = 一个 Tab 停靠点，Shift-Tab 回到记住的行。
+- **光标不亮不等于没有**：进页时光标停在开场行但**不亮**（鼠标打开的列表和从前一个样，没有"看起来被选中其实没选"的行）；任一列表键用过它才亮，Tab 进入自带亮（MyGo `FocusVisible`），离开列表或重进页面复暗，点击不亮。会改东西的行键（Files 的 `a/A/r/d/y`）等光标亮了才响应——不对看不见的光标动手。
+- **键位**（表驱动 `navBindings`）：`j/k`·`↓/↑` 移动且**不回绕**（方向键由行认领，绕开 MyGo 焦点组的回绕）；`h/←` 已展开则折叠、否则回父级；`l/→` 已折叠则展开、已展开则进首个子项、叶子则打开；`o` 打开；`gg`/`G`/`Home`/`End` 首尾；`Ctrl-d/u` 跳十行；Enter/Space 本就是行点击。树自己的动作键归各树（Files：`a/A` 新建文件/文件夹、`r` 重命名、`d` 删除、`y` 复制路径，与右键菜单走同一份实现）。
+- **接入**：容器用 `s.navList(c, &s.nav.<树>, autoFocus, box, rows)`；行/分组头 spec 带 `Nav: &s.nav.<树>`；选择与折叠仍由各树处理——构建器返回的 `clicked` 已兼收鼠标点击与键盘激活。进页聚焦：Files/Hosts 开（落在打开的文件/选中项，否则首行），Git 引用树关（窗口级 j/k 归 Diff）。
+- **虚拟化 `ui.List`（Sessions、Changes）不走这里**：`listNav` 要求每帧画出全部行。
+- **对话框坑**：MyGo 只把焦点还给"仍然存在的打开者"，带 AutoFocus 输入框的对话框会让它失效；`navTrackDialogs` 在对话框开/关时记住并还原光标行——新对话框只要计入 `dialogOpen/confirmOpen/mergeDialogOpen`。
+- **守卫**：`list_nav_test.go`（移动与不回绕、gg/G/Ctrl-d、h/l/o、单 Tab 停靠点、进页聚焦含列表晚到、对话框后焦点、Files 行键、Hosts 选中跟随与机器行、光标脸的亮/暗四种时机），22 种变异检查全红。headless 里用 `Tester.Key` 发行键——`TypeKey` 会把文字投进刚打开的对话框，只用于输入框。
+- **验证边界**：App 在后台时 MyGo 的 `Focused()` 需要窗口焦点，被动观察验证不了按键；键盘只靠 headless 测试，真机只做外观被动核对。
+
 ## 去 AI 味配方（本项目真实做过的，按维度）
 
 | 维度 | AI 味症状 | 做法 |
@@ -99,6 +112,7 @@ rg -n 'Padding\(14, 9, 9\)' --glob '!*_test.go' .                      # 侧栏�
 - Hosts 侧栏列表不再二次内缩（原比 Sessions/Settings 低 14、窄 9）：`TestInnerSidebarsShareOneInset`。
 - Agent 浮层（标题栏/托盘）重排（2026-10-14 第二轮）：顶部 Agents/Services 分段、浮层自身无标题；Agents 按状态分组（Needs attention › Review › Working › Idle，空组省略；分组头 = 状态点 + 名称 + 计数，Services 分区标题用同一构件 `quickPanelGroupHeader`），行复用侧栏 `agentCardRow`；点击行**直达面板并收起浮层**（待交互 → Chat；blocked/failed → Terminal；其余回到该 pane 上次所在面板），行尾 ✓ = 标记已审阅（不跳转），其余动作在右键菜单；去掉详情层、统计筛选卡与浮层标题。高度随内容增长至上限 480：预算常数取自真实布局（`quickPanelChromeHeight/GroupHeight/RowHeight/UsageHeight`），不是估的——估的 72/28/44 实测多出 57 px 空白，`TestQuickPanelHeightHoldsTheContent` 现在钉贴合（含用量行）。
 - Hosts 重做（2026-10-14 第二轮）：**侧栏**按配置自带分组可折叠——`#SCE_GROUP:<id>:::<名>` / `#SCEGroup <id>`（SSH Config Editor 的注释标记，只读解析 `sshconfig.Index.Groups`，不写回、不建第二注册表）→ 声明组 › Ungrouped › 各 Include 文件，没有可分组内容时保持平铺；分组头与行都走共享的 `sidebarSectionHeader`/`sidebarTreeRow`（Git 分区头已委托同一构件，`Selected` 用 `SidebarSelect` 脸，`Action` = 悬停才现的行内主动作图标，占位固定）。**详情**不再是"标题 + 三个按钮 + 三张卡"：一行标题（Heading 16 semibold + 灰色 `file:line`，非主机则前缀 `Wildcard pattern ·`/`Match rule ·` 交代为何没有 Connect）+ 主按钮 Connect + 铅笔图标；指令只有一个 `settingsGroup`，**编辑就地发生**（值变输入框、Cancel/Save 顶替 Connect/铅笔、Return 保存、一句话说明其余内容原样保留），生效配置是折叠行（`ssh -G`）。长值走 `valueText`（单行省略 + 全文 tooltip，所有事实行共用）。次要动作（Add Herdr Machine…/Edit File）进标题栏 Actions，与行右键菜单是同一份 `hostEntryMenu`。守卫：`hosts_test.go`（分组折叠与计数、平铺、符号链接配置不被当 include、选中脸、悬停连接、就地编辑与放弃确认、Return 保存落盘、Actions 随选中出现）、`hosts_groups_test.go`、`sshconfig` 的标记解析测试。
+- 键盘（2026-10-14 第二轮）：Files/Git 引用/Hosts 侧栏共用 `listNav`（见「键盘模型」）；光标脸与选中同为 `SidebarSelect`，Hosts 光标移动即选中，Files 光标行上 `a/A/r/d/y` 直通右键菜单同一批动作。
 - 菜单项一律 Title Case（Git 分支/标签/Stash/提交/文件夹菜单 20 项）、Finder 定位统一 `Reveal in Finder`、Git 确认框标题对齐菜单（`Undo Last Commit?`、`Delete Tag “x”?`）：`TestMenuItemsAreTitleCase`。
 
 ## 已知例外与待办（下一轮从这里接）
@@ -120,5 +134,6 @@ rg -n 'Padding\(14, 9, 9\)' --glob '!*_test.go' .                      # 侧栏�
 | 页面进出时标题位置跳动 | 不变量 1 | 所有内页同字号同一行，不要按路由改标题栏高度 |
 | 浮层里点条目又进下一层详情 / 返回键 | 交互行 | 点击直达面板并收起；其余动作进右键菜单 |
 | 内容驱动高度的预算常数凭估算填 | 打磨循环 4 | 用 `Tester.Find` 矩形测真实高度，写贴合测试（不越界、空白有上限），预算改常数而非猜 |
+| 新树/列表自己写 j/k、`Shortcut` 或焦点环 | 键盘模型 | 行走 `sidebarTreeRow`/`sidebarSectionHeader` + `Nav`，容器走 `navList` |
 | 文案向读者解释自己 / 暴露内部名 | 文案规则 | 删句或改成动作 + 下一步 |
 | 把条目路径和"主文件路径"直接比较来判断是否 include | 打磨循环 4 | 索引会解析符号链接——软链的 `~/.ssh/config` 会让每个条目都像 include；比较用索引自己的主文件（`hostsMainFile`），并钉符号链接用例 |

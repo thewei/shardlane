@@ -2,7 +2,7 @@ package nativeui
 
 /**
  * [INPUT]: filesview.CreateFile/CreateDir/Rename/Delete、rightPanel 缓存围栏（filesGen）与右键菜单/工具条动作
- * [OUTPUT]: Files 树文件操作的执行通道：对话框分发（dialogs.go）→ 后台执行 → 缓存失效/局部刷新/Toast 与选中迁移
+ * [OUTPUT]: Files 树文件操作的执行通道：对话框分发（dialogs.go）→ 后台执行 → 缓存失效/局部刷新/Toast 与选中迁移；filesRowKeys 让光标行上的 a/A/r/d/y 直通同一批动作
  * [POS]: 仅本地文件系域能力（internal/filesview 域服务）；不触碰 git index，不新增 Herdr 方法；删除为永久操作，确认框走共享 AlertDialog
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -68,6 +68,34 @@ func (s *Shell) filesRowMenu(m *ui.Menu, e filesview.Entry) {
 	}
 	m.Separator()
 	s.filesPathItems(m, e.Path)
+}
+
+// filesRowKeys are the row menu's actions on the focused row's keys, as the
+// Vim file explorers spell them: a new file, A new folder (in the folder, or
+// beside the file), r rename, d delete, y copy path. The same dialogs run, so
+// Delete still asks first.
+func (s *Shell) filesRowKeys(row ui.Element, e filesview.Entry, isDir bool) {
+	newFile := row.Shortcut(0, ui.KeyA)
+	newFolder := row.Shortcut(ui.Shift, ui.KeyA)
+	rename := row.Shortcut(0, ui.KeyR)
+	remove := row.Shortcut(0, ui.KeyD)
+	copyPath := row.Shortcut(0, ui.KeyY)
+	parent := filepath.Dir(e.Path)
+	if isDir {
+		parent = e.Path
+	}
+	switch {
+	case newFile:
+		s.filesNewFile(parent)
+	case newFolder:
+		s.filesNewFolder(parent)
+	case rename:
+		s.filesRename(e.Path, e.Name)
+	case remove:
+		s.filesDelete(e.Path, isDir)
+	case copyPath:
+		s.copyToClipboard(e.Path)
+	}
 }
 
 // filesPathItems are the read-only path helpers of one file or folder. The

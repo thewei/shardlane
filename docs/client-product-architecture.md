@@ -173,6 +173,18 @@ MyGo Native UI
     size, truncation pill, Rendered/Source choice) is native over every
     tier. The WebView constraints above bind unchanged; the frontend sheds
     the 17 `@codemirror/*` packages and `@lezer/highlight`.
+  - **Amended 2026-10-14 — the sidebar trees are keyboard-first.** The Files
+    tree, the Git reference tree and the Hosts list share one keyboard model
+    (`internal/nativeui/list_nav.go`): the row holding MyGo's real keyboard
+    focus is the cursor, each tree is one Tab stop, and Vim-style keys
+    (`j/k`, `h/l`, `o`, `gg/G`, `Ctrl-d/u`) or the arrows move, fold and open
+    without wrapping; Enter/Space stay ordinary row clicks. A cursor parked
+    on a freshly opened list stays unlit until the keyboard has used it, so a
+    list opened with the mouse looks as it always did. On Files the
+    cursor row also answers `a/A/r/d/y` with the same create / rename /
+    delete-with-confirm / copy-path actions as its context menu.
+    Presentation only: no new runtime path, no Herdr method, and the tree
+    data, folding and file operations keep their owners.
 - Daily development of the new desktop path must not require compiling the
   Rust GUI. Current `shardlane-host`, `shardlane-history` and
   `shardlane-remote` remain compatibility/parity references until each domain

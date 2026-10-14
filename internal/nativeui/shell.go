@@ -205,6 +205,11 @@ type Shell struct {
 	// and machine profiles stay on the Herdr-owned paths.
 	hosts hostsPageState
 
+	// nav is the keyboard model of the sidebar lists and trees (list_nav.go);
+	// navDialog is whether a dialog was up when it last looked.
+	nav       listNavs
+	navDialog bool
+
 	// sidebarCollapsed hides the sidebar (2026-10-06 A6): session-only
 	// presentation state, toggled from the header's leading cluster.
 	sidebarCollapsed bool
@@ -515,6 +520,7 @@ func NewShell(opts ...ShellOption) *Shell {
 	s.gitFilePaneWidth = gitFilePaneDefaultWidth
 	s.gitLowerTab = 1
 	s.gitTreeClosed = make(map[string]bool)
+	s.nav.hosts.OnMove = s.followHostCursor
 	s.unstagedOpen, s.stagedOpen = true, true
 	s.git.splitLayout = s.settings.Workbench.SplitDiff
 	// Stores fall back to memory when no user-data dir is injected
@@ -695,6 +701,7 @@ func (s *Shell) Close() {
 }
 func (s *Shell) View(c *ui.Context) {
 	s.hist.viewFrame++
+	s.navTrackDialogs()
 	s.releaseIdleHistoryChat()
 	theme := shardlaneTheme(s.resolvedDark(c.Theme().Dark))
 	c.SetTheme(theme)

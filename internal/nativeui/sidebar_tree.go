@@ -2,8 +2,8 @@ package nativeui
 
 /**
  * [INPUT]: row level, MyGo Context/Painter, TreeLine token 与 Shell 的 density 偏好
- * [OUTPUT]: 侧栏层级共用的对齐网格（treeGlyphX/treeGuideX）、导向线绘制、disclosure chevron、统一行构建器 sidebarTreeRow、可折叠分组头 sidebarSectionHeader 与行高 token treeRowHeight
- * [POS]: Git 引用树、Files 树与 Hosts 列表共享的呈现层；数据、折叠状态、动作与菜单仍由各自的树持有
+ * [OUTPUT]: 侧栏层级共用的对齐网格（treeGlyphX/treeGuideX）、导向线绘制、disclosure chevron、统一行构建器 sidebarTreeRow、可折叠分组头 sidebarSectionHeader、行高 token treeRowHeight，以及键盘光标脸与两个构建器返回的 clicked（鼠标点击或键盘激活）
+ * [POS]: Git 引用树、Files 树与 Hosts 列表共享的呈现层；数据、折叠状态、动作与菜单仍由各自的树持有，键盘移动归 listNav（list_nav.go）
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 
@@ -103,12 +103,18 @@ type sidebarTreeSpec struct {
 	Trailing func()
 	// Menu is the row's context menu.
 	Menu func(*ui.Menu)
+	// Nav is the list's keyboard model; nil leaves the row to the mouse.
+	Nav *listNav
 }
 
-// sidebarTreeRow draws one row of the grid and returns it for the caller's
-// Clicked(). Git references and Files share it, so alignment, density, tints
-// and guides cannot drift apart.
-func (s *Shell) sidebarTreeRow(c *ui.Context, spec sidebarTreeSpec) ui.Element {
+// sidebarTreeRow draws one row of the grid and returns it with whether it was
+// clicked. clicked also reports the keyboard's activation (o, l and h on a
+// row whose fold state asks for it), so a tree answers the mouse and the keys
+// in one place; Enter and Space already are clicks. Git references, Files and
+// Hosts share it, so alignment, density, tints and guides cannot drift apart.
+// The row holding the keyboard focus — the list's cursor — wears the
+// selection face once the keyboard has used it.
+func (s *Shell) sidebarTreeRow(c *ui.Context, spec sidebarTreeSpec) (ui.Element, bool) {
 	t := c.Theme()
 	tokens := designTokens(t.Dark)
 	label := spec.Label
@@ -123,7 +129,7 @@ func (s *Shell) sidebarTreeRow(c *ui.Context, spec sidebarTreeSpec) ui.Element {
 	case spec.Current:
 		row.Background(t.Accent.Alpha(.11)).TextColor(t.Accent)
 		glyph = t.Accent
-	case spec.Selected:
+	case spec.Selected, spec.Nav.showsCursor(row):
 		row.Background(tokens.SidebarSelect)
 	case row.Hovered():
 		row.Background(t.SurfaceHover)
@@ -131,6 +137,10 @@ func (s *Shell) sidebarTreeRow(c *ui.Context, spec sidebarTreeSpec) ui.Element {
 	if spec.Menu != nil {
 		row.ContextMenu(spec.Menu)
 	}
+	activated := spec.Nav.row(c, row, navRow{
+		Key: spec.Key, Level: spec.Level, Folder: spec.Folder, Expanded: spec.Expanded,
+		Pick: spec.Current || spec.Selected,
+	})
 	treeGuides(row, spec.Level, tokens.TreeLine)
 	row.Children(func() {
 		if spec.Level > 0 {
@@ -159,7 +169,7 @@ func (s *Shell) sidebarTreeRow(c *ui.Context, spec sidebarTreeSpec) ui.Element {
 			})
 		}
 	})
-	return row
+	return row, activated || row.Clicked()
 }
 
 // sidebarSectionSpec describes one collapsible group header of a sidebar
@@ -176,23 +186,29 @@ type sidebarSectionSpec struct {
 	Action *treeRowAction
 	// Menu is the header's context menu.
 	Menu func(*ui.Menu)
+	// Nav is the list's keyboard model; nil leaves the header to the mouse.
+	Nav *listNav
 }
 
 // sidebarSectionHeader draws one group header: chevron, semibold title and
-// the count. It returns the row for the caller's Clicked() — the fold state
-// and the rows beneath stay the caller's.
-func (s *Shell) sidebarSectionHeader(c *ui.Context, spec sidebarSectionSpec) ui.Element {
+// the count. It returns the row with whether it was clicked (mouse or
+// keyboard) — the fold state and the rows beneath stay the caller's.
+func (s *Shell) sidebarSectionHeader(c *ui.Context, spec sidebarSectionSpec) (ui.Element, bool) {
 	t := c.Theme()
 	ui.Box(c).Height(4).Shrink(0)
 	row := ui.ButtonBase(c.Key(spec.Key)).FillWidth().Height(s.treeRowHeight()+2).
 		Padding(0, treeRowPad).Radius(4).FocusRing(false).AlignItems(ui.Center).
 		Label("Toggle " + spec.Title).Tooltip(spec.Tooltip)
-	if row.Hovered() {
+	switch {
+	case spec.Nav.showsCursor(row):
+		row.Background(designTokens(t.Dark).SidebarSelect)
+	case row.Hovered():
 		row.Background(t.SurfaceHover)
 	}
 	if spec.Menu != nil {
 		row.ContextMenu(spec.Menu)
 	}
+	activated := spec.Nav.row(c, row, navRow{Key: spec.Key, Section: true, Folder: true, Expanded: !spec.Closed})
 	row.Children(func() {
 		treeChevron(c, true, !spec.Closed, t.TextMuted)
 		ui.Box(c).Width(treeGlyphGap).Shrink(0).PassThrough()
@@ -208,5 +224,5 @@ func (s *Shell) sidebarSectionHeader(c *ui.Context, spec sidebarSectionSpec) ui.
 			}
 		})
 	})
-	return row
+	return row, activated || row.Clicked()
 }

@@ -2,7 +2,7 @@ package nativeui
 
 /**
  * [INPUT]: Git metadata snapshot, existing Git mutations/confirmations, shared sidebar tree grid and native Sidebar controls
- * [OUTPUT]: Collapsible Worktrees/Branches/Remotes/Tags/Stashes navigation in the Git left rail; section hover "+" and right-click menus replace the old "···" popovers
+ * [OUTPUT]: Collapsible Worktrees/Branches/Remotes/Tags/Stashes navigation in the Git left rail; section hover "+" and right-click menus replace the old "···" popovers; one listNav focus group without entry focus (window-level j/k belong to the diff)
  * [POS]: Git sidebar presentation only; all Git truth and operations stay in gitworkbench
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -53,7 +53,7 @@ func (s *Shell) gitRepositorySidebar(c *ui.Context) {
 			return
 		}
 		ui.Scroll(c).Grow(1).MinHeight(0).Children(func() {
-			ui.Column(c).FillWidth().Padding(0, 0, 12).Children(func() {
+			s.navList(c, &s.nav.gitRefs, false, ui.Column(c).FillWidth().Padding(0, 0, 12), func() {
 				s.gitSidebarSection(c, "Worktrees", len(s.git.worktrees), &gitSectionAction{
 					label: "Add worktree", menuItem: "Add Worktree…", disabled: s.git.opBusy,
 					run: func() {
@@ -201,7 +201,7 @@ func (s *Shell) gitRepositorySidebar(c *ui.Context) {
 func (s *Shell) gitSidebarSection(c *ui.Context, name string, count int, action *gitSectionAction, children func()) {
 	key := s.gitFoldKey("section/" + name)
 	closed := s.gitTreeClosed[key]
-	spec := sidebarSectionSpec{Key: "git-section:" + name, Title: name, Count: count, Closed: closed}
+	spec := sidebarSectionSpec{Key: "git-section:" + name, Title: name, Count: count, Closed: closed, Nav: &s.nav.gitRefs}
 	if action != nil {
 		if !action.disabled {
 			spec.Action = &treeRowAction{Label: action.label, Tooltip: action.menuItem, Glyph: iconPlus, Run: action.run}
@@ -212,7 +212,7 @@ func (s *Shell) gitSidebarSection(c *ui.Context, name string, count int, action 
 			}
 		}
 	}
-	if s.sidebarSectionHeader(c, spec).Clicked() {
+	if _, clicked := s.sidebarSectionHeader(c, spec); clicked {
 		s.gitTreeClosed[key] = !s.gitTreeClosed[key]
 	}
 	if !closed {

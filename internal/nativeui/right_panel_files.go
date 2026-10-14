@@ -2,7 +2,7 @@ package nativeui
 
 /**
  * [INPUT]: selected Herdr Tab CWD、cachedDirEntries/filesGen 缓存围栏、filesview 忽略规则（固定名单 + git 集合）
- * [OUTPUT]: /files 左侧目录树（惰性展开、忽略过滤、"显示忽略项"开关、新建/重命名/删除右键菜单与工具条）及选中文件 → filesPreview 桥事件
+ * [OUTPUT]: /files 左侧目录树（惰性展开、忽略过滤、"显示忽略项"开关、新建/重命名/删除右键菜单与工具条；整棵树是 listNav 的一个焦点组，键盘见 list_nav.go）及选中文件 → filesPreview 桥事件
  * [POS]: 树只调用 internal/filesview 域服务，渲染零 IO（GWB-003）；预览内容仅经 WebView 桥（2026-10-13 产品决策），此处不再读取文件正文
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -28,7 +28,7 @@ func (s *Shell) filesToolView(c *ui.Context) {
 	ui.Column(c).FillWidth().Grow(1).MinHeight(0).Children(func() {
 		s.filesTreeToolbar(c)
 		ui.Scroll(c).Grow(1).MinHeight(0).Children(func() {
-			ui.Column(c).FillWidth().Padding(4, sidebarGutter, 12).Children(func() {
+			s.navList(c, &s.nav.files, true, ui.Column(c).FillWidth().Padding(4, sidebarGutter, 12), func() {
 				s.renderDirectoryLevel(c, root, 0)
 			})
 		})
@@ -216,10 +216,11 @@ func (s *Shell) renderDirectoryLevel(c *ui.Context, dir string, level int) {
 		if isDir {
 			glyph, kind = iconFolder, "Folder"
 		}
-		row := s.sidebarTreeRow(c, sidebarTreeSpec{
+		row, clicked := s.sidebarTreeRow(c, sidebarTreeSpec{
 			Key: "file:" + e.Path, Title: e.Name, Label: kind + " " + e.Name, Tooltip: e.Path, Level: level,
 			Folder: isDir, Expanded: isExpanded, Glyph: glyph,
 			Current: !isDir && s.rightPanel.selectedFilePath == e.Path, Dim: e.IsSymlink,
+			Nav:  &s.nav.files,
 			Menu: func(m *ui.Menu) { s.filesRowMenu(m, e) },
 			Trailing: func() {
 				// The size right-aligned, as the changes list puts its counts.
@@ -232,8 +233,11 @@ func (s *Shell) renderDirectoryLevel(c *ui.Context, dir string, level int) {
 			},
 		})
 
+		if s.nav.files.showsCursor(row) {
+			s.filesRowKeys(row, e, isDir)
+		}
 		if isDir {
-			if row.Clicked() {
+			if clicked {
 				s.rightPanel.expandedDirs[e.Path] = !isExpanded
 				if !isExpanded {
 					s.requestDirectory(e.Path)
@@ -243,7 +247,7 @@ func (s *Shell) renderDirectoryLevel(c *ui.Context, dir string, level int) {
 				s.renderDirectoryLevel(c, e.Path, level+1)
 			}
 		} else {
-			if row.Clicked() {
+			if clicked {
 				s.openFilePreview(e.Path)
 			}
 		}

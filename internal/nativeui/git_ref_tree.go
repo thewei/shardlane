@@ -185,12 +185,12 @@ func (s *Shell) gitTreeRow(c *ui.Context, it gitTreeItem, action func(), menu fu
 			ui.Icon(c, iconCheck).FontSize(11).TextColor(c.Theme().Accent).Shrink(0)
 		}
 	}
-	row := s.sidebarTreeRow(c, sidebarTreeSpec{
+	_, clicked := s.sidebarTreeRow(c, sidebarTreeSpec{
 		Key: "git-ref:" + it.title + "@" + it.tooltip, Title: it.title, Label: it.kind + " " + it.title,
 		Tooltip: it.tooltip, Level: it.level, Folder: it.folder, Expanded: !it.closed,
-		Glyph: it.glyph, Current: it.current, Trailing: trailing, Menu: menu,
+		Glyph: it.glyph, Current: it.current, Trailing: trailing, Menu: menu, Nav: &s.nav.gitRefs,
 	})
-	if row.Clicked() {
+	if clicked {
 		action()
 	}
 }

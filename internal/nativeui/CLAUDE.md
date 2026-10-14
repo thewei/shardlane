@@ -22,7 +22,7 @@ navigation_semantics_test.go: UI-009 顶栏/侧栏同级返回、重复点击、
 panel_motion.go: 整高侧栏（macOS vibrancy 材质、无 vibrancy 时不透明回退）的收起/展开动画与尾缘拖拽调宽（sidebarLimits 钳制，宽度会话持久化）；无右栏布局宿主
 panel_motion_test.go: Reduce Motion 下左导航收起/恢复，以及各窗口宽度无右栏回归
 right_panel.go: 旧会话设置兼容字段及 Files 缓存、根目录 identity fence、URL Preview 管理；**不绘制右栏**
-right_panel_files.go: /files 左侧目录缓存/树（共用侧栏网格行与项目/分支头部；工具条用共用 gorexIconButton，开关态与全 App 同一枚中性芯片，无私有 accent 底）及点击加载预览的适配器
+right_panel_files.go: /files 左侧目录缓存/树（共用侧栏网格行与项目/分支头部；工具条用共用 gorexIconButton，开关态与全 App 同一枚中性芯片，无私有 accent 底；整棵树是 listNav 焦点组，进页即聚焦打开的文件/首行，光标行上 Vim 键见 list_nav.go，a/A/r/d/y 经 files_ops.go 的 filesRowKeys 直通新建/重命名/删除/复制路径）及点击加载预览的适配器
 page_files.go: Header Files 独立页面：左树/中预览（查看条 + 分级预览体）、当前 Tab CWD 归属和空态；页面只画内容，标题/根路径/文件动作在标题栏（route_header.go）
 files_native_preview.go: Files 预览分级计划与原生层——选中后离 UI lane 探测 size×flavor×偏好：文本/代码/Markdown 源码进只读 editor.View（Buffer 离 UI lane 构建，8 MiB 上限、截断胶囊、散文自动换行），Markdown 渲染与网页图片交 WebView 页，解码得了的图片原生位图，其余给真实失败态；查看条（名称/大小/截断/Rendered⇄Source 分段）横跨所有层级；重命名、偏好切换、Source 切换都重新计划
 code_theme.go: codeEditorTheme——把 Git 评审的语法色/代码色/行号色（gd_palette 单一来源）穿到框架 editor 上，同一份代码在 Files 与 Git 评审里同色
@@ -89,7 +89,9 @@ runtime.go: 首次 Herdr 列举、异步 Projection、初次 terminal coordinati
 panel_motion.go: Git/Terminal 左栏统一宽度（默认 252 DIP，可拖拽 200–400）和折叠动画，不再依路由改变宽度
 repo_bar.go: 仅保留变更文件点击与 toggleMenu popover 辅助函数；仓库菜单见 git_sidebar_tree 与 sidebar_switchers
 branch_menu.go: 当前分支优先的搜索过滤与受保护的切换/创建入口，弹层由 sidebar_switchers 持有
-sidebar_tree.go: 侧栏层级唯一对齐网格（chevron 槽·图标·标题、首层对齐分区标题）、导向线、统一行构建器 sidebarTreeRow（Selected 选中脸、Action 悬停行内图标）、可折叠分组头 sidebarSectionHeader 与行高令牌 treeRowHeight；Git 引用、Files 树与 Hosts 列表共用
+sidebar_tree.go: 侧栏层级唯一对齐网格（chevron 槽·图标·标题、首层对齐分区标题）、导向线、统一行构建器 sidebarTreeRow（Selected 选中脸、键盘光标同脸 SidebarSelect、Action 悬停行内图标）、可折叠分组头 sidebarSectionHeader 与行高令牌 treeRowHeight；两个构建器返回 (行, clicked)（clicked 兼收鼠标点击与键盘激活），经 Spec.Nav 注册进 listNav；Git 引用、Files 树与 Hosts 列表共用
+list_nav.go: 侧栏列表/树唯一的键盘模型 listNav——真焦点即光标（FocusGroup 单 Tab 停靠点，方向键由它认领故不回绕），j/k·↓/↑ 移动、h/l·←/→ 折叠展开或进出层级、o 打开、gg/G·Home/End 首尾、Ctrl-d/u 跳十行，Enter/Space 本就是行点击；进页聚焦开场行但光标不亮——键盘用过它才亮（Tab 进入自带亮；离开列表/重进页面复暗；点击不亮），会改东西的行键（Files 的 a/A/r/d/y）等光标亮了才响应；Git 引用树不抢进页焦点（窗口级 j/k 归 Diff）；对话框关闭后 navTrackDialogs 把焦点还给光标行（MyGo 对 AutoFocus 对话框的焦点恢复缺口，应用侧补）；Hosts 光标移动即选中；虚拟化 ui.List（Sessions、Changes）不走这里
+list_nav_test.go: Files/Git 引用/Hosts 的真键盘回归——移动与不回绕、gg/G/Ctrl-d/u、h/l/o 层级、单 Tab 停靠点与记忆、进页聚焦（含列表晚到）、对话框后焦点回到光标行、Files 行键 a/A/r/d/y、Hosts 选中跟随与机器行不属于末组、光标脸（键盘用过才亮、Tab 进入即亮、离开/重进复暗、点击不亮）
 sidebar_switchers.go: Git/Files 侧栏共用头部：项目名与分支名各自是可搜索的 pull-down 快速切换，外加刷新图标
 sidebar_tree_test.go: 网格对齐、导向线连续、分区无 "···"、悬停 "+"、创建对话框、项目/分支快速切换、Workspace 行无 "…" 与标题栏 Actions 回归
 changes_tree_test.go: Changes 文件树共用网格（逐层缩进一格）与行内图标动作命名回归

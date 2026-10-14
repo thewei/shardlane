@@ -2,13 +2,14 @@ package nativeui
 
 /**
  * [INPUT]: 依赖 Shell.hosts 索引态与分组（hostGroups）、machineInstances/machineMenuSuffix、sidebarTreeRow/sidebarSectionHeader/sectionLabel
- * [OUTPUT]: /hosts 的侧栏导航：SSH Config 条目（配置自带分组时按组可折叠；行悬停连接、连接/注册机器/编辑文件上下文菜单 hostEntryMenu）+ Herdr Machines；列表头的图标刷新是该页唯一的 Refresh
+ * [OUTPUT]: /hosts 的侧栏导航：SSH Config 条目（配置自带分组时按组可折叠；行悬停连接、连接/注册机器/编辑文件上下文菜单 hostEntryMenu）+ Herdr Machines；列表头的图标刷新是该页唯一的 Refresh；列表是 listNav 的一个焦点组，光标移动即选中（分组头除外）
  * [POS]: 内页侧栏宿主（sidebar.go 按 routeHosts 分派到这里）；行与分组头与 Git/Files 共用同一套树网格；机器管理动作留在 Session selector，不复制第二实现
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/wh-studio/herdr-client/internal/herdr"
@@ -35,12 +36,21 @@ func (s *Shell) hostsNav(c *ui.Context) {
 				s.refreshMachineStatus(true)
 			}
 		})
-		ui.Scroll(c).Grow(1).MinHeight(0).Children(func() {
+		s.navList(c, &s.nav.hosts, true, ui.Scroll(c).Grow(1).MinHeight(0), func() {
 			s.hostsNavEntries(c)
+			s.nav.hosts.barrier() // the machines are not part of the last group
 			sectionLabel(c, "Herdr Machines")
 			s.hostsNavMachines(c)
 		})
 	})
+}
+
+// followHostCursor is the Hosts list's OnMove: the selection follows the
+// keyboard cursor, as a click selects, except on a group header.
+func (s *Shell) followHostCursor(key string) {
+	if !strings.HasPrefix(key, hostGroupKeyPrefix) {
+		s.hosts.selected = key
+	}
 }
 
 // hostsNavMachines renders the saved Herdr machines below the config list.
@@ -54,10 +64,10 @@ func (s *Shell) hostsNavMachines(c *ui.Context) {
 	for _, inst := range machines {
 		key := hostMachineKeyPrefix + inst.Machine.ID
 		label := s.machineNavLabel(inst)
-		row := s.sidebarTreeRow(c, sidebarTreeSpec{
-			Key: key, Title: label, Tooltip: label, Glyph: iconServer, Selected: s.hosts.selected == key,
+		_, clicked := s.sidebarTreeRow(c, sidebarTreeSpec{
+			Key: key, Title: label, Tooltip: label, Glyph: iconServer, Selected: s.hosts.selected == key, Nav: &s.nav.hosts,
 		})
-		if row.Clicked() {
+		if clicked {
 			s.hosts.selected = key
 		}
 	}
@@ -91,10 +101,11 @@ func (s *Shell) hostsNavEntries(c *ui.Context) {
 	}
 	for _, g := range groups {
 		closed := s.hosts.closed[g.Key]
-		header := s.sidebarSectionHeader(c, sidebarSectionSpec{
-			Key: "hosts-group:" + g.Key, Title: g.Label, Count: len(g.Entries), Closed: closed, Tooltip: g.Tip,
+		_, clicked := s.sidebarSectionHeader(c, sidebarSectionSpec{
+			Key: hostGroupKeyPrefix + g.Key, Title: g.Label, Count: len(g.Entries), Closed: closed, Tooltip: g.Tip,
+			Nav: &s.nav.hosts,
 		})
-		if header.Clicked() {
+		if clicked {
 			if s.hosts.closed == nil {
 				s.hosts.closed = map[string]bool{}
 			}
@@ -115,13 +126,13 @@ func (s *Shell) hostsNavRow(c *ui.Context, entry sshconfig.Entry) {
 	key := hostEntryKey(entry)
 	spec := sidebarTreeSpec{
 		Key: key, Title: entry.Title(), Tooltip: entry.Title(), Glyph: iconGlobe,
-		Selected: s.hosts.selected == key,
-		Menu:     func(m *ui.Menu) { s.hostEntryMenu(m, entry) },
+		Selected: s.hosts.selected == key, Nav: &s.nav.hosts,
+		Menu: func(m *ui.Menu) { s.hostEntryMenu(m, entry) },
 	}
 	if alias := entry.Alias(); alias != "" {
 		spec.Action = &treeRowAction{Label: "Connect", Glyph: iconTerminal, Run: func() { s.connectHost(alias) }}
 	}
-	if s.sidebarTreeRow(c, spec).Clicked() {
+	if _, clicked := s.sidebarTreeRow(c, spec); clicked {
 		s.hosts.selected = key
 	}
 }

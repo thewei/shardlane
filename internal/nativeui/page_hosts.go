@@ -54,7 +54,11 @@ type hostsPageState struct {
 	form hostsFormState
 }
 
-const hostMachineKeyPrefix = "machine:"
+const (
+	hostMachineKeyPrefix = "machine:"
+	// hostGroupKeyPrefix keys the sidebar's group headers, which never select.
+	hostGroupKeyPrefix = "hosts-group:"
+)
 
 // hostEntryKey namespaces one index entry by its defining file and line.
 func hostEntryKey(entry sshconfig.Entry) string {
