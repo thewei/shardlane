@@ -2,7 +2,7 @@ package nativeui
 
 /**
  * [INPUT]: 依赖 sessiontrash.Store（经 SessionTrashView 接缝）、HistoryService.Forget/Scan、Sessions 列表/选择状态与 Herdr 投影里 Agent 的会话身份
- * [OUTPUT]: 提供 Sessions 回收站：移入（带撤销提示）、放回、永久删除/清空（二次确认）、回收站视图的行/计数/筛选，以及对运行中 Agent 会话与刚写入会话的保护
+ * [OUTPUT]: 提供 Sessions 回收站：移入（带撤销提示）、放回、永久删除/清空（二次确认）、回收站视图的行/计数/筛选（随 Sessions 范围），以及对运行中 Agent 会话与刚写入会话的保护
  * [POS]: Sessions 页的删除层；只经 internal/sessiontrash 搬动 Provider 会话文件，不新增 Herdr 方法；日志只记操作名、数量与稳定 id，从不记标题或正文
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -99,7 +99,7 @@ func trashSummary(item sessiontrash.Item) history.SessionSummary {
 func (s *Shell) trashRows() []history.SessionSummary {
 	query := strings.ToLower(strings.TrimSpace(s.hist.query))
 	rows := make([]history.SessionSummary, 0, len(s.hist.trashItems))
-	for _, item := range s.hist.trashItems {
+	for _, item := range s.trashScoped() {
 		if s.hist.provider != "" && string(item.Agent) != s.hist.provider {
 			continue
 		}
@@ -132,7 +132,7 @@ func (s *Shell) historyProviders() []history.AgentID {
 	}
 	seen := make(map[history.AgentID]bool, 4)
 	var providers []history.AgentID
-	for _, item := range s.hist.trashItems {
+	for _, item := range s.trashScoped() {
 		if !seen[item.Agent] {
 			seen[item.Agent] = true
 			providers = append(providers, item.Agent)
@@ -388,12 +388,17 @@ func (s *Shell) confirmDeleteForever(ids []string) {
 
 // confirmEmptyTrash asks before the whole Trash is removed for good.
 func (s *Shell) confirmEmptyTrash() {
-	if len(s.hist.trashItems) == 0 {
+	items := s.trashScoped()
+	if len(items) == 0 {
 		return
 	}
+	where := "in the Trash"
+	if s.historyScopeRoot() != "" {
+		where = "of this project in the Trash"
+	}
 	s.openConfirm(emptyTrashConfirm, "", "Empty Trash?",
-		fmt.Sprintf("All %d session%s in the Trash will be removed from this Mac. This can't be undone.",
-			len(s.hist.trashItems), pluralS(len(s.hist.trashItems))))
+		fmt.Sprintf("All %d session%s %s will be removed from this Mac. This can't be undone.",
+			len(items), pluralS(len(items)), where))
 }
 
 // deleteFromTrash removes confirmed entries for good.
@@ -427,10 +432,19 @@ func (s *Shell) deleteFromTrash(ids []string) {
 	})
 }
 
-// emptyTrash removes every entry for good.
+// emptyTrash removes the entries the Trash view shows for good: all of them
+// under All, the project's own under its scope.
 func (s *Shell) emptyTrash() {
 	store := s.hist.trash
 	if store == nil {
+		return
+	}
+	if s.historyScopeRoot() != "" {
+		ids := make([]string, 0, len(s.hist.trashItems))
+		for _, item := range s.trashScoped() {
+			ids = append(ids, item.ID)
+		}
+		s.deleteFromTrash(ids)
 		return
 	}
 	s.dispatch(func() {
@@ -493,7 +507,7 @@ func (s *Shell) historyTrashToggle(c *ui.Context) {
 	toggle.Children(func() {
 		ui.Icon(c, iconTrash).Size(13, 13).TextColor(t.TextMuted).PassThrough()
 		ui.Text(c, "Trash").FontSize(Typography().Body).PassThrough()
-		if count := len(s.hist.trashItems); count > 0 {
+		if count := len(s.trashScoped()); count > 0 {
 			ui.Text(c, itoa(count)).FontSize(Typography().Caption).TextColor(t.TextMuted).PassThrough()
 		}
 	})
@@ -504,7 +518,7 @@ func (s *Shell) historyTrashToggle(c *ui.Context) {
 
 // trashAvailable says whether the page offers the Trash at all: a store is
 // attached, and — like every control with nothing to act on — it shows once
-// something is in it, and stays while its view is open.
+// something of the scope is in it, and stays while its view is open.
 func (s *Shell) trashAvailable() bool {
-	return s.hist.trash != nil && (len(s.hist.trashItems) > 0 || s.hist.showTrash)
+	return s.hist.trash != nil && (len(s.trashScoped()) > 0 || s.hist.showTrash)
 }

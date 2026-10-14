@@ -2,7 +2,7 @@ package nativeui
 
 /**
  * [INPUT]: 依赖 Shell 当前 Router/Workspace/Agent 投影、共享 agentCardRow 和 native Quick Panel
- * [OUTPUT]: 提供 Sidebar 的顶部视图标签条（Terminal/Changes/Sessions/Files/Hosts 五个等宽图标标签）、Workspace 树、Git 引用导航、History/Settings 导航、仅 Settings 保留的底部返回控件（取代 Workspace 切换页脚）与 Agent 行点击/右键动作
+ * [OUTPUT]: 提供 Sidebar 的顶部视图标签条（Terminal/Changes/Sessions/Files/Hosts 五个等宽图标标签）、Workspace 树、Git 引用导航、Sessions（项目头 + 范围行）/Settings 导航、仅 Settings 保留的底部返回控件（取代 Workspace 切换页脚）与 Agent 行点击/右键动作
  * [POS]: 唯一左栏宿主，Git 引用树由 git_sidebar_tree 负责，Agent 详情复用 Quick Panel；视图切换与回 Terminal 都在栏顶标签条，其余内页与 Git 视图没有页脚
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -46,6 +46,12 @@ func (s *Shell) sidebar(c *ui.Context) {
 			s.sidebarProjectHeader(c, s.rightPanel.currentRoot, "Refresh files", s.refreshFiles)
 			ui.Divider(c)
 			s.filesToolView(c)
+		} else if isHistoryRoute(s.router.Path()) {
+			// Sessions wears the same project/branch head as Git and Files;
+			// under it the scope rows say whose sessions the list shows.
+			s.sidebarProjectHeader(c, s.historyProjectRoot(), "Refresh sessions", s.refreshHistoryScan)
+			ui.Divider(c)
+			s.historyNav(c)
 		} else if s.sidebarInnerPage() {
 			s.sidebarInnerNav(c)
 		} else if ui.Sidebar(c, &s.selected, func() {
@@ -174,8 +180,9 @@ func (s *Shell) sidebarBackRow(c *ui.Context) {
 	}
 }
 
-// sidebarInnerNav is the inner-page sidebar body: the page's navigation and
-// filters live in the app sidebar while the route owns the content area.
+// sidebarInnerNav is the Settings and Hosts sidebar body: the page's
+// navigation lives in the app sidebar while the route owns the content area
+// (Files and Sessions carry the project header and build their own).
 func (s *Shell) sidebarInnerNav(c *ui.Context) {
 	ui.Column(c).Grow(1).MinHeight(0).Padding(14, 9, 9).Gap(3).Children(func() {
 		switch path := s.router.Path(); {
@@ -183,8 +190,6 @@ func (s *Shell) sidebarInnerNav(c *ui.Context) {
 			s.settingsNav(c)
 		case path == routeHosts:
 			s.hostsNav(c)
-		default:
-			s.historyNav(c)
 		}
 	})
 }

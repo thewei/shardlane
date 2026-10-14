@@ -13,7 +13,7 @@ import (
 
 /**
  * [INPUT]: 依赖 Shell/routeHeader/routeHeaderBlock、各内页入口（Hosts/Files/Sessions/Session Detail/Settings）与 ui.Tester 无头渲染
- * [OUTPUT]: 对外提供标题栏单一归属回归：内页标题只在标题栏且落在同一位置、内页与侧栏不再自画页头/标题回声、每个内页至多一个 Refresh 且为图标、Sessions/Settings/Hosts 侧栏列表同一起点、Session 详情标题栏可返回列表
+ * [OUTPUT]: 对外提供标题栏单一归属回归：内页标题只在标题栏且落在同一位置、内页与侧栏不再自画页头/标题回声、每个内页至多一个 Refresh 且为图标、Settings/Hosts 侧栏列表同一起点、Git/Files/Sessions 侧栏同一项目头、Session 详情标题栏可返回列表
  * [POS]: 2026-10-14 统一 Header 决策的守卫测试；与 route_header.go 同生共死
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -136,14 +136,13 @@ func TestPagesDrawNoHeaderOfTheirOwn(t *testing.T) {
 		name  string
 		title string
 		page  func(c *ui.Context)
-		// sidebarRefresh marks the page whose list lives in the sidebar,
-		// which owns the one Refresh (Sessions keeps its toolbar icon: no
-		// list in its sidebar to host one).
+		// sidebarRefresh marks the page whose sidebar owns the one Refresh
+		// (the Hosts list, the Sessions project head).
 		sidebarRefresh bool
 	}{
 		{"hosts", "Hosts", hosts.hostsPage, true},
 		{"files", "Files", files.filesPage, false},
-		{"sessions", "Sessions", sessions.historyPage, false},
+		{"sessions", "Sessions", sessions.historyPage, true},
 		{"settings", "General", func(c *ui.Context) { settingsPage(c, func() { settings.settingsGeneral(c) }) }, false},
 		{"chat", "Chat", chat.chatPage, false},
 	} {
@@ -184,12 +183,13 @@ func TestSidebarListsStartAtTheirFirstEntry(t *testing.T) {
 // button while every other refresh is an icon. One per context, one face.
 func TestEachRouteHasOneRefreshAndItIsAnIcon(t *testing.T) {
 	for _, tc := range []struct {
-		name  string
-		setup func(t *testing.T) *Shell
+		name    string
+		refresh string // the control's label: the sidebar head names what it refreshes
+		setup   func(t *testing.T) *Shell
 	}{
-		{"hosts", headerRoutes()[0].setup},
-		{"sessions", headerRoutes()[2].setup},
-		{"agents", func(t *testing.T) *Shell {
+		{"hosts", "Refresh", headerRoutes()[0].setup},
+		{"sessions", "Refresh sessions", headerRoutes()[2].setup},
+		{"agents", "Refresh", func(t *testing.T) *Shell {
 			s := NewShell()
 			s.providers.loaded = true // never start a real audit
 			s.router.Replace("/settings/providers")
@@ -198,11 +198,11 @@ func TestEachRouteHasOneRefreshAndItIsAnIcon(t *testing.T) {
 	} {
 		tester := ui.NewTester(tc.setup(t).View, 1200, 800)
 		settleFrames(tester, 3)
-		if got := countTextExact(tester.Texts(), "Refresh"); got != 1 {
-			t.Errorf("%s: %d Refresh controls, want exactly one; texts=%q", tc.name, got, tester.Texts())
+		if got := countTextExact(tester.Texts(), tc.refresh); got != 1 {
+			t.Errorf("%s: %d %q controls, want exactly one; texts=%q", tc.name, got, tc.refresh, tester.Texts())
 			continue
 		}
-		rect, _ := tester.Find("Refresh")
+		rect, _ := tester.Find(tc.refresh)
 		if rect.W > 32 || rect.H > 32 {
 			t.Errorf("%s: Refresh is %.0f×%.0f — an icon button, not a text button or a navigation row", tc.name, rect.W, rect.H)
 		}
@@ -210,8 +210,8 @@ func TestEachRouteHasOneRefreshAndItIsAnIcon(t *testing.T) {
 }
 
 // TestInnerSidebarsShareOneInset pins the sidebar body's inset: entering
-// Sessions, Settings or Hosts, the first line of the list starts at the same
-// x and y (the Hosts list once inset itself a second time: 14pt lower, 9pt in).
+// Settings or Hosts, the first line of the list starts at the same x and y
+// (the Hosts list once inset itself a second time: 14pt lower, 9pt in).
 func TestInnerSidebarsShareOneInset(t *testing.T) {
 	routes := headerRoutes()
 	var wantX, wantY float32
@@ -220,7 +220,6 @@ func TestInnerSidebarsShareOneInset(t *testing.T) {
 		setup func(t *testing.T) *Shell
 		first string // the first line of that page's sidebar list
 	}{
-		{"sessions", routes[2].setup, "All sessions"},
 		{"settings", routes[3].setup, "General"},
 		{"hosts", routes[0].setup, "SSH Config"},
 	} {
@@ -374,5 +373,52 @@ func TestFilesRouteHeaderCarriesPathActionsOnlyWithASelection(t *testing.T) {
 	s.rightPanel.selectedFilePath = filepath.Join(root, "a.txt")
 	if spec, _ = s.routeHeader(); spec.actions == nil {
 		t.Fatal("a file is open: the bar must offer Copy Path / Reveal in Finder")
+	}
+}
+
+// TestProjectSidebarsShareOneHead pins the project head Git, Files and
+// Sessions open their sidebars with: the project chip and the one Refresh
+// icon sit at the same place on all three, so moving between the pages moves
+// nothing above the list.
+func TestProjectSidebarsShareOneHead(t *testing.T) {
+	routes := headerRoutes()
+	type spot struct{ chipX, chipY, refreshX, refreshY float32 }
+	var want spot
+	for i, tc := range []struct {
+		name    string
+		setup   func(t *testing.T) *Shell
+		refresh string
+	}{
+		{"changes", routes[4].setup, "Refresh repository"},
+		{"files", routes[1].setup, "Refresh files"},
+		{"sessions", func(t *testing.T) *Shell { // a workspace with a project, like the other two
+			s := rightPanelTestShell(t, t.TempDir())
+			s.hist.service = newMultiAgentHistoryShell(t).hist.service
+			s.router.Replace(routeHistory)
+			return s
+		}, "Refresh sessions"},
+	} {
+		s := tc.setup(t)
+		tester := ui.NewTester(s.View, 1200, 800)
+		settleFrames(tester, 3)
+		chip, ok := tester.Find(s.sidebarProjectTitle())
+		if !ok {
+			t.Fatalf("%s: the sidebar has no project head %q; texts=%q", tc.name, s.sidebarProjectTitle(), tester.Texts())
+		}
+		refresh, ok := tester.Find(tc.refresh)
+		if !ok {
+			t.Fatalf("%s: the project head has no %q; texts=%q", tc.name, tc.refresh, tester.Texts())
+		}
+		got := spot{chip.X, chip.Y, refresh.X, refresh.Y}
+		if i == 0 {
+			want = got
+			continue
+		}
+		for _, d := range []float32{got.chipX - want.chipX, got.chipY - want.chipY, got.refreshX - want.refreshX, got.refreshY - want.refreshY} {
+			if math.Abs(float64(d)) > 0.25 {
+				t.Errorf("%s: the project head sits at %+v, Git's at %+v", tc.name, got, want)
+				break
+			}
+		}
 	}
 }

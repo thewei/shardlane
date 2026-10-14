@@ -12,7 +12,8 @@ import (
 	"fmt"
 )
 
-// HistoryQuery is one read-only catalog list request.
+// HistoryQuery is one read-only catalog list request. ProjectPath scopes it to
+// one project: the folder and everything below it.
 type HistoryQuery struct {
 	ProjectPath string
 	Provider    AgentID
@@ -105,6 +106,15 @@ func (s *HistoryService) ProviderCounts(ctx context.Context) ([]ProviderCount, e
 		return nil, err
 	}
 	return s.catalog.ProviderCounts(), nil
+}
+
+// ProviderCountsIn is ProviderCounts over one project — the sessions started
+// in projectPath or below it; "" is the whole catalog.
+func (s *HistoryService) ProviderCountsIn(ctx context.Context, projectPath string) ([]ProviderCount, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return s.catalog.ProviderCountsIn(projectPath), nil
 }
 
 // List returns bounded session metadata. It never parses transcripts.

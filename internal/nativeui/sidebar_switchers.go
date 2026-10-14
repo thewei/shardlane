@@ -2,7 +2,7 @@ package nativeui
 
 /**
  * [INPUT]: Herdr 项目投影与当前选择、本地分支目录、既有 selectProject/confirmSwitchBranch/创建分支流程与共享 sidebar 网格
- * [OUTPUT]: Git 与 Files 两个侧栏共用的头部 sidebarProjectHeader：项目名与分支名各自是可搜索的 pull-down 快速切换，外加刷新图标
+ * [OUTPUT]: Git、Files 与 Sessions 三个侧栏共用的头部 sidebarProjectHeader：项目名与分支名各自是可搜索的 pull-down 快速切换，外加刷新图标
  * [POS]: 侧栏头部呈现与切换交互；项目选择权威仍在 selection.go，分支变更仍走 git_service_mutation
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -43,9 +43,9 @@ func switcherChip(c *ui.Context, key, label, text, tooltip string, glyph *ui.SVG
 	return chip
 }
 
-// sidebarProjectHeader is the head of the Git and Files sidebars: the
-// project and its branch — each a pull-down that switches in place — and the
-// refresh icon. root is the folder the sidebar shows, offered as the
+// sidebarProjectHeader is the head of the Git, Files and Sessions sidebars:
+// the project and its branch — each a pull-down that switches in place — and
+// the refresh icon. root is the folder the sidebar shows, offered as the
 // project's tooltip.
 func (s *Shell) sidebarProjectHeader(c *ui.Context, root, refreshLabel string, refresh func()) {
 	t := c.Theme()

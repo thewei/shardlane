@@ -2,8 +2,8 @@ package nativeui
 
 /**
  * [INPUT]: 依赖 HistoryService 的只读列表/详情查询与 MyGo 窗口调度
- * [OUTPUT]: 提供 History 查询代际隔离、筛选重置、列表/分组/多选/行内预览的瞬态状态、各 Provider 会话总数与扫描的分批上报（每批约 100 个来源刷新一次可见列表）
- * [POS]: History 页面状态编排层；查询/筛选不改变 Herdr Runtime 或来源历史文件
+ * [OUTPUT]: 提供 History 查询代际隔离、筛选重置、列表/分组/多选/行内预览的瞬态状态、会话范围（当前项目 / 全部）与按范围计数、各 Provider 会话总数与扫描的分批上报（每批约 100 个来源刷新一次可见列表）
+ * [POS]: History 页面状态编排层；查询/筛选/范围不改变 Herdr Runtime 或来源历史文件
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 
@@ -48,6 +48,13 @@ type HistoryProviderCountView interface {
 	ProviderCounts(ctx context.Context) ([]history.ProviderCount, error)
 }
 
+// HistoryProjectCountView is optional for test fakes; the production service
+// totals one project's sessions per Provider — the project scope's Agent tabs
+// and the "This project" count.
+type HistoryProjectCountView interface {
+	ProviderCountsIn(ctx context.Context, projectPath string) ([]history.ProviderCount, error)
+}
+
 // HistoryScanProgressView is optional for test fakes; the production service
 // calls onBatch after every indexed batch, and the shell reloads the visible
 // list on each one so thousands of session sources surface batch by batch
@@ -69,13 +76,21 @@ type historyState struct {
 	// unfiltered (All) load — the filter rail is derived from it instead of
 	// a hardcoded trio that hid every other provider (2026-10-06 F37).
 	providers []history.AgentID
-	// counts is each Provider's catalog-wide session total, refreshed with
-	// every list request (it never depends on the search or tab scope).
-	counts   map[history.AgentID]int
-	loaded   bool
-	loading  bool
-	errText  string
-	sessions []history.SessionSummary
+	// counts is each Provider's session total within the scope, refreshed
+	// with every list request (it never depends on the search or Agent tab).
+	counts map[history.AgentID]int
+	// The Sessions scope (history_scope.go): the project the sidebar header
+	// names (the default) or every project. scopeRoot is the folder the last
+	// request was scoped to ("" = unscoped), so a project switch reloads the
+	// list; projectTotal and allTotal are the two scope rows' counts.
+	scopeAll     bool
+	scopeRoot    string
+	projectTotal int
+	allTotal     int
+	loaded       bool
+	loading      bool
+	errText      string
+	sessions     []history.SessionSummary
 	// scanning is true while a background catalog scan runs: the catalog is
 	// rebuilt in memory on every launch, so an empty list during that time
 	// means "still reading", not "no sessions".
@@ -142,11 +157,11 @@ func (s *Shell) dispatch(fn func()) {
 }
 
 // requestHistoryList loads the bounded session list for the latest
-// filter/search intent (CLOSURE-01 latest-request-wins): a new intent
+// filter/search/scope intent (CLOSURE-01 latest-request-wins): a new intent
 // cancels the previous request, starts a new generation, and queries the
 // latest filters immediately. Only the newest generation may apply, so a
-// stale late result can never overwrite the newer answer. The apply also
-// feeds the Sidebar Recent section (metadata only).
+// stale late result can never overwrite the newer answer. An unscoped,
+// unfiltered apply also feeds the Sidebar Recent section (metadata only).
 func (s *Shell) requestHistoryList() {
 	service := s.hist.service
 	if service == nil {
@@ -160,29 +175,45 @@ func (s *Shell) requestHistoryList() {
 	s.hist.loading = true
 	s.hist.errText = ""
 	generation := s.hist.listGen.Add(1)
+	root, projectRoot := s.historyScopeRoot(), s.historyProjectRoot()
+	s.hist.scopeRoot = root
 	query := history.HistoryQuery{
-		ProjectPath: "",
+		ProjectPath: root,
 		Provider:    history.AgentID(s.hist.provider),
 		Search:      strings.TrimSpace(s.hist.query),
 		Limit:       HistoryListLimit,
 	}
 	s.dispatch(func() {
 		summaries, err := service.List(ctx, query)
+		var all, project []history.ProviderCount
+		if err == nil {
+			all, project = historyTotals(ctx, service, projectRoot)
+		}
+		// The Agent tabs count the scope the list shows; a source that cannot
+		// total one project leaves them empty rather than counting another scope.
+		tabs := all
+		if root != "" {
+			tabs = project
+		}
 		var counts map[history.AgentID]int
-		if source, ok := service.(HistoryProviderCountView); ok && err == nil {
-			if totals, lookupErr := source.ProviderCounts(ctx); lookupErr == nil {
-				counts = make(map[history.AgentID]int, len(totals))
-				for _, total := range totals {
-					counts[total.Agent] = total.Count
-				}
-			} else if ctx.Err() == nil {
-				slog.Warn("history provider counts unavailable", "error", lookupErr)
+		if err == nil && (all != nil || root != "") {
+			counts = make(map[history.AgentID]int, len(tabs))
+			for _, total := range tabs {
+				counts[total.Agent] = total.Count
 			}
 		}
 		var providers []history.AgentID
 		if err == nil && query.Provider == "" && query.Search == "" {
 			providers = distinctAgents(summaries)
-			if source, ok := service.(HistoryProviderView); ok {
+			switch source, ok := service.(HistoryProviderView); {
+			case root != "":
+				if project != nil {
+					providers = providers[:0]
+					for _, total := range project {
+						providers = append(providers, total.Agent)
+					}
+				}
+			case ok:
 				if available, lookupErr := source.AvailableProviders(ctx); lookupErr == nil {
 					providers = available
 				} else if ctx.Err() == nil {
@@ -205,12 +236,20 @@ func (s *Shell) requestHistoryList() {
 			if counts != nil {
 				s.hist.counts = counts
 			}
+			if all != nil {
+				s.hist.allTotal = providerTotal(all)
+			}
+			if project != nil {
+				s.hist.projectTotal = providerTotal(project)
+			}
 			// Nothing is selected until the user selects it: the zero value
 			// 0 pre-highlighted the first row as if chosen (2026-10-06 F15).
 			s.hist.listSelected = -1
 			if query.Provider == "" && query.Search == "" {
 				s.hist.providers = providers
-				s.feedRecentFromHistory(summaries)
+				if root == "" {
+					s.feedRecentFromHistory(summaries)
+				}
 			}
 		})
 	})

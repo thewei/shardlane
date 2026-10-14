@@ -6,9 +6,9 @@ History 是 Shardlane 的只读 Provider 会话目录；扫描 Provider 原生�
 成员清单
 
 - `models.go`：Provider AgentID、会话元数据、消息及来源类型，统一跨解析器的数据语言。
-- `service.go`：HistoryService 查询/扫描/阅读入口；`Forget` 把已离开来源目录的会话摘出 Catalog；Project/Provider 范围在 LIMIT 前应用，暴露完整 Provider 列表及各 Provider 会话总数（Sessions 标签计数，元数据只读，不受列表上限影响）；`Open` 每次解析原始会话文件并切出一个有界窗口（无任何落盘缓存）；`ScanWithProgress` 在 `Scan` 之上提供分批进度（每 100 个可查询来源通知一次，供 UI 渐进刷新列表）。
+- `service.go`：HistoryService 查询/扫描/阅读入口；`Forget` 把已离开来源目录的会话摘出 Catalog；Project/Provider 范围在 LIMIT 前应用（Project = 该文件夹及其所有子文件夹，按路径边界匹配：`/work/ab` 不属于 `/work/a`），暴露完整 Provider 列表及各 Provider 会话总数（Sessions 标签计数，元数据只读，不受列表上限影响；`ProviderCountsIn(项目)` 给出一个项目内的同类计数）；`Open` 每次解析原始会话文件并切出一个有界窗口（无任何落盘缓存）；`ScanWithProgress` 在 `Scan` 之上提供分批进度（每 100 个可查询来源通知一次，供 UI 渐进刷新列表）。
 - `catalog.go`：纯内存 Catalog：Put/Forget/RemoveMissing/KnownFiles 写入面（Forget 按会话 key 摘行并释放文件路径占用，未知 key 忽略）、列表行描述行提取；文件路径唯一，`(mtime,size)` 为扫描变更信号。
-- `catalog_read.go`：只读元数据查询、Provider 集合与各 Provider 非归档会话计数、Project/Provider 范围过滤与 metadata 搜索（标题/项目/路径/id/Provider，大小写不敏感）；同一遍历内完成排序与 LIMIT。
+- `catalog_read.go`：只读元数据查询、Provider 集合与各 Provider 非归档会话计数（可限定项目：`ProviderCountsIn`）、Project/Provider 范围过滤（Project = 文件夹及其子文件夹，`withinProject` 是列表/搜索/计数共用的唯一规则；`ProjectContains` 把同一规则给不经 Catalog 的回收站行复用）与 metadata 搜索（标题/项目/路径/id/Provider，大小写不敏感）；同一遍历内完成排序与 LIMIT。
 - `legacy.go`：一次性删除旧版遗留的 `history.sqlite3`（含 WAL/SHM/journal）——旧版把会话正文复制进 FTS/页缓存，现已无读者。
 - `scanner.go`：多 Provider 来源目录协调与增量索引（变更文件解析一次、只保留列表行元数据）；`SummarizeSource` 解析单个来源文件并给出一行列表摘要（不入 Catalog）；解析走至多 4 个 worker 的小池，行按目录列举顺序提交，结果与顺序扫描一致；首个失败取消本轮且不做清理；每提交 `scanBatchSize`（100）行在锁外通知一次进度观察者（含完成时的尾部一批）。
 - `scan_utils.go`：增量扫描的文件及目录遍历辅助。
@@ -30,6 +30,6 @@ History 是 Shardlane 的只读 Provider 会话目录；扫描 Provider 原生�
 - `pi_test.go`：Pi Provider 解析和 live 增量回归。
 - `scanner_test.go`：来源扫描、去重与索引协调；同 mtime 大小变化仍重读；每 100 个来源一批的上报契约；SummarizeSource 读回一行摘要。
 - `service_test.go`：HistoryService 列表/读取/扫描契约；Open 始终反映原始文件的当前内容（追加后无需重扫）；Forget 后所有读取面一致。
-- `service_filter_test.go`：Provider/Project 提前过滤、完整 Provider 集合和各 Provider 计数（排除归档）的回归。
+- `service_filter_test.go`：Provider/Project 提前过滤、完整 Provider 集合和各 Provider 计数（排除归档）的回归；Project 范围含子文件夹且不误收同前缀兄弟目录（列表/搜索/计数同一规则）与 `ProjectContains` 表驱动。
 
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

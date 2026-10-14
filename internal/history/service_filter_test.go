@@ -95,3 +95,106 @@ func TestHistoryServiceFiltersBeforeLimit(t *testing.T) {
 		t.Fatalf("non-matching Project/Provider scope = %+v", got)
 	}
 }
+
+// TestHistoryServiceProjectScopeCoversSubfolders pins what a project scope
+// means: the folder and everything below it, so a session an Agent started in
+// a repository's subfolder still belongs to the repository, while a sibling
+// that merely shares the name prefix does not. The list, the search and the
+// Provider totals all use the one rule.
+func TestHistoryServiceProjectScopeCoversSubfolders(t *testing.T) {
+	service, _ := newTestService(t)
+	for _, tc := range []struct {
+		key, agent, project string
+		updated             int64
+	}{
+		{"claude:root", string(AgentClaudeCode), "/work/a", 4000},
+		{"codex:sub", string(AgentCodex), "/work/a/pkg/web", 3000},
+		{"codex:sibling", string(AgentCodex), "/work/ab", 2000},
+		{"pi:other", string(AgentPi), "/work/b", 1000},
+	} {
+		meta := catalogTestSession(tc.key, "deploy "+tc.key, "/nowhere/"+tc.key, tc.project)
+		meta.Agent = AgentID(tc.agent)
+		meta.UpdatedAt = tc.updated
+		service.Catalog().Put(meta, tc.updated, "")
+	}
+	ctx := context.Background()
+	keys := func(found []SessionSummary) []string {
+		out := make([]string, 0, len(found))
+		for _, summary := range found {
+			out = append(out, summary.Meta.Key)
+		}
+		return out
+	}
+	equal := func(got, want []string) bool {
+		if len(got) != len(want) {
+			return false
+		}
+		for i := range want {
+			if got[i] != want[i] {
+				return false
+			}
+		}
+		return true
+	}
+	for _, scope := range []string{"/work/a", "/work/./a/", "/work/a/"} {
+		listed, err := service.List(ctx, HistoryQuery{ProjectPath: scope, Limit: 10})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if want := []string{"claude:root", "codex:sub"}; !equal(keys(listed), want) {
+			t.Errorf("List under %q = %v, want %v", scope, keys(listed), want)
+		}
+	}
+	searched, err := service.List(ctx, HistoryQuery{ProjectPath: "/work/a", Search: "deploy", Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"claude:root", "codex:sub"}; !equal(keys(searched), want) {
+		t.Errorf("Search under /work/a = %v, want %v", keys(searched), want)
+	}
+	counts, err := service.ProviderCountsIn(ctx, "/work/a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []ProviderCount{{AgentClaudeCode, 1}, {AgentCodex, 1}}; len(counts) != 2 || counts[0] != want[0] || counts[1] != want[1] {
+		t.Errorf("Provider totals under /work/a = %+v, want %+v", counts, want)
+	}
+	all, err := service.ProviderCountsIn(ctx, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	total := 0
+	for _, count := range all {
+		total += count.Count
+	}
+	if total != 4 {
+		t.Errorf("no scope counts %d sessions, want all 4", total)
+	}
+	root, err := service.List(ctx, HistoryQuery{ProjectPath: "/", Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(root) != 4 {
+		t.Errorf("the filesystem root scopes %d sessions, want all 4", len(root))
+	}
+}
+
+func TestProjectContains(t *testing.T) {
+	for _, tc := range []struct {
+		root, path string
+		want       bool
+	}{
+		{"/work/a", "/work/a", true},
+		{"/work/a", "/work/a/pkg", true},
+		{"/work/./a/", "/work/a/pkg/../x", true},
+		{"/work/a", "/work/ab", false},
+		{"/work/a/pkg", "/work/a", false},
+		{"/", "/work/a", true},
+		{"", "/work/a", false},
+		{"/work/a", "", false},
+	} {
+		if got := ProjectContains(tc.root, tc.path); got != tc.want {
+			t.Errorf("ProjectContains(%q, %q) = %v, want %v", tc.root, tc.path, got, tc.want)
+		}
+	}
+}

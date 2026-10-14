@@ -2,12 +2,14 @@ package history
 
 /**
  * [INPUT]: 依赖内存 Catalog 的会话元数据行与项目归一化键
- * [OUTPUT]: 提供 Catalog 的有界会话列表、Project/Provider 筛选、Provider 计数与 metadata 搜索
+ * [OUTPUT]: 提供 Catalog 的有界会话列表、Project/Provider 筛选（Project = 该文件夹及其子文件夹）、可限定 Project 的 Provider 计数与 metadata 搜索，以及给 Trash 行复用的 ProjectContains
  * [POS]: History 查询层；筛选、排序和 LIMIT 在同一遍历内完成，只读元数据，永不触碰会话正文
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 
 import (
+	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -61,10 +63,22 @@ type ProviderCount struct {
 // ProviderCounts returns every Provider in the catalog with its session
 // total, most recently active first — the metadata-only source of the
 // Sessions tab counts, independent of the interactive list limit.
-func (c *Catalog) ProviderCounts() []ProviderCount {
+func (c *Catalog) ProviderCounts() []ProviderCount { return c.ProviderCountsIn("") }
+
+// ProviderCountsIn is ProviderCounts over one project: the sessions started
+// in projectPath or below it ("" counts the whole catalog).
+func (c *Catalog) ProviderCountsIn(projectPath string) []ProviderCount {
+	projectKey := ""
+	if projectPath != "" {
+		if projectKey = NormalizedProjectKey(projectPath); projectKey == "" {
+			return []ProviderCount{}
+		}
+	}
 	latest := map[AgentID]int64{}
 	counts := map[AgentID]int{}
-	for _, row := range c.rows(func(e *catalogEntry) bool { return e.meta.Agent != "" }) {
+	for _, row := range c.rows(func(e *catalogEntry) bool {
+		return e.meta.Agent != "" && (projectKey == "" || withinProject(e.projectKey, projectKey))
+	}) {
 		counts[row.meta.Agent]++
 		latest[row.meta.Agent] = max(latest[row.meta.Agent], row.meta.UpdatedAt)
 	}
@@ -92,9 +106,27 @@ func (c *Catalog) AvailableProviders() []AgentID {
 	return providers
 }
 
+// withinProject reports whether a session's folder key is the project's
+// folder key or lies below it: a session an Agent started in a repository's
+// subfolder still belongs to the repository, while a sibling that merely
+// shares the name prefix does not.
+func withinProject(sessionKey, projectKey string) bool {
+	sep := string(filepath.Separator)
+	return sessionKey == projectKey || strings.HasPrefix(sessionKey, strings.TrimSuffix(projectKey, sep)+sep)
+}
+
+// ProjectContains reports whether path is the project folder root or lies
+// below it, both cleaned — the catalog's own scope rule, for rows that never
+// pass through the catalog (the Trash).
+func ProjectContains(root, path string) bool {
+	rootKey, pathKey := NormalizedProjectKey(root), NormalizedProjectKey(path)
+	return rootKey != "" && pathKey != "" && withinProject(pathKey, rootKey)
+}
+
 // ListFilteredSessions applies Project and Provider scopes BEFORE the bounded
 // limit. Filtering a globally limited page would hide older matching
-// provider conversations (UI-006).
+// provider conversations (UI-006). A Project scope is the folder and
+// everything below it.
 func (c *Catalog) ListFilteredSessions(projectPath string, provider AgentID, limit int) []SessionSummary {
 	projectKey := ""
 	if projectPath != "" {
@@ -103,7 +135,7 @@ func (c *Catalog) ListFilteredSessions(projectPath string, provider AgentID, lim
 		}
 	}
 	return summaries(c.rows(func(e *catalogEntry) bool {
-		return (projectKey == "" || e.projectKey == projectKey) && (provider == "" || e.meta.Agent == provider)
+		return (projectKey == "" || withinProject(e.projectKey, projectKey)) && (provider == "" || e.meta.Agent == provider)
 	}), limit)
 }
 
@@ -129,7 +161,7 @@ func (c *Catalog) SearchMetadata(query string, projectPaths []string, agents []A
 		return []SessionSummary{}
 	}
 	return summaries(c.rows(func(e *catalogEntry) bool {
-		if len(projectKeys) > 0 && !contains(projectKeys, e.projectKey) {
+		if len(projectKeys) > 0 && !slices.ContainsFunc(projectKeys, func(key string) bool { return withinProject(e.projectKey, key) }) {
 			return false
 		}
 		if len(agents) > 0 && !contains(agents, e.meta.Agent) {

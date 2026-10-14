@@ -2,7 +2,7 @@ package nativeui
 
 /**
  * [INPUT]: 依赖只读 HistoryService 的列表状态、多选/行内预览状态和共享 MyGo Design Tokens
- * [OUTPUT]: 提供 Sessions 列表（Agent 标签/搜索/Select/Trash 工具条、项目分组卡片与行、行菜单）、Provider 过滤、扫描中的 Updating 提示、Markdown 导出与删除入口（回收站见 history_trash.go）
+ * [OUTPUT]: 提供 Sessions 列表（Agent 标签/搜索/Select/Trash 工具条（刷新在侧栏项目头）、项目分组卡片与行、行菜单）、Provider 过滤、扫描中的 Updating 提示、Markdown 导出与删除入口（回收站见 history_trash.go）
  * [POS]: History 的列表页；会话详情是 history_detail.go（共享 Chat 视图），本页不再渲染转录
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -37,19 +37,8 @@ func distinctAgents(summaries []history.SessionSummary) []history.AgentID {
 	return out
 }
 
-// historyNav is the Sessions sidebar body (N19 #9: History is now the
-// Sessions view): the index entry — search, provider filters, the Trash
-// toggle, refresh and the count live in the page toolbar, so the sidebar
-// foot holds only Back, as on every inner page. The title bar names the
-// page, so the list starts at its entry.
-func (s *Shell) historyNav(c *ui.Context) {
-	path := s.router.Path()
-	if navTileButton(c, iconHistory, TileBlue, "All sessions", path == routeHistory).Clicked() {
-		s.showHistoryIndex()
-	}
-}
-
 func (s *Shell) historyPage(c *ui.Context) {
+	s.syncHistoryScope()
 	if !s.hist.loaded && !s.hist.loading && s.hist.errText == "" {
 		s.requestHistoryList()
 	}
@@ -72,15 +61,14 @@ func (s *Shell) historyPage(c *ui.Context) {
 }
 
 // historyToolbar is the Sessions control strip, laid out after magpie's:
-// the Agent tabs lead, the search field, Select, the Trash toggle (with
-// Empty Trash inside the Trash) and Refresh trail as one cluster. A control
-// with nothing to act on stays out (one Agent needs no tabs, an empty Trash
-// needs no toggle, an empty list needs no Select). A narrow window wraps the
-// cluster onto a second line as a whole instead of squeezing the field to
-// nothing.
+// the Agent tabs lead, the search field, Select and the Trash toggle (with
+// Empty Trash inside the Trash) trail as one cluster; Refresh is the
+// sidebar header's. A control with nothing to act on stays out (one Agent
+// needs no tabs, an empty Trash needs no toggle, an empty list needs no
+// Select). A narrow window wraps the cluster onto a second line as a whole
+// instead of squeezing the field to nothing.
 func (s *Shell) historyToolbar(c *ui.Context) {
 	sp := Spacing()
-	k := gorexColorsOf(c.Theme().Dark)
 	ui.Row(c).FillWidth().Padding(pageTopInset(), sp.XL, sp.M).Gap(sp.M).AlignItems(ui.Center).Wrap().Children(func() {
 		s.historyAgentTabs(c)
 		ui.Spacer(c)
@@ -95,13 +83,10 @@ func (s *Shell) historyToolbar(c *ui.Context) {
 			if s.trashAvailable() {
 				s.historyTrashToggle(c)
 			}
-			if s.hist.showTrash && len(s.hist.trashItems) > 0 {
+			if s.hist.showTrash && len(s.trashScoped()) > 0 {
 				if ui.Button(c, "Empty Trash").Clicked() {
 					s.confirmEmptyTrash()
 				}
-			}
-			if gorexIconButton(c, k, iconRefresh, "Refresh", "Refresh", false, gorexIconBtn, gorexIconGlyph).Clicked() {
-				s.refreshHistoryScan()
 			}
 		})
 	})
@@ -158,13 +143,14 @@ func (s *Shell) historyAgentTabs(c *ui.Context) {
 }
 
 // historyTabCount is a Provider's tab total, matching what the list below
-// shows: the catalog total, or — in the Trash — what the Trash holds of it.
+// shows: the scope's total, or — in the Trash — what the Trash holds of it
+// within the scope.
 func (s *Shell) historyTabCount(provider history.AgentID) int {
 	if !s.hist.showTrash {
 		return s.hist.counts[provider]
 	}
 	count := 0
-	for _, item := range s.hist.trashItems {
+	for _, item := range s.trashScoped() {
 		if item.Agent == provider {
 			count++
 		}
@@ -199,6 +185,8 @@ func (s *Shell) historyListBody(c *ui.Context) {
 		emptyState(c, "Couldn't load sessions", "Try Refresh.")
 	case s.hist.loaded && len(s.hist.sessions) == 0 && historyFiltersActive(s.hist.query, s.hist.provider):
 		s.noMatchingSessions(c)
+	case s.hist.loaded && len(s.hist.sessions) == 0 && s.hist.scopeRoot != "" && s.hist.allTotal > 0:
+		s.noProjectSessions(c, "No sessions in this project")
 	case s.hist.loaded && len(s.hist.sessions) == 0:
 		emptyState(c, "No sessions yet", "")
 	default:
@@ -214,6 +202,8 @@ func (s *Shell) trashListBody(c *ui.Context) {
 		loadingState(c, "Loading Trash…")
 	case len(rows) == 0 && historyFiltersActive(s.hist.query, s.hist.provider):
 		s.noMatchingSessions(c)
+	case len(rows) == 0 && s.historyScopeRoot() != "" && len(s.hist.trashItems) > 0:
+		s.noProjectSessions(c, "Nothing from this project in the Trash")
 	case len(rows) == 0:
 		emptyState(c, "Trash is empty", "Deleted sessions wait here until you delete them for good.")
 	default:
