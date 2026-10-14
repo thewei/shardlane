@@ -7,19 +7,23 @@ proc_brands.go: 进程与工具/服务品牌标识解析器，将前台进程、
 brands.go: Agent 品牌位图资产与视觉标识解析器，将 live Agent 映射为全彩品牌 Logo 与 agentMarkForPane 窗格标识
 agent_visual.go: Agent 品牌矢量回退图标字典、窗格 Agent 绑定与状态指示点（statusDot）
 brands_test.go: Agent 品牌位图资产检索、Antigravity 及其它 Provider 标识与 agentProvider 回退回归
-gorex_style.go: 扁平视觉系统：卡片/配色、图标按钮度量（gorexIconBtn·Glyph、gorexPaneBtn·Glyph 为唯一尺寸来源）、gorexPulldown 图标+下拉箭头（标题栏 Actions）与 shortDir/samePath 路径处理；无渐变、无投影
-terminal.go: 终端画布与 Gorex 窗格卡片渲染器，Pane 标题双击最大化/恢复、最大化 Tab 的窗格 Logo 数量角标（Tab 内面板数，无重叠堆叠画）、窗格标题取 Agent 名（Shardlane 生成的短名 <kind>-<6hex> 不当标题，回落到 Agent 品牌名）、标题原生拖动放置（跨窗格/跨 Tab 移动、拆分与交换）与 split 分隔条拖拽调宽高（解析为 Herdr pane.resize，双击回到 50/50；布局权威在 Herdr）
+gorex_style.go: 扁平视觉系统：卡片/配色、图标按钮度量（gorexIconBtn·Glyph、gorexPaneBtn·Glyph 为唯一尺寸来源）、gorexToggleFace 按钮的按下/悬停/「开」态唯一来源（图标开关与文字开关同一枚中性芯片；列表/树行的选中仍是 SidebarSelect）、gorexPulldown 图标+下拉箭头（标题栏 Actions）与 shortDir/samePath 路径处理；无渐变、无投影
+terminal.go: 终端画布与 Gorex 窗格卡片渲染器，Pane 标题双击最大化/恢复、最大化 Tab 的窗格 Logo 数量角标（Tab 内面板数，无重叠堆叠画）、窗格标题取 Agent 名（Shardlane 生成的短名 <kind>-<6hex> 不当标题，回落到 Agent 品牌名）、标题原生拖动放置（跨窗格/跨 Tab 移动、拆分与交换）与 split 分隔条拖拽调宽高（解析为 Herdr pane.resize，双击回到 50/50；布局权威在 Herdr）；窗格头的目录文案不复述已有信息——标签已写出目录（titleSpellsOutDir，F168 去重对 shortDir 截断路径失效的修复）或单卡时标题栏第二行已是该窗格目录（paneCardCaption）都不再出第三份
 run_command_button.go: 窗格卡片头的项目命令运行控件：嗅探命令（package.json/Makefile/justfile + 手写 Script 合并）经 root 键缓存读盘外构建；Run 直跑最后使用命令、菜单全量列出（last-used 置顶）；忙碌（pane.process_info 扫描事实）非 Agent 窗格变 Stop（pane.send_text 写 ETX=Ctrl+C）；事务走 ShellReady 探测 + pane.send_text 字面写入（agent.send_keys 只认 Agent 目标，2026-10-13 隔离探针验证；headless 按 mutate 规则丢弃），无新 Herdr 方法
 run_command_button_test.go: 运行控件状态机回归（命令菜单内容、last-used 置顶、忙碌换 Stop、Agent 繁忙隐藏、无命令隐藏、headless 点击安全丢弃）与 computePaneBusy 纯函数、合并形状测试
-breadcrumb_switcher.go: 标题栏面包屑与快速切换弹层所有者，Pane 顺序与 Herdr 实际布局对齐并展示品牌图标
-titlebar.go: 内容列标题栏（面包屑与工具区）、整高侧栏上的红绿灯带与侧栏切换钮（sidebarBand/sidebarToggle）、视图切换（History 内页先返回根）与 Windows 平台窗口控件支持
+breadcrumb_switcher.go: 标题栏面包屑与快速切换弹层所有者，Pane 顺序与 Herdr 实际布局对齐并展示品牌图标；crumbButton 是面包屑与内页标题共用的唯一一枚 crumb 渲染
+titlebar.go: 内容列标题栏（每条路由同一版式的双行身份块：Workspace 为面包屑 + cwd，其余路由为 route_header.go 的标题块；标题栏是页面标题与页面动作的唯一归属）、整高侧栏上的红绿灯带与侧栏切换钮（sidebarBand/sidebarToggle）、视图切换（History 内页先返回根）与 Windows 平台窗口控件支持
+route_header.go: 非 Workspace 路由的标题栏身份（routeHeader/routeHeaderSpec：Sessions、Session 详情[Sessions › 标题，可返回，事实行，会话操作菜单]、Files[根路径，选中文件时 Copy Path/Reveal in Finder]、Hosts[SSH 配置路径]、Settings[Settings › 分组，由 settingsSections 命名]、Inspector）与 routeHeaderBlock/headerDetailRow（与 Workspace 面包屑同一两行版式；第二行空也占位，标题行进出内页不动）
+unified_header_test.go: 标题栏单一归属回归——内页标题只在标题栏且各路由落在同一位置、内页/侧栏不自画页头或标题回声、每个内页至多一个 Refresh 且为图标、Sessions/Settings/Hosts 侧栏列表同一起点（x/y）、Session 详情标题栏可返回列表、各路由 routeHeader 身份
+toggle_face_test.go: 开关「开」态回归——Sessions 工具栏的文字开关（Select/Hidden）与标题栏图标开关同为中性芯片，不再是蓝色选中色（像素采样，深浅两套外观）
+copy_style_test.go: 文案大小写回归——emptyState/workspaceEmptyBanner 的字面标题一律句首大写（专有名词除外）；菜单项（.Item("…") 字面量）一律 Title Case（冠词/短介词小写），拦下两个方向的大小写漂移
 router.go: 单一 Router 的页面归属、精确 History 路径分类与窗口标题路由语义
 navigation_semantics_test.go: UI-009 顶栏/侧栏同级返回、重复点击、深链接与浏览历史回归
 panel_motion.go: 整高侧栏（macOS vibrancy 材质、无 vibrancy 时不透明回退）的收起/展开动画与尾缘拖拽调宽（sidebarLimits 钳制，宽度会话持久化）；无右栏布局宿主
 panel_motion_test.go: Reduce Motion 下左导航收起/恢复，以及各窗口宽度无右栏回归
 right_panel.go: 旧会话设置兼容字段及 Files 缓存、根目录 identity fence、URL Preview 管理；**不绘制右栏**
-right_panel_files.go: /files 左侧目录缓存/树（共用侧栏网格行与项目/分支头部）及点击加载预览的适配器
-page_files.go: Header Files 独立页面：左树/中预览、当前 Tab CWD 归属和空态
+right_panel_files.go: /files 左侧目录缓存/树（共用侧栏网格行与项目/分支头部；工具条用共用 gorexIconButton，开关态与全 App 同一枚中性芯片，无私有 accent 底）及点击加载预览的适配器
+page_files.go: Header Files 独立页面：左树/中预览、当前 Tab CWD 归属和空态；页面只画内容，标题/根路径/文件动作在标题栏（route_header.go）
 quick_panel.go: 托盘与顶栏 Agent 快捷浮层宿主，提供 Agent 概览与 Services 双 Tab 及详情卡片
 quick_panel_services.go: Agent 浮层里的 Services 内容：当前 Tab Scripts 与观测端口
 quick_panel_test.go: QuickPanel 尺寸伸缩、卡片详情点击与空态行为测试
@@ -34,7 +38,7 @@ page_history.go: Sessions 中心列表布局（参照 magpie 会话历史）：A
 history_state.go: HistoryService 列表查询的生成代际隔离，筛选清空旧可选行/预览/多选；Provider 元数据选择与各 Provider 总数（可选 HistoryProviderCountView）、扫描分批上报（可选 HistoryScanProgressView：每批约 100 个来源在窗口线程刷新一次可见列表，数千个单会话文件夹不再把页面按在 Loading 态）；分组展开、多选、行内预览与详情页帧戳（只读 Chat 绑定的空闲释放）状态
 history_select.go: Sessions 多选：行/项目头勾选标记、底部批量 Hide/Restore 栏；只改本地隐藏列表，不碰 Provider 会话文件
 history_preview.go: 行内会话预览：点行懒读原始会话末尾若干条（Tail 窗口，代际防过期），只读展示，带 Open/Continue/Hide/Restore；不缓存任何会话内容
-history_detail.go: /history/{id} 详情页：头部（标题、Provider · 项目 · 模型、操作菜单）+ 与 Chat 共用的只读视图（WebView 页或原生时间线回退，最新消息优先、向上懒加载）；页面停止构建后释放只读绑定
+history_detail.go: /history/{id} 详情页：与 Chat 共用的只读视图（WebView 页或原生时间线回退，最新消息优先、向上懒加载）；页面停止构建后释放只读绑定；标题、Provider · 项目 · 模型与操作菜单在标题栏（route_header.go），页面不自带头部
 history_continue.go: Sessions 的 Continue / Continue in <Agent>：只读规划（PlanHistoryContinuation）→ 已在运行则定位窗格，否则经共享确认框后由既有 Herdr launch transaction 新建 Tab 续接（同 Agent 原生 resume 或跨 Agent 带最新消息简报），成功选中新窗格；失败按类给一行文案（shell 没就绪、Agent 没启动、可能已启动等分开说，不猜原因），已创建的窗格直接展示；引擎经 continuationRuntime 缝可被测试替换
 text_clip.go: Inspector 摘要与工具输出预览共用的按字节/行数 Unicode 安全截断（clipNativeText/clipPreview）
 history_test.go: History 页面真实 Catalog 场景回归
@@ -49,8 +53,9 @@ sidebar.go: 唯一左栏宿主——Workspace/Agent/Pin 树、Git 引用导航�
 sidebar_test.go: 内页侧栏导航与页脚返回的位置/文案、Settings 导航、Pin 区块回归
 detail_fact.go: Agent 详情复用的只读字段样式，从退役 Inspector 解耦
 shell.go: 核心 Shell 宿主，协调 Router/Window/Titlebar；首次 Herdr 加载独占中心展示并淡入工作区，Git sidebar 与双模式分栏展示态仅本地持有
-page_settings.go: 五个 Settings 分组页（General/Terminal/Agents/Git/Diagnostics）统一 settingsPage Header/Scroll/最大内容宽度；设置项只经 settingsGroup/formRow 分组行表达，支持外观主题/透明度/密度与终端配置；Diagnostics 兼容分组承载 Rich chat view 开关（实现细节，不放在 General）
-page_providers.go: Agents 设置页——单一分组列表，每个 Agent 一行（品牌 tile + 状态胶囊 + 单一动作）；直连 Status hook 为主，Herdr integration 作为 attached 子行降级为 fallback（hook 健康时仅次要展示、不提供动作），跟随 settingsPage 公共头部与滚动容器
+page_settings.go: 五个 Settings 分组页（General/Terminal/Agents/Git/Diagnostics）统一 settingsPage Scroll/最大内容宽度（无页内标题：标题栏按 settingsSections 表命名分组，侧栏列表也不再回声 "Settings"）；设置项只经 settingsGroup/formRow 分组行表达，支持外观主题/透明度/密度与终端配置；Diagnostics 兼容分组承载 Rich chat view 开关（实现细节，不放在 General）
+page_providers.go: Agents 设置页——单一分组列表，每个 Agent 一行（品牌 tile + 状态胶囊 + 单一动作）；直连 Status hook 为主，Herdr integration 作为 attached 子行降级为 fallback（hook 健康时仅次要展示、不提供动作），跟随 settingsPage 滚动容器；Refresh 为工具条图标按钮（与全 App 刷新同一形态）
+page_hosts.go, hosts_nav.go: /hosts 内页（详情中心 + 侧栏 SSH Config/Herdr Machines 列表）；页面无自带页头，列表头的图标刷新是该页唯一的 Refresh
 providers_ui.go: Providers 统一状态机（经 herdr.RunCLI 取 integration 状态；失败只显示人话——integrationErrorText，细节进日志；一次审计同时覆盖两面、进入/刷新/动作后审计、hook 主导 + fallback 修复动作门控、在途防重、一次性 toast、两面状态→语义色映射）
 workspace.go: Terminal/Chat/Diff/Commit 唯一主表面，Changes 主内容采用上下可调 Git Review，Chat 保持 Agent 身份门禁
 chat_ui.go: Chat Timeline/Composer 和身份消失时的安全空态，不得泄漏旧 transcript；bindChatWindow（Tail 窗口）供 Workspace 历史绑定与 Sessions 详情只读绑定共用，releaseHistoryChat 保证只读绑定不外泄给窗格/Inspector
@@ -103,9 +108,9 @@ git_sequencer_ui_test.go: Merge/Revert/Cherry-pick 的 headless 冲突状态、�
 dialogs.go: Git 危险动作确认绑定打开时 repository root；Merge 策略 Modal 失效时关闭；Confirm/Cancel 保持安全默认
 branch_menu.go: 本地分支 Popover 可搜索/独立滚动/当前分支优先，Switch/More 层级；Merge FF/no-FF 策略和 dirty Branch Switch 的真实确认分发
 git_workbench_actions_test.go: Git 本地操作条、Modal、Draft Guard、Merge/Revert Confirm 的 headless 回归
-ds_components.go: 通用卡片、settingsGroup/formRow 分组行（控件先于标签入树，保证焦点/朗读顺序）、groupLabel、iconTile 彩色图标块、compactButton/compactPrimaryButton 紧凑按钮层级（密集工具栏/行内操作的唯一字号来源，业务代码不再对 Button 内联 FontSize）、工作区 Chat/Diff 轻量空状态组件（窄列时操作换行到消息下方，消息不被挤成单字列）
+ds_components.go: 通用卡片、pageTopInset（标题栏到页面首行的唯一顶部留白令牌）、settingsGroup/formRow 分组行（控件先于标签入树，保证焦点/朗读顺序）、groupLabel、iconTile 彩色图标块、compactButton/compactPrimaryButton 紧凑按钮层级（密集工具栏/行内操作的唯一字号来源，业务代码不再对 Button 内联 FontSize）、工作区 Chat/Diff 轻量空状态组件（窄列时操作换行到消息下方，消息不被挤成单字列）
 unified_page_test.go: UI-007/UI-008 Settings/Git/Chat 跨页面基础回归与尺寸矩阵（headless；含窄窗口 clean 状态可读性）
-pane_header_visuals_test.go: 窗格头部视觉解析、Agent 图标与名称解析、路径格式化及最大化 Tab 窗格计数单元测试
+pane_header_visuals_test.go: 窗格头部视觉解析、Agent 图标与名称解析、路径格式化、标签已写出目录/单卡不复述目录的去重及最大化 Tab 窗格计数单元测试
 chat_hooks.go: Shell 钩子层：挂载原生 apphook 进程内 IPC 服务与 spool 兼容层，直接接收并更新 Agent 状态与会话绑定，驱动 blocked 交互检测
 chat_hooks_test.go: 钩子事件解析、提示词检测、投影等价去重与原生 apphook 状态/会话更新回归
 

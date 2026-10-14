@@ -38,7 +38,7 @@ Packaging identity and the chat WebView frontend are configured once in `mygo.co
 
 ## Native design system
 
-Presentation is componentized rather than page-styled ad hoc: `internal/nativeui` provides `theme.go` (macOS/shadcn-like neutral tokens), `icons.go` (reusable outline SVG icon set), and `components.go` (iconButton/navButton/panelCard/treeRow) plus the titlebar/sidebar/project-tree/router/page files. On macOS the window uses MyGo vibrancy behind the full-height sidebar (traffic lights included) while the title bar and content surfaces stay opaque for terminal and text clarity. Reuse these before adding one-off page styling.
+Presentation is componentized rather than page-styled ad hoc: `internal/nativeui` provides `theme.go` (macOS/shadcn-like neutral tokens), `icons.go` (reusable outline SVG icon set), and `components.go` (navButton/panelCard/treeRow), `gorex_style.go` (gorexIconButton/gorexToggleFace) plus the titlebar/sidebar/project-tree/router/page files. On macOS the window uses MyGo vibrancy behind the full-height sidebar (traffic lights included) while the title bar and content surfaces stay opaque for terminal and text clarity. Reuse these before adding one-off page styling.
 
 ## Diagnostics and bounded logs
 
