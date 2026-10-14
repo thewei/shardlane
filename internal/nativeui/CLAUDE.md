@@ -27,9 +27,12 @@ page_files.go: Header Files 独立页面：左树/中预览（查看条 + 分级
 files_native_preview.go: Files 预览分级计划与原生层——选中后离 UI lane 探测 size×flavor×偏好：文本/代码/Markdown 源码进只读 editor.View（Buffer 离 UI lane 构建，8 MiB 上限、截断胶囊、散文自动换行），Markdown 渲染与网页图片交 WebView 页，解码得了的图片原生位图，其余给真实失败态；查看条（名称/大小/截断/Rendered⇄Source 分段）横跨所有层级；重命名、偏好切换、Source 切换都重新计划
 code_theme.go: codeEditorTheme——把 Git 评审的语法色/代码色/行号色（gd_palette 单一来源）穿到框架 editor 上，同一份代码在 Files 与 Git 评审里同色
 files_preview_test.go: 预览分级回归（文本/代码原生、Markdown 渲染⇄源码与超限、网页图片与「Rich file preview」关闭、截断/二进制/空文件/CJK、重命名重新计划、桥只放行页面拥有的文件、语法配色单一来源）
-quick_panel.go: 托盘与顶栏 Agent 快捷浮层宿主，提供 Agent 概览与 Services 双 Tab 及详情卡片
-quick_panel_services.go: Agent 浮层里的 Services 内容：当前 Tab Scripts 与观测端口
-quick_panel_test.go: QuickPanel 尺寸伸缩、卡片详情点击与空态行为测试
+quick_panel.go: 托盘与顶栏 Agent 快捷浮层宿主：顶部 Agents/Services 分段（浮层无标题），Agents 列表按状态分组，一层到底——点击行直达面板并收起浮层；高度随内容增长（预算常数取自真实布局）
+quick_panel_services.go: Agent 浮层里的 Services 内容：当前 Tab Scripts 与观测端口（分区标题与 Agents 分组同一构件）
+quick_panel_test.go: QuickPanel 高度预算（纯函数 + 真实布局贴合含用量行）、状态分组、点击直达（Terminal/Chat/记忆面板/从 Diff 返回）、右键菜单与行尾标记已审阅回归
+agent_quick_panel.go: 浮层的状态分组（quickPanelGroups）、分组标题（quickPanelGroupHeader）、条目行（点击直达、行尾标记已审阅、右键菜单）与直达动作 openQuickPanelEntry/openAgentTerminal；另保留历史遗留的统计 tile（无调用方）
+agent_quick_panel_test.go: 状态分组的优先级顺序、空组省略与组内保序回归
+agent_card.go: 侧栏与 Agent 浮层共用的紧凑 Agent 卡片 agentCardRow（标记/标题/供应商/状态点，可选行尾槽）
 right_panel_git_test.go: Diff/历史 Commit 保留左导航/中预览而不绘制旧 Review Inspector
 command_center_ui.go: Command Center Files 操作直达独立 /files 页面，不受旧右栏宽度限制
 project_tree.go: 侧栏 Workspace/Tab/Pane 原生拖拽入口及运行状态树，尊重 Herdr 权威顺序而非按 Agent 状态重排；行内无 "…"，项目行悬停 "+"（New Tab），其余动作经右键菜单

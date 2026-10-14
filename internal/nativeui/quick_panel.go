@@ -10,19 +10,20 @@ import (
 )
 
 /**
- * [INPUT]: 依赖 mygo 的 Flyout（Tray/Parent 锚定、Popover 系统材质、菜单式关闭与 Escape）、ui.Segmented、agent_card 共享卡片、tray_model 的计数
- * [OUTPUT]: 对外提供 Shell.QuickPanelView（Agent 概览或聚焦详情）、Shell.ToggleQuickPanel（托盘）、Shell.toggleAgentActivityPanel（标题栏按钮）、QuickPanelHeightFor（内容驱动高度纯函数）
- * [POS]: Agent 活动的唯一浮层：托盘/标题栏浏览概览，侧栏/列表卡片浏览精确 Agent；同一 Flyout 生命周期，锚定/贴边/翻转/关闭归框架
+ * [INPUT]: 依赖 mygo 的 Flyout（Tray/Parent 锚定、Popover 系统材质、菜单式关闭与 Escape）、ui.Segmented、agent_card 共享卡片、agent_quick_panel 的分组与条目行
+ * [OUTPUT]: 对外提供 Shell.QuickPanelView（Agents 按状态分组的列表 / Services）、Shell.ToggleQuickPanel（托盘）、Shell.toggleAgentActivityPanel（标题栏按钮）、QuickPanelHeightFor（内容驱动高度纯函数）
+ * [POS]: Agent 活动的唯一浮层：托盘/标题栏打开，一层到底——点击 Agent 直达其面板并收起浮层，没有第二层详情；同一 Flyout 生命周期，锚定/贴边/翻转/关闭归框架
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 
-// Floating Agent activity panel (0.7 §17.1/§17.2, 2026-10-11 revision): one
+// Floating Agent activity panel (0.7 §17.1/§17.2, 2026-10-14 revision): one
 // MyGo flyout at a time — a system Popover on macOS — anchored beneath the
-// menu-bar item, the titlebar's agent button, or a sidebar Agent card. It
-// takes the keyboard while shown and closes like a menu: outside click,
-// focus moving away, app deactivation, or Escape. One shared
-// StatusCenterSnapshot, a status tab group switching the agent list, and the
-// sidebar's compact agent cards. The height follows the content up to the
+// menu-bar item or the titlebar's agent button. It takes the keyboard while
+// shown and closes like a menu: outside click, focus moving away, app
+// deactivation, or Escape. One shared StatusCenterSnapshot, a two-tab switch
+// (Agents, Services) and, under Agents, the sidebar's compact agent cards
+// grouped by state. There is one layer: a click lands on the Agent's own
+// panel and closes the flyout. The height follows the content up to the
 // fixed cap — beyond it the list scrolls inside.
 
 // QuickPanelWidth is the §17.1 suggested panel width (360–420 DIP).
@@ -35,27 +36,31 @@ const QuickPanelHeight = 480
 // quickPanelGap keeps breathing room between the anchor and the panel.
 const quickPanelGap = 8
 
-// quickPanelChromeHeight budgets the header summary + status tab group +
-// scroll padding; quickPanelRowHeight is one agent card plus its gap;
-// quickPanelEmptyHeight is the empty state's budget.
+// quickPanelChromeHeight budgets the tab switch plus the list's own padding;
+// quickPanelGroupHeight is one status header; quickPanelRowHeight is one
+// agent card; quickPanelUsageHeight is the usage caption under a card that
+// has one; quickPanelEmptyHeight is the empty state's budget;
+// quickPanelOfflineHeight is the Reconnect row's. They are measured from the
+// rendered layout (TestQuickPanelHeightHoldsTheContent keeps them honest).
 const (
-	quickPanelChromeHeight = 180
-	quickPanelRowHeight    = 44
-	quickPanelEmptyHeight  = 72
+	quickPanelChromeHeight  = 52
+	quickPanelGroupHeight   = 25
+	quickPanelRowHeight     = 38
+	quickPanelUsageHeight   = 17
+	quickPanelEmptyHeight   = 72
+	quickPanelOfflineHeight = 36
 )
 
 // quickPanelMinHeight keeps the panel presentable when it is nearly empty.
 const quickPanelMinHeight = 160
 
-// The focused Agent card uses the same flyout but a shorter,
-// action-oriented detail layout, rather than a second popup implementation.
-const quickPanelAgentHeight = 328
-
 // QuickPanelHeightFor returns the content-driven panel height: chrome plus
-// one row per listed agent, clamped between the minimum and the fixed cap
-// (the panel sizes to content, it is not a fixed-height window).
-func QuickPanelHeightFor(rows int) int {
-	budget := quickPanelChromeHeight + rows*quickPanelRowHeight
+// one header per status group, one row per listed agent and one caption per
+// row that carries a usage line, clamped between the minimum and the fixed
+// cap (the panel sizes to content, it is not a fixed-height window).
+func QuickPanelHeightFor(rows, groups, captions int) int {
+	budget := quickPanelChromeHeight + groups*quickPanelGroupHeight +
+		rows*quickPanelRowHeight + captions*quickPanelUsageHeight
 	if rows == 0 {
 		budget = quickPanelChromeHeight + quickPanelEmptyHeight
 	}
@@ -71,10 +76,10 @@ func QuickPanelHeightFor(rows int) int {
 // QuickPanelView renders the floating panel content (§17.2): over the
 // popover's material on macOS the content draws no background of its own;
 // elsewhere it draws the panel (Windows 11 rounds and outlines the flyout,
-// so no radius or border there). The shared StatusCenterSnapshot feeds the
-// summary header, the status tab group and the agent cards; a focused Agent
-// swaps the whole body for its detail layout. Escape closes through the
-// flyout itself (§17.1) — the view deliberately does not take it.
+// so no radius or border there). A two-tab switch sits on top — the tabs name
+// the panel, so it has no title of its own — over the Agents list grouped by
+// state or the Services tab. Escape closes through the flyout itself
+// (§17.1) — the view deliberately does not take it.
 func (s *Shell) QuickPanelView(c *ui.Context) {
 	t := c.Theme()
 	sp := Spacing()
@@ -88,22 +93,7 @@ func (s *Shell) QuickPanelView(c *ui.Context) {
 		}
 	}
 	body.Children(func() {
-		snapshot := s.BuildStatusCenterSnapshot()
-		if s.quickPanelAgent != nil {
-			s.agentQuickPanelDetail(c, snapshot)
-			return
-		}
-		entries := snapshot.Entries
-		header := QuickPanelHeader(snapshot, !s.offline)
-		if s.quickPanelTab == 1 {
-			header = "Scripts and open ports"
-		}
-		ui.Column(c).FillWidth().Padding(sp.M, sp.L).Gap(sp.XS).
-			BorderWidth(0, 0, 1, 0).BorderColor(tokens.BorderSubtle).Children(func() {
-			ui.Text(c, "Agents & Services").FontSize(Typography().Heading).FontWeight(WeightSemibold)
-			ui.Text(c, header).FontSize(Typography().Caption).TextColor(t.TextMuted).SingleLine()
-		})
-		ui.Row(c).FillWidth().Padding(sp.S, sp.L, 0).Children(func() {
+		ui.Row(c).FillWidth().Padding(sp.M, sp.M, sp.XS).Children(func() {
 			view := s.quickPanelTab
 			if ui.Segmented(c, &view, "Agents", "Services").FillWidth().Changed() {
 				s.quickPanelTab = view
@@ -115,45 +105,30 @@ func (s *Shell) QuickPanelView(c *ui.Context) {
 			return
 		}
 		if s.offline {
-			ui.Row(c).FillWidth().Padding(sp.M, sp.L, 0).Gap(sp.S).AlignItems(ui.Center).Children(func() {
+			ui.Row(c).FillWidth().Padding(sp.S, sp.M, 0).Gap(sp.S).AlignItems(ui.Center).Children(func() {
 				ui.Text(c, "Herdr disconnected").FontSize(Typography().Caption).Grow(1).TextColor(t.TextMuted)
 				if ui.Button(c, "Reconnect").Clicked() {
 					s.reloadInstances(false)
 				}
 			})
 		}
-		// N19 #5: a simple agent list, like the sidebar's — no stat tiles,
-		// no status filter rail.
-		ui.Scroll(c).Grow(1).Children(func() {
-			ui.Column(c).FillWidth().Padding(sp.S, sp.L, sp.L).Gap(sp.S).Children(func() {
+		entries := s.filterStatusEntries(s.BuildStatusCenterSnapshot())
+		ui.Scroll(c).Grow(1).MinHeight(0).Children(func() {
+			ui.Column(c).FillWidth().Padding(0, sp.S, sp.M).Children(func() {
 				if len(entries) == 0 {
 					emptyState(c, "No active agents", "")
 					return
 				}
-				entryCards := make([]agent.AgentCardModel, len(entries))
+				cards := make([]agent.AgentCardModel, len(entries))
 				for i, entry := range entries {
-					entryCards[i] = entry.Card
+					cards[i] = entry.Card
 				}
-				dupProjects := duplicateAgentProjectLabels(entryCards)
-				for _, entry := range entries {
-					entry := entry
-					var row ui.Element
-					ui.Box(c).Children(func() {
-						row = s.agentCardRow(c, entry.Card, false, dupProjects)
-						// §17.2: the usage caption renders under the card
-						// when the cached History-meta projection has facts.
-						if usage := s.usageLineFor(entry.Card.Key); usage != "" {
-							ui.Box(c).Children(func() {
-								ui.Text(c, usage).FontSize(Typography().Caption).
-									TextColor(t.TextMuted).SingleLine()
-							})
-						}
-					})
-					if row.Clicked() {
-						key := entry.Card.Key
-						s.quickPanelAgent = &key
-						s.fitQuickPanel()
-						s.invalidateQuickPanel()
+				dupProjects := duplicateAgentProjectLabels(cards)
+				for _, group := range quickPanelGroups(entries) {
+					tone := group.Tone
+					quickPanelGroupHeader(c, group.Label, len(group.Entries), &tone)
+					for _, entry := range group.Entries {
+						s.quickPanelEntryRow(c, entry, dupProjects)
 					}
 				}
 			})
@@ -204,7 +179,6 @@ func (s *Shell) ToggleQuickPanel() {
 		s.closeQuickPanel()
 		return
 	}
-	s.quickPanelAgent = nil
 	s.openQuickPanelFlyout(mygo.FlyoutOptions{
 		Tray:      s.trayHandle,
 		Placement: mygo.PlacementBottom,
@@ -224,7 +198,6 @@ func (s *Shell) toggleAgentActivityPanel(anchor ui.Element) {
 		s.closeQuickPanel()
 		return
 	}
-	s.quickPanelAgent = nil
 	s.openQuickPanelFlyout(mygo.FlyoutOptions{
 		Parent:    s.win,
 		Anchor:    quickAnchorRect(anchor.Bounds()),
@@ -247,8 +220,7 @@ func quickAnchorRect(b ui.Rect) mygo.Rectangle {
 // survives the stale callback.
 func (s *Shell) openQuickPanelFlyout(base mygo.FlyoutOptions) {
 	// Detach before closing: a programmatic Close fires OnClosed inline, and
-	// the stale listener must not reset the selection the caller just set
-	// (the agent-card switch path opens the replacement right here).
+	// the stale listener must not clear the replacement opened right here.
 	if prev := s.quickPanel; prev != nil {
 		s.quickPanel = nil
 		prev.Close()
@@ -268,22 +240,21 @@ func (s *Shell) openQuickPanelFlyout(base mygo.FlyoutOptions) {
 		s.quickPanelDismissedAt = time.Now()
 		if s.quickPanel == panel {
 			s.quickPanel = nil
-			s.quickPanelAgent = nil
 		}
 	})
 }
 
-// closeQuickPanel closes the open panel; the OnClosed listener resets the
-// selection. Nil-safe (headless sessions, tests, already-closed panel).
+// closeQuickPanel closes the open panel. Nil-safe (headless sessions, tests,
+// already-closed panel).
 func (s *Shell) closeQuickPanel() {
 	if s.quickPanel != nil {
 		s.quickPanel.Close()
 	}
 }
 
-// hideQuickPanel is the action-button path (open Terminal / Chat /
-// Inspector): close the panel and let OnClosed reset its state, so the
-// content does not flicker to another layout during the close animation.
+// hideQuickPanel is the navigation path (a row click, a menu action): close
+// the panel before landing, so the content does not flicker to another
+// layout during the close animation.
 func (s *Shell) hideQuickPanel() {
 	s.closeQuickPanel()
 }
@@ -297,16 +268,24 @@ func (s *Shell) invalidateQuickPanel() {
 }
 
 // quickPanelContentHeight is the panel height for the current content
-// (§17.1): the focused detail layout, the fixed Services tab, or the
-// overview's content-driven height.
+// (§17.1): the fixed Services tab, or the Agents list's content-driven
+// height (the Reconnect row included while Herdr is unreachable).
 func (s *Shell) quickPanelContentHeight() int {
-	if s.quickPanelAgent != nil {
-		return quickPanelAgentHeight
-	}
 	if s.quickPanelTab == 1 {
 		return QuickPanelHeight
 	}
-	return QuickPanelHeightFor(len(s.filterStatusEntries(s.BuildStatusCenterSnapshot())))
+	entries := s.filterStatusEntries(s.BuildStatusCenterSnapshot())
+	captions := 0
+	for _, entry := range entries {
+		if s.usageLineFor(entry.Card.Key) != "" {
+			captions++
+		}
+	}
+	height := QuickPanelHeightFor(len(entries), len(quickPanelGroups(entries)), captions)
+	if s.offline {
+		height += quickPanelOfflineHeight
+	}
+	return min(height, QuickPanelHeight)
 }
 
 // fitQuickPanel resizes the open flyout to the current content height; the

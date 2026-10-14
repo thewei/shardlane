@@ -3,69 +3,45 @@ package nativeui
 import (
 	"testing"
 
-	"github.com/egoist/mygo/ui"
 	"github.com/wh-studio/herdr-client/internal/agent"
 )
 
 /**
- * [INPUT]: 依赖 quickPanelShell 的真实卡片投影和 MyGo headless Tester
- * [OUTPUT]: 钉住浮层概览统计、单 Agent 精确身份、返回列表、已消失 Agent 的安全空态
- * [POS]: agent_quick_panel UI 交互的回归测试，不访问用户实例或修改运行时
+ * [INPUT]: 依赖 StatusCenterEntry 的目录分桶
+ * [OUTPUT]: 钉住浮层的状态分组：按优先级排序、空组省略、各组内保持快照顺序
+ * [POS]: agent_quick_panel 分组的纯函数回归；整面板渲染与点击直达见 quick_panel_test.go，不访问用户实例或修改运行时
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 
-func TestAgentQuickPanelOverviewStats(t *testing.T) {
-	// N19 #5: the quick panel is a simple agent list like the sidebar's —
-	// no stat tiles, no status filter rail.
-	shell := quickPanelShell(t)
-	tester := ui.NewTester(shell.QuickPanelView, QuickPanelWidth, QuickPanelHeight)
-	for _, want := range []string{"Agents & Services", "Scout", "Ranger", "Sleeper"} {
-		if !tester.HasText(want) {
-			t.Fatalf("missing overview label %q: %q", want, tester.Texts())
-		}
+func TestQuickPanelGroupsFollowThePriorityOrder(t *testing.T) {
+	entry := func(name string, bucket agent.AgentDirectoryBucket) StatusCenterEntry {
+		return StatusCenterEntry{Card: agent.AgentCardModel{Title: name}, Bucket: bucket}
 	}
-	for _, gone := range []string{"Attention (1)", "Review", "All"} {
-		if tester.HasText(gone) {
-			t.Fatalf("simplified panel still shows %q: %q", gone, tester.Texts())
-		}
+	groups := quickPanelGroups([]StatusCenterEntry{
+		entry("idle-1", agent.BucketIdle),
+		entry("work-1", agent.BucketWorking),
+		entry("attn-1", agent.BucketNeedsAttention),
+		entry("work-2", agent.BucketWorking),
+		entry("attn-2", agent.BucketNeedsAttention),
+	})
+	var labels []string
+	for _, group := range groups {
+		labels = append(labels, group.Label)
 	}
-}
-
-func TestAgentQuickPanelFocusedDetailsAndBack(t *testing.T) {
-	shell := quickPanelShell(t)
-	cards := shell.workbenchCards()
-	if len(cards) == 0 {
-		t.Fatal("fixture has no agents")
+	if len(groups) != 3 || labels[0] != "Needs attention" || labels[1] != "Working" || labels[2] != "Idle" {
+		t.Fatalf("groups = %q, want Needs attention, Working, Idle (Review is empty and omitted)", labels)
 	}
-	selected := cards[0].Key
-	shell.quickPanelAgent = &selected
-	tester := ui.NewTester(shell.QuickPanelView, QuickPanelWidth, QuickPanelHeight)
-	for _, want := range []string{"← All Agents", "Open Terminal", "Open Chat", "Details", "Context"} {
-		if !tester.HasText(want) {
-			t.Fatalf("focused agent lacks %q: %q", want, tester.Texts())
-		}
+	if groups[0].Tone != ToneAttention || groups[1].Tone != ToneWorking || groups[2].Tone != ToneMuted {
+		t.Fatalf("group tones = %v %v %v", groups[0].Tone, groups[1].Tone, groups[2].Tone)
 	}
-	if tester.HasText("All") && tester.HasText("Attention") {
-		t.Fatalf("focused agent must not show the overview filters: %q", tester.Texts())
+	if got := groups[1].Entries; len(got) != 2 || got[0].Card.Title != "work-1" || got[1].Card.Title != "work-2" {
+		t.Fatalf("a group must keep the snapshot order, got %+v", got)
 	}
-	if err := tester.Click("← All Agents"); err != nil {
-		t.Fatal(err)
+	if quickPanelGroups(nil) != nil && len(quickPanelGroups(nil)) != 0 {
+		t.Fatal("no entries, no groups")
 	}
-	tester.Frame()
-	if shell.quickPanelAgent != nil || !tester.HasText("Agents & Services") {
-		t.Fatalf("Back must show the all-agents overview: %q", tester.Texts())
-	}
-}
-
-func TestAgentQuickPanelRejectsGoneAgent(t *testing.T) {
-	shell := quickPanelShell(t)
-	key := agent.AgentKey{InstanceID: "gone-instance", TerminalID: "gone-terminal"}
-	shell.quickPanelAgent = &key
-	tester := ui.NewTester(shell.QuickPanelView, QuickPanelWidth, QuickPanelHeight)
-	if !tester.HasText("Agent not found") {
-		t.Fatalf("missing gone-agent safe state: %q", tester.Texts())
-	}
-	if tester.HasText("Open Terminal") || tester.HasText("Open Chat") {
-		t.Fatalf("gone Agent cannot expose stale actions: %q", tester.Texts())
+	review := quickPanelGroups([]StatusCenterEntry{entry("done-1", agent.BucketReadyForReview)})
+	if len(review) != 1 || review[0].Label != "Review" || review[0].Tone != ToneSuccess {
+		t.Fatalf("review group = %+v", review)
 	}
 }

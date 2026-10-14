@@ -6,58 +6,49 @@ import (
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
+	"github.com/wh-studio/herdr-client/internal/agent"
+	"github.com/wh-studio/herdr-client/internal/conversation"
 	"github.com/wh-studio/herdr-client/internal/herdr"
 )
 
-// TestQuickPanelHeightFor pins the 2026-10-07 content-driven height: the
-// panel grows with its row count up to the fixed cap, sizes to the empty
-// state when there are no rows, and never exceeds the cap (the list scrolls
-// inside beyond it).
+// TestQuickPanelHeightFor pins the content-driven height: the panel grows with
+// its group, row and usage-caption counts up to the fixed cap, sizes to the
+// empty state when there are no rows, and never exceeds the cap (the list
+// scrolls inside beyond it).
 func TestQuickPanelHeightFor(t *testing.T) {
-	empty := quickPanelChromeHeight + quickPanelEmptyHeight
-	if got := QuickPanelHeightFor(0); got != empty {
+	empty := max(quickPanelChromeHeight+quickPanelEmptyHeight, quickPanelMinHeight)
+	if got := QuickPanelHeightFor(0, 0, 0); got != empty {
 		t.Fatalf("empty height = %d, want %d", got, empty)
 	}
-	one := quickPanelChromeHeight + quickPanelRowHeight
-	if got := QuickPanelHeightFor(1); got != one {
+	one := max(quickPanelChromeHeight+quickPanelGroupHeight+quickPanelRowHeight, quickPanelMinHeight)
+	if got := QuickPanelHeightFor(1, 1, 0); got != one {
 		t.Fatalf("one-row height = %d, want %d", got, one)
 	}
-	three := quickPanelChromeHeight + 3*quickPanelRowHeight
-	if got := QuickPanelHeightFor(3); got != three {
-		t.Fatalf("three-row height = %d, want %d", got, three)
+	five := quickPanelChromeHeight + 2*quickPanelGroupHeight + 5*quickPanelRowHeight + 2*quickPanelUsageHeight
+	if got := QuickPanelHeightFor(5, 2, 2); got != five {
+		t.Fatalf("five-row height = %d, want %d", got, five)
 	}
-	if got := QuickPanelHeightFor(50); got != QuickPanelHeight {
+	if got := QuickPanelHeightFor(50, 4, 50); got != QuickPanelHeight {
 		t.Fatalf("capped height = %d, want %d", got, QuickPanelHeight)
 	}
-	if !(QuickPanelHeightFor(2) < QuickPanelHeightFor(4)) {
+	if !(QuickPanelHeightFor(5, 1, 0) < QuickPanelHeightFor(5, 3, 0)) {
+		t.Fatal("height must grow with the group count")
+	}
+	if !(QuickPanelHeightFor(4, 2, 0) < QuickPanelHeightFor(6, 2, 0)) {
 		t.Fatal("height must grow with the row count")
+	}
+	if !(QuickPanelHeightFor(5, 2, 0) < QuickPanelHeightFor(5, 2, 3)) {
+		t.Fatal("height must grow with the usage-caption count")
 	}
 }
 
-// TestQuickPanelHeader pins the §17.2 header summary sharing the §17.4
-// segment source with the tray: panel wording "review", the full Agent
-// count appended, quiet reads Ready, disconnection wins.
-func TestQuickPanelHeader(t *testing.T) {
+// TestTrayToolTipSharesTheAttentionSegments pins the one summary source the
+// tray tooltip builds on (§17.4): wording per surface, quiet reads Ready,
+// disconnection wins.
+func TestTrayToolTipSharesTheAttentionSegments(t *testing.T) {
 	counts := TrayCounts{Attention: 2, Review: 1, Working: 3}
-	snapshot := StatusCenterSnapshot{
-		NeedsAttention: 2, ReviewPending: 1, Working: 3,
-		Entries: make([]StatusCenterEntry, 6),
-	}
-	if got := QuickPanelHeader(snapshot, true); got != "2 need attention · 1 review · 3 working · 6 agents" {
-		t.Fatalf("header = %q", got)
-	}
-	// The tray keeps its own wording from the same segments.
 	if got := TrayToolTip(counts, true); got != "Shardlane — 2 need attention, 1 for review, 3 working" {
 		t.Fatalf("tray tooltip = %q", got)
-	}
-	if got := QuickPanelHeader(StatusCenterSnapshot{Entries: make([]StatusCenterEntry, 1)}, true); got != "1 agent" {
-		t.Fatalf("single-agent header = %q", got)
-	}
-	if got := QuickPanelHeader(StatusCenterSnapshot{}, true); got != "Ready" {
-		t.Fatalf("quiet header = %q", got)
-	}
-	if got := QuickPanelHeader(snapshot, false); got != "Herdr disconnected" {
-		t.Fatalf("disconnected header = %q", got)
 	}
 }
 
@@ -78,39 +69,75 @@ func quickPanelShell(t *testing.T) *Shell {
 	return shell
 }
 
-// TestQuickPanelViewRendersAgentsWithStatusTabGroup pins the 2026-10-07
-// panel contract: the shared snapshot rendered as the sidebar's compact
-// agent cards under a status tab group — no complex per-row action buttons,
-// no status words in the rows.
-func TestQuickPanelViewRendersAgentsWithStatusTabGroup(t *testing.T) {
+// TestQuickPanelViewGroupsAgentsByState pins the 2026-10-14 panel contract:
+// no title, a two-tab switch on top, and the sidebar's compact agent cards
+// under one header per state — no complex per-row action buttons, no status
+// words in the rows themselves.
+func TestQuickPanelViewGroupsAgentsByState(t *testing.T) {
 	shell := quickPanelShell(t)
 	tester := ui.NewTester(shell.QuickPanelView, QuickPanelWidth, QuickPanelHeight)
-	for _, want := range []string{
-		"Agents & Services",
-		"1 needs attention · 1 working · 3 agents",
-		"Scout", "Ranger", "Sleeper",
-	} {
+	for _, want := range []string{"Agents", "Services", "Needs attention", "Working", "Idle", "Scout", "Ranger", "Sleeper"} {
 		if !tester.HasText(want) {
 			t.Fatalf("panel missing %q; texts=%q", want, tester.Texts())
 		}
 	}
-	// The rows are the sidebar's simple cards: the state is the corner dot,
-	// so the old per-row action buttons and status pills are gone.
-	for _, gone := range []string{"Open Terminal", "Open Agent", "Open Chat", "Mark reviewed"} {
+	for _, gone := range []string{"Agents & Services", "Open Terminal", "Open Agent", "Open Chat", "Mark Reviewed", "agents"} {
 		if tester.HasText(gone) {
-			t.Fatalf("panel row still shows %q; texts=%q", gone, tester.Texts())
+			t.Fatalf("panel still shows %q; texts=%q", gone, tester.Texts())
 		}
 	}
 	if tester.HasText("No active agents") {
 		t.Fatalf("panel shows the empty state despite live agents; texts=%q", tester.Texts())
 	}
+	// Each row sits under its own state header, the headers in priority order.
+	y := func(text string) float32 {
+		rect, ok := tester.Find(text)
+		if !ok {
+			t.Fatalf("%q not found; texts=%q", text, tester.Texts())
+		}
+		return rect.Y
+	}
+	if !(y("Needs attention") < y("Ranger") && y("Ranger") < y("Working") &&
+		y("Working") < y("Scout") && y("Scout") < y("Idle") && y("Idle") < y("Sleeper")) {
+		t.Fatalf("rows are not grouped Needs attention › Working › Idle; texts=%q", tester.Texts())
+	}
 }
 
+// TestQuickPanelHeightHoldsTheContent pins the height budget against the real
+// layout: at the content-driven height every row is on screen (nothing
+// scrolls away) and the panel is not left mostly empty below the last row —
+// with and without the usage caption under each card.
+func TestQuickPanelHeightHoldsTheContent(t *testing.T) {
+	shell := quickPanelShell(t)
+	fits := func(label, last string) {
+		t.Helper()
+		height := shell.quickPanelContentHeight()
+		tester := ui.NewTester(shell.QuickPanelView, QuickPanelWidth, height)
+		rect, ok := tester.Find(last)
+		if !ok {
+			t.Fatalf("%s: last line %q missing; texts=%q", label, last, tester.Texts())
+		}
+		bottom := int(rect.Y + rect.H)
+		if bottom > height {
+			t.Errorf("%s: last line ends at %d, below the %d-high panel", label, bottom, height)
+		} else if height-bottom > 20 { // the list's own bottom padding plus the caption's are structural
+			t.Errorf("%s: last line ends at %d in a %d-high panel: %d of blank slack", label, bottom, height, height-bottom)
+		}
+	}
+	fits("plain cards", "Sleeper")
 
-// TestQuickPanelCardClickOpensAgentDetail pins the two-level popover:
-// selecting an Agent in the overview reveals its exact details without
-// navigating away; explicit actions in the detail handle navigation.
-func TestQuickPanelCardClickOpensAgentDetail(t *testing.T) {
+	shell.usageByAgent = map[agent.AgentKey]agent.AgentUsageSnapshot{}
+	for _, card := range shell.workbenchCards() {
+		shell.usageByAgent[card.Key] = agent.AgentUsageSnapshot{Model: card.Title + "-model"}
+	}
+	fits("cards with a usage caption", "Sleeper-model")
+}
+
+// TestQuickPanelRowClickGoesStraightToThePanel pins the one-layer panel: a
+// row click selects the Agent's pane, shows its Terminal from whatever page
+// the panel was opened on, and swaps nothing inside the panel — the old
+// detail layer (← All Agents, Open Terminal, Context) is gone.
+func TestQuickPanelRowClickGoesStraightToThePanel(t *testing.T) {
 	shell := quickPanelShell(t)
 	shell.router.Replace("/history")
 	tester := ui.NewTester(shell.QuickPanelView, QuickPanelWidth, QuickPanelHeight)
@@ -119,14 +146,120 @@ func TestQuickPanelCardClickOpensAgentDetail(t *testing.T) {
 		t.Fatal(err)
 	}
 	tester.Frame()
-	if shell.quickPanelAgent == nil || shell.quickPanelAgent.TerminalID != "term-2" {
-		t.Fatalf("Agent detail = %#v, want Ranger", shell.quickPanelAgent)
+	if shell.router.Path() != routeWorkspace || shell.selectedPaneID != "p2" ||
+		shell.surface.current() != WorkspaceSurfaceTerminal {
+		t.Fatalf("a blocked Agent's row landed on %q/%v pane %q, want its Terminal at /workspace pane p2",
+			shell.router.Path(), shell.surface.current(), shell.selectedPaneID)
 	}
-	if shell.router.Path() != routeHistory || shell.selectedPaneID != "" {
-		t.Fatalf("Agent preview unexpectedly navigated: route=%q pane=%q", shell.router.Path(), shell.selectedPaneID)
+	for _, gone := range []string{"← All Agents", "Open Terminal", "Context", "Details"} {
+		if tester.HasText(gone) {
+			t.Fatalf("the panel grew a second layer (%q); texts=%q", gone, tester.Texts())
+		}
 	}
-	if !tester.HasText("Open Terminal") {
-		t.Fatalf("focused action missing: %q", tester.Texts())
+
+	// From another Workspace surface the click still lands on the Terminal.
+	shell = quickPanelShell(t)
+	shell.router.Replace(routeWorkspace)
+	shell.showSurface(WorkspaceSurfaceDiff)
+	if shell.surface.current() != WorkspaceSurfaceDiff {
+		t.Fatalf("fixture: surface = %v, want Diff", shell.surface.current())
+	}
+	tester = ui.NewTester(shell.QuickPanelView, QuickPanelWidth, QuickPanelHeight)
+	if err := tester.Click("Ranger"); err != nil {
+		t.Fatal(err)
+	}
+	if shell.surface.current() != WorkspaceSurfaceTerminal || shell.selectedPaneID != "p2" {
+		t.Fatalf("a row click from Diff landed on %v pane %q, want the Terminal on p2", shell.surface.current(), shell.selectedPaneID)
+	}
+}
+
+// TestQuickPanelRowClickFollowsTheRecommendedPanel pins where a click lands
+// when it is not the Terminal: the Chat for an Agent waiting on an
+// interaction, and the surface a pane was last used on.
+func TestQuickPanelRowClickFollowsTheRecommendedPanel(t *testing.T) {
+	// A pending interaction sends the click to Chat (the answer goes there).
+	shell := quickPanelShell(t)
+	shell.interactionBroker.Publish(conversation.PendingInteraction{
+		ID: "i1", ConversationID: "live:codex:s1", AgentPaneID: "p1",
+		Kind: conversation.InteractionPermission, Prompt: "Allow workspace write?", Options: []string{"Approve", "Deny"},
+	})
+	tester := ui.NewTester(shell.QuickPanelView, QuickPanelWidth, QuickPanelHeight)
+	if err := tester.Click("Scout"); err != nil {
+		t.Fatal(err)
+	}
+	if shell.chatPaneID != "p1" || shell.selectedPaneID != "p1" {
+		t.Fatalf("an interaction row opened pane %q / chat %q, want Chat on p1", shell.selectedPaneID, shell.chatPaneID)
+	}
+
+	// A working Agent whose pane was last left in Chat reopens in Chat.
+	shell = quickPanelShell(t)
+	shell.rememberPaneSurface("p1", WorkspaceSurfaceChat)
+	tester = ui.NewTester(shell.QuickPanelView, QuickPanelWidth, QuickPanelHeight)
+	if err := tester.Click("Scout"); err != nil {
+		t.Fatal(err)
+	}
+	if shell.chatPaneID != "p1" {
+		t.Fatalf("a pane left in Chat opened chat %q, want p1", shell.chatPaneID)
+	}
+
+	// Anything else is the Terminal, and the pane is remembered as such.
+	shell = quickPanelShell(t)
+	tester = ui.NewTester(shell.QuickPanelView, QuickPanelWidth, QuickPanelHeight)
+	if err := tester.Click("Sleeper"); err != nil {
+		t.Fatal(err)
+	}
+	if shell.chatPaneID != "" || shell.selectedPaneID != "p3" || shell.paneSurfaceMemo["p3"] != WorkspaceSurfaceTerminal {
+		t.Fatalf("an idle row opened pane %q / chat %q / memo %v, want Terminal on p3",
+			shell.selectedPaneID, shell.chatPaneID, shell.paneSurfaceMemo["p3"])
+	}
+}
+
+// TestQuickPanelRowMenuHoldsTheOtherActions pins what moved off the detail
+// layer: the other panel, the inspector and — only for an Agent waiting on
+// review — the review mark, in the row's right-click menu.
+func TestQuickPanelRowMenuHoldsTheOtherActions(t *testing.T) {
+	shell := quickPanelShell(t)
+	tester := ui.NewTester(shell.QuickPanelView, QuickPanelWidth, QuickPanelHeight)
+	if err := tester.RightClick("Ranger"); err != nil {
+		t.Fatal(err)
+	}
+	menu := tester.Menu()
+	for _, want := range []string{"Open Terminal", "Open Chat", "Details"} {
+		if !containsText(menu, want) {
+			t.Fatalf("row menu %q missing %q", menu, want)
+		}
+	}
+	if containsText(menu, "Mark Reviewed") {
+		t.Fatalf("row menu %q offers a review mark with nothing to review", menu)
+	}
+	tester.CloseMenu()
+
+	// Review pending: the mark joins the menu, and the row carries the same
+	// action as a trailing icon that marks without navigating.
+	shell.projection.Agents[0].Status = "done"
+	shell.reconcileWorkbench()
+	shell.router.Replace("/history")
+	tester = ui.NewTester(shell.QuickPanelView, QuickPanelWidth, QuickPanelHeight)
+	if !tester.HasText("Review") {
+		t.Fatalf("a finished Agent is not under Review; texts=%q", tester.Texts())
+	}
+	if err := tester.RightClick("Scout"); err != nil {
+		t.Fatal(err)
+	}
+	if menu = tester.Menu(); !containsText(menu, "Mark Reviewed") {
+		t.Fatalf("row menu %q lacks the review mark", menu)
+	}
+	tester.CloseMenu()
+	if err := tester.Click("Mark reviewed"); err != nil {
+		t.Fatal(err)
+	}
+	for _, card := range shell.workbenchCards() {
+		if card.Title == "Scout" && card.ReviewPending {
+			t.Fatal("the trailing mark did not clear the review")
+		}
+	}
+	if shell.router.Path() != "/history" {
+		t.Fatalf("marking reviewed navigated to %q", shell.router.Path())
 	}
 }
 

@@ -561,7 +561,7 @@ func (s *Shell) agentItems(c *ui.Context) {
 		card := card
 		label, _ := agentCardLabel(card, dupProjects)
 		selected := card.PaneID != "" && card.PaneID == s.selectedPaneID
-		row := s.agentCardRow(c, card, selected, dupProjects)
+		row := s.agentCardRow(c, card, selected, dupProjects, nil)
 		if row.Clicked() {
 			// N19 #4: a sidebar Agent click jumps straight to the pane's
 			// remembered surface (Chat or Terminal) instead of the detail

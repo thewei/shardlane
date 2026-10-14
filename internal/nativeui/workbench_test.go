@@ -57,26 +57,27 @@ func TestWorkbenchSidebarShowsSharedCardRows(t *testing.T) {
 // page; since 2026-10-07 the status tab group lives in the floating agent
 // activity panel (quick_panel_test.go covers it).
 
-// TestWorkbenchBlockedActionOpensTerminalLocally pins the explicit
-// quick-panel Open Terminal action after selecting a blocked Agent. Merely
-// selecting an Agent for preview never moves the Terminal focus.
-func TestWorkbenchBlockedActionOpensTerminalLocally(t *testing.T) {
+// TestWorkbenchBlockedRowOpensTerminalLocally pins the quick-panel row click
+// for a blocked Agent: it goes straight to that Agent's Terminal (no preview
+// layer, no second click) and moves only the local selection — Herdr's own
+// focus stays where it was.
+func TestWorkbenchBlockedRowOpensTerminalLocally(t *testing.T) {
 	shell := workbenchTestShell(t)
 	tester := ui.NewTester(shell.QuickPanelView, QuickPanelWidth, QuickPanelHeight)
+	if shell.selectedPaneID != "" {
+		t.Fatalf("fixture selected pane = %q, want none", shell.selectedPaneID)
+	}
 
 	if err := tester.Click("Demo · Ranger"); err != nil {
 		t.Fatal(err)
 	}
 	tester.Frame()
-	if shell.selectedPaneID != "" {
-		t.Fatalf("preview switched pane prematurely: %q", shell.selectedPaneID)
-	}
-	if err := tester.Click("Open Terminal"); err != nil {
-		t.Fatal(err)
-	}
-	// Ranger sits on p2; only the explicit action moves local selection.
+	// Ranger sits on p2.
 	if shell.selectedPaneID != "p2" {
 		t.Fatalf("selected pane = %q, want p2", shell.selectedPaneID)
+	}
+	if shell.projection.FocusedPaneID != "p1" {
+		t.Fatalf("a row click moved Herdr's focus to %q", shell.projection.FocusedPaneID)
 	}
 }
 

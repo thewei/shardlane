@@ -335,7 +335,9 @@ Normative 0.10 boundaries:
   — see the Files decisions.) Changes uses the left Git-reference tree and a Fork-style center: Local Changes places staged/unstaged files beside Diff with a bottom commit composer; All Commits places the ancestry-aware history graph above a changed-file tree and read-only Diff.
   The existing Header/tray Agent activity flyout (a MyGo Flyout, shown as a
   system popover on macOS) has an Agents /
-  Services switch: Services displays the active Tab's configured Scripts and
+  Services switch: Agents lists the live agents grouped by state, and a click
+  goes straight to that Agent's panel (one layer, no detail view; amended
+  2026-10-14); Services displays the active Tab's configured Scripts and
   observed ports, with explicit Run/Preview actions, not a new runtime.
   Directory and port snapshots are root-scoped; no render-time filesystem,
   process or Git access may be added.

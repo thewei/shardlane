@@ -33,7 +33,7 @@ description: Use when polishing or unifying the Shardlane MyGo client's UI/UX �
 | 图标 | Lucide 粗描边、机器人头像、文本字符冒充图标（↻ ← ↑↓ −） | 全部细线 1.5（iOS 风格）；彩色圆角方块 `iconTile` 只标目的地/类别（设置导航、Agent 列表、Sessions 行），状态一律 `StatusTone`；刷新/返回/展开用 SVG |
 | 布局 | 互斥项并排按钮、整页拉伸、窄窗挤成单字列 | 互斥项 → Segmented tabs（Git 侧栏 Local Changes/All Commits、Theme/Density、Sessions Agent 标签条；只有一个来源不显示）；设置页 = macOS 分组列表（原生 Switch、右对齐紧凑控件、行内分隔线）；内页居中最大宽度，宽窗长边距；窄窗 `Wrap().Basis()` 让操作换行到消息下方；侧栏统一对齐网格 + 折叠结构线（`TreeLine`） |
 | 间距 / 圆角 / 分隔线 | 5/7/12/16 混搭圆角、一次性间距、各页各画分隔 | Spacing `2/4/6/8/12/20`（XXS…XL）；Radius Control 6 / Row 8 / Card 10 / Pill，图标按钮 `size/2.6`；控件高 Compact 24 / Regular 28 / Row 31；分隔线一律 1px `BorderSubtle`，分组列表里从 `rowInset`（14）起、`attached` 行不画；卡 = `Panel` 底 + 1px `BorderSubtle`，无阴影；页面不写字面量 |
-| 交互 | 每行常驻三个按钮、"…" 文本按钮、各页高亮色不同 | 行内操作 = 悬停才现的菜单入口 + 右键菜单，**占位固定，悬停不位移**（有变异测试）；原生控件优先（Switch/Segmented/Pulldown/SearchField）；破坏性确认默认焦点不在 Confirm |
+| 交互 | 每行常驻三个按钮、"…" 文本按钮、各页高亮色不同 | 行内操作 = 悬停才现的菜单入口 + 右键菜单，**占位固定，悬停不位移**（有变异测试）；原生控件优先（Switch/Segmented/Pulldown/SearchField）；破坏性确认默认焦点不在 Confirm；**浮层只有一层**——点击条目 = 直达面板并收起浮层，不在浮层里再开详情层/返回键；主动作只有点击，其余进右键菜单，行尾至多一个快捷图标；浮层复用侧栏同一张卡片 |
 | 动效 | 装饰性动画、卡顿的重排 | 悬停/按下/开态颜色 120 ms；重排/拖动占位 150–190 ms；浮层进出场 140 ms（Enter Y+6 / Exit Y−4）；侧栏滑动 200 ms（拖动时 1 ms 直落）；Reduce Motion 直接落位；不为装饰加动画 |
 | 文案 | 自圆其说、泄漏内部信息 | 见下节 |
 
@@ -97,6 +97,7 @@ rg -n 'Padding\(14, 9, 9\)' --glob '!*_test.go' .                      # 侧栏�
 - 旧 `iconButton`（28/14，半径 6）并入 `gorexIconButton`：侧栏页脚设置齿轮走工具栏档，Workspace 区 "+" 走密集档。
 - 空态标题统一 sentence case；Inspector 路由补回 `gorexContentCard`。
 - Hosts 侧栏列表不再二次内缩（原比 Sessions/Settings 低 14、窄 9）：`TestInnerSidebarsShareOneInset`；Hosts 详情操作行三按钮同一档（`Edit File` 原为密集档）：`TestHostActionRowSharesOneButtonTier`。
+- Agent 浮层（标题栏/托盘）重排（2026-10-14 第二轮）：顶部 Agents/Services 分段、浮层自身无标题；Agents 按状态分组（Needs attention › Review › Working › Idle，空组省略；分组头 = 状态点 + 名称 + 计数，Services 分区标题用同一构件 `quickPanelGroupHeader`），行复用侧栏 `agentCardRow`；点击行**直达面板并收起浮层**（待交互 → Chat；blocked/failed → Terminal；其余回到该 pane 上次所在面板），行尾 ✓ = 标记已审阅（不跳转），其余动作在右键菜单；去掉详情层、统计筛选卡与浮层标题。高度随内容增长至上限 480：预算常数取自真实布局（`quickPanelChromeHeight/GroupHeight/RowHeight/UsageHeight`），不是估的——估的 72/28/44 实测多出 57 px 空白，`TestQuickPanelHeightHoldsTheContent` 现在钉贴合（含用量行）。
 - 菜单项一律 Title Case（Git 分支/标签/Stash/提交/文件夹菜单 20 项）、Finder 定位统一 `Reveal in Finder`、Git 确认框标题对齐菜单（`Undo Last Commit?`、`Delete Tag “x”?`）：`TestMenuItemsAreTitleCase`。
 
 ## 已知例外与待办（下一轮从这里接）
@@ -116,4 +117,6 @@ rg -n 'Padding\(14, 9, 9\)' --glob '!*_test.go' .                      # 侧栏�
 | 同一个开关在两页两种高亮 | 不变量 4 | 走 `gorexToggleFace`；行选中走 `rowTint` |
 | 新页面自己写 28×28 按钮 | 不变量 5 | `gorexIconButton(... gorexIconBtn|gorexPaneBtn ...)` |
 | 页面进出时标题位置跳动 | 不变量 1 | 所有内页同字号同一行，不要按路由改标题栏高度 |
+| 浮层里点条目又进下一层详情 / 返回键 | 交互行 | 点击直达面板并收起；其余动作进右键菜单 |
+| 内容驱动高度的预算常数凭估算填 | 打磨循环 4 | 用 `Tester.Find` 矩形测真实高度，写贴合测试（不越界、空白有上限），预算改常数而非猜 |
 | 文案向读者解释自己 / 暴露内部名 | 文案规则 | 删句或改成动作 + 下一步 |

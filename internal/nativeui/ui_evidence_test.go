@@ -19,6 +19,7 @@ import (
 
 	"github.com/egoist/mygo/plugins/terminal"
 	"github.com/egoist/mygo/ui"
+	"github.com/wh-studio/herdr-client/internal/agent"
 	"github.com/wh-studio/herdr-client/internal/herdr"
 	"github.com/wh-studio/herdr-client/internal/history"
 	"github.com/wh-studio/herdr-client/internal/sshconfig"
@@ -255,16 +256,29 @@ func TestUIEvidence(t *testing.T) {
 		shell.router.Push("/hosts")
 		render("11-hosts")
 
-		panel := ui.NewTester(shell.QuickPanelView, QuickPanelWidth, QuickPanelHeight)
-		panel.SetDark(dark)
-		panel.Frame()
-		file, err := os.Create(filepath.Join(dir, fmt.Sprintf("10-agent-panel-%s.png", mode)))
-		if err != nil {
-			t.Fatal(err)
+		// The Agent activity panel at its content-driven height: the
+		// Agents list grouped by state, then the Services tab over a seeded
+		// port.
+		shell.portsForRoot, shell.observedPortsList, shell.portsRefreshedAt = code, []uint16{3000}, time.Now()
+		// The finished Codex agent waits for review (its trailing mark shows).
+		shell.workbench.markers.Observe(agent.AgentKey{InstanceID: "default", TerminalID: "term-5"},
+			agent.TransitionReadyForReview, false)
+		shell.reconcileWorkbenchMarkersOnly()
+		for i, tab := range []int{0, 1} {
+			shell.quickPanelTab = tab
+			panel := ui.NewTester(shell.QuickPanelView, QuickPanelWidth, shell.quickPanelContentHeight())
+			panel.SetDark(dark)
+			panel.Frame()
+			name := []string{"10-agent-panel", "10b-agent-services"}[i]
+			file, err := os.Create(filepath.Join(dir, fmt.Sprintf("%s-%s.png", name, mode)))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := png.Encode(file, panel.Image()); err != nil {
+				t.Fatal(err)
+			}
+			file.Close()
 		}
-		if err := png.Encode(file, panel.Image()); err != nil {
-			t.Fatal(err)
-		}
-		file.Close()
+		shell.quickPanelTab = 0
 	}
 }

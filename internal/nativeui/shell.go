@@ -179,9 +179,6 @@ type Shell struct {
 	// panel is open — the flyout is created on demand, and headless
 	// sessions (tests, platform fallback) keep the anchor clicks no-ops.
 	quickPanel *mygo.Window
-	// quickPanelAgent selects one exact Agent for the shared quick panel;
-	// nil means the tray/titlebar's full activity overview.
-	quickPanelAgent *agent.AgentKey
 	// 0: Agent activity, 1: workspace Services; one anchored flyout.
 	quickPanelTab int
 	// quickPanelDismissedAt records when the panel last closed: on macOS

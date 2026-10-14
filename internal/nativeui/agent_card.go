@@ -7,7 +7,7 @@ import (
 
 /**
  * [INPUT]: 依赖 mygo/ui 的 ButtonBase、Spinner，agent_visual 的品牌 mark 与状态点、git_meta 的 git 事实
- * [OUTPUT]: 对外提供 Shell.agentCardRow（侧栏 Agents 区与 Agent 活动浮层共享的两行卡片）
+ * [OUTPUT]: 对外提供 Shell.agentCardRow（侧栏 Agents 区与 Agent 活动浮层共享的两行卡片，可选行尾控件）与 agentCardTextInset（卡片文字起点，卡片下方的说明行对齐用）
  * [POS]: Agent 卡片的唯一呈现实现（2026-10-07）：品牌 mark + 角落状态点 + 项目/标题行 + git 事实行；工作中卡片尾随 Spinner（card.Working，与目录 Working 桶同一语义）；点击语义留给调用方
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -47,6 +47,15 @@ func duplicateAgentProjectLabels(cards []agent.AgentCardModel) map[string]bool {
 	return dups
 }
 
+// The card's horizontal metrics. agentCardTextInset is where its text
+// starts, so a caption set under the card lines up with the title above.
+const (
+	agentCardPadX      float32 = 8
+	agentCardGap       float32 = 8
+	agentCardMark      float32 = 18
+	agentCardTextInset         = agentCardPadX + agentCardMark + agentCardGap
+)
+
 // agentCardRow is the two-line Agent card shared by the sidebar's Agents
 // section and the floating agent activity panel (2026-10-07): the brand
 // mark with the operational state as a corner dot, the project (or agent
@@ -54,8 +63,10 @@ func duplicateAgentProjectLabels(cards []agent.AgentCardModel) map[string]bool {
 // second. Status words are deliberately absent — the dot is the state,
 // and a working agent spins at the row's trailing edge so mid-flight work
 // reads at a glance. Click handling stays with the caller; the returned
-// element carries the Clicked/ContextMenu surface.
-func (s *Shell) agentCardRow(c *ui.Context, card agent.AgentCardModel, selected bool, dupProjects map[string]bool) ui.Element {
+// element carries the Clicked/ContextMenu surface. A caller may add one
+// control at the trailing edge (trailing), which draws inside the row after
+// the spinner and the unread dot.
+func (s *Shell) agentCardRow(c *ui.Context, card agent.AgentCardModel, selected bool, dupProjects map[string]bool, trailing func()) ui.Element {
 	t := c.Theme()
 	tokens := designTokens(t.Dark)
 	mark := agentMark(card.Provider, t.Dark)
@@ -66,16 +77,16 @@ func (s *Shell) agentCardRow(c *ui.Context, card agent.AgentCardModel, selected 
 			FillWidth().
 			MinHeight(38).
 			Radius(6).
-			Padding(0, 8).
-			Gap(8).
+			Padding(0, agentCardPadX).
+			Gap(agentCardGap).
 			AlignItems(ui.Center).
 			Label(label)
 		if tint, ok := rowTint(tokens, selected, row.Hovered()); ok {
 			row.Background(tint)
 		}
 		row.Children(func() {
-			ui.Box(c).Size(18, 18).Shrink(0).Children(func() {
-				markView(c, mark, 18, t.TextMuted)
+			ui.Box(c).Size(agentCardMark, agentCardMark).Shrink(0).Children(func() {
+				markView(c, mark, agentCardMark, t.TextMuted)
 				// Always shown; gray means idle (round three follow-up).
 				ui.Box(c).Absolute().Left(11).Top(10).Children(func() {
 					statusDot(c, operationalState(card.Attention))
@@ -100,6 +111,9 @@ func (s *Shell) agentCardRow(c *ui.Context, card agent.AgentCardModel, selected 
 			}
 			if card.Unread {
 				ui.Box(c).Size(6, 6).Radius(3).Background(tokens.StatusColor(ToneAttention, t.Dark)).Shrink(0)
+			}
+			if trailing != nil {
+				trailing()
 			}
 		})
 	})

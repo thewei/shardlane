@@ -77,11 +77,15 @@ func (s *Shell) BuildStatusCenterSnapshot() StatusCenterSnapshot {
 	return snapshot
 }
 
+// actionOpenChat is the recommended destination of an Agent that waits on a
+// pending interaction: its Chat, where the answer goes.
+const actionOpenChat agent.PrimaryAction = "open-chat"
+
 // statusCenterRecommendedDestination names the surface a click should open
 // (0.7 §10): interaction → Chat, blocked/failed → Terminal, else the agent.
 func statusCenterRecommendedDestination(entry StatusCenterEntry) agent.PrimaryAction {
 	if entry.HasInteraction {
-		return "open-chat"
+		return actionOpenChat
 	}
 	return entry.Card.PrimaryAction()
 }

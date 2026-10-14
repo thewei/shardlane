@@ -21,12 +21,12 @@ func (s *Shell) quickPanelServices(c *ui.Context) {
 	sp := Spacing()
 	root := s.selectedTabCWD()
 	ui.Scroll(c).Grow(1).MinHeight(0).Children(func() {
-		ui.Column(c).FillWidth().Padding(sp.M, sp.L, sp.L).Gap(sp.L).Children(func() {
+		ui.Column(c).FillWidth().Padding(0, sp.S, sp.M).Gap(sp.M).Children(func() {
 			if root == "" {
 				emptyState(c, "No project selected", "Pick a tab to see its scripts and ports.")
 				return
 			}
-			ui.Row(c).FillWidth().Gap(sp.S).AlignItems(ui.Center).Children(func() {
+			ui.Row(c).FillWidth().Padding(sp.XS, sp.M).Gap(sp.S).AlignItems(ui.Center).Children(func() {
 				ui.Icon(c, iconFolder).Size(14, 14).TextColor(t.TextMuted)
 				ui.Text(c, filepath.Base(root)).FontSize(Typography().Caption).FontWeight(WeightSemibold).
 					Grow(1).MinWidth(0).SingleLine().Tooltip(root)
@@ -38,17 +38,14 @@ func (s *Shell) quickPanelServices(c *ui.Context) {
 				if s.scriptStore != nil {
 					defs = s.scriptStore.List(root)
 				}
-				ui.Row(c).FillWidth().AlignItems(ui.Center).Children(func() {
-					ui.Text(c, "Scripts").FontSize(Typography().Section).FontWeight(WeightSemibold).Grow(1)
-					ui.Textf(c, "%d", len(defs)).FontSize(Typography().Caption).TextColor(t.TextMuted)
-				})
+				quickPanelGroupHeader(c, "Scripts", len(defs), nil)
 				if len(defs) == 0 {
-					ui.Text(c, "No scripts").
+					ui.Text(c, "No scripts").Padding(0, sp.M).
 						FontSize(Typography().Caption).TextColor(t.TextMuted)
 				}
 				for _, def := range defs {
 					script := def
-					ui.Row(c).FillWidth().Gap(sp.S).Padding(sp.S).Radius(Radius().Control).
+					ui.Row(c).FillWidth().Gap(sp.S).Padding(sp.S, sp.M).Radius(Radius().Control).
 						Background(designTokens(t.Dark).Panel).AlignItems(ui.Center).Children(func() {
 						ui.Icon(c, iconTerminal).Size(14, 14).TextColor(t.TextMuted)
 						ui.Column(c).Grow(1).MinWidth(0).Gap(sp.XXS).Children(func() {
@@ -71,17 +68,14 @@ func (s *Shell) quickPanelServices(c *ui.Context) {
 			ui.Divider(c)
 			ui.Column(c).FillWidth().Gap(sp.S).Children(func() {
 				ports := s.observedPorts()
-				ui.Row(c).FillWidth().AlignItems(ui.Center).Children(func() {
-					ui.Text(c, "Listening ports").FontSize(Typography().Section).FontWeight(WeightSemibold).Grow(1)
-					ui.Textf(c, "%d", len(ports)).FontSize(Typography().Caption).TextColor(t.TextMuted)
-				})
+				quickPanelGroupHeader(c, "Listening ports", len(ports), nil)
 				if len(ports) == 0 {
-					ui.Text(c, "No open ports").
+					ui.Text(c, "No open ports").Padding(0, sp.M).
 						FontSize(Typography().Caption).TextColor(t.TextMuted)
 				}
 				for _, port := range ports {
 					p := port
-					ui.Row(c).FillWidth().Gap(sp.S).Padding(sp.S).Radius(Radius().Control).
+					ui.Row(c).FillWidth().Gap(sp.S).Padding(sp.S, sp.M).Radius(Radius().Control).
 						Background(designTokens(t.Dark).Panel).AlignItems(ui.Center).Children(func() {
 						ui.Icon(c, iconGlobe).Size(14, 14).TextColor(t.TextMuted)
 						ui.Text(c, fmt.Sprintf("localhost:%d", p)).FontSize(Typography().BodySmall).Grow(1)

@@ -184,7 +184,7 @@ func TestServicesLiveInAgentQuickPanel(t *testing.T) {
 	s.portsForRoot = root
 	s.portsRefreshedAt = time.Now()
 	tester := ui.NewTester(s.QuickPanelView, QuickPanelWidth, QuickPanelHeight)
-	for _, want := range []string{"Agents & Services", "Agents", "Services", "Scripts", "Listening ports", "localhost:43217", "Preview"} {
+	for _, want := range []string{"Agents", "Services", "Scripts", "Listening ports", "localhost:43217", "Preview"} {
 		if !tester.HasText(want) {
 			t.Fatalf("Services panel missing %q: %q", want, tester.Texts())
 		}

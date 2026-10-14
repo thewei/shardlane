@@ -145,8 +145,8 @@ Shardlane 的身份是「以 Terminal 为中心的 Agent 开发工作区」，�
 | UI-001 Route Context Gate | P0 已实施（headless） | `context_panel.go` / `right_panel.go` / `panel_motion.go` / `titlebar.go` | History 只显示 History Context；Settings 无右栏；无旧工具闪现 |
 | UI-002 Independent Visibility | P0 已实施（headless） | `right_panel.go` | History 展开不影响 Workspace 工具历史状态 |
 | UI-003 History Information Density | P0 已实施（headless） | `page_history.go` | 同源摘要不重复，截断有 Tooltip；内容由详情 id 隔离 |
-| UI-004 Agent Quick Detail | P0 已实施（headless） | `agent_quick_panel.go`、`quick_panel.go`、`sidebar.go` | 点击 Agent 只显示该 Agent；Back、点击动作、gone-state 安全 |
-| UI-005 Quick Panel Polish | P0 已实施（headless） | `agent_quick_panel.go` | 三状态计数可点击、共享真实 Status snapshot |
+| UI-004 Agent Quick Detail | P0 已实施（headless） | `agent_quick_panel.go`、`quick_panel.go`、`sidebar.go` | 点击 Agent 只显示该 Agent；Back、点击动作、gone-state 安全（2026-10-14 已被取代：浮层改为一层，点击直达面板，无详情层与 Back） |
+| UI-005 Quick Panel Polish | P0 已实施（headless） | `agent_quick_panel.go` | 三状态计数可点击、共享真实 Status snapshot（2026-10-14 已被取代：统计筛选卡换成按状态分组的列表，仍共享同一 snapshot） |
 | UI-006 History Search/Sort/Selection | P1 部分完成（headless）：即时搜索、结果数量反馈、Clear filters、查询前置 Provider/Project 过滤、完整 Provider 发现、仅列表页露出有效控件；排序控件/焦点实机待做 | `page_history.go`、`history_state.go`、`internal/history/service.go` 和 `catalog_read.go` | 筛选期间旧行不可点击、无结果可复原、较早 Provider 不因全局 LIMIT 漏掉；全量/实机门禁仍需通过 |
 | UI-007 Workspace Empty & Chat Gate | P1 已实现（headless），实机待验 | `workspace.go`、`chat_ui.go`、`gd_surface.go`、`ds_components.go`、`titlebar.go`、`gitworkbench/tree.go` | 无 Agent 切换拒绝；Agent 消失遮蔽旧 Chat；Git clean 有 View Commits/Terminal，非匹配过滤可 Clear filter；`Flatten(nil)` 不崩溃；三种尺寸需实机视觉验收 |
 | UI-008 Settings and Page Headers | P1 核心已实现（headless），交互精修待验 | `page_settings.go`、`page_providers.go`、`ds_components.go` | General/Terminal/Providers/Runtime/Diagnostics 使用唯一 pageHeader 与滚动内容区；消除重复透明背景项；旧表单数据更新路径不变 |
