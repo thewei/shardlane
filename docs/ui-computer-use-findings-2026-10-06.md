@@ -368,3 +368,23 @@
 - gofmt 注意：仓库存在少量**既有** EOF 空行偏差（PATH gofmt 1.25.9 与 pin 的 1.27.1 并存）；本批只清理了本会话触碰的文件，未夹带无关重排。
 
 > 台账现共 **179 项**，Round 8 的 31 项中 29 项已修复闭环（F149/F169 于同日第二批修复）、F167 经用户裁定取消（非需求）、其余 2 项保留记录（F176/F164 部分/F179 部分）。
+
+# Round 9 — 第二轮统一后的循环审计（cua-driver 实机后台 + 代码，2026-10-14）
+
+方法：每个修复一条设备证据——`cua-driver`（`list_windows` 标题=路由真值、`get_window_state`、`invoke_menu`）后台驱动，System Events 只读转储菜单栏；前台应用全程不变（Fork）。窗口 frame 与 Workspace/Terminal 落点每轮归位。台账接 Round 8（F179）续号。
+
+| # | 严重度 | 界面 | 问题（现象+证据） | 处置 |
+|---|--------|------|------------------|------|
+| F180 | P2 | 窗口标题 | 恢复到内页的启动窗口标题恒为 "Shardlane"：`restoreSession` 在窗口挂上之前就设好可见路由，"路由变化时同步标题"的钩子永不触发（实机：启动即在 /files，标题仍是裸名） | ✅ bdba7cb：`syncWindowTitle` 每帧由 `syncRouteVisibility` 调用 + `windowTitleShown` 去重 + `setWindowTitle` 接缝；实机重启后 "Shardlane — Files" / "— Sessions" |
+| F181 | P1 | 复制 | 26 处复制都 `exec pbcopy`；Finder/Dock 启动的 App 无 `LANG`（MacRoman），中文路径/提交说明/恢复命令一律乱码（草稿 pasteboard 复现） | ✅ d67c8ea：复制/定位/打开改走 `mygo.Clipboard`/`mygo.Shell`；实机 Git diff 中文行 Copy Line 读回逐字节一致 |
+| F182 | P2 | 菜单栏/⌘K | 视图标签搬进侧栏后：Changes 在 ⌘K 与 Go 菜单无入口；Go 菜单 Files 仍是旧右栏开关接缝（选一次进、再选一次出，与同菜单 Sessions/Hosts 不一致）；Settings 摆在自定义 Go 菜单；应用菜单缺 Hide/Hide Others/Show All（⌘H 无效）——实机 AX 菜单转储 | ✅ dde5dca：菜单栏收进 `app_menu.go`（`Shell.MenuBar`）；应用菜单走系统惯例（Settings… ⌘,、Hide ⌘H…）；Files/Changes 走「去往」形态（点名已打开页面保持不动）；⌘K 补 Changes；三类测试 + 10 个变异体全杀；实机 Go ▸ Files 连选两次仍在 Files |
+| F183 | P2 | Go ▸ Workspace | ⌘1/Go ▸ Workspace 在 Changes/Chat 表面上无反应：它只是 `router.Push(/workspace)`，而这两个本就是 /workspace 的表面，同路由 Push 被去重（实机 `invoke_menu` 复现：Changes 上选 Workspace，截图仍是 Changes） | ✅ f83f613：走 `showViewTerminal`（与 Back 同落点、幂等）；实机 Changes→Workspace 落 Terminal，再选保持 |
+| F184 | P3 | ⌘K | 面板没有不靠选 Pane 的"回 Terminal"路径，且 App 区顺序与 Go 菜单不同（Files 排在 Hosts 之后） | ✅ c811bcc：补 Workspace，App 区按 Go 菜单顺序；顺带发现并改正一条隐含"结果数<10"的 PgDn 旧测试 |
+| F185 | P3 | 确认框 | 全仓其余 19 个确认标题都是问句，回收站两个写成 "Delete Forever"/"Empty Trash"（后者与触发它的按钮重名） | ✅ 8c8cdd0：改为 `…?`；`TestConfirmTitlesAreQuestions`（go/ast 扫描）钉住 |
+| F186 | P2 | ⌘W/Close Tab | Close Tab（⌘W）在 Settings/Sessions/Files/Hosts 等内页同样弹 "Close Tab? This closes the selected Herdr Tab and all Panes in it."——目标 Tab 不在屏幕上；macOS 里 ⌘W 在设置窗口是"关掉眼前这个"，误确认会关掉带运行中 Agent 的 Tab（确认框默认聚焦 Cancel，已降险）。无头探针证实各路由均弹 | 记录（待产品决策：内页 ⌘W = 返回 / 禁用 / 维持，见回写） |
+| F187 | P3 | ⌘, / Settings | 已在 Settings ▸ Agents 时按 ⌘, 或选 Settings… 会跳回 General（`router.Push(/settings/general)`）；macOS 惯例是已打开则保持当前窗格 | 记录 |
+| F188 | P3 | 确认框 | 所有确认框主按钮都叫泛化的 "Confirm"（Cancel 在最后以保 Enter 安全）；HIG 要求按钮写动作（"Delete"/"Close Tab"/"Discard"） | 记录（待产品决策：按 kind 取动词，需改约 20 处调用） |
+| F189 | P3 | Toast | 单句"结果"类 toast 有的带句号（"Commit subject generated."/"Prompt copied to clipboard."/"Commit rules saved."/"Pi path saved."/"Default commit rules restored."）有的不带（"Changes stashed"/"Trash emptied"/"Deleted"/"Copied remote-tracking ref"）；失败类 "Could not read commit:" 与 "Couldn't empty the Trash." 缩写不一 | 记录 |
+| F190 | P3 | 菜单栏 | 无 View 菜单（显示/隐藏侧栏、全屏只在应用内 ⌘B）；Window 菜单缺 Bring All to Front；⌘2–⌘5 未分配给四个视图（侧栏收起时标签条随之消失，键盘路径只剩 ⌘K） | 记录（待产品决策；加速器只能挂在幂等的「去往」动作上，不能挂侧栏切换，F13/F101/F103/F162 教训） |
+
+已排查排除：控件无标签缺口——Workspace/Changes/Sessions/Files/Hosts/Settings 六页 AX 扫描，唯一无 label 的 AXButton 是窗口左上三个系统红绿灯；760×560/980×640 窄窗口下五页（Workspace/Sessions/Files/Hosts/Settings）无裁切、标签条与大标题均完整（无头渲染）。

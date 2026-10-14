@@ -44,6 +44,16 @@ CUA 绑定：`cua.getApp("Shardlane")`（bundle `com.whstudio.shardlane.next`）
 - Esc 关 ⌘K/⌘F 可靠；对话框家族 Esc/Cancel 默认聚焦（F69 契约）可依赖。
 - 窗口标题会随路由变化（F104），AX window 行即路由真值。
 
+### cua-driver CLI 补充（0.34，2026-10-14 第二轮审计实测）
+
+- 调用形态：`cua-driver call <tool> '<json>'`；`get_window_state` 带 `session` 标签才会跨调用保留元素令牌，**应用重启后旧标签失效**（"session has ended"）——换新标签即可。
+- **菜单栏用 `invoke_menu`**（`pid` + `window_id` + `path:["Go","Files"]`，AX 触发、不走像素、缺项/歧义/禁用即失败）：返回里 `delivery.mode` 写 `foreground`，但实测前台应用不变（用 System Events 只读查 `frontmost` 复核过）。效果必须另取新状态核对：`list_windows` 的标题（路由真值）+ 截图。**不要对 Close Tab / Quit / Check for Updates 调用**。
+- 只读转储整条菜单栏与加速器：`osascript` 遍历 `menu bar items of menu bar 1`，读 `name`、`AXMenuItemCmdChar`、`AXMenuItemCmdModifiers`（0=⌘，1=⇧⌘，2=⌥⌘，3=⌥⇧⌘）、`enabled`；AppleScript 没有行内 `if` 表达式，先落变量。
+- 原生右键菜单是独立弹层且数秒内自动消失：右键 → 短 sleep → 新取 `get_window_state` → AXPress 菜单项，必须在**同一个脚本**里完成。
+- 未标注的 AXButton 只剩窗口左上三个红绿灯（系统自带）即无标签缺口：`get_window_state` 后筛交互角色无 label 项，逐页（含 Settings/Sessions/Files/Hosts/Changes）扫一遍。
+- zsh 下 `for p in "Go Files"; do cmd ${=p}` 才会拆词；`$p` 不拆，`invoke_menu` 会拿整串当一个菜单名失败（静默无效，表现为"页面没变"）。
+- 每次导航后记得回到 Workspace Terminal，并核对窗口 frame 未变。
+
 ## 巡检清单（每表面过一遍）
 
 按序走查，每表面记录候选问题再继续：
