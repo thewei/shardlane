@@ -3,7 +3,7 @@ package nativeui
 /**
  * [INPUT]: rightPanel.selectedFilePath/currentRoot、filesview.ReadPreview/ReadImageDataURL（flavor 上限 + symlink 守卫）、platform.OpenURL、mygo Bind 事件
  * [OUTPUT]: FilesPreviewBridge 绑定服务（Current/Open/OpenExternal）与 files:preview 事件、Shell.publishFilesPreview（有序发布）
- * [POS]: Files 预览 WebView（产品决策 2026-10-13）唯一表现层桥：只读——页面没有任何写通道（OpenExternal 仅放行 http/https 出站），文件操作仍走原生对话框 + filesview 域服务；WebView 兜不住的文件由 Native 兜底层接管，不经此桥；不新增 Herdr 方法，无 localhost HTTP
+ * [POS]: Files 预览 WebView（产品决策 2026-10-13，2026-10-14 收窄为 Markdown 渲染与网页图片）唯一表现层桥：只读——页面没有任何写通道（OpenExternal 仅放行 http/https 出站），文件操作仍走原生对话框 + filesview 域服务；文本/代码由原生 editor 显示、WebView 兜不住的文件由 Native 兜底层接管，均不经此桥；不新增 Herdr 方法，无 localhost HTTP
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 
@@ -35,8 +35,8 @@ type FilesPreviewTarget struct {
 var filesPreviewSelected = mygo.NewEvent[FilesPreviewTarget]("files:preview")
 
 // FilesPreviewContent is one read-only file the page renders. Flavor tells
-// the page which view to take: "text" (CodeMirror), "markdown" (rendered
-// or source, the page's toggle), or "image" (DataURL).
+// the page which view to take: "markdown" (rendered) or "image" (DataURL);
+// text and code never reach the page.
 type FilesPreviewContent struct {
 	Path      string `json:"path"`
 	Name      string `json:"name"`
@@ -72,22 +72,22 @@ func (b *FilesPreviewBridge) Current(ctx context.Context) (FilesPreviewTarget, e
 	return target, nil
 }
 
-// Open reads one file for preview. The request must still match the live
-// selection — a stale page request after the user clicked elsewhere is
-// refused instead of answering with content the tree no longer shows.
-// The flavor routes the read: text and Markdown pull through ReadPreview
-// (1 MiB cap, symlink-guarded); images become a data URL (24 MiB cap).
-// Files the WebView tier cannot take are never selected into the page —
-// the Native UI tier owns them — so an error here is a stale race, not a
-// user-facing state.
+// Open reads one file for preview. The request must be a file the page
+// owns — the live selection, planned for the WebView tier — so a stale
+// page request after the user clicked elsewhere, or for a file the native
+// code view shows, is refused instead of answering with content the tree
+// no longer shows. The flavor routes the read: Markdown pulls through
+// ReadPreview (1 MiB cap, symlink-guarded); images become a data URL
+// (24 MiB cap). Text never crosses the bridge — the native code view owns
+// it — so an error here is a stale race, not a user-facing state.
 func (b *FilesPreviewBridge) Open(ctx context.Context, path string) (FilesPreviewContent, error) {
 	var root string
-	var selected bool
+	var owned bool
 	b.shell.callOnWindow(func() {
 		root = b.shell.rightPanel.currentRoot
-		selected = root != "" && path == b.shell.rightPanel.selectedFilePath
+		owned = root != "" && b.shell.webPreviewOwns(path)
 	})
-	if !selected {
+	if !owned {
 		return FilesPreviewContent{}, errors.New("the file is no longer selected")
 	}
 	content := FilesPreviewContent{Path: path, Name: filepath.Base(path)}
@@ -102,7 +102,7 @@ func (b *FilesPreviewBridge) Open(ctx context.Context, path string) (FilesPrevie
 		if info, err := os.Stat(path); err == nil {
 			content.SizeBytes = info.Size()
 		}
-	default:
+	case filesview.FlavorMarkdown:
 		preview, err := filesview.ReadPreview(path, root)
 		if err != nil {
 			return FilesPreviewContent{}, err
@@ -112,6 +112,8 @@ func (b *FilesPreviewBridge) Open(ctx context.Context, path string) (FilesPrevie
 		content.IsBinary = preview.IsBinary
 		content.Truncated = preview.Truncated
 		content.Content = preview.Content
+	default:
+		return FilesPreviewContent{}, errors.New("this file previews natively")
 	}
 	b.shell.callOnWindow(func() {
 		content.Theme = b.shell.chatBridgeTheme()
@@ -139,11 +141,22 @@ func (b *FilesPreviewBridge) OpenExternal(ctx context.Context, rawURL string) er
 // filesPreviewTargetState projects the selection for the page (UI lane).
 func (s *Shell) filesPreviewTargetState() FilesPreviewTarget {
 	target := FilesPreviewTarget{Theme: s.chatBridgeTheme()}
-	if path := s.rightPanel.selectedFilePath; path != "" {
+	// The page hears only a file it owns: one the native tier shows, or one
+	// still being planned, is no business of it, so it never lingers on
+	// another file's content under this name.
+	if path := s.rightPanel.selectedFilePath; s.webPreviewOwns(path) {
 		target.Path = path
 		target.Name = filepath.Base(path)
 	}
 	return target
+}
+
+// webPreviewOwns reports whether the WebView page is the tier showing path:
+// it is the selection, its plan has landed, and the native tier did not take
+// it (UI lane).
+func (s *Shell) webPreviewOwns(path string) bool {
+	st := &s.rightPanel
+	return path != "" && st.selectedFilePath == path && st.previewPlanned == path && st.nativePreviewPath != path
 }
 
 // publishFilesPreview pushes the current selection to the WebView page.

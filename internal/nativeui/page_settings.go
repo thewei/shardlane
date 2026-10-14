@@ -327,7 +327,7 @@ func (s *Shell) settingsDiagnostics(c *ui.Context) {
 				})
 			}
 		}),
-		row("Rich file preview", "CodeMirror-highlighted preview on the Files page.", func() {
+		row("Rich file preview", "Render Markdown and SVG, AVIF and ICO images on the Files page.", func() {
 			if useWeb, changed := settingSwitch(c, "Rich file preview", s.settings.General.WebViewFilesPreview); changed {
 				if useWeb {
 					s.filesWebviewBroken = false // re-arm a latched creation failure
@@ -336,6 +336,7 @@ func (s *Shell) settingsDiagnostics(c *ui.Context) {
 					v.General.WebViewFilesPreview = useWeb
 					return nil
 				})
+				s.replanFilesPreview() // the open file may belong to the other tier now
 			}
 		}),
 	)

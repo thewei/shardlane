@@ -9,6 +9,7 @@ package nativeui
 
 import (
 	"github.com/egoist/mygo/ui"
+	"github.com/egoist/mygo/ui/editor"
 	"github.com/wh-studio/herdr-client/internal/filesview"
 	"github.com/wh-studio/herdr-client/internal/platform"
 	"github.com/wh-studio/herdr-client/internal/preview"
@@ -53,12 +54,21 @@ type rightPanelState struct {
 	ignoredRoot string
 	ignoredSet  *filesview.IgnoreSet
 
-	// Native fallback tier (FILES-09): files the WebView tier cannot take —
-	// oversized text heads, oversized images — render natively instead of
-	// dead-ending. nativePreviewPath is set only while the native tier owns
-	// the current selection; the WebView page is not published for it.
+	// Preview tiers (FILES-09, reworked 2026-10-14): the WebView page
+	// renders what HTML suits — rendered Markdown and the web image formats —
+	// while text, code and Markdown source show in the framework's code
+	// editor and oversized images decode to a native bitmap.
+	// nativePreviewPath is set only while the native tier owns the current
+	// selection (the WebView page is not published for it); previewSize is
+	// the selection's stat'd size for the viewer bar and previewPlanned the
+	// path whose tier plan has landed; markdownSource is the sticky
+	// Rendered/Source choice.
+	previewSize        int64
+	previewPlanned     string
+	markdownSource     bool
 	nativePreviewPath  string
 	nativeText         *filesview.Preview
+	nativeCode         *editor.State
 	nativeTextLoading  bool
 	nativeTextFailed   string
 	nativeImage        *ui.Bitmap

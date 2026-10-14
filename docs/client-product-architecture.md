@@ -158,6 +158,21 @@ MyGo Native UI
     root expanding without perceptible lag. The native preview renderer
     is retired; `General.WebViewFilesPreview` (Settings → Compatibility)
     stays as the escape hatch and renders truthful states when off.
+  - **Amended 2026-10-14 — code is native again, via the framework's own
+    editor.** MyGo v0.4.8 ships `ui/editor` (a virtualized, read-only-capable
+    code view with syntax highlighting for 28 languages, find and folding),
+    so a mature framework owner now exists for code display and the
+    hand-built CodeMirror 6 viewer is retired. Text, code and Markdown
+    *source* show in `editor.View` inside the native Files page (an 8 MiB
+    `filesview.TextPreviewCap`, truncation stated; the `editor.Buffer` is
+    built off the UI lane; token colors come from the Git review's palette
+    so one file reads the same in Files and in a diff). The WebView page
+    narrows to what HTML suits: rendered Markdown (GitHub's stylesheet) and
+    web images, still over the same strictly read-only bridge — which now
+    refuses text and any file the page does not own. The viewer bar (name,
+    size, truncation pill, Rendered/Source choice) is native over every
+    tier. The WebView constraints above bind unchanged; the frontend sheds
+    the 17 `@codemirror/*` packages and `@lezer/highlight`.
 - Daily development of the new desktop path must not require compiling the
   Rust GUI. Current `shardlane-host`, `shardlane-history` and
   `shardlane-remote` remain compatibility/parity references until each domain
@@ -314,9 +329,10 @@ Normative 0.10 boundaries:
   Header's Files action navigates to a dedicated `/files` page, whose left
   sidebar browses the selected Herdr Tab's CWD and whose center owns the
   bounded, read-only preview. (Amended 2026-10-13: the center preview
-  renders in the official `ui.WebView` with CodeMirror 6 and the tree
-  carries ignore rules plus bounded file operations — see the 2026-10-13
-  Files decision.) Changes uses the left Git-reference tree and a Fork-style center: Local Changes places staged/unstaged files beside Diff with a bottom commit composer; All Commits places the ancestry-aware history graph above a changed-file tree and read-only Diff.
+  renders in the official `ui.WebView` and the tree carries ignore rules
+  plus bounded file operations; amended 2026-10-14: code shows in the
+  native `ui/editor` view and the WebView renders only Markdown and images
+  — see the Files decisions.) Changes uses the left Git-reference tree and a Fork-style center: Local Changes places staged/unstaged files beside Diff with a bottom commit composer; All Commits places the ancestry-aware history graph above a changed-file tree and read-only Diff.
   The existing Header/tray Agent activity flyout (a MyGo Flyout, shown as a
   system popover on macOS) has an Agents /
   Services switch: Services displays the active Tab's configured Scripts and

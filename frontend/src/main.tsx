@@ -6,7 +6,8 @@ import "./theme.css";
 
 // One embedded SPA serves both WebView pages from the app content origin:
 // /chat (the chat body) and /files-viewer (the Files preview body). The
-// FilesViewer chunk is lazy, so the chat route never pays for CodeMirror.
+// FilesViewer chunk is lazy, so the chat route never pays for GitHub's
+// Markdown stylesheets.
 const FilesViewer = React.lazy(() =>
   import("./FilesViewer").then((m) => ({ default: m.FilesViewer })),
 );

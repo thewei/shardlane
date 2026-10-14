@@ -211,6 +211,34 @@ func TestUIEvidence(t *testing.T) {
 		shell.router.Push("/files")
 		render("09-files")
 
+		// Files with a file open: the native code view over a seeded temp
+		// root (this package's own themed Go source), then a Markdown file
+		// whose Source choice shows it natively.
+		code := t.TempDir()
+		source, err := os.ReadFile("code_theme.go")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(code, "code_theme.go"), source, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(code, "README.md"), []byte("# Notes\n\nA **short** readme with `code` and a [link](https://example.com).\n\n- one\n- two\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		shell.projection.Projects[0].CWD = code
+		for i := range shell.projection.Panes {
+			if shell.projection.Panes[i].ProjectID == "w1" {
+				shell.projection.Panes[i].CWD = code
+			}
+		}
+		tt.Frame()
+		tt.Frame() // the root swap and its directory read land
+		shell.openFilePreview(filepath.Join(code, "code_theme.go"))
+		render("09b-files-code")
+		shell.setMarkdownSource(true)
+		shell.openFilePreview(filepath.Join(code, "README.md"))
+		render("09c-files-markdown-source")
+
 		// Hosts reads a seeded temp config, never the developer's real one.
 		config := filepath.Join(t.TempDir(), "config")
 		if err := os.WriteFile(config, []byte("Host dev-box\n  HostName 10.0.0.12\n  User wilson\n\nHost staging\n  HostName staging.example.com\n  User deploy\n  Port 2222\n"), 0o600); err != nil {

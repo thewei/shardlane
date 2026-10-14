@@ -1,6 +1,7 @@
 package filesview
 
 import (
+	"bytes"
 	"errors"
 	"os"
 	"path/filepath"
@@ -80,44 +81,94 @@ func TestReadImageDataURLCapsAndEncodes(t *testing.T) {
 	}
 }
 
-// TestReadTextHeadBoundsAndTruncates: the native fallback sees the head
-// with Truncated telling the truth about the rest.
-func TestReadTextHeadBoundsAndTruncates(t *testing.T) {
+// TestReadTextBoundsAndTruncates: the native code view sees text up to
+// TextPreviewCap — past the 1 MiB web cap — with Truncated telling the
+// truth about the rest, and an empty file is just empty.
+func TestReadTextBoundsAndTruncates(t *testing.T) {
 	root := t.TempDir()
 	small := filepath.Join(root, "small.txt")
 	if err := os.WriteFile(small, []byte("hello"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	preview, err := ReadTextHead(small)
+	preview, err := ReadText(small, root)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if preview.Content != "hello" || preview.Truncated {
-		t.Fatalf("small head = %+v", preview)
+	if preview.Content != "hello" || preview.Truncated || preview.IsBinary {
+		t.Fatalf("small text = %+v", preview)
+	}
+
+	empty := filepath.Join(root, "empty.txt")
+	if err := os.WriteFile(empty, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if preview, err = ReadText(empty, root); err != nil || preview.Content != "" || preview.IsBinary {
+		t.Fatalf("empty text = %+v, %v", preview, err)
+	}
+
+	mid := filepath.Join(root, "mid.txt")
+	if err := os.WriteFile(mid, []byte(strings.Repeat("a", PreviewCap+10)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if preview, err = ReadText(mid, root); err != nil || len(preview.Content) != PreviewCap+10 || preview.Truncated {
+		t.Fatalf("a file past the web cap must still read whole: len=%d truncated=%v err=%v", len(preview.Content), preview.Truncated, err)
 	}
 
 	big := filepath.Join(root, "big.txt")
-	if err := os.WriteFile(big, []byte(strings.Repeat("a", NativeTextHeadCap+10)), 0o600); err != nil {
+	if err := os.WriteFile(big, []byte(strings.Repeat("a", TextPreviewCap+10)), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	preview, err = ReadTextHead(big)
-	if err != nil {
+	if preview, err = ReadText(big, root); err != nil {
 		t.Fatal(err)
 	}
-	if len(preview.Content) != NativeTextHeadCap || !preview.Truncated {
-		t.Fatalf("big head len = %d truncated = %v", len(preview.Content), preview.Truncated)
+	if len(preview.Content) != TextPreviewCap || !preview.Truncated {
+		t.Fatalf("big text len = %d truncated = %v", len(preview.Content), preview.Truncated)
 	}
+}
 
-	// An invalid UTF-8 tail is trimmed, never mojibaked.
-	mixed := filepath.Join(root, "mixed.bin")
-	if err := os.WriteFile(mixed, append([]byte("ok"), 0xff, 0xfe), 0o600); err != nil {
+// TestIsBinaryDoesNotMistakeACutRuneForBinary: the probe stops at 8 KiB,
+// which for 3-byte CJK runes always lands inside a rune. Such files are
+// text; real binary and genuinely invalid bytes stay binary.
+func TestIsBinaryDoesNotMistakeACutRuneForBinary(t *testing.T) {
+	for _, n := range []int{2800, 2801, 2802, 2803} {
+		if IsBinary([]byte(strings.Repeat("中", n))) {
+			t.Errorf("%d CJK runes read as binary", n)
+		}
+	}
+	// 4-byte runes cut at every offset of the rune.
+	for pad := 0; pad < 4; pad++ {
+		text := strings.Repeat("a", pad) + strings.Repeat("😀", 3000)
+		if IsBinary([]byte(text)) {
+			t.Errorf("emoji text with pad %d read as binary", pad)
+		}
+	}
+	if !IsBinary(append(bytes.Repeat([]byte("a"), 100), 0x00)) {
+		t.Error("a NUL byte must read as binary")
+	}
+	// Invalid bytes before the cut are still binary, long or short.
+	if !IsBinary([]byte("ok\xff\xfeok")) {
+		t.Error("short invalid UTF-8 must read as binary")
+	}
+	if !IsBinary(append([]byte("\xff"), bytes.Repeat([]byte("a"), 9000)...)) {
+		t.Error("invalid byte inside the probe must read as binary")
+	}
+}
+
+// TestReadTextShowsBytesPastTheProbeAsReplacementRunes: a stray byte past
+// the classification probe renders as U+FFFD instead of invalid text.
+func TestReadTextShowsBytesPastTheProbeAsReplacementRunes(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "late.txt")
+	body := append(bytes.Repeat([]byte("a"), 9000), 0xff)
+	body = append(body, []byte("tail")...)
+	if err := os.WriteFile(path, body, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	preview, err = ReadTextHead(mixed)
+	preview, err := ReadText(path, root)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasPrefix(preview.Content, "ok") {
-		t.Fatalf("mixed head = %q", preview.Content)
+	if preview.IsBinary || !strings.HasSuffix(preview.Content, "\uFFFDtail") {
+		t.Fatalf("late stray byte: binary=%v tail=%q", preview.IsBinary, preview.Content[len(preview.Content)-8:])
 	}
 }

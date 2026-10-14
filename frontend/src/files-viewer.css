@@ -1,7 +1,6 @@
-/* Files preview page (product decision 2026-10-13). Shares the app token
-   variables from theme.css; the highlight classes below are themed per
-   appearance so the CodeMirror document follows the app without editor
-   reconfiguration. */
+/* Files preview page (product decision 2026-10-13, narrowed 2026-10-14 to
+   rendered Markdown and images). Shares the app token variables from
+   theme.css; the bar, size and code view are native. */
 
 .viewer {
   display: flex;
@@ -12,59 +11,10 @@
   color: var(--text);
 }
 
-.viewer-bar {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  height: 40px;
-  padding: 0 16px;
-  border-bottom: 1px solid var(--border-subtle);
-  flex: none;
-}
-
-.viewer-name {
-  font-weight: 600;
-  font-size: 13px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.viewer-size {
-  font-size: 11.5px;
-  color: var(--text-muted);
-  flex: none;
-}
-
-.viewer-loading {
-  font-size: 11.5px;
-  color: var(--text-muted);
-  flex: none;
-}
-
-/* Markdown rendered/source toggle (the chat's segmented language). */
-.viewer-seg {
-  display: inline-flex;
-  border: 1px solid var(--border-subtle);
-  border-radius: 6px;
-  overflow: hidden;
-  margin-left: auto;
-  flex: none;
-}
-
-.viewer-seg button {
-  font: inherit;
-  font-size: 11.5px;
-  color: var(--text-muted);
-  background: transparent;
-  border: none;
-  padding: 3px 10px;
-  cursor: pointer;
-}
-
-.viewer-seg button.pick {
-  background: var(--code-bg);
-  color: var(--text);
+.viewer-body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
 }
 
 /* Markdown rendered view: GitHub's own markdown-body stylesheet (scoped
@@ -103,136 +53,6 @@
   object-fit: contain;
   border-radius: 4px;
 }
-
-.pill {
-  font-size: 11px;
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: var(--code-bg);
-  color: var(--text-muted);
-  flex: none;
-}
-
-.viewer-body {
-  position: relative;
-  flex: 1;
-  min-height: 0;
-}
-
-.viewer-editor {
-  position: absolute;
-  inset: 0;
-}
-
-/* Read-only code surface: transparent chrome, token colors via classes. */
-.viewer-editor .cm-editor {
-  height: 100%;
-  font-size: 12.5px;
-}
-
-.viewer-editor .cm-editor.cm-focused {
-  outline: none;
-}
-
-.viewer-editor .cm-scroller {
-  font-family: ui-monospace, "SF Mono", Menlo, Monaco, "Cascadia Mono", monospace;
-  line-height: 1.55;
-}
-
-.viewer-editor .cm-gutters {
-  background: transparent;
-  border-right: 1px solid var(--border-subtle);
-  color: var(--text-muted);
-}
-
-.viewer-editor .cm-activeLine,
-.viewer-editor .cm-activeLineGutter {
-  background: var(--code-bg);
-}
-
-.viewer-editor .cm-selectionBackground,
-.viewer-editor .cm-editor ::selection,
-.viewer-editor .cm-content ::selection {
-  background: color-mix(in srgb, var(--accent) 22%, transparent) !important;
-}
-
-.viewer-editor .cm-cursor {
-  display: none;
-}
-
-/* In-page search panel (⌘F) follows the panel surface. */
-.viewer-editor .cm-panels {
-  background: var(--panel);
-  color: var(--text);
-  border-bottom: 1px solid var(--border-subtle);
-}
-
-.viewer-editor .cm-panel input,
-.viewer-editor .cm-panel button {
-  font: inherit;
-  color: var(--text);
-}
-
-.viewer-editor .cm-panel.cm-search input {
-  background: var(--content);
-  border: 1px solid var(--border-subtle);
-  border-radius: 5px;
-  padding: 2px 6px;
-}
-
-.viewer-editor .cm-panel.cm-search button {
-  background: transparent;
-  border: 1px solid var(--border-subtle);
-  border-radius: 5px;
-  padding: 2px 8px;
-  cursor: pointer;
-}
-
-.viewer-editor .cm-searchMatch {
-  background: color-mix(in srgb, var(--accent) 25%, transparent);
-}
-
-.viewer-editor .cm-searchMatch-selected {
-  background: color-mix(in srgb, var(--accent) 45%, transparent);
-}
-
-/* Highlight vocabulary. Light = One Light family, dark = One Dark family. */
-[data-theme="light"] .viewer-editor {
-  --cmk-keyword: #a626a4;
-  --cmk-func: #4078f2;
-  --cmk-type: #c18401;
-  --cmk-num: #986801;
-  --cmk-string: #50a14f;
-  --cmk-op: #0184bc;
-  --cmk-comment: #a0a1a7;
-  --cmk-escape: #0184bc;
-  --cmk-name: #383a42;
-  --cmk-invalid: #e45649;
-}
-
-[data-theme="dark"] .viewer-editor {
-  --cmk-keyword: #c678dd;
-  --cmk-func: #61afef;
-  --cmk-type: #e5c07b;
-  --cmk-num: #d19a66;
-  --cmk-string: #98c379;
-  --cmk-op: #56b6c2;
-  --cmk-comment: #7f848e;
-  --cmk-escape: #56b6c2;
-  --cmk-name: #abb2bf;
-  --cmk-invalid: #e06c75;
-}
-
-.viewer-editor .cmk-keyword { color: var(--cmk-keyword); }
-.viewer-editor .cmk-func { color: var(--cmk-func); }
-.viewer-editor .cmk-type { color: var(--cmk-type); }
-.viewer-editor .cmk-num { color: var(--cmk-num); }
-.viewer-editor .cmk-string { color: var(--cmk-string); }
-.viewer-editor .cmk-op { color: var(--cmk-op); }
-.viewer-editor .cmk-comment { color: var(--cmk-comment); }
-.viewer-editor .cmk-escape { color: var(--cmk-escape); }
-.viewer-editor .cmk-name { color: var(--cmk-name); }
-.viewer-editor .cmk-invalid { color: var(--cmk-invalid); }
 
 /* Empty / error states, centered like the chat page's notes. */
 .viewer-state {

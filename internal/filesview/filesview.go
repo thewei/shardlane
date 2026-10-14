@@ -18,8 +18,14 @@ import (
 	"unicode/utf8"
 )
 
-// PreviewCap is the 1 MiB maximum size for a file preview (WIX-055).
+// PreviewCap is the 1 MiB maximum size for a file preview (WIX-055): what
+// the WebView page takes of a Markdown file to render.
 const PreviewCap = 1024 * 1024
+
+// TextPreviewCap bounds what the native code view takes of a file: the
+// framework's editor virtualizes its lines, so text is shown to 8 MiB,
+// past which the head shows with Truncated set.
+const TextPreviewCap = 8 << 20
 
 // EntryKind distinguishes directory nodes from files and symlinks.
 type EntryKind string
@@ -151,6 +157,16 @@ func SortEntries(entries []Entry) {
 // text vs binary (WIX-054). Truncated is true when the file exceeds 1 MiB.
 // If root is provided, path is verified to stay within root (symlink escape guard).
 func ReadPreview(path string, root ...string) (Preview, error) {
+	return readLimited(path, PreviewCap, root)
+}
+
+// ReadText is ReadPreview for the native code view: the same
+// classification and escape guard, up to TextPreviewCap.
+func ReadText(path string, root ...string) (Preview, error) {
+	return readLimited(path, TextPreviewCap, root)
+}
+
+func readLimited(path string, limit int, root []string) (Preview, error) {
 	if len(root) > 0 && root[0] != "" {
 		canonicalRoot, err1 := filepath.EvalSymlinks(root[0])
 		canonicalPath, err2 := filepath.EvalSymlinks(path)
@@ -177,23 +193,24 @@ func ReadPreview(path string, root ...string) (Preview, error) {
 	}
 	defer file.Close()
 
-	// Read up to PreviewCap + 1 byte so truncation is provable.
-	limited := io.LimitReader(file, PreviewCap+1)
-	buf, err := io.ReadAll(limited)
+	// Read up to limit + 1 byte so truncation is provable.
+	buf, err := io.ReadAll(io.LimitReader(file, int64(limit)+1))
 	if err != nil {
 		return Preview{}, err
 	}
 
 	truncated := false
-	if len(buf) > PreviewCap {
-		buf = buf[:PreviewCap]
+	if len(buf) > limit {
+		buf = buf[:limit]
 		truncated = true
 	}
 
 	isBinary := IsBinary(buf)
 	content := ""
 	if !isBinary {
-		content = string(buf)
+		// A cut inside a multi-byte rune, or a stray byte past the probe,
+		// shows as U+FFFD instead of invalid text.
+		content = strings.ToValidUTF8(string(buf), "\uFFFD")
 	}
 
 	return Preview{
@@ -215,6 +232,17 @@ func IsBinary(buf []byte) bool {
 	probe := buf[:probeLen]
 	if bytes.IndexByte(probe, 0) >= 0 {
 		return true
+	}
+	if probeLen < len(buf) {
+		// The cut may split a multi-byte rune — every pure-CJK file would
+		// read as binary (8192 % 3 = 2) — so an incomplete tail is not
+		// evidence.
+		for i := 0; i < utf8.UTFMax-1 && len(probe) > 0 && !utf8.Valid(probe); i++ {
+			if r, size := utf8.DecodeLastRune(probe); r != utf8.RuneError || size > 1 {
+				break // the tail is a whole rune: the invalid bytes are elsewhere
+			}
+			probe = probe[:len(probe)-1]
+		}
 	}
 	return !utf8.Valid(probe)
 }

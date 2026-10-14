@@ -101,8 +101,8 @@ export interface ChatBridgeTurn {
 
 /**
  * FilesPreviewContent is one read-only file the page renders. Flavor tells
- * the page which view to take: "text" (CodeMirror), "markdown" (rendered
- * or source, the page's toggle), or "image" (DataURL).
+ * the page which view to take: "markdown" (rendered) or "image" (DataURL);
+ * text and code never reach the page.
  */
 export interface FilesPreviewContent {
   path: string;
@@ -246,14 +246,14 @@ export const filesPreview = {
     return call("filesPreview.Current");
   },
   /**
-   * Open reads one file for preview. The request must still match the live
-   * selection — a stale page request after the user clicked elsewhere is
-   * refused instead of answering with content the tree no longer shows.
-   * The flavor routes the read: text and Markdown pull through ReadPreview
-   * (1 MiB cap, symlink-guarded); images become a data URL (24 MiB cap).
-   * Files the WebView tier cannot take are never selected into the page —
-   * the Native UI tier owns them — so an error here is a stale race, not a
-   * user-facing state.
+   * Open reads one file for preview. The request must be a file the page
+   * owns — the live selection, planned for the WebView tier — so a stale
+   * page request after the user clicked elsewhere, or for a file the native
+   * code view shows, is refused instead of answering with content the tree
+   * no longer shows. The flavor routes the read: Markdown pulls through
+   * ReadPreview (1 MiB cap, symlink-guarded); images become a data URL
+   * (24 MiB cap). Text never crosses the bridge — the native code view owns
+   * it — so an error here is a stale race, not a user-facing state.
    */
   open(path: string): Promise<FilesPreviewContent> {
     return call("filesPreview.Open", path);

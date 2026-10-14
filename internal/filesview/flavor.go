@@ -1,8 +1,9 @@
-// flavor.go decides how a file previews (FILES-07/08): the WebView tier
-// renders text and Markdown up to PreviewCap and images up to
-// ImagePreviewCap as data URLs; larger files fall back to the Native UI
-// tier (bounded text head, or a decoded native bitmap). SVG stays text
-// when it outgrows the image cap — it is XML source a developer can read.
+// flavor.go decides how a file previews (FILES-07/08, reworked 2026-10-14):
+// the WebView page renders what HTML suits — Markdown up to PreviewCap and
+// images up to ImagePreviewCap as data URLs — while text, code and
+// Markdown source show in the native code view (ReadText) and oversized
+// images decode to a native bitmap. SVG stays text when it outgrows the
+// image cap — it is XML source a developer can read.
 
 package filesview
 
@@ -33,10 +34,6 @@ const (
 // tier renders.
 const ImagePreviewCap = 24 << 20
 
-// NativeTextHeadCap bounds the Native fallback's text head: a read-only
-// glimpse (first 256 KiB) of a file that outgrows the WebView tier.
-const NativeTextHeadCap = 256 << 10
-
 // markdownExts render (default) instead of highlighting.
 var markdownExts = map[string]struct{}{
 	".md":       {},
@@ -57,8 +54,8 @@ var imageExts = map[string]string{
 }
 
 // PreviewFlavor maps a filename to its preview flavor. Everything that is
-// neither Markdown nor an image previews as text (CodeMirror highlights by
-// extension; unknown extensions render plain).
+// neither Markdown nor an image previews as text (the code view highlights
+// by extension; unknown extensions render plain).
 func PreviewFlavor(name string) Flavor {
 	ext := strings.ToLower(filepath.Ext(name))
 	if _, ok := markdownExts[ext]; ok {
@@ -130,35 +127,4 @@ func DecodeImageBounded(path string) (image.Image, error) {
 		return nil, err
 	}
 	return img, nil
-}
-
-// ReadTextHead reads up to NativeTextHeadCap bytes as displayable text for
-// the Native fallback tier: oversized files preview as their head, with
-// Truncated carrying the story. Invalid UTF-8 tails are trimmed.
-func ReadTextHead(path string) (Preview, error) {
-	info, err := os.Stat(path)
-	if err != nil {
-		return Preview{}, err
-	}
-	if info.IsDir() {
-		return Preview{}, errors.New("cannot preview a directory")
-	}
-	file, err := os.Open(path)
-	if err != nil {
-		return Preview{}, err
-	}
-	defer file.Close()
-
-	buf := make([]byte, min(NativeTextHeadCap, max(info.Size(), 1)))
-	n, err := file.Read(buf)
-	if err != nil && n == 0 {
-		return Preview{}, err
-	}
-	head := strings.ToValidUTF8(string(buf[:n]), "")
-	return Preview{
-		Path:      path,
-		SizeBytes: info.Size(),
-		Truncated: info.Size() > int64(n),
-		Content:   head,
-	}, nil
 }

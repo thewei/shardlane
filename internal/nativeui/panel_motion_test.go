@@ -10,6 +10,8 @@ package nativeui
 import (
 	"github.com/egoist/mygo/ui"
 	"github.com/wh-studio/herdr-client/internal/herdr"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -81,9 +83,19 @@ func TestFilesNavigationKeepsLeftTreeAtNarrowWidth(t *testing.T) {
 	s.showViewFiles()
 	tt := ui.NewTester(s.View, 960, 640)
 	tt.SetPreferences(ui.Preferences{ReduceMotion: true})
-	// Headless runs have no window, so the WebView preview cannot exist;
-	// the center must still render its truthful state beside the tree.
-	if s.router.Path() != routeFiles || s.sidebarCollapsed || !tt.HasText("Preview unavailable") {
+	// No file is open: the center says so beside the tree.
+	if s.router.Path() != routeFiles || s.sidebarCollapsed || !tt.HasText("Select a file to preview") {
 		t.Fatalf("Files should show directory tree and central preview: %q", tt.Texts())
+	}
+	// Headless runs have no window, so the WebView page cannot exist; a
+	// file that belongs to it must still render its truthful state.
+	md := filepath.Join(s.rightPanel.currentRoot, "README.md")
+	if err := os.WriteFile(md, []byte("# hi\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s.openFilePreview(md)
+	tt.Frame()
+	if !tt.HasText("Preview unavailable") {
+		t.Fatalf("a page-owned file without a page must say so: %q", tt.Texts())
 	}
 }
