@@ -16,7 +16,7 @@ titlebar.go: 内容列标题栏（身份区：Terminal/Chat 为面包屑 + cwd �
 route_header.go: Terminal/Chat 以外各页的标题栏身份（routeHeader/routeHeaderSpec：Changes[Diff/Commit 表面，Actions=表面菜单]、Sessions、Session 详情[灰色父级 Sessions › 会话标题，可返回，同行事实，会话操作菜单]、Files[选中文件时 Copy Path/Reveal in Finder，根路径只在标题悬停提示]、Hosts[SSH 配置路径只在悬停提示；选中主机时 Actions=该主机菜单]、Settings[灰色 Settings › 分组，由 settingsSections 命名]、Inspector、遗留 /chat 整页）与 routeHeaderBlock（单行 Title 大字加粗标题，无 crumb 胶囊无第二行，每页同字号同位置）；headerDetailRow 只服务 Workspace 面包屑的第二行
 unified_header_test.go: 标题栏单一归属回归——内页标题只在标题栏且各路由（含 Changes 与遗留 /chat）落在同一位置、标题为 Title 大字单行（不复述根路径/配置路径成第二行）、内页/侧栏不自画页头或标题回声、每个内页至多一个 Refresh 且为图标、Sessions/Settings/Hosts 侧栏列表同一起点（x/y）、Session 详情标题栏可返回列表、各路由 routeHeader 身份
 toggle_face_test.go: 开关「开」态回归——Sessions 工具栏的文字开关（Select/Trash）与标题栏图标开关同为中性芯片，不再是蓝色选中色（像素采样，深浅两套外观）
-copy_style_test.go: 文案大小写回归——emptyState/workspaceEmptyBanner 的字面标题一律句首大写（专有名词除外）；菜单项（.Item("…") 字面量）与按钮（ui.Button/PrimaryButton/compactButton/compactPrimaryButton 的字面量，含 `+` 链的字面部分）一律 Title Case（冠词/短介词小写），拦下两个方向的大小写漂移；openConfirm 的标题（字面量/`+` 链/Sprintf，AST 扫描）一律以 ? 结尾；生产字符串字面量不含 Please/successfully/Oops；同一动作名（菜单项/图标按钮/Tooltip）大小写只有一种拼写；提交时间只经 gdCommitTime 一种写法（调用处不得自己 .Time.Format）
+copy_style_test.go: 文案大小写回归——emptyState/workspaceEmptyBanner 的字面标题一律句首大写（专有名词除外）；菜单项（.Item("…") 字面量）与按钮（ui.Button/PrimaryButton/compactButton/compactPrimaryButton 的字面量，含 `+` 链的字面部分）一律 Title Case（冠词/短介词小写），拦下两个方向的大小写漂移；openConfirm 的标题（字面量/`+` 链/Sprintf，AST 扫描）一律以 ? 结尾；生产字符串字面量不含 Please/successfully/Oops；同一动作名（菜单项/图标按钮/Tooltip）大小写只有一种拼写；提交时间只经 gdCommitTime 一种写法（调用处不得自己 .Time.Format）；文件数只经 pluralFiles（字面量里不得出现 "%d files" / " files…" 前缀 / `file(s)` 类 "(s)" 回避）
 search_field_test.go: 搜索/筛选框只有官方 ui.SearchField 一种脸（AST 扫描：TextInput/TextInputBase 链上带 "Search…"/"Filter…" 提示、或手绘 "Clear" ButtonBase 即失败；ui.SearchField 调用数下限防扫描失效）；Git 面「Filter files」框收的是文字，输入时不同时触发 Alt+Z 等面上快捷键
 modal_title_test.go: 对话框标题回归——Merge/Commit/文本输入三种自建对话框的标题行高一致（渲染比较）；Title 字号（20）只许 route_header.go 的页标题使用，对话框与卡片用 Heading
 hairline_test.go: 分隔线只有一种粗细——AST 扫描 .Background(x)/.BorderColor(x) 的实参，控件描边色 theme.Border（不透明、比发丝线重数倍）不得当分隔线/面板边缘的颜色，一律 BorderSubtle；扫描数下限防失效
@@ -108,7 +108,7 @@ list_nav.go: 侧栏列表/树与 Sessions 列表唯一的键盘模型 listNav—
 list_nav_test.go: Files/Git 引用/Hosts 的真键盘回归（Sessions 见 history_nav_test.go）——移动与不回绕、gg/G/Ctrl-d/u、h/l/o 层级、单 Tab 停靠点与记忆、进页聚焦（含列表晚到）、对话框后焦点回到光标行、Files 行键 a/A/r/d/y、Hosts 选中跟随与机器行不属于末组、光标脸（键盘用过才亮、Tab 进入即亮、离开/重进复暗、点击不亮）
 sidebar_switchers.go: Git/Files 侧栏共用头部：项目名与分支名各自是可搜索的 pull-down 快速切换，外加刷新图标
 sidebar_tree_test.go: 网格对齐、导向线连续、分区无 "···"、悬停 "+"、创建对话框、项目/分支快速切换、Workspace 行无 "…" 与标题栏 Actions 回归
-changes_tree_test.go: Changes 文件树共用网格（逐层缩进一格）与行内图标动作命名回归
+changes_tree_test.go: Changes 文件树共用网格（逐层缩进一格）与行内图标动作命名回归；一个文件的状态读作 "1 file"（列表头与 Commit 旁计数）而非 "1 files"
 layout_width_test.go: 宽窗口内容列居中封顶（Settings 760、Sessions 1040、提交表单 760）回归
 git_service_snapshot.go: 仓库绑定快照/提交历史及本地远程跟踪引用的分离异步获取与 generation root 隔离
 commit_surface.go: 原生 Commit Dialog 唯一草稿，滚动正文 + 固定底部 Commit/Cancel、Select all/Clear selection；页脚主按钮用默认档（与 Cancel Commit 同高，不内联字号）

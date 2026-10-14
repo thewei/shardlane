@@ -181,7 +181,7 @@ func (s *Shell) gitQuickCommitForm(c *ui.Context, snap *gitworkbench.ChangesSnap
 				}
 			}
 			ui.Spacer(c)
-			ui.Textf(c, "%d files", len(snap.Files)).FontSize(Typography().Micro).TextColor(t.TextMuted)
+			ui.Text(c, pluralFiles(len(snap.Files))).FontSize(Typography().Micro).TextColor(t.TextMuted)
 			blocked := s.git.opBusy || s.git.committing || s.git.branchBusy ||
 				len(snap.Files) == 0 || (s.git.sequencerChecked && s.git.sequencer.Active())
 			button := compactPrimaryButton(c, "Commit")

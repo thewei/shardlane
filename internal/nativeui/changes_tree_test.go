@@ -73,3 +73,24 @@ func TestChangesRowActionsAreNamedIconButtons(t *testing.T) {
 		t.Fatal("the row's Stage icon did not start the operation")
 	}
 }
+
+// One changed file reads "1 file" in the header and beside Commit, never
+// "1 files": the commonest state is the one a hand-glued plural gets wrong.
+func TestChangesCountAgreesWithItsNumber(t *testing.T) {
+	root := t.TempDir()
+	shell := gitSurfaceTestShell(t, root)
+	shell.git.rootOf[root] = root
+	shell.git.snapshot.Files = shell.git.snapshot.Files[1:]
+	shell.router.Push(routeWorkspace)
+	shell.showSurface(WorkspaceSurfaceDiff)
+	shell.rebuildDiffRows()
+	tester := ui.NewTester(shell.View, 1200, 800)
+	tester.Frame()
+	tester.Frame()
+	if !tester.HasText("1 file") || !tester.HasText("  1 file") {
+		t.Fatalf("one changed file should read %q in the header and beside Commit: %q", "1 file", tester.Texts())
+	}
+	if tester.HasText("1 files") || tester.HasText("  1 files") {
+		t.Fatalf("a single file is counted as plural: %q", tester.Texts())
+	}
+}

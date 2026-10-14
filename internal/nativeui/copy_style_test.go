@@ -335,3 +335,60 @@ func TestCommitTimeIsSpelledOnce(t *testing.T) {
 		t.Fatalf("only %d gdCommitTime uses; the meta line and the row tooltip should both go through it", users)
 	}
 }
+
+// pluralHedge matches a "(s)" written after a noun: it hedges instead of
+// agreeing with the count.
+var pluralHedge = regexp.MustCompile(`(?i)\b(?:file|session|message|commit|line|item|host|agent|pane|result|entry)\(s\)`)
+
+// TestFileCountIsPluralisedByTheHelper pins one way to say how many files:
+// pluralFiles ("1 file", "2 files"). A count glued to a literal plural —
+// "%d files", itoa(n) + " files" — says "1 files" for the commonest state,
+// and "file(s)" is a hedge, not a sentence.
+func TestFileCountIsPluralisedByTheHelper(t *testing.T) {
+	for n, want := range map[int]string{0: "0 files", 1: "1 file", 2: "2 files"} {
+		if got := pluralFiles(n); got != want {
+			t.Fatalf("pluralFiles(%d) = %q, want %q", n, got, want)
+		}
+	}
+	files, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fset := token.NewFileSet()
+	users := 0
+	for _, name := range files {
+		if strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		file, err := parser.ParseFile(fset, name, nil, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ast.Inspect(file, func(n ast.Node) bool {
+			switch n := n.(type) {
+			case *ast.CallExpr:
+				if id, ok := n.Fun.(*ast.Ident); ok && id.Name == "pluralFiles" {
+					users++
+				}
+			case *ast.BasicLit:
+				if n.Kind != token.STRING {
+					return true
+				}
+				text, err := strconv.Unquote(n.Value)
+				if err != nil {
+					return true
+				}
+				if strings.Contains(text, "%d files") || strings.HasPrefix(text, " files") {
+					t.Errorf("%s: %q glues a count to a literal plural; use pluralFiles", fset.Position(n.Pos()), text)
+				}
+				if hedge := pluralHedge.FindString(text); hedge != "" {
+					t.Errorf("%s: %q hedges with %q; agree with the count (pluralFiles / pluralS)", fset.Position(n.Pos()), text, hedge)
+				}
+			}
+			return true
+		})
+	}
+	if users < 5 {
+		t.Fatalf("only %d pluralFiles uses; the count labels should all go through it", users)
+	}
+}

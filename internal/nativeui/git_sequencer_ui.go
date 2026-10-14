@@ -8,8 +8,6 @@ package nativeui
  */
 
 import (
-	"fmt"
-
 	"github.com/egoist/mygo/ui"
 	"github.com/wh-studio/herdr-client/internal/gitworkbench"
 )
@@ -70,7 +68,7 @@ func (s *Shell) gitSequencerBanner(c *ui.Context) {
 		ui.Text(c, gitOperationLabel(state.Kind)+" needs attention").
 			FontSize(Typography().Section).FontWeight(WeightSemibold)
 		if state.Unmerged > 0 {
-			ui.Text(c, fmt.Sprintf("%d file(s) with conflicts. Resolve and stage them, then refresh.", state.Unmerged)).
+			ui.Text(c, pluralFiles(state.Unmerged)+" with conflicts. Resolve and stage, then refresh.").
 				FontSize(Typography().Caption)
 		} else {
 			ui.Text(c, "No conflicts left. Review the staged result, then continue.").

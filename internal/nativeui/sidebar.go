@@ -192,7 +192,7 @@ func (s *Shell) sidebarFilesView(c *ui.Context) {
 		ui.Row(c).FillWidth().Padding(6, 12, 2).AlignItems(ui.Center).Children(func() {
 			ui.Text(c, "Local Changes").FontSize(Typography().Body).FontWeight(WeightSemibold)
 			if snap != nil {
-				ui.Textf(c, "  %d files", len(snap.Files)).FontSize(Typography().BodySmall).TextColor(t.TextMuted)
+				ui.Text(c, "  "+pluralFiles(len(snap.Files))).FontSize(Typography().BodySmall).TextColor(t.TextMuted)
 			}
 		})
 
@@ -500,7 +500,7 @@ func (s *Shell) gdSectionHeader(c *ui.Context, pal *gdPalette, title string, cou
 			return
 		}
 		b := ui.ButtonBase(c).Height(20).Padding(0, 7).Radius(5).Gap(4).
-			Label(actionLabel).Tooltip(actionLabel + " (" + itoa(len(paths)) + " files)").TextColor(t.TextMuted)
+			Label(actionLabel).Tooltip(actionLabel + " (" + pluralFiles(len(paths)) + ")").TextColor(t.TextMuted)
 		if b.Hovered() {
 			b.Background(pal.hover).TextColor(t.Text)
 		}

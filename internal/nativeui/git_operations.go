@@ -524,13 +524,8 @@ func (s *Shell) amendPrefill() {
 	}()
 }
 
-// pluralFiles writes "1 file" / "N files".
-func pluralFiles(n int) string {
-	if n == 1 {
-		return "1 file"
-	}
-	return itoa(n) + " files"
-}
+// pluralFiles writes "1 file" / "N files": the one way a file count is spelled.
+func pluralFiles(n int) string { return itoa(n) + " file" + pluralS(n) }
 
 // splitTrackedUntracked sorts paths by their snapshot status: untracked
 // files delete from disk, tracked ones restore from HEAD.

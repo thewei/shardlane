@@ -552,11 +552,7 @@ func (s *Shell) gdGapRow(c *ui.Context, pal *gdPalette, f *gdFile, r *gdRow) {
 			}
 		})
 		label := ui.ButtonBase(c).Padding(0, 12).Height(30).FocusRing(false).Disabled(!can).Children(func() {
-			text := itoa(n) + " unmodified lines"
-			if n == 1 {
-				text = "1 unmodified line"
-			}
-			ui.Text(c, text).FontSize(Typography().Body).TextColor(pal.gapText)
+			ui.Text(c, gdLines(n, "unmodified")).FontSize(Typography().Body).TextColor(pal.gapText)
 		})
 		if label.Hovered() && can {
 			label.Underline()

@@ -131,7 +131,7 @@ func (s *Shell) renderChangesRow(c *ui.Context, pal *gdPalette, row gitworkbench
 						glyph, verb, action = iconMinus, "Unstage", s.unstageFiles
 					}
 					button := gorexIconButton(c, gorexColorsOf(t.Dark), glyph, verb+" folder "+node.Path,
-						verb+" "+node.Path+" ("+itoa(len(paths))+" files)", false, gorexRowBtn, gorexRowGlyph).Shrink(0)
+						verb+" "+node.Path+" ("+pluralFiles(len(paths))+")", false, gorexRowBtn, gorexRowGlyph).Shrink(0)
 					if !r.Hovered() && !button.Hovered() {
 						button.Opacity(0)
 					}
