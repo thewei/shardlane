@@ -61,9 +61,6 @@ func (s *Shell) gdDiffSurface(c *ui.Context) {
 	}
 
 	find := ui.FindBar(c, &s.git.gdFinding, &s.git.gdQuery, len(s.git.gdMatches), &s.git.gdMatch).Label("Find in diffs")
-	if find.FocusWithin() {
-		s.git.gdTyping = true
-	}
 	if find.Changed() {
 		s.gdShowMatch()
 	}
@@ -867,14 +864,10 @@ func gdPulldown(c *ui.Context, svg *ui.SVG, tip string) ui.Element {
 
 // gdSearchInput is a field filtering a list of the Git surface: the official
 // search field — the face of the Sessions search and the palette — named by
-// label. It fills its row, reports a change, and while it holds the focus
-// sets typing so the surface's letter keys stay text.
-func gdSearchInput(c *ui.Context, query *string, label string, typing *bool) bool {
-	field := ui.SearchField(c, query).Label(label).Grow(1).MinWidth(0)
-	if typing != nil && field.FocusWithin() {
-		*typing = true
-	}
-	return field.Changed()
+// label. It fills its row and reports a change; its keys are text, which the
+// framework keeps from the surface's letter shortcuts.
+func gdSearchInput(c *ui.Context, query *string, label string) bool {
+	return ui.SearchField(c, query).Label(label).Grow(1).MinWidth(0).Changed()
 }
 
 // gdEmptyPanel says why there is nothing to show.
@@ -937,9 +930,7 @@ func (s *Shell) gdLayoutControl(c *ui.Context) {
 
 // gdShortcuts handles the surface's keys.
 func (s *Shell) gdShortcuts(c *ui.Context) {
-	typing := s.git.gdTyping
-	s.git.gdTyping = false
-	if typing || s.git.root == "" || s.gitSnapshot() == nil {
+	if s.git.root == "" || s.gitSnapshot() == nil {
 		// No diff list is up to move within (empty panel / still loading).
 		return
 	}

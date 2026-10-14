@@ -71,9 +71,6 @@ type gitService struct {
 	// gdFileMatches marks the files holding a match of the find bar; those
 	// show their lines even while collapsed.
 	gdFileMatches map[int]bool
-	// gdTyping is set while a field of the surface has the focus, whose
-	// keys are its own.
-	gdTyping bool
 
 	// diff surface presentation
 	splitLayout bool

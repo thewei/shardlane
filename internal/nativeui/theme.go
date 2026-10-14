@@ -138,18 +138,6 @@ func (s *Shell) sidebarDensity() SidebarDensity {
 	}
 }
 
-// sidebarItemSpacing returns the item vertical padding and row gap for the active density.
-func (s *Shell) sidebarItemSpacing() (itemPaddingY float32, gap float32) {
-	switch s.sidebarDensity() {
-	case DensityCompact:
-		return 3, 1
-	case DensityComfortable:
-		return 8, 4
-	default:
-		return 5, 2
-	}
-}
-
 // tokens returns the DesignTokens considering both dark theme and high contrast preference.
 func (s *Shell) tokens(dark bool) DesignTokens {
 	return designTokensWithContrast(dark, s.settings.General.HighContrast)

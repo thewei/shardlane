@@ -66,40 +66,20 @@ func TestAppearanceSettingsRoundTrip(t *testing.T) {
 	}
 }
 
-// TestSidebarDensityVariations pins P19: sidebar density controls
-// item vertical padding and row gap without breaking hierarchy.
+// TestSidebarDensityVariations pins P19: the density setting selects one of
+// the three sidebar densities. What each density does to a row is pinned by
+// TestTreeRowHeightFollowsDensity, the one place density is spent.
 func TestSidebarDensityVariations(t *testing.T) {
 	shell := NewShell()
-
-	// Default
-	shell.settings.General.Density = "default"
-	if d := shell.sidebarDensity(); d != DensityDefault {
-		t.Fatalf("expected DensityDefault, got %s", d)
-	}
-	padDefault, gapDefault := shell.sidebarItemSpacing()
-
-	// Compact
-	shell.settings.General.Density = "compact"
-	if d := shell.sidebarDensity(); d != DensityCompact {
-		t.Fatalf("expected DensityCompact, got %s", d)
-	}
-	padCompact, gapCompact := shell.sidebarItemSpacing()
-
-	// Comfortable
-	shell.settings.General.Density = "comfortable"
-	if d := shell.sidebarDensity(); d != DensityComfortable {
-		t.Fatalf("expected DensityComfortable, got %s", d)
-	}
-	padComfortable, gapComfortable := shell.sidebarItemSpacing()
-
-	// Compact must be strictly more compact than Default, which is strictly more compact than Comfortable
-	if padCompact >= padDefault || gapCompact >= gapDefault {
-		t.Fatalf("compact spacing (pad=%v, gap=%v) must be smaller than default (pad=%v, gap=%v)",
-			padCompact, gapCompact, padDefault, gapDefault)
-	}
-	if padDefault >= padComfortable || gapDefault >= gapComfortable {
-		t.Fatalf("default spacing (pad=%v, gap=%v) must be smaller than comfortable (pad=%v, gap=%v)",
-			padDefault, gapDefault, padComfortable, gapComfortable)
+	for setting, want := range map[string]SidebarDensity{
+		"default":     DensityDefault,
+		"compact":     DensityCompact,
+		"comfortable": DensityComfortable,
+	} {
+		shell.settings.General.Density = setting
+		if got := shell.sidebarDensity(); got != want {
+			t.Fatalf("density %q: got %s, want %s", setting, got, want)
+		}
 	}
 }
 

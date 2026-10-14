@@ -197,7 +197,7 @@ func (s *Shell) sidebarFilesView(c *ui.Context) {
 		})
 
 		ui.Row(c).FillWidth().Padding(8, 10, 10).Children(func() {
-			if gdSearchInput(c, &s.changes.filter, "Filter files", &s.git.gdTyping) {
+			if gdSearchInput(c, &s.changes.filter, "Filter files") {
 				s.changesTree = nil
 				s.git.gdRowsDirty = true
 			}
@@ -235,13 +235,8 @@ func (s *Shell) sidebarFilesView(c *ui.Context) {
 			s.gdSectionHeader(c, pal, "Unstaged Files", len(unstagedFiles), &s.unstagedOpen,
 				"Stage", gdActionPaths(&s.unstagedChoice, unstagedFiles), s.stageFiles)
 			if s.unstagedOpen && len(unstagedRows) > 0 {
-				list := s.gdChangedTreeList(c, pal, unstagedRows, &s.unstagedList, &s.unstagedSelected,
+				s.gdChangedTreeList(c, pal, unstagedRows, &s.unstagedList, &s.unstagedSelected,
 					&s.unstagedChoice, gdViewUnstaged, func(row gitworkbench.FlatRow) { s.changesClickSide(row, gdViewUnstaged) })
-				list.Children(func() {
-					if len(unstagedRows) == 0 {
-						ui.Text(c, "No unstaged files").FontSize(Typography().Body).TextColor(t.TextMuted).Padding(12)
-					}
-				})
 			}
 
 			if s.unstagedOpen && s.stagedOpen && len(stagedFiles) > 0 && len(unstagedFiles) > 0 {
@@ -254,11 +249,6 @@ func (s *Shell) sidebarFilesView(c *ui.Context) {
 			if s.stagedOpen && len(stagedRows) > 0 {
 				list := s.gdChangedTreeList(c, pal, stagedRows, &s.stagedList, &s.stagedSelected,
 					&s.stagedChoice, gdViewStaged, func(row gitworkbench.FlatRow) { s.changesClickSide(row, gdViewStaged) })
-				list.Children(func() {
-					if len(stagedRows) == 0 {
-						ui.Text(c, "No staged files").FontSize(Typography().Body).TextColor(t.TextMuted).Padding(12)
-					}
-				})
 				if s.unstagedOpen && len(unstagedFiles) > 0 {
 					list.Height(clampF(s.stagedPaneHeight, 60, s.gitUpperHeight-138))
 				} else {

@@ -108,9 +108,10 @@ func TestListFiltersAreTheOfficialSearchField(t *testing.T) {
 }
 
 // A filter field of the Git surface takes its keys as text: typing in it never
-// also fires the surface's window shortcuts. Today the framework shields them
-// (an editor handles letters and, on a Mac, Option+letter — Alt+Z types an
-// Omega), so this pins the observable result for whichever layer does it.
+// also fires the surface's window shortcuts (j/k hop between hunks, Alt+Z wraps
+// lines). The framework shields them (an editor handles letters and, on a Mac,
+// Option+letter: Alt+Z types an Omega), so the surface keeps no guard of its
+// own; this pins the observable result for whichever layer does it.
 func TestChangesFilterTakesItsKeysAsText(t *testing.T) {
 	newSurface := func() (*Shell, *ui.Tester) {
 		root := t.TempDir()
@@ -126,28 +127,39 @@ func TestChangesFilterTakesItsKeysAsText(t *testing.T) {
 		return shell, tester
 	}
 
-	// Control: with nothing focused, Alt+Z toggles the diff's word wrap.
+	// Control: with nothing focused, Alt+Z toggles the diff's word wrap and j
+	// walks to a hunk.
 	shell, tester := newSurface()
 	was := shell.git.gdWordWrap
 	pressKey(tester, ui.Alt, ui.KeyZ)
 	if shell.git.gdWordWrap == was {
 		t.Fatal("control: Alt+Z with no field focused must toggle word wrap, or this test proves nothing")
 	}
+	file, hunk := shell.git.gdSelFile, shell.git.gdSelHunk
+	pressKey(tester, 0, ui.KeyJ)
+	if shell.git.gdSelFile == file && shell.git.gdSelHunk == hunk {
+		t.Fatal("control: j with no field focused must walk to a hunk, or this test proves nothing")
+	}
 
-	// In the filter the same chord is text and toggles nothing.
+	// In the filter the same keys are text and trigger nothing.
 	shell, tester = newSurface()
 	was = shell.git.gdWordWrap
+	file, hunk = shell.git.gdSelFile, shell.git.gdSelHunk
 	if err := tester.Click("Filter files"); err != nil {
 		t.Fatal(err)
 	}
 	tester.Frame()
 	tester.TypeKey(0, ui.KeyJ, "j")
+	tester.TypeKey(0, ui.KeyK, "k")
 	tester.TypeKey(ui.Alt, ui.KeyZ, "Ω")
 	tester.Frame()
-	if shell.changes.filter != "jΩ" {
+	if shell.changes.filter != "jkΩ" {
 		t.Fatalf("filter text = %q, want what was typed", shell.changes.filter)
 	}
 	if shell.git.gdWordWrap != was {
 		t.Fatal("Alt+Z typed into the filter must not also toggle word wrap")
+	}
+	if shell.git.gdSelFile != file || shell.git.gdSelHunk != hunk {
+		t.Fatal("j/k typed into the filter must not also walk the hunks")
 	}
 }
