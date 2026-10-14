@@ -138,7 +138,7 @@ func TestCommitIsNativeModalWithDraftGuard(t *testing.T) {
 	if !s.commitDialogOpen || s.surface.current() != WorkspaceSurfaceCommit {
 		t.Fatal("Commit editor was not opened as a modal task")
 	}
-	for _, label := range []string{"Commit changes", "Commit subject", "Draft Commit Message…", "Cancel Commit"} {
+	for _, label := range []string{"Commit Changes", "Commit subject", "Draft Commit Message…", "Cancel Commit"} {
 		if !tester.HasText(label) {
 			t.Fatalf("Commit modal missing %q: %q", label, tester.Texts())
 		}

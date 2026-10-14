@@ -18,6 +18,7 @@ unified_header_test.go: 标题栏单一归属回归——内页标题只在标�
 toggle_face_test.go: 开关「开」态回归——Sessions 工具栏的文字开关（Select/Trash）与标题栏图标开关同为中性芯片，不再是蓝色选中色（像素采样，深浅两套外观）
 copy_style_test.go: 文案大小写回归——emptyState/workspaceEmptyBanner 的字面标题一律句首大写（专有名词除外）；菜单项（.Item("…") 字面量）与按钮（ui.Button/PrimaryButton/compactButton/compactPrimaryButton 的字面量，含 `+` 链的字面部分）一律 Title Case（冠词/短介词小写），拦下两个方向的大小写漂移；openConfirm 的标题（字面量/`+` 链/Sprintf，AST 扫描）一律以 ? 结尾；生产字符串字面量不含 Please/successfully/Oops；同一动作名（菜单项/图标按钮/Tooltip）大小写只有一种拼写
 search_field_test.go: 搜索/筛选框只有官方 ui.SearchField 一种脸（AST 扫描：TextInput/TextInputBase 链上带 "Search…"/"Filter…" 提示、或手绘 "Clear" ButtonBase 即失败；ui.SearchField 调用数下限防扫描失效）；Git 面「Filter files」框收的是文字，输入时不同时触发 Alt+Z 等面上快捷键
+modal_title_test.go: 对话框标题回归——Merge/Commit/文本输入三种自建对话框的标题行高一致（渲染比较）；Title 字号（20）只许 route_header.go 的页标题使用，对话框与卡片用 Heading
 hairline_test.go: 分隔线只有一种粗细——AST 扫描 .Background(x)/.BorderColor(x) 的实参，控件描边色 theme.Border（不透明、比发丝线重数倍）不得当分隔线/面板边缘的颜色，一律 BorderSubtle；扫描数下限防失效
 segmented_face_test.go: 分段控件回归——segmentedTrack/segmentFace 搭的控件选中段像素与官方 ui.Segmented 一致（深浅两套）；Git 的 Split/Unified 是 SegmentedBase 分段（轨道标签 Diff layout），真实点击切换 splitLayout
 button_tier_test.go: 按钮字号回归——扫描 ui.Button/ui.PrimaryButton 调用链上的 .FontSize(…) 字面覆盖（只许 ds_components.go 的 compact 两档），拦下同排按钮两种高度；另扫图标按钮构造（gdIconButton/gdPulldown/gorexIconButton/gorexPulldown/gorexIconTab）调用链尾的 .Size(…)，并拦下 gorexIconButton/gorexPulldown 构造处的数字字面尺寸——图标按钮尺寸只来自 gorexIconBtn/gorexPaneBtn/gorexRowBtn 三档
@@ -124,7 +125,7 @@ workspace_header.go: Commit Modal 打开/取消/草稿导航防护，仍使用�
 git_operations.go: 背景 mutation 编排，FF/no-FF Merge、Revert/Cherry-pick/Undo、Git Continue/Abort，经确认并在失败后刷新
 git_sequencer_ui.go: Git Diff 顶栏冲突提示、操作准确的 Continue/Abort/Refresh；右侧 Inspector 共用状态和指引
 git_sequencer_ui_test.go: Merge/Revert/Cherry-pick 的 headless 冲突状态、按钮安全门禁和仓库切换隔离
-dialogs.go: Git 危险动作确认绑定打开时 repository root；Merge 策略 Modal 失效时关闭；Sessions 的 Delete Forever / Empty Trash 确认；Confirm/Cancel 保持安全默认
+dialogs.go: Git 危险动作确认绑定打开时 repository root；Merge 策略 Modal 失效时关闭；Sessions 的 Delete Forever / Empty Trash 确认；Confirm/Cancel 保持安全默认；modalTitle 是自建对话框（Merge/Commit/文本输入）唯一的标题（Heading 16 semibold），内层间距 L=12 与 Modal 面板一致、页脚按钮间距 M=8 与官方 AlertDialog 一致
 branch_menu.go: 本地分支 Popover 可搜索/独立滚动/当前分支优先，Switch/More 层级；Merge FF/no-FF 策略和 dirty Branch Switch 的真实确认分发
 git_workbench_actions_test.go: Git 本地操作条、Modal、Draft Guard、Merge/Revert Confirm 的 headless 回归
 ds_components.go: 通用卡片、pageTopInset（标题栏到页面首行的唯一顶部留白令牌）、settingsGroup/formRow 分组行（控件先于标签入树，保证焦点/朗读顺序）、groupLabel、iconTile 彩色图标块、compactButton/compactPrimaryButton 紧凑按钮层级（密集工具栏/行内操作的唯一字号来源，业务代码不再对 Button 内联 FontSize）、segmentedTrack/segmentFace（用 ui.SegmentedBase 搭图标/计数段时的唯一脸：官方 Segmented 的轨道与圆角，选中芯片浅色=页面色、深色=按下面；Sessions Agent 标签与 Git Split/Unified 共用）、工作区 Chat/Diff 轻量空状态组件（窄列时操作换行到消息下方，消息不被挤成单字列）

@@ -152,7 +152,7 @@ func (s *Shell) commitActionFooter(c *ui.Context) {
 			})
 			return
 		}
-		ui.Row(c).FillWidth().Gap(sp.S).AlignItems(ui.Center).Children(func() {
+		ui.Row(c).FillWidth().Gap(sp.M).AlignItems(ui.Center).Children(func() {
 			selected := s.selectedCommitPaths()
 			label := "Commit " + itoa(len(selected)) + " file" + pluralS(len(selected))
 			if s.surface.commit.Amend {

@@ -41,6 +41,13 @@ func (s *Shell) openConfirm(kind, target, title, message string) {
 	s.confirmOpen = true
 }
 
+// modalTitle is the heading every dialog opens with. One size and weight, so
+// Merge, Commit and the text prompts read as the same kind of surface — and
+// not as pages: the Title size belongs to the page title in the title bar.
+func modalTitle(c *ui.Context, title string) ui.Element {
+	return ui.Text(c, title).FontSize(Typography().Heading).FontWeight(WeightSemibold)
+}
+
 func (s *Shell) dialogs(c *ui.Context) {
 	if s.mergeDialogOpen && (s.git == nil || s.mergeRepoRoot == "" || s.mergeRepoRoot != s.git.root) {
 		s.mergeDialogOpen = false
@@ -48,8 +55,8 @@ func (s *Shell) dialogs(c *ui.Context) {
 	}
 	if s.mergeDialogOpen {
 		ui.Modal(c, &s.mergeDialogOpen, func() {
-			ui.Column(c).Width(430).MaxWidth(480).Gap(Spacing().M).Children(func() {
-				ui.Text(c, "Merge Branch").FontSize(Typography().Title).FontWeight(WeightSemibold)
+			ui.Column(c).Width(430).MaxWidth(480).Gap(Spacing().L).Children(func() {
+				modalTitle(c, "Merge Branch")
 				ui.Text(c, s.mergeTarget).FontSize(Typography().Body).FontWeight(WeightSemibold).SingleLine().Tooltip(s.mergeTarget)
 				ui.Segmented(c, &s.mergeStrategy, "Fast-forward only", "Create merge commit").FillWidth()
 				if s.mergeStrategy == 0 {
@@ -57,7 +64,7 @@ func (s *Shell) dialogs(c *ui.Context) {
 				} else {
 					ui.Text(c, "Creates a merge commit. You may need to resolve conflicts.").FontSize(Typography().Caption).TextColor(c.Theme().TextMuted)
 				}
-				ui.Row(c).FillWidth().Gap(Spacing().S).Justify(ui.End).Children(func() {
+				ui.Row(c).FillWidth().Gap(Spacing().M).Justify(ui.End).Children(func() {
 					if ui.Button(c, "Cancel Merge").Clicked() {
 						s.mergeDialogOpen = false
 					}
@@ -86,8 +93,8 @@ func (s *Shell) dialogs(c *ui.Context) {
 			ui.Modal(c, &s.commitDialogOpen, func() {
 				_, height := c.Size()
 				ui.Column(c).Width(680).MaxWidth(760).Height(min(height-100, 600)).
-					MinHeight(240).MinWidth(0).Gap(Spacing().M).Children(func() {
-					ui.Text(c, "Commit changes").FontSize(Typography().Title).FontWeight(WeightSemibold)
+					MinHeight(240).MinWidth(0).Gap(Spacing().L).Children(func() {
+					modalTitle(c, "Commit Changes")
 					s.commitSurface(c)
 				})
 			})
@@ -95,7 +102,7 @@ func (s *Shell) dialogs(c *ui.Context) {
 	}
 	if s.dialogOpen {
 		ui.Modal(c, &s.dialogOpen, func() {
-			ui.Text(c, s.dialogTitle).FontWeight(WeightSemibold).FontSize(Typography().Heading)
+			modalTitle(c, s.dialogTitle)
 			field := ui.TextInput(c, &s.dialogValue).Label(s.dialogLabel).AutoFocus().Width(360)
 			submit := field.Submitted()
 			ui.Row(c).Gap(Spacing().M).Justify(ui.End).Children(func() {

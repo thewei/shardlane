@@ -80,7 +80,7 @@ Right:       [Review | Files | Services]
              Review (commit): subject, SHA, author/date, Revert
              (Terminal returns to normal Changes tool)
              
-Modal:       Commit changes
+Modal:       Commit Changes
                selected files; Subject / Body / Amend
                Preview AI Commit Prompt… (metadata default, exclude sensitive files)
                Optional include code excerpts → Copy Reviewed AI Prompt
