@@ -257,6 +257,16 @@ func (s *Shell) showViewChanges() {
 	s.openChanges("")
 }
 
+// goChanges is the destination form of showViewChanges, for the launchers
+// that name a page instead of toggling it (the Command Center, the Go menu):
+// naming the page already on screen keeps it, where the sidebar tab leaves.
+func (s *Shell) goChanges() {
+	if _, _, changes, _ := s.viewSwitchActive(); changes {
+		return
+	}
+	s.showViewChanges()
+}
+
 // showHistoryIndex is the single parent-navigation intent for History.
 // Nested History pages never fall back to the previous unrelated route.
 func (s *Shell) showHistoryIndex() {

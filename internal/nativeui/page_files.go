@@ -26,6 +26,15 @@ func (s *Shell) showViewFiles() {
 	s.router.Push(routeFiles)
 }
 
+// goFiles is the destination form of showViewFiles (see goChanges): naming
+// Files while it is open keeps it instead of leaving for the Terminal.
+func (s *Shell) goFiles() {
+	if s.router.Path() == routeFiles {
+		return
+	}
+	s.showViewFiles()
+}
+
 // filesPage is the preview center: the open file's bar over its tier. The
 // title bar names the page and the folder it browses and carries the open
 // file's Actions (Copy Path, Reveal in Finder — route_header.go); the

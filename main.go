@@ -199,52 +199,10 @@ func main() {
 		}
 		shell.AttachDock(mygo.App.Dock)
 
-		// macOS app menu with a Check for Updates item (truthful status via
-		// the updater plugin), plus a Go menu so the core commands are
-		// discoverable from the menu bar — accelerators only on idempotent
-		// route pushes (Router.Push dedupes), never on the panel toggle.
+		// macOS menu bar: the shell owns its structure (nativeui.MenuBar);
+		// the updater plugin supplies Check for Updates with its truthful status.
 		if runtime.GOOS == "darwin" {
-			nav := func(label, accelerator, path string) *mygo.MenuItem {
-				return &mygo.MenuItem{Label: label, Accelerator: accelerator, Click: func(*mygo.MenuItem, *mygo.Window) {
-					shell.Navigate(path)
-				}}
-			}
-			mygo.App.SetMenu(mygo.NewMenu([]*mygo.MenuItem{
-				{Label: "Shardlane", Submenu: []*mygo.MenuItem{
-					{Role: mygo.RoleAbout},
-					updater.MenuItem(),
-					mygo.Separator(),
-					{Role: mygo.RoleQuit},
-				}},
-				{Label: "Go", Submenu: []*mygo.MenuItem{
-					nav("Workspace", "CmdOrCtrl+1", "/workspace"),
-					nav("Sessions", "", "/history"),
-					nav("Hosts", "", "/hosts"),
-					mygo.Separator(),
-					// ⌘W belongs to the tab model, not the window (F103):
-					// the stock Window role bound it to closing the whole
-					// window in a tab-centric app. The guarded confirm keeps
-					// the action family single-sourced with the sidebar.
-					{Label: "Close Tab", Accelerator: "CmdOrCtrl+W", Click: func(*mygo.MenuItem, *mygo.Window) {
-						shell.CloseTabFromMenu()
-					}},
-					{Label: "Files", Click: func(*mygo.MenuItem, *mygo.Window) {
-						shell.ToggleRightPanelFromMenu()
-					}},
-					nav("Set Up Agents", "", "/settings/providers"),
-					{Label: "Command Center", Accelerator: "CmdOrCtrl+Shift+P", Click: func(*mygo.MenuItem, *mygo.Window) {
-						shell.OpenCommandCenterFromMenu()
-					}},
-					nav("Settings", "CmdOrCtrl+,", "/settings/general"),
-				}},
-				{Role: mygo.RoleEditMenu},
-				// Custom Window menu (F103): Minimize/Zoom without the stock
-				// "Close Window ⌘W" item so the accelerator stays tab-scoped.
-				{Label: "Window", Submenu: []*mygo.MenuItem{
-					{Role: mygo.RoleMinimize},
-					{Role: mygo.RoleZoom},
-				}},
-			}))
+			mygo.App.SetMenu(shell.MenuBar(updater.MenuItem()))
 		}
 
 		slog.Info("main window shown", "bounds", win.Bounds())

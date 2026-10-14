@@ -670,13 +670,13 @@ func (s *Shell) Navigate(path string) {
 	})
 }
 
-// ToggleRightPanelFromMenu is the menu-bar seam for the panel toggle: the
-// ⌥⌘B binding stays in-app only, so the menu item carries no accelerator
-// that could double-fire with it.
-func (s *Shell) ToggleRightPanelFromMenu() {
-	// Legacy menu action opens the standalone Files workbench instead.
-	s.applyOnWindow(func() { s.showViewFiles() })
-}
+// ShowChangesFromMenu and ShowFilesFromMenu are the Go menu's seams for the
+// two views that are not routes of their own (Changes is a Workspace
+// surface; Files carries its tree setup). A menu item names a destination, so
+// choosing the page already open keeps it — the sidebar tab is the toggle.
+func (s *Shell) ShowChangesFromMenu() { s.applyOnWindow(s.goChanges) }
+
+func (s *Shell) ShowFilesFromMenu() { s.applyOnWindow(s.goFiles) }
 
 // OpenCommandCenterFromMenu opens the palette from the menu bar; opening an
 // already-open palette is a no-op re-render, never a toggle.

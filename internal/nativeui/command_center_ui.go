@@ -113,6 +113,8 @@ func (s *Shell) buildCommandCenterActions() []commandcenter.Action {
 	// decode compatibility, so a second palette command only duplicated it
 	// (F162, same shape as the F16 Settings pair).
 	actions = append(actions,
+		commandcenter.Action{ID: "app.changes", Title: "Changes", Section: "App",
+			Keywords: []string{"git", "diff", "review", "commit", "staged"}, Kind: commandcenter.TargetRoute, TargetID: "action:open-changes", Available: true},
 		commandcenter.Action{ID: "app.history", Title: "Sessions", Section: "App",
 			Keywords: []string{"history", "conversations"}, Kind: commandcenter.TargetRoute, TargetID: "/history", Available: true},
 		commandcenter.Action{ID: "app.hosts", Title: "Hosts", Section: "App",
@@ -347,8 +349,10 @@ func (s *Shell) executeCommandCenterResult(result commandcenter.Result) {
 		// size supplies the same geometry that View gets from c.Size(); in
 		// headless mode a zero width means geometry is not yet established.
 		switch action.TargetID {
+		case "action:open-changes":
+			s.goChanges()
 		case "action:open-files":
-			s.showViewFiles()
+			s.goFiles()
 		default:
 			if action.TargetID != "" {
 				s.router.Push(action.TargetID)

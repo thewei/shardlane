@@ -37,7 +37,9 @@ agent_quick_panel.go: 浮层的状态分组（quickPanelGroups）、分组标题
 agent_quick_panel_test.go: 状态分组的优先级顺序、空组省略与组内保序回归
 agent_card.go: 侧栏与 Agent 浮层共用的紧凑 Agent 卡片 agentCardRow（标记/标题/供应商/状态点，可选行尾槽）
 right_panel_git_test.go: Diff/历史 Commit 保留左导航/中预览而不绘制旧 Review Inspector
-command_center_ui.go: Command Center Files 操作直达独立 /files 页面，不受旧右栏宽度限制
+command_center_ui.go: Command Center 的动作注册表与执行；App 区的页面入口（Changes/Sessions/Files/Hosts/Settings/Set Up Agents）与侧栏视图标签、Go 菜单同名，Changes 与 Files 走「去往」形态（goChanges/goFiles：点名已打开的页面保持不动，只有侧栏标签才切回 Terminal）
+app_menu.go: macOS 菜单栏的单一来源（原内联在 main.go）：应用菜单走系统惯例（About、Check for Updates…、Settings… ⌘,、Hide/Hide Others/Show All、Quit），Go 菜单按侧栏标签顺序列 Workspace/Changes/Sessions/Files/Hosts，再 Close Tab/Set Up Agents/Command Center；一个命令只在一个菜单里；加速器只给幂等的路由跳转
+app_menu_test.go: 菜单栏回归——结构（应用菜单形状、Settings… 唯一且 ⌘,、⌘H）、三个启动器（侧栏标签/⌘P/Go 菜单）同名同序、点名当前页保持不动（面板与菜单各跑两遍）
 project_tree.go: 侧栏 Workspace/Tab/Pane 原生拖拽入口及运行状态树，尊重 Herdr 权威顺序而非按 Agent 状态重排；行内无 "…"，项目行悬停 "+"（New Tab），其余动作经右键菜单
 reorder.go: 作用域隔离的拖放语义与目标插入索引、跨 Tab/Project 移动与拆分位置计算、Herdr mutation 分发和 Pane layout 顺序投影
 reorder_test.go: Drag/Drop 真正鼠标事件、插入索引、跨 Tab/Project 移动校验、窗格卡片放置动作推导和投影排序回归
