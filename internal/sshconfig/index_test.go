@@ -204,3 +204,79 @@ func TestSplitKeywordVariants(t *testing.T) {
 		}
 	}
 }
+
+// TestIndexReadsGroupMarkers pins the read-only group convention (SSH Config
+// Editor's comment markers): declarations name groups in order, a marker files
+// the block above it, the first marker of a block wins, comments never leak
+// into a block's facts, and nothing else about the listing changes.
+func TestIndexReadsGroupMarkers(t *testing.T) {
+	dir := t.TempDir()
+	config := filepath.Join(dir, "config")
+	write(t, config, `#SCEGroup STRAY
+
+#SCE_GROUP:AAAA:::Development
+
+Host web
+    HostName web.example.com
+#SCEGroup AAAA
+
+# a plain comment
+`+"#SCE_GROUP:BBBB:::  Personal  \n"+`
+Host nas
+    User me
+#SCEPassword 1234
+#SCEGroup BBBB
+
+Host loose
+    HostName loose.example.com
+
+#SCE_GROUP:AAAA:::Renamed
+#SCE_GROUP::::nameless id is ignored
+
+Host dangling
+    Port 22
+#SCEGroup ZZZZ
+#SCEGroup BBBB
+`)
+	ix, err := IndexPath(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ix.Groups) != 2 || ix.Groups[0] != (Group{ID: "AAAA", Name: "Development"}) ||
+		ix.Groups[1] != (Group{ID: "BBBB", Name: "Personal"}) {
+		t.Fatalf("groups = %+v, want Development then Personal (a repeated id keeps its first name)", ix.Groups)
+	}
+	want := map[string]string{"web": "AAAA", "nas": "BBBB", "loose": "", "dangling": "ZZZZ"}
+	if len(ix.Entries) != len(want) {
+		t.Fatalf("entries = %d, want %d: %+v", len(ix.Entries), len(want), ix.Entries)
+	}
+	for _, entry := range ix.Entries {
+		if got := entry.Group; got != want[entry.Alias()] {
+			t.Errorf("%s filed under %q, want %q", entry.Alias(), got, want[entry.Alias()])
+		}
+	}
+	if facts := ix.Entries[0].Facts(); len(facts) != 1 || facts[0].Key != "HostName" {
+		t.Fatalf("markers leaked into the block's facts: %+v", facts)
+	}
+}
+
+// TestIndexGroupMarkersFollowIncludedFiles pins that an included file's blocks
+// carry their own markers and that its declarations join the one list.
+func TestIndexGroupMarkersFollowIncludedFiles(t *testing.T) {
+	dir := t.TempDir()
+	home := filepath.Join(dir, "home")
+	t.Setenv("HOME", home)
+	write(t, filepath.Join(home, ".ssh", "extra"), "#SCE_GROUP:CCCC:::Extra\n\nHost inc\n  HostName inc.example.com\n#SCEGroup CCCC\n")
+	config := filepath.Join(home, ".ssh", "config")
+	write(t, config, "Include extra\n\nHost main\n  HostName main.example.com\n")
+	ix, err := IndexPath(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ix.Groups) != 1 || ix.Groups[0].Name != "Extra" {
+		t.Fatalf("groups = %+v", ix.Groups)
+	}
+	if len(ix.Entries) != 2 || ix.Entries[0].Alias() != "inc" || ix.Entries[0].Group != "CCCC" || ix.Entries[1].Group != "" {
+		t.Fatalf("entries = %+v", ix.Entries)
+	}
+}

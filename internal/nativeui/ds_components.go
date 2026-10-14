@@ -132,9 +132,15 @@ func formRowLead(c *ui.Context, lead func(), label, detail string, control func(
 	})
 }
 
-// valueText is the muted trailing value of a fact row.
+// valueTextMaxWidth caps a fact row's value, so a long one gives way with an
+// ellipsis instead of squeezing its label.
+const valueTextMaxWidth float32 = 360
+
+// valueText is the muted trailing value of a fact row: one selectable line
+// that clips long values and keeps their full text in the tooltip.
 func valueText(c *ui.Context, value string) {
-	ui.Text(c, value).FontSize(Typography().Body).TextColor(c.Theme().TextMuted).Selectable()
+	ui.Text(c, value).FontSize(Typography().Body).TextColor(c.Theme().TextMuted).
+		SingleLine().Ellipsis("…").Shrink(1).MinWidth(0).MaxWidth(valueTextMaxWidth).Selectable().Tooltip(value)
 }
 
 // iconTile paints a glyph in white on a rounded system-color square: the

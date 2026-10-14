@@ -80,6 +80,7 @@ func (s *Shell) refreshHostsIndex(force bool) {
 			if index != nil {
 				s.hosts.mainPath = path
 				s.hosts.entries = index.Entries
+				s.hosts.groups = index.Groups
 				s.hosts.files = index.Files
 				slog.Debug("hosts index refreshed", "entries", len(index.Entries), "files", len(index.Files))
 			}

@@ -82,11 +82,19 @@ func sectionLabel(c *ui.Context, label string) {
 		TextColor(c.Theme().TextMuted)
 }
 
-// treeRowAction is a row's hover icon button.
+// treeRowAction is a row's hover icon button. Tooltip defaults to Label.
 type treeRowAction struct {
-	Label string
-	Glyph *ui.SVG
-	Run   func()
+	Label   string
+	Tooltip string
+	Glyph   *ui.SVG
+	Run     func()
+}
+
+func (a treeRowAction) tooltip() string {
+	if a.Tooltip != "" {
+		return a.Tooltip
+	}
+	return a.Label
 }
 
 type treeRowSpec struct {
@@ -289,7 +297,7 @@ func treeRow(c *ui.Context, spec treeRowSpec) ui.Element {
 				ui.Icon(c, glyph).Size(11, 11).TextColor(t.TextMuted).Shrink(0).PassThrough()
 			}
 			if spec.Action != nil && hovered {
-				action := gorexIconButton(c, gorexColorsOf(t.Dark), spec.Action.Glyph, spec.Action.Label, spec.Action.Label, false, 20, 12)
+				action := gorexIconButton(c, gorexColorsOf(t.Dark), spec.Action.Glyph, spec.Action.Label, spec.Action.tooltip(), false, 20, 12)
 				if action.Clicked() {
 					spec.Action.Run()
 				}

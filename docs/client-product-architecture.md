@@ -425,7 +425,11 @@ byte, fenced against a file that changed since the index loaded, and
 persisted through the same backup + atomic write. It deliberately does not
 adopt a serializing ssh_config library (the leading Go library does not
 support Match blocks), and the raw editor remains the full-fidelity
-editing path beside it.
+editing path beside it. Host grouping (2026-10-14) is read-only and owned
+by the config file itself: the sidebar groups hosts by the comment markers
+SSH Config Editor writes (`#SCE_GROUP:<id>:::<name>`, `#SCEGroup <id>`) and
+by `Include` file, with collapse state kept in memory only — Shardlane
+never writes the markers and keeps no group registry of its own.
 
 Detailed execution/audit documents:
 

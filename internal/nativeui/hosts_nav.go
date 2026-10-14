@@ -1,9 +1,9 @@
 package nativeui
 
 /**
- * [INPUT]: 依赖 Shell.hosts 索引态、machineInstances/machineMenuSuffix、navButton/sectionLabel
- * [OUTPUT]: /hosts 的侧栏导航：SSH Config 条目（连接/注册机器/编辑文件上下文菜单）+ Herdr Machines；列表头的图标刷新是该页唯一的 Refresh
- * [POS]: 内页侧栏宿主（sidebar.go 按 routeHosts 分派到这里）；机器管理动作留在 Session selector，不复制第二实现
+ * [INPUT]: 依赖 Shell.hosts 索引态与分组（hostGroups）、machineInstances/machineMenuSuffix、sidebarTreeRow/sidebarSectionHeader/sectionLabel
+ * [OUTPUT]: /hosts 的侧栏导航：SSH Config 条目（配置自带分组时按组可折叠；行悬停连接、连接/注册机器/编辑文件上下文菜单 hostEntryMenu）+ Herdr Machines；列表头的图标刷新是该页唯一的 Refresh
+ * [POS]: 内页侧栏宿主（sidebar.go 按 routeHosts 分派到这里）；行与分组头与 Git/Files 共用同一套树网格；机器管理动作留在 Session selector，不复制第二实现
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 
@@ -12,10 +12,12 @@ import (
 
 	"github.com/egoist/mygo/ui"
 	"github.com/wh-studio/herdr-client/internal/herdr"
+	"github.com/wh-studio/herdr-client/internal/sshconfig"
 )
 
-// hostsNav is the Hosts page's sidebar body: the config index above, the
-// saved Herdr machines below. The list's one refresh is an icon in its head —
+// hostsNav is the Hosts page's sidebar body: the config index above (under
+// collapsible group headers when the config groups itself), the saved Herdr
+// machines below. The list's one refresh is an icon in its head —
 // the same control every list-backed sidebar uses (the project tree's) — and
 // an action never wears a navigation row's face. The listing scrolls
 // (quick-panel pattern) — a long config must never overflow the sidebar
@@ -50,10 +52,12 @@ func (s *Shell) hostsNavMachines(c *ui.Context) {
 		return
 	}
 	for _, inst := range machines {
-		inst := inst
 		key := hostMachineKeyPrefix + inst.Machine.ID
-		b := navButton(c, iconGlobe, s.machineNavLabel(inst), "", s.hosts.selected == key)
-		if b.Clicked() {
+		label := s.machineNavLabel(inst)
+		row := s.sidebarTreeRow(c, sidebarTreeSpec{
+			Key: key, Title: label, Tooltip: label, Glyph: iconServer, Selected: s.hosts.selected == key,
+		})
+		if row.Clicked() {
 			s.hosts.selected = key
 		}
 	}
@@ -78,26 +82,64 @@ func (s *Shell) hostsNavEntries(c *ui.Context) {
 		ui.Text(c, "No hosts yet").FontSize(Typography().BodySmall).TextColor(t.TextMuted).Padding(6, 8)
 		return
 	}
-	for _, entry := range s.hosts.entries {
-		entry := entry
-		key := hostEntryKey(entry)
-		b := navButton(c, iconGlobe, entry.Title(), "", s.hosts.selected == key)
-		if b.Clicked() {
-			s.hosts.selected = key
+	groups := hostGroups(s.hosts.entries, s.hosts.groups, s.hostsMainFile())
+	if groups == nil {
+		for _, entry := range s.hosts.entries {
+			s.hostsNavRow(c, entry)
 		}
-		b.ContextMenu(func(m *ui.Menu) {
-			if alias := entry.Alias(); alias != "" {
-				if m.Item("Connect").Chosen() {
-					s.connectHost(alias)
-				}
-				if m.Item("Add Herdr Machine…").Chosen() {
-					s.registerHostMachine(alias)
-				}
-			}
-			if m.Item("Edit File").Chosen() {
-				s.openHostEditor(entry.File, false)
-			}
+		return
+	}
+	for _, g := range groups {
+		closed := s.hosts.closed[g.Key]
+		header := s.sidebarSectionHeader(c, sidebarSectionSpec{
+			Key: "hosts-group:" + g.Key, Title: g.Label, Count: len(g.Entries), Closed: closed, Tooltip: g.Tip,
 		})
+		if header.Clicked() {
+			if s.hosts.closed == nil {
+				s.hosts.closed = map[string]bool{}
+			}
+			s.hosts.closed[g.Key] = !closed
+		}
+		if closed {
+			continue
+		}
+		for _, entry := range g.Entries {
+			s.hostsNavRow(c, entry)
+		}
+	}
+}
+
+// hostsNavRow is one config entry: select on click, Connect on the hover
+// icon of a connectable alias, the full action menu on right-click.
+func (s *Shell) hostsNavRow(c *ui.Context, entry sshconfig.Entry) {
+	key := hostEntryKey(entry)
+	spec := sidebarTreeSpec{
+		Key: key, Title: entry.Title(), Tooltip: entry.Title(), Glyph: iconGlobe,
+		Selected: s.hosts.selected == key,
+		Menu:     func(m *ui.Menu) { s.hostEntryMenu(m, entry) },
+	}
+	if alias := entry.Alias(); alias != "" {
+		spec.Action = &treeRowAction{Label: "Connect", Glyph: iconTerminal, Run: func() { s.connectHost(alias) }}
+	}
+	if s.sidebarTreeRow(c, spec).Clicked() {
+		s.hosts.selected = key
+	}
+}
+
+// hostEntryMenu is one host's actions, the same list on its sidebar row and
+// in the title bar's Actions menu. Patterns and Match blocks are ssh's own
+// business, so only a concrete alias connects or registers.
+func (s *Shell) hostEntryMenu(m *ui.Menu, entry sshconfig.Entry) {
+	if alias := entry.Alias(); alias != "" {
+		if m.Item("Connect").Chosen() {
+			s.connectHost(alias)
+		}
+		if m.Item("Add Herdr Machine…").Chosen() {
+			s.registerHostMachine(alias)
+		}
+	}
+	if m.Item("Edit File").Chosen() {
+		s.openHostEditor(entry.File, false)
 	}
 }
 

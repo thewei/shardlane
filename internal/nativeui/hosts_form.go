@@ -2,7 +2,7 @@ package nativeui
 
 /**
  * [INPUT]: 依赖 internal/sshconfig（Entry 索引、EditHostBlock 单块定向改写、SaveFile 原子写）、ui.TextInput、共享 DS 组件
- * [OUTPUT]: hostEntryDetail 的结构化表单（别名 + HostName/User/Port/ProxyJump）及其保存事务 openHostForm/saveHostForm
+ * [OUTPUT]: hostEntryDetail 的就地编辑行 hostFormRows（别名 + HostName/User/Port/ProxyJump 输入框，Return 保存）及其保存事务 openHostForm/saveHostForm
  * [POS]: Phase 2 结构化编辑：仅限单字面 Host 块；保存是单块定向改写（注释与其余指令逐字保留）+ 陈旧围栏 + .bak 备份；raw 编辑器保持全量编辑入口
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -105,65 +105,50 @@ func (s *Shell) cancelHostForm() {
 	s.hosts.form = hostsFormState{}
 }
 
-// hostsFormSection renders the form affordance in the entry detail: a quiet
-// Edit Host button, or the open draft card. Every entry keeps its raw
-// entry points (Edit File) alongside.
-func (s *Shell) hostsFormSection(c *ui.Context, entry sshconfig.Entry) {
-	if !hostFormEditable(entry) {
-		return
-	}
-	sp := Spacing()
+// hostFormRows are the open draft's rows in the detail's grouped list: the
+// alias, then the managed directives in their fixed order. Return in any
+// field saves, as in Settings.
+func (s *Shell) hostFormRows(c *ui.Context, entry sshconfig.Entry) []settingsRow {
 	f := &s.hosts.form
-	if !f.open || f.entryKey != hostEntryKey(entry) {
-		ui.Row(c).FillWidth().Children(func() {
-			if compactButton(c, "Edit Host…").Clicked() {
-				s.openHostForm(entry)
+	input := func(label string, value *string, placeholder string) settingsRow {
+		return row(label, "", func() {
+			field := ui.TextInput(c, value).Width(240).Label(label)
+			if placeholder != "" {
+				field.Placeholder(placeholder)
 			}
-		})
-		return
-	}
-	settingsCard(c, "Edit Host", func() {
-		if f.err != "" {
-			inlineNotice(c, ToneError, f.err, nil)
-		}
-		if f.confirmClose {
-			ui.Row(c).FillWidth().Gap(sp.S).AlignItems(ui.Center).Children(func() {
-				ui.Text(c, "Discard unsaved changes?").FontSize(Typography().BodySmall).Grow(1)
-				if ui.Button(c, "Keep Editing").Clicked() {
-					f.confirmClose = false
-				}
-				if ui.Button(c, "Discard").Clicked() {
-					s.hosts.form = hostsFormState{}
-				}
-			})
-		}
-		formRow(c, "Host", "The alias ssh matches on", func() {
-			ui.TextInput(c, &f.alias).Width(220).Placeholder("myserver").Label("Host alias")
-		})
-		for _, field := range hostFormFields {
-			field := field
-			note := ""
-			if field.directive == "Port" {
-				note = "Empty uses ssh's default (22)"
-			}
-			formRow(c, field.directive, note, func() {
-				ui.TextInput(c, field.value(f)).Width(220).Label(field.directive)
-			})
-		}
-		ui.Row(c).FillWidth().Gap(sp.S).AlignItems(ui.Center).Children(func() {
-			if f.saving {
-				ui.Spinner(c).Size(14, 14)
-			}
-			if compactButton(c, "Cancel").Clicked() {
-				s.cancelHostForm()
-			}
-			if compactPrimaryButton(c, "Save").Clicked() {
+			if field.Submitted() {
 				s.saveHostForm(entry)
 			}
-			ui.Text(c, "Other directives and comments in this block stay untouched — full-file editing stays in Edit File (raw).").
-				FontSize(Typography().Caption).TextColor(c.Theme().TextMuted).Grow(1)
 		})
-	})
+	}
+	rows := []settingsRow{input("Host", &f.alias, "")}
+	for _, field := range hostFormFields {
+		placeholder := ""
+		if field.directive == "Port" {
+			placeholder = "22"
+		}
+		rows = append(rows, input(field.directive, field.value(f), placeholder))
+	}
+	return rows
+}
+
+// unmanagedDirectives are the facts the form does not edit: everything but
+// the managed directives, in file order.
+func unmanagedDirectives(facts []sshconfig.KV) []sshconfig.KV {
+	var rest []sshconfig.KV
+	for _, kv := range facts {
+		managed := false
+		for _, field := range hostFormFields {
+			if strings.EqualFold(kv.Key, field.directive) {
+				managed = true
+				break
+			}
+		}
+		if !managed {
+			rest = append(rest, kv)
+		}
+	}
+	return rest
 }
 
 // validateHostForm checks the draft before any disk work.

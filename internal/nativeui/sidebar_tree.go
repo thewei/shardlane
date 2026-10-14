@@ -2,8 +2,8 @@ package nativeui
 
 /**
  * [INPUT]: row level, MyGo Context/Painter, TreeLine token 与 Shell 的 density 偏好
- * [OUTPUT]: 侧栏层级共用的对齐网格（treeGlyphX/treeGuideX）、导向线绘制、disclosure chevron、统一行构建器 sidebarTreeRow 与行高 token treeRowHeight
- * [POS]: Git 引用树与 Files 树共享的呈现层；数据、动作与菜单仍由各自的树持有
+ * [OUTPUT]: 侧栏层级共用的对齐网格（treeGlyphX/treeGuideX）、导向线绘制、disclosure chevron、统一行构建器 sidebarTreeRow、可折叠分组头 sidebarSectionHeader 与行高 token treeRowHeight
+ * [POS]: Git 引用树、Files 树与 Hosts 列表共享的呈现层；数据、折叠状态、动作与菜单仍由各自的树持有
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 
@@ -91,6 +91,12 @@ type sidebarTreeSpec struct {
 	Glyph    *ui.SVG
 	// Current marks the checked-out branch or the open file: accent tinted.
 	Current bool
+	// Selected is the row's selection face — the one every navigation list
+	// wears (SidebarSelect). Current stays a state mark, not a selection.
+	Selected bool
+	// Action is the row's one hover icon at the trailing edge; its slot is
+	// reserved while set, so the title never moves under the pointer.
+	Action *treeRowAction
 	// Dim mutes the title (symlinks).
 	Dim bool
 	// Trailing draws content at the row's right edge.
@@ -113,10 +119,13 @@ func (s *Shell) sidebarTreeRow(c *ui.Context, spec sidebarTreeSpec) ui.Element {
 		Padding(0, treeRowPad).Radius(4).FocusRing(false).AlignItems(ui.Center).
 		Label(label).Tooltip(spec.Tooltip)
 	glyph := t.TextMuted
-	if spec.Current {
+	switch {
+	case spec.Current:
 		row.Background(t.Accent.Alpha(.11)).TextColor(t.Accent)
 		glyph = t.Accent
-	} else if row.Hovered() {
+	case spec.Selected:
+		row.Background(tokens.SidebarSelect)
+	case row.Hovered():
 		row.Background(t.SurfaceHover)
 	}
 	if spec.Menu != nil {
@@ -138,6 +147,66 @@ func (s *Shell) sidebarTreeRow(c *ui.Context, spec sidebarTreeSpec) ui.Element {
 		if spec.Trailing != nil {
 			spec.Trailing()
 		}
+		if spec.Action != nil {
+			ui.Box(c).Size(22, 20).Shrink(0).Center().Children(func() {
+				if !row.Hovered() {
+					return
+				}
+				action := gorexIconButton(c, gorexColorsOf(t.Dark), spec.Action.Glyph, spec.Action.Label, spec.Action.tooltip(), false, 20, 12)
+				if action.Clicked() {
+					spec.Action.Run()
+				}
+			})
+		}
+	})
+	return row
+}
+
+// sidebarSectionSpec describes one collapsible group header of a sidebar
+// hierarchy: the Git references' Branches/Tags/… and the Hosts' groups.
+type sidebarSectionSpec struct {
+	Key    string
+	Title  string
+	Count  int
+	Closed bool
+	// Tooltip is the full text of a clipped title (a file group's path).
+	Tooltip string
+	// Action is the header's one hover icon (a "+"); its slot is always
+	// reserved so the count never jumps. The same action belongs in Menu.
+	Action *treeRowAction
+	// Menu is the header's context menu.
+	Menu func(*ui.Menu)
+}
+
+// sidebarSectionHeader draws one group header: chevron, semibold title and
+// the count. It returns the row for the caller's Clicked() — the fold state
+// and the rows beneath stay the caller's.
+func (s *Shell) sidebarSectionHeader(c *ui.Context, spec sidebarSectionSpec) ui.Element {
+	t := c.Theme()
+	ui.Box(c).Height(4).Shrink(0)
+	row := ui.ButtonBase(c.Key(spec.Key)).FillWidth().Height(s.treeRowHeight()+2).
+		Padding(0, treeRowPad).Radius(4).FocusRing(false).AlignItems(ui.Center).
+		Label("Toggle " + spec.Title).Tooltip(spec.Tooltip)
+	if row.Hovered() {
+		row.Background(t.SurfaceHover)
+	}
+	if spec.Menu != nil {
+		row.ContextMenu(spec.Menu)
+	}
+	row.Children(func() {
+		treeChevron(c, true, !spec.Closed, t.TextMuted)
+		ui.Box(c).Width(treeGlyphGap).Shrink(0).PassThrough()
+		ui.Text(c, spec.Title).FontSize(Typography().Body).FontWeight(WeightSemibold).Grow(1).MinWidth(0).SingleLine()
+		ui.Textf(c, "%d", spec.Count).FontSize(Typography().Micro).TextColor(t.TextMuted).Shrink(0)
+		ui.Box(c).Size(22, 20).Shrink(0).Center().Children(func() {
+			if spec.Action == nil || !row.Hovered() {
+				return
+			}
+			add := gorexIconButton(c, gorexColorsOf(t.Dark), spec.Action.Glyph, spec.Action.Label, spec.Action.tooltip(), false, 20, 12)
+			if add.Clicked() {
+				spec.Action.Run()
+			}
+		})
 	})
 	return row
 }

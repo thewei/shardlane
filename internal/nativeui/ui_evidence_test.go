@@ -240,21 +240,71 @@ func TestUIEvidence(t *testing.T) {
 		shell.openFilePreview(filepath.Join(code, "README.md"))
 		render("09c-files-markdown-source")
 
-		// Hosts reads a seeded temp config, never the developer's real one.
-		config := filepath.Join(t.TempDir(), "config")
-		if err := os.WriteFile(config, []byte("Host dev-box\n  HostName 10.0.0.12\n  User wilson\n\nHost staging\n  HostName staging.example.com\n  User deploy\n  Port 2222\n"), 0o600); err != nil {
+		// Hosts reads a seeded temp config, never the developer's real one:
+		// two declared groups, ungrouped hosts, an included file, a wildcard
+		// block and a long ProxyCommand (the clipped-value case).
+		hostsDir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(hostsDir, "orbstack"), []byte("Host orb-dev\n  HostName 127.0.0.1\n  Port 32222\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		config := filepath.Join(hostsDir, "config")
+		hostsConfig := "Include " + filepath.Join(hostsDir, "orbstack") + "\n\n" +
+			"#SCE_GROUP:A:::Development\n\n" +
+			"Host dev-box\n  HostName 10.0.0.12\n  User wilson\n  ProxyCommand ssh -W %h:%p -q -o StrictHostKeyChecking=accept-new jump.internal.example.com\n  IdentityFile ~/.ssh/id_ed25519\n#SCEGroup A\n\n" +
+			"Host staging\n  HostName staging.example.com\n  User deploy\n  Port 2222\n#SCEGroup A\n\n" +
+			"#SCE_GROUP:B:::Personal\n\n" +
+			"Host nas\n  HostName nas.local\n  User wilson\n#SCEGroup B\n\n" +
+			"Host scratch\n  HostName scratch.example.com\n\n" +
+			"Host *\n  ServerAliveInterval 30\n  AddKeysToAgent yes\n"
+		if err := os.WriteFile(config, []byte(hostsConfig), 0o600); err != nil {
 			t.Fatal(err)
 		}
 		index, err := sshconfig.IndexPath(config)
 		if err != nil {
 			t.Fatal(err)
 		}
-		shell.hosts.loaded, shell.hosts.mainPath, shell.hosts.entries, shell.hosts.files = true, index.MainPath, index.Entries, index.Files
-		if len(index.Entries) > 0 {
-			shell.hosts.selected = hostEntryKey(index.Entries[0])
+		shell.hosts.loaded, shell.hosts.mainPath, shell.hosts.entries, shell.hosts.groups, shell.hosts.files =
+			true, index.MainPath, index.Entries, index.Groups, index.Files
+		hostKey := func(alias string) string {
+			for _, entry := range index.Entries {
+				if entry.Alias() == alias || entry.Title() == alias {
+					return hostEntryKey(entry)
+				}
+			}
+			t.Fatalf("no %q in the seeded config", alias)
+			return ""
 		}
 		shell.router.Push("/hosts")
-		render("11-hosts")
+		render("11-hosts-empty")
+		shell.hosts.selected = hostKey("dev-box")
+		render("11a-hosts")
+		shell.openHostForm(index.Entries[1])
+		render("11b-hosts-edit")
+		shell.hosts.form = hostsFormState{}
+		shell.hosts.effOpen, shell.hosts.effFor = true, "dev-box"
+		shell.hosts.eff = []sshconfig.KV{
+			{Key: "hostname", Value: "10.0.0.12"}, {Key: "user", Value: "wilson"}, {Key: "port", Value: "22"},
+			{Key: "proxycommand", Value: "ssh -W %h:%p -q -o StrictHostKeyChecking=accept-new jump.internal.example.com"},
+			{Key: "identityfile", Value: "~/.ssh/id_ed25519"}, {Key: "serveraliveinterval", Value: "30"},
+		}
+		render("11c-hosts-effective")
+		shell.hosts.effOpen = false
+		shell.hosts.selected = hostKey("*")
+		render("11d-hosts-pattern")
+		shell.instances = append(shell.instances, herdr.Instance{
+			Name: "workbox", DisplayName: "workbox",
+			Machine: &herdr.Machine{ID: "m1", Label: "workbox", Target: "wilson@workbox.local", Enabled: true},
+		})
+		shell.machineStates = map[string]herdr.MachineState{"m1": {Reachable: true}}
+		shell.hosts.selected = hostMachineKeyPrefix + "m1"
+		render("11e-hosts-machine")
+		shell.hosts.selected = hostKey("dev-box")
+		shell.hosts.closed = map[string]bool{"group:B": true}
+		render("11f-hosts-folded")
+		shell.hosts.editing, shell.hosts.editorFile = true, config
+		shell.hosts.editorLoaded, shell.hosts.editorText = hostsConfig, hostsConfig+"# edited\n"
+		render("11g-hosts-raw")
+		shell.hosts.editing = false
 
 		// The Agent activity panel at its content-driven height: the
 		// Agents list grouped by state, then the Services tab over a seeded

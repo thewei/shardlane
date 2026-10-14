@@ -2,12 +2,13 @@ package nativeui
 
 /**
  * [INPUT]: 依赖 internal/sshconfig（本地 ~/.ssh/config 行级索引与条目事实）、Shell 机器投影（machineInstances/machineStates）、共享 DS 组件
- * [OUTPUT]: /hosts 内页入口 showViewHosts/hostsPage：主机条目详情、Herdr 机器详情与空态
+ * [OUTPUT]: /hosts 内页入口 showViewHosts/hostsPage：主机条目详情（标题行主操作 + 一个分组指令列表，编辑时就地变输入框）、Herdr 机器详情与空态
  * [POS]: 本地客户端能力页（类比 Git Workbench 的本地事实投影）：只读展示 + 显式保存；连接与机器管理一律走 Herdr 既有通道，不建第二注册表
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/egoist/mygo/ui"
@@ -26,7 +27,11 @@ type hostsPageState struct {
 
 	mainPath string
 	entries  []sshconfig.Entry
+	groups   []sshconfig.Group
 	files    []string
+
+	// closed folds the sidebar's groups by hostGroup.Key; session-only.
+	closed map[string]bool
 
 	selected string // hostEntryKey or hostMachineKeyPrefix+profile id
 
@@ -92,6 +97,17 @@ func (s *Shell) hostsPage(c *ui.Context) {
 	})
 }
 
+// hostsMainFile is the main config as entries name it. The index resolves
+// symlinks for the files it reads, so a linked ~/.ssh/config reads back under
+// its target's path — comparing entries against mainPath would call every
+// host of such a config "included".
+func (s *Shell) hostsMainFile() string {
+	if len(s.hosts.files) > 0 {
+		return s.hosts.files[0]
+	}
+	return s.hosts.mainPath
+}
+
 // selectedHostEntry resolves the selected key against the current index;
 // a stale key (refreshed index, edited file) falls back to the empty state.
 func (s *Shell) selectedHostEntry() (sshconfig.Entry, bool) {
@@ -119,85 +135,136 @@ func (s *Shell) hostsEmptyState(c *ui.Context) {
 		})
 	case s.hosts.missing:
 		ui.Column(c).Grow(1).Center().Gap(Spacing().S).Children(func() {
-			emptyState(c, "No SSH config",
-				"Create ~/.ssh/config to keep host aliases; ssh reads it on every connection.")
+			emptyState(c, "No SSH config", "ssh reads host aliases from ~/.ssh/config.")
 			if ui.PrimaryButton(c, "Create ~/.ssh/config").Clicked() {
 				s.openHostEditor(s.hosts.mainPath, true)
 			}
 		})
 	default:
-		emptyState(c, "Select a host", "Pick an entry in the sidebar to connect, inspect or edit it.")
+		emptyState(c, "Select a host", "")
 	}
 }
 
-// hostEntryDetail renders one Host/Match block: identity, provenance, the
-// indexed directive facts, and the actions its shape allows.
-func (s *Shell) hostEntryDetail(c *ui.Context, entry sshconfig.Entry) {
-	t := c.Theme()
+// hostsDetailPage is the scrolling, centered column every Hosts detail sits
+// in — the same inset and rhythm as Settings and the Agent inspector.
+func hostsDetailPage(c *ui.Context, body func()) {
 	sp := Spacing()
-	alias := entry.Alias()
-	ui.Column(c).FillWidth().Grow(1).MinHeight(0).Children(func() {
+	ui.Scroll(c).Grow(1).MinHeight(0).Children(func() {
 		contentColumn(c, formColumnWidth, func() {
-			ui.Column(c).FillWidth().Padding(sp.L, 0, sp.XL).Gap(sp.L).Children(func() {
-				ui.Row(c).FillWidth().Gap(sp.S).AlignItems(ui.Center).Children(func() {
-					ui.Text(c, entry.Title()).FontSize(Typography().Title).
-						FontWeight(WeightBold).Grow(1).MinWidth(0).SingleLine()
-					if entry.Kind == sshconfig.KindMatch {
-						statusPill(c, "match", ToneNeutral)
-					} else if alias == "" {
-						statusPill(c, "pattern", ToneNeutral)
-					}
-					if entry.File != s.hosts.mainPath {
-						statusPill(c, "included", ToneInfo)
-					}
-				})
-				ui.Textf(c, "%s:%d", compactSearchPath(entry.File), entry.Line).
-					FontSize(Typography().Caption).TextColor(t.TextMuted)
-
-				ui.Row(c).FillWidth().Gap(sp.S).AlignItems(ui.Center).Children(func() {
-					if alias != "" {
-						if ui.PrimaryButton(c, "Connect").Clicked() {
-							s.connectHost(alias)
-						}
-						if ui.Button(c, "Add Herdr Machine…").Clicked() {
-							s.registerHostMachine(alias)
-						}
-					} else {
-						ui.Text(c, hostsConnectHint(entry)).FontSize(Typography().Caption).
-							TextColor(t.TextMuted).Grow(1)
-					}
-					if ui.Button(c, "Edit File").Clicked() {
-						s.openHostEditor(entry.File, false)
-					}
-				})
-
-				s.hostsFormSection(c, entry)
-
-				settingsCard(c, "Directives", func() {
-					facts := entry.Facts()
-					if len(facts) == 0 {
-						ui.Text(c, "No directives in this block.").FontSize(Typography().BodySmall).TextColor(t.TextMuted)
-					}
-					for _, kv := range facts {
-						formRow(c, kv.Key, kv.Value, nil)
-					}
-				})
-				s.hostEffectiveSection(c, alias)
-			})
+			ui.Column(c).FillWidth().Padding(pageTopInset(), sp.XL, sp.XL).Gap(sp.XL).Children(body)
 		})
 	})
 }
 
-// hostsConnectHint explains why an entry has no Connect action: ssh itself
-// resolves patterns and Match blocks, so the page never guesses a name.
-func hostsConnectHint(entry sshconfig.Entry) string {
-	if entry.Kind == sshconfig.KindMatch {
-		return "Match blocks are resolved by ssh itself — connect from a concrete host."
+// hostEntryDetail renders one Host/Match block: a heading with its primary
+// actions, the block's directives in one grouped list that turns into inputs
+// while the block is edited, and the system client's effective config on
+// demand.
+func (s *Shell) hostEntryDetail(c *ui.Context, entry sshconfig.Entry) {
+	t := c.Theme()
+	f := &s.hosts.form
+	editing := f.open && f.entryKey == hostEntryKey(entry) && hostFormEditable(entry)
+	ui.Column(c).FillWidth().Grow(1).MinWidth(0).MinHeight(0).Children(func() {
+		if editing && f.err != "" {
+			inlineNotice(c, ToneError, f.err, nil)
+		}
+		hostsDetailPage(c, func() {
+			s.hostHeading(c, entry, editing)
+			if editing && f.confirmClose {
+				ui.Row(c).FillWidth().Gap(Spacing().S).AlignItems(ui.Center).Children(func() {
+					hostsDiscardPrompt(c, func() { f.confirmClose = false }, func() { s.hosts.form = hostsFormState{} })
+				})
+			}
+			s.hostFacts(c, entry, editing)
+			if editing {
+				ui.Text(c, "Comments and other directives stay as they are.").
+					FontSize(Typography().Caption).TextColor(t.TextMuted)
+				return
+			}
+			s.hostEffectiveSection(c, entry.Alias())
+		})
+	})
+}
+
+// hostHeading is the detail's title row: the host and where it is defined on
+// the left, its actions on the right. Connect is the one primary action; the
+// pencil edits in place (a structured form for a plain host, the file's raw
+// editor for anything ssh resolves itself). Editing swaps both for
+// Cancel/Save, so the row never changes height.
+func (s *Shell) hostHeading(c *ui.Context, entry sshconfig.Entry, editing bool) {
+	t := c.Theme()
+	typ := Typography()
+	sp := Spacing()
+	k := gorexColorsOf(t.Dark)
+	ui.Row(c).FillWidth().Gap(sp.S).AlignItems(ui.Center).Children(func() {
+		ui.Column(c).Grow(1).MinWidth(0).Gap(sp.XXS).Children(func() {
+			ui.Text(c, entry.Title()).FontSize(typ.Heading).FontWeight(WeightSemibold).
+				SingleLine().Ellipsis("…").MinWidth(0).Tooltip(entry.Title())
+			ui.Text(c, hostSubtitle(entry)).FontSize(typ.Caption).TextColor(t.TextMuted).
+				SingleLine().Ellipsis("…").MinWidth(0)
+		})
+		if editing {
+			if s.hosts.form.saving {
+				ui.Spinner(c).Size(14, 14)
+			}
+			if ui.Button(c, "Cancel").Clicked() {
+				s.cancelHostForm()
+			}
+			if ui.PrimaryButton(c, "Save").Clicked() {
+				s.saveHostForm(entry)
+			}
+			return
+		}
+		if alias := entry.Alias(); alias != "" {
+			if ui.PrimaryButton(c, "Connect").Clicked() {
+				s.connectHost(alias)
+			}
+		}
+		if hostFormEditable(entry) {
+			if gorexIconButton(c, k, iconEdit, "Edit", "Edit", false, gorexIconBtn, gorexIconGlyph).Clicked() {
+				s.openHostForm(entry)
+			}
+		} else if gorexIconButton(c, k, iconEdit, "Edit File", "Edit File", false, gorexIconBtn, gorexIconGlyph).Clicked() {
+			s.openHostEditor(entry.File, false)
+		}
+	})
+}
+
+// hostSubtitle is the heading's quiet second line: where the block is
+// defined, after a word for what it is when it is not a plain host — the
+// reason it has no Connect.
+func hostSubtitle(entry sshconfig.Entry) string {
+	where := fmt.Sprintf("%s:%d", compactSearchPath(entry.File), entry.Line)
+	switch {
+	case entry.Kind == sshconfig.KindMatch:
+		return "Match rule · " + where
+	case entry.Alias() != "":
+		return where
+	case len(entry.Patterns) > 1:
+		return "Several patterns · " + where
 	}
-	if len(entry.Patterns) > 1 {
-		return "This line lists several patterns — edit the file to connect to one of them."
+	return "Wildcard pattern · " + where
+}
+
+// hostFacts is the block's directives in one grouped list. While the host is
+// edited its alias and the managed directives lead as inputs and the rest of
+// the block stays read-only beneath them.
+func (s *Shell) hostFacts(c *ui.Context, entry sshconfig.Entry, editing bool) {
+	facts := entry.Facts()
+	var rows []settingsRow
+	if editing {
+		rows = s.hostFormRows(c, entry)
+		facts = unmanagedDirectives(facts)
 	}
-	return "Wildcard patterns are resolved by ssh — connect from a concrete alias."
+	for _, kv := range facts {
+		kv := kv
+		rows = append(rows, row(kv.Key, "", func() { valueText(c, kv.Value) }))
+	}
+	if len(rows) == 0 {
+		ui.Text(c, "No directives.").FontSize(Typography().BodySmall).TextColor(c.Theme().TextMuted)
+		return
+	}
+	settingsGroup(c, "", rows...)
 }
 
 // hostMachineDetail renders one saved Herdr machine profile read-only: the
@@ -216,55 +283,45 @@ func (s *Shell) hostMachineDetail(c *ui.Context) {
 		return
 	}
 	machine := inst.Machine
-	label := inst.DisplayName
-	if label == "" {
-		label = machine.Label
-	}
-	if label == "" {
-		label = machine.ID
-	}
+	label := fallbackText(inst.DisplayName, machine.Label, machine.ID)
 	sp := Spacing()
 	t := c.Theme()
-	ui.Column(c).FillWidth().Grow(1).MinHeight(0).Children(func() {
-		contentColumn(c, formColumnWidth, func() {
-			ui.Column(c).FillWidth().Padding(sp.L, 0, sp.XL).Gap(sp.L).Children(func() {
-				ui.Row(c).FillWidth().Gap(sp.S).AlignItems(ui.Center).Children(func() {
-					ui.Text(c, label).FontSize(Typography().Title).
-						FontWeight(WeightBold).Grow(1).MinWidth(0).SingleLine()
-					state, known := s.machineStates[machine.ID]
-					if known {
-						switch {
-						case state.Reachable:
-							statusPill(c, "reachable", ToneSuccess)
-						case state.Attention:
-							statusPill(c, "needs attention", ToneAttention)
-						default:
-							statusPill(c, "unreachable", ToneNeutral)
-						}
-					}
-				})
-				settingsCard(c, "Machine", func() {
-					formRow(c, "SSH target", machine.Target, nil)
-					if machine.Session != "" {
-						formRow(c, "Remote session", machine.Session, nil)
-					}
-					enabled := "disabled"
-					if machine.Enabled {
-						enabled = "enabled"
-					}
-					formRow(c, "Profile", enabled, nil)
-				})
-				ui.Row(c).FillWidth().Gap(sp.S).AlignItems(ui.Center).Children(func() {
-					if ui.PrimaryButton(c, "Open Workspace").Clicked() {
-						s.openInstance(inst.Name)
-					}
-					ui.Text(c, "Machines are Herdr-managed profiles — add, rename or forget them from the Session selector.").
-						FontSize(Typography().Caption).TextColor(t.TextMuted).Grow(1)
-				})
-				if state, known := s.machineStates[machine.ID]; known && state.Attention && state.Message != "" {
-					ui.Text(c, state.Message).FontSize(Typography().Caption).TextColor(t.TextMuted)
+	state, known := s.machineStates[machine.ID]
+	hostsDetailPage(c, func() {
+		ui.Row(c).FillWidth().Gap(sp.S).AlignItems(ui.Center).Children(func() {
+			ui.Text(c, label).FontSize(Typography().Heading).FontWeight(WeightSemibold).
+				SingleLine().Ellipsis("…").Shrink(1).MinWidth(0).Tooltip(label)
+			if known {
+				switch {
+				case state.Reachable:
+					statusPill(c, "reachable", ToneSuccess)
+				case state.Attention:
+					statusPill(c, "needs attention", ToneAttention)
+				default:
+					statusPill(c, "unreachable", ToneNeutral)
 				}
-			})
+			}
+			ui.Box(c).Grow(1).PassThrough()
+			if ui.PrimaryButton(c, "Open Workspace").Clicked() {
+				s.openInstance(inst.Name)
+			}
+		})
+		rows := []settingsRow{row("SSH target", "", func() { valueText(c, machine.Target) })}
+		if machine.Session != "" {
+			rows = append(rows, row("Remote session", "", func() { valueText(c, machine.Session) }))
+		}
+		enabled := "disabled"
+		if machine.Enabled {
+			enabled = "enabled"
+		}
+		rows = append(rows, row("Profile", "", func() { valueText(c, enabled) }))
+		settingsGroup(c, "", rows...)
+		ui.Column(c).FillWidth().Gap(sp.XXS).Children(func() {
+			if known && state.Attention && state.Message != "" {
+				ui.Text(c, state.Message).FontSize(Typography().Caption).TextColor(t.TextMuted)
+			}
+			ui.Text(c, "Rename or forget this machine from the Session selector.").
+				FontSize(Typography().Caption).TextColor(t.TextMuted)
 		})
 	})
 }

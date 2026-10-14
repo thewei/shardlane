@@ -33,7 +33,7 @@ description: Use when polishing or unifying the Shardlane MyGo client's UI/UX �
 | 图标 | Lucide 粗描边、机器人头像、文本字符冒充图标（↻ ← ↑↓ −） | 全部细线 1.5（iOS 风格）；彩色圆角方块 `iconTile` 只标目的地/类别（设置导航、Agent 列表、Sessions 行），状态一律 `StatusTone`；刷新/返回/展开用 SVG |
 | 布局 | 互斥项并排按钮、整页拉伸、窄窗挤成单字列 | 互斥项 → Segmented tabs（Git 侧栏 Local Changes/All Commits、Theme/Density、Sessions Agent 标签条；只有一个来源不显示）；设置页 = macOS 分组列表（原生 Switch、右对齐紧凑控件、行内分隔线）；内页居中最大宽度，宽窗长边距；窄窗 `Wrap().Basis()` 让操作换行到消息下方；侧栏统一对齐网格 + 折叠结构线（`TreeLine`） |
 | 间距 / 圆角 / 分隔线 | 5/7/12/16 混搭圆角、一次性间距、各页各画分隔 | Spacing `2/4/6/8/12/20`（XXS…XL）；Radius Control 6 / Row 8 / Card 10 / Pill，图标按钮 `size/2.6`；控件高 Compact 24 / Regular 28 / Row 31；分隔线一律 1px `BorderSubtle`，分组列表里从 `rowInset`（14）起、`attached` 行不画；卡 = `Panel` 底 + 1px `BorderSubtle`，无阴影；页面不写字面量 |
-| 交互 | 每行常驻三个按钮、"…" 文本按钮、各页高亮色不同 | 行内操作 = 悬停才现的菜单入口 + 右键菜单，**占位固定，悬停不位移**（有变异测试）；原生控件优先（Switch/Segmented/Pulldown/SearchField）；破坏性确认默认焦点不在 Confirm；**浮层只有一层**——点击条目 = 直达面板并收起浮层，不在浮层里再开详情层/返回键；主动作只有点击，其余进右键菜单，行尾至多一个快捷图标；浮层复用侧栏同一张卡片 |
+| 交互 | 每行常驻三个按钮、"…" 文本按钮、各页高亮色不同、编辑要另开一张卡 | **编辑就地发生**（值变输入框，主按钮换成 Cancel/Save，Return 保存，不另开卡）；行内操作 = 悬停才现的菜单入口 + 右键菜单，**占位固定，悬停不位移**（有变异测试）；原生控件优先（Switch/Segmented/Pulldown/SearchField）；破坏性确认默认焦点不在 Confirm；**浮层只有一层**——点击条目 = 直达面板并收起浮层，不在浮层里再开详情层/返回键；主动作只有点击，其余进右键菜单，行尾至多一个快捷图标；浮层复用侧栏同一张卡片 |
 | 动效 | 装饰性动画、卡顿的重排 | 悬停/按下/开态颜色 120 ms；重排/拖动占位 150–190 ms；浮层进出场 140 ms（Enter Y+6 / Exit Y−4）；侧栏滑动 200 ms（拖动时 1 ms 直落）；Reduce Motion 直接落位；不为装饰加动画 |
 | 文案 | 自圆其说、泄漏内部信息 | 见下节 |
 
@@ -71,7 +71,7 @@ rg -n 'Padding\(14, 9, 9\)' --glob '!*_test.go' .                      # 侧栏�
 1. **基线**：改动前先出 headless 证据 `SHARDLANE_UI_EVIDENCE=/tmp/x/before GOTOOLCHAIN=go1.27.1 go test ./internal/nativeui -run 'TestUIEvidence$' -count=1`（深/浅各 12 页：Workspace、Settings 各分组、Sessions、详情、Files、Agent 面板、Hosts）；用户正在用的 App 只做被动观察（cua-driver 后台 AX/截图，边界见 `shardlane-ui-audit`）。
 2. **收集问题**，分四类：重复（入口/标题/刷新/路径回声）、不一致（同组件两种脸/尺寸/文案）、AI 味（自圆其说/泄漏/装饰）、断路（死按钮/无 Tooltip 截断）。每条记 `文件:行`。
 3. **修**：先判规则归属（五条不变量或 token），改唯一实现，不堆页面特例。需求有歧义（例如"把终端标题移进 Header"）→ 按保守解读做信息去重，并列出备选交给用户，不擅自删结构。
-4. **钉**：每个修复一条回归测试 + **变异检查**（`cp` 备份 → 改回旧实现 → 测试必须红 → 从备份还原并复核）。像素断言用 `pixelAt`/`rgbDiff`（`sidebar_tree_test.go`），布局断言用 `Tester.Find` 矩形；路由动画用真实时钟，测试用 `settleFrames`。
+4. **钉**：每个修复一条回归测试 + **变异检查**（`cp` 备份 → 改回旧实现 → 测试必须红 → 从备份还原并复核）。像素断言用 `pixelAt`/`rgbDiff`（`sidebar_tree_test.go`），布局断言用 `Tester.Find` 矩形（按钮文字的矩形是字，不是按钮；比对齐线而不是高度）；路由动画用真实时钟，测试用 `settleFrames`。**`Tester.HasText` 是子串匹配**：页面会打印路径，`t.TempDir()` 路径带测试名（`…NoConnect` 的测试就"出现"了 Connect）——否定断言一律用精确 `Find`（`onScreen`），种子目录用 `os.MkdirTemp`；`applyOnUI` 在 headless 下默认丢弃，需要落地就设 `uiApplyOverride` 队列。
 5. **证据**：重出 after 图并排对比（`Read` 看 PNG），再看一次浅色与深色。
 6. **门禁**（全部实跑）：
    ```sh
@@ -96,8 +96,9 @@ rg -n 'Padding\(14, 9, 9\)' --glob '!*_test.go' .                      # 侧栏�
 - 开关脸统一：Files 忽略开关与 Sessions 的 Select/Hidden 从蓝/accent 改为 `gorexToggleFace` 的中性芯片。
 - 旧 `iconButton`（28/14，半径 6）并入 `gorexIconButton`：侧栏页脚设置齿轮走工具栏档，Workspace 区 "+" 走密集档。
 - 空态标题统一 sentence case；Inspector 路由补回 `gorexContentCard`。
-- Hosts 侧栏列表不再二次内缩（原比 Sessions/Settings 低 14、窄 9）：`TestInnerSidebarsShareOneInset`；Hosts 详情操作行三按钮同一档（`Edit File` 原为密集档）：`TestHostActionRowSharesOneButtonTier`。
+- Hosts 侧栏列表不再二次内缩（原比 Sessions/Settings 低 14、窄 9）：`TestInnerSidebarsShareOneInset`。
 - Agent 浮层（标题栏/托盘）重排（2026-10-14 第二轮）：顶部 Agents/Services 分段、浮层自身无标题；Agents 按状态分组（Needs attention › Review › Working › Idle，空组省略；分组头 = 状态点 + 名称 + 计数，Services 分区标题用同一构件 `quickPanelGroupHeader`），行复用侧栏 `agentCardRow`；点击行**直达面板并收起浮层**（待交互 → Chat；blocked/failed → Terminal；其余回到该 pane 上次所在面板），行尾 ✓ = 标记已审阅（不跳转），其余动作在右键菜单；去掉详情层、统计筛选卡与浮层标题。高度随内容增长至上限 480：预算常数取自真实布局（`quickPanelChromeHeight/GroupHeight/RowHeight/UsageHeight`），不是估的——估的 72/28/44 实测多出 57 px 空白，`TestQuickPanelHeightHoldsTheContent` 现在钉贴合（含用量行）。
+- Hosts 重做（2026-10-14 第二轮）：**侧栏**按配置自带分组可折叠——`#SCE_GROUP:<id>:::<名>` / `#SCEGroup <id>`（SSH Config Editor 的注释标记，只读解析 `sshconfig.Index.Groups`，不写回、不建第二注册表）→ 声明组 › Ungrouped › 各 Include 文件，没有可分组内容时保持平铺；分组头与行都走共享的 `sidebarSectionHeader`/`sidebarTreeRow`（Git 分区头已委托同一构件，`Selected` 用 `SidebarSelect` 脸，`Action` = 悬停才现的行内主动作图标，占位固定）。**详情**不再是"标题 + 三个按钮 + 三张卡"：一行标题（Heading 16 semibold + 灰色 `file:line`，非主机则前缀 `Wildcard pattern ·`/`Match rule ·` 交代为何没有 Connect）+ 主按钮 Connect + 铅笔图标；指令只有一个 `settingsGroup`，**编辑就地发生**（值变输入框、Cancel/Save 顶替 Connect/铅笔、Return 保存、一句话说明其余内容原样保留），生效配置是折叠行（`ssh -G`）。长值走 `valueText`（单行省略 + 全文 tooltip，所有事实行共用）。次要动作（Add Herdr Machine…/Edit File）进标题栏 Actions，与行右键菜单是同一份 `hostEntryMenu`。守卫：`hosts_test.go`（分组折叠与计数、平铺、符号链接配置不被当 include、选中脸、悬停连接、就地编辑与放弃确认、Return 保存落盘、Actions 随选中出现）、`hosts_groups_test.go`、`sshconfig` 的标记解析测试。
 - 菜单项一律 Title Case（Git 分支/标签/Stash/提交/文件夹菜单 20 项）、Finder 定位统一 `Reveal in Finder`、Git 确认框标题对齐菜单（`Undo Last Commit?`、`Delete Tag “x”?`）：`TestMenuItemsAreTitleCase`。
 
 ## 已知例外与待办（下一轮从这里接）
@@ -120,3 +121,4 @@ rg -n 'Padding\(14, 9, 9\)' --glob '!*_test.go' .                      # 侧栏�
 | 浮层里点条目又进下一层详情 / 返回键 | 交互行 | 点击直达面板并收起；其余动作进右键菜单 |
 | 内容驱动高度的预算常数凭估算填 | 打磨循环 4 | 用 `Tester.Find` 矩形测真实高度，写贴合测试（不越界、空白有上限），预算改常数而非猜 |
 | 文案向读者解释自己 / 暴露内部名 | 文案规则 | 删句或改成动作 + 下一步 |
+| 把条目路径和"主文件路径"直接比较来判断是否 include | 打磨循环 4 | 索引会解析符号链接——软链的 `~/.ssh/config` 会让每个条目都像 include；比较用索引自己的主文件（`hostsMainFile`），并钉符号链接用例 |

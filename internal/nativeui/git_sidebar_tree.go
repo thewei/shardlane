@@ -199,38 +199,20 @@ func (s *Shell) gitRepositorySidebar(c *ui.Context) {
 // slot is always reserved, so the count never jumps) and the same action
 // lives in the right-click menu.
 func (s *Shell) gitSidebarSection(c *ui.Context, name string, count int, action *gitSectionAction, children func()) {
-	t := c.Theme()
 	key := s.gitFoldKey("section/" + name)
 	closed := s.gitTreeClosed[key]
-	ui.Box(c).Height(4).Shrink(0)
-	row := ui.ButtonBase(c.Key("git-section:"+name)).FillWidth().Height(s.treeRowHeight()+2).
-		Padding(0, treeRowPad).Radius(4).FocusRing(false).AlignItems(ui.Center).Label("Toggle " + name)
-	if row.Hovered() {
-		row.Background(t.SurfaceHover)
-	}
+	spec := sidebarSectionSpec{Key: "git-section:" + name, Title: name, Count: count, Closed: closed}
 	if action != nil {
-		row.ContextMenu(func(m *ui.Menu) {
+		if !action.disabled {
+			spec.Action = &treeRowAction{Label: action.label, Tooltip: action.menuItem, Glyph: iconPlus, Run: action.run}
+		}
+		spec.Menu = func(m *ui.Menu) {
 			if m.Item(action.menuItem).Disabled(action.disabled).Chosen() {
 				action.run()
 			}
-		})
+		}
 	}
-	row.Children(func() {
-		treeChevron(c, true, !closed, t.TextMuted)
-		ui.Box(c).Width(treeGlyphGap).Shrink(0).PassThrough()
-		ui.Text(c, name).FontSize(Typography().Body).FontWeight(WeightSemibold).Grow(1).MinWidth(0).SingleLine()
-		ui.Textf(c, "%d", count).FontSize(Typography().Micro).TextColor(t.TextMuted).Shrink(0)
-		ui.Box(c).Size(22, 20).Shrink(0).Center().Children(func() {
-			if action == nil || action.disabled || !row.Hovered() {
-				return
-			}
-			add := gorexIconButton(c, gorexColorsOf(t.Dark), iconPlus, action.label, action.menuItem, false, 20, 12)
-			if add.Clicked() {
-				action.run()
-			}
-		})
-	})
-	if row.Clicked() {
+	if s.sidebarSectionHeader(c, spec).Clicked() {
 		s.gitTreeClosed[key] = !s.gitTreeClosed[key]
 	}
 	if !closed {

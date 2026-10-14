@@ -2,7 +2,7 @@ package sshconfig
 
 /**
  * [INPUT]: 依赖用户自己的 OpenSSH 客户端配置（~/.ssh/config 及其 Include 闭包），仅标准库
- * [OUTPUT]: DefaultPath/IndexPath 行级索引（Host/Match 块、多模式、`=` 与引号、Include 递归+glob+环防护）与块原文 Facts
+ * [OUTPUT]: DefaultPath/IndexPath 行级索引（Host/Match 块、多模式、`=` 与引号、Include 递归+glob+环防护）、块原文 Facts 与只读的主机分组（SSH Config Editor 式注释标记）
  * [POS]: 本地客户端能力域包：只做"列目录"级解析，绝不求值语义（求值委托系统 ssh，见 effective.go）；不读写私钥、不记录文件内容
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -24,6 +24,8 @@ const (
 	maxEntries      = 4000
 	maxBlockLines   = 400
 	maxWarnings     = 32
+	maxGroups       = 200
+	maxGroupName    = 64
 )
 
 // Kind distinguishes the two block headers ssh_config knows.
@@ -49,6 +51,7 @@ type Entry struct {
 	File     string   // absolute path of the defining file
 	Line     int      // 1-based line of the block header
 	Lines    []string
+	Group    string // id of the group a `#SCEGroup <id>` marker files the block under; "" when none
 }
 
 // Alias returns the one literal connectable name of a host entry, or ""
@@ -88,11 +91,22 @@ func (e Entry) Facts() []KV {
 	return facts
 }
 
+// Group is one named collection of hosts as the config's own comments
+// declare it. The markers are the ones SSH Config Editor writes: a
+// `#SCE_GROUP:<id>:::<name>` line names a group, and a `#SCEGroup <id>` line
+// inside a Host block files that block under it. ssh ignores them as comments
+// and they are only ever read here — never written, so a config that carries
+// groups keeps working in the tool that made them.
+type Group struct {
+	ID, Name string
+}
+
 // Index is the listing of one config file plus its Include closure.
 type Index struct {
 	MainPath string
 	Files    []string // absolute, main first, in Include encounter order
 	Entries  []Entry  // document order, includes expanded in place
+	Groups   []Group  // declared groups, in declaration order
 	Warnings []string // bounded, path-level only
 }
 
@@ -156,6 +170,7 @@ func (ix *Index) addFile(path string, seen map[string]bool, depth int) error {
 	for i, raw := range splitLines(data) {
 		keyword, rest, comment := splitKeyword(raw)
 		if comment {
+			ix.noteGroupMarker(strings.TrimSpace(raw), block)
 			continue
 		}
 		switch strings.ToLower(keyword) {
@@ -198,6 +213,37 @@ func (ix *Index) addFile(path string, seen map[string]bool, depth int) error {
 		}
 	}
 	return nil
+}
+
+// noteGroupMarker reads one comment line as a group declaration or as the
+// marker of the block above it (block is that block's index, -1 before the
+// first one). Any other comment is just a comment.
+func (ix *Index) noteGroupMarker(line string, block int) {
+	if rest, ok := strings.CutPrefix(line, "#SCE_GROUP:"); ok {
+		id, name, _ := strings.Cut(rest, ":::")
+		id = strings.Trim(strings.TrimSpace(id), ":")
+		if id == "" {
+			return
+		}
+		for _, have := range ix.Groups {
+			if have.ID == id {
+				return
+			}
+		}
+		if len(ix.Groups) >= maxGroups {
+			ix.warn("group limit reached")
+			return
+		}
+		name = strings.TrimSpace(name)
+		if runes := []rune(name); len(runes) > maxGroupName {
+			name = string(runes[:maxGroupName])
+		}
+		ix.Groups = append(ix.Groups, Group{ID: id, Name: name})
+		return
+	}
+	if id, ok := strings.CutPrefix(line, "#SCEGroup "); ok && block >= 0 && ix.Entries[block].Group == "" {
+		ix.Entries[block].Group = strings.TrimSpace(id)
+	}
 }
 
 // expandIncludes turns one Include line's arguments into file paths.

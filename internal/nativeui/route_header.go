@@ -88,13 +88,18 @@ func (s *Shell) filesRouteHeader() routeHeaderSpec {
 }
 
 // hostsRouteHeader titles the Hosts page; the SSH config it indexes is the
-// title's tooltip.
+// title's tooltip, and a selected host adds its action menu to the bar's
+// Actions.
 func (s *Shell) hostsRouteHeader() routeHeaderSpec {
 	path := s.hosts.mainPath
 	if path == "" {
 		path = "~/.ssh/config"
 	}
-	return routeHeaderSpec{title: "Hosts", titleTip: path}
+	spec := routeHeaderSpec{title: "Hosts", titleTip: path}
+	if entry, ok := s.selectedHostEntry(); ok && !s.hosts.editing {
+		spec.actions = func(m *ui.Menu) { s.hostEntryMenu(m, entry) }
+	}
+	return spec
 }
 
 // inspectorRouteHeader titles the Agent inspector with the agent it shows.
