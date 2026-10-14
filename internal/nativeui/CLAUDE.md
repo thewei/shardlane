@@ -11,10 +11,10 @@ gorex_style.go: 扁平视觉系统：卡片/配色、图标按钮度量（gorexI
 terminal.go: 终端画布与 Gorex 窗格卡片渲染器，Pane 标题双击最大化/恢复、最大化 Tab 的窗格 Logo 数量角标（Tab 内面板数，无重叠堆叠画）、窗格标题取 Agent 名（Shardlane 生成的短名 <kind>-<6hex> 不当标题，回落到 Agent 品牌名）、标题原生拖动放置（跨窗格/跨 Tab 移动、拆分与交换）与 split 分隔条拖拽调宽高（解析为 Herdr pane.resize，双击回到 50/50；布局权威在 Herdr）；窗格头的目录文案不复述已有信息——标签已写出目录（titleSpellsOutDir，F168 去重对 shortDir 截断路径失效的修复）或单卡时标题栏第二行已是该窗格目录（paneCardCaption）都不再出第三份
 run_command_button.go: 窗格卡片头的项目命令运行控件：嗅探命令（package.json/Makefile/justfile + 手写 Script 合并）经 root 键缓存读盘外构建；Run 直跑最后使用命令、菜单全量列出（last-used 置顶）；忙碌（pane.process_info 扫描事实）非 Agent 窗格变 Stop（pane.send_text 写 ETX=Ctrl+C）；事务走 ShellReady 探测 + pane.send_text 字面写入（agent.send_keys 只认 Agent 目标，2026-10-13 隔离探针验证；headless 按 mutate 规则丢弃），无新 Herdr 方法
 run_command_button_test.go: 运行控件状态机回归（命令菜单内容、last-used 置顶、忙碌换 Stop、Agent 繁忙隐藏、无命令隐藏、headless 点击安全丢弃）与 computePaneBusy 纯函数、合并形状测试
-breadcrumb_switcher.go: 标题栏面包屑与快速切换弹层所有者，Pane 顺序与 Herdr 实际布局对齐并展示品牌图标；crumbButton 是面包屑与内页标题共用的唯一一枚 crumb 渲染
-titlebar.go: 内容列标题栏（每条路由同一版式的双行身份块：Workspace 为面包屑 + cwd，其余路由为 route_header.go 的标题块；标题栏是页面标题与页面动作的唯一归属）、整高侧栏上的红绿灯带与侧栏切换钮（sidebarBand/sidebarToggle）、视图切换（History 内页先返回根）与 Windows 平台窗口控件支持
-route_header.go: 非 Workspace 路由的标题栏身份（routeHeader/routeHeaderSpec：Sessions、Session 详情[Sessions › 标题，可返回，事实行，会话操作菜单]、Files[根路径，选中文件时 Copy Path/Reveal in Finder]、Hosts[SSH 配置路径]、Settings[Settings › 分组，由 settingsSections 命名]、Inspector）与 routeHeaderBlock/headerDetailRow（与 Workspace 面包屑同一两行版式；第二行空也占位，标题行进出内页不动）
-unified_header_test.go: 标题栏单一归属回归——内页标题只在标题栏且各路由落在同一位置、内页/侧栏不自画页头或标题回声、每个内页至多一个 Refresh 且为图标、Sessions/Settings/Hosts 侧栏列表同一起点（x/y）、Session 详情标题栏可返回列表、各路由 routeHeader 身份
+breadcrumb_switcher.go: 标题栏面包屑与快速切换弹层所有者，Pane 顺序与 Herdr 实际布局对齐并展示品牌图标
+titlebar.go: 内容列标题栏（身份区：Terminal/Chat 为面包屑 + cwd 双行，Changes 与各内页为 route_header.go 的单行 Title 大字标题；标题栏是页面标题与页面动作的唯一归属）、整高侧栏上的红绿灯带与侧栏切换钮（sidebarBand/sidebarToggle）、视图切换（History 内页先返回根）与 Windows 平台窗口控件支持
+route_header.go: Terminal/Chat 以外各页的标题栏身份（routeHeader/routeHeaderSpec：Changes[Diff/Commit 表面，Actions=表面菜单]、Sessions、Session 详情[灰色父级 Sessions › 会话标题，可返回，同行事实，会话操作菜单]、Files[选中文件时 Copy Path/Reveal in Finder，根路径只在标题悬停提示]、Hosts[SSH 配置路径只在悬停提示]、Settings[灰色 Settings › 分组，由 settingsSections 命名]、Inspector）与 routeHeaderBlock（单行 Title 大字加粗标题，无 crumb 胶囊无第二行，每页同字号同位置）；headerDetailRow 只服务 Workspace 面包屑的第二行
+unified_header_test.go: 标题栏单一归属回归——内页标题只在标题栏且各路由（含 Changes）落在同一位置、标题为 Title 大字单行（不复述根路径/配置路径成第二行）、内页/侧栏不自画页头或标题回声、每个内页至多一个 Refresh 且为图标、Sessions/Settings/Hosts 侧栏列表同一起点（x/y）、Session 详情标题栏可返回列表、各路由 routeHeader 身份
 toggle_face_test.go: 开关「开」态回归——Sessions 工具栏的文字开关（Select/Hidden）与标题栏图标开关同为中性芯片，不再是蓝色选中色（像素采样，深浅两套外观）
 copy_style_test.go: 文案大小写回归——emptyState/workspaceEmptyBanner 的字面标题一律句首大写（专有名词除外）；菜单项（.Item("…") 字面量）一律 Title Case（冠词/短介词小写），拦下两个方向的大小写漂移
 router.go: 单一 Router 的页面归属、精确 History 路径分类与窗口标题路由语义

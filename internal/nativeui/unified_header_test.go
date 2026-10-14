@@ -52,6 +52,11 @@ func headerRoutes() []headerRoute {
 			s.router.Replace("/settings/general")
 			return s
 		}},
+		{"changes", "Changes", func(t *testing.T) *Shell {
+			s := rightPanelTestShell(t, t.TempDir())
+			s.showSurface(WorkspaceSurfaceDiff)
+			return s
+		}},
 	}
 }
 
@@ -84,6 +89,30 @@ func TestTitleBarNamesTheRouteInOneSharedPlace(t *testing.T) {
 			baseline = rect.Y
 		} else if rect.Y < baseline-0.5 || rect.Y > baseline+0.5 {
 			t.Errorf("%s: title at y=%.1f, other pages at y=%.1f — entering a page must not move it", route.name, rect.Y, baseline)
+		}
+	}
+}
+
+// TestInnerTitlesAreOneLargeRow pins the 2026-10-14 look of the bar: every
+// inner page is a single row of Title-size type — no crumb chip, no second
+// context row — so the Files folder, the Hosts config path and the like do
+// not return as a muted line under it.
+func TestInnerTitlesAreOneLargeRow(t *testing.T) {
+	for _, route := range headerRoutes() {
+		s := route.setup(t)
+		tester := ui.NewTester(s.View, 1200, 800)
+		settleFrames(tester, 3)
+		rect, ok := tester.Find(route.title)
+		if !ok {
+			t.Fatalf("%s: title %q missing; texts=%q", route.name, route.title, tester.Texts())
+		}
+		if rect.H < Typography().Title {
+			t.Errorf("%s: title is %.1f high, want Title-size type (>= %.0f)", route.name, rect.H, Typography().Title)
+		}
+		for _, echo := range []string{shortDir(s.rightPanel.currentRoot), compactSearchPath(s.hosts.mainPath)} {
+			if echo != "" && echo != "." && tester.HasText(echo) {
+				t.Errorf("%s: the bar repeats %q as a second row; texts=%q", route.name, echo, tester.Texts())
+			}
 		}
 	}
 }
@@ -265,7 +294,7 @@ func TestLongSessionTitleCannotPushTheBarsToolsOut(t *testing.T) {
 }
 
 // TestRouteHeaderIdentity pins what the bar says per route, without
-// rendering: parents, the way back, the context line and the Actions.
+// rendering: parents, the way back, the facts and the Actions.
 func TestRouteHeaderIdentity(t *testing.T) {
 	s := newMultiAgentHistoryShell(t)
 	s.router.Replace(routeHistory)
@@ -273,41 +302,50 @@ func TestRouteHeaderIdentity(t *testing.T) {
 	settleFrames(ui.NewTester(s.View, 1200, 800), 3)
 
 	s.router.Replace(routeWorkspace)
-	if _, ok := s.routeHeader(false); ok {
-		t.Fatal("the workspace keeps its own breadcrumb, not a route header")
+	if _, ok := s.routeHeader(); ok {
+		t.Fatal("the Terminal keeps its own breadcrumb, not a route header")
+	}
+	s.showSurface(WorkspaceSurfaceDiff)
+	spec, ok := s.routeHeader()
+	if !ok || spec.title != "Changes" || spec.parent != "" || spec.actions == nil {
+		t.Fatalf("Changes is a page of its own, titled in the bar with its Actions: %+v", spec)
+	}
+	s.showSurface(WorkspaceSurfaceTerminal)
+	if _, ok := s.routeHeader(); ok {
+		t.Fatal("back on the Terminal the breadcrumb returns")
 	}
 
 	s.router.Replace(routeHistory)
-	spec, ok := s.routeHeader(false)
-	if !ok || spec.current.label != "Sessions" || spec.parent.label != "" {
+	spec, ok = s.routeHeader()
+	if !ok || spec.title != "Sessions" || spec.parent != "" {
 		t.Fatalf("sessions list header = %+v", spec)
 	}
 
 	s.router.Replace("/settings/git")
-	spec, _ = s.routeHeader(false)
-	if spec.parent.label != "Settings" || spec.current.label != "Git" || spec.onParent != nil {
+	spec, _ = s.routeHeader()
+	if spec.parent != "Settings" || spec.title != "Git" || spec.onParent != nil {
 		t.Fatalf("settings section header = %+v", spec)
 	}
 	s.router.Replace("/settings/nope")
-	if spec, _ = s.routeHeader(false); spec.current.label != "General" {
-		t.Fatalf("an unknown section falls back to General, got %q", spec.current.label)
+	if spec, _ = s.routeHeader(); spec.title != "General" {
+		t.Fatalf("an unknown section falls back to General, got %q", spec.title)
 	}
 
 	s.router.Replace(routeHosts)
-	if spec, _ = s.routeHeader(false); spec.current.label != "Hosts" || spec.detail == "" {
-		t.Fatalf("hosts header must name the config it indexes: %+v", spec)
+	if spec, _ = s.routeHeader(); spec.title != "Hosts" || spec.titleTip == "" || spec.facts != "" {
+		t.Fatalf("hosts header must name the config it indexes in its tooltip only: %+v", spec)
 	}
 
 	s.router.Replace("/inspector/p9")
-	if spec, _ = s.routeHeader(false); spec.current.label != "Agent Inspector" {
-		t.Fatalf("inspector without a card keeps the generic title, got %q", spec.current.label)
+	if spec, _ = s.routeHeader(); spec.title != "Agent Inspector" {
+		t.Fatalf("inspector without a card keeps the generic title, got %q", spec.title)
 	}
 
-	// Session detail: back crumb, session title, facts and its action menu.
+	// Session detail: back parent, session title, facts and its action menu.
 	s.router.Replace(routeHistory + "/pi:p2")
-	spec, _ = s.routeHeader(false)
-	if spec.parent.label != "Sessions" || spec.onParent == nil ||
-		spec.current.label != "Rename the settings groups" || spec.detail != "alpha · Pi" || spec.actions == nil {
+	spec, _ = s.routeHeader()
+	if spec.parent != "Sessions" || spec.onParent == nil ||
+		spec.title != "Rename the settings groups" || spec.facts != "alpha · Pi" || spec.actions == nil {
 		t.Fatalf("session detail header = %+v", spec)
 	}
 }
@@ -319,15 +357,15 @@ func TestFilesRouteHeaderCarriesPathActionsOnlyWithASelection(t *testing.T) {
 	root := t.TempDir()
 	s := rightPanelTestShell(t, root)
 	s.showViewFiles()
-	spec, ok := s.routeHeader(false)
-	if !ok || spec.current.label != "Files" || spec.detail != shortDir(root) {
-		t.Fatalf("files header = %+v, want Files over %q", spec, shortDir(root))
+	spec, ok := s.routeHeader()
+	if !ok || spec.title != "Files" || spec.titleTip != root {
+		t.Fatalf("files header = %+v, want Files with %q as its tooltip", spec, root)
 	}
 	if spec.actions != nil {
 		t.Fatal("no file open: nothing to act on")
 	}
 	s.rightPanel.selectedFilePath = filepath.Join(root, "a.txt")
-	if spec, _ = s.routeHeader(false); spec.actions == nil {
+	if spec, _ = s.routeHeader(); spec.actions == nil {
 		t.Fatal("a file is open: the bar must offer Copy Path / Reveal in Finder")
 	}
 }

@@ -11,7 +11,7 @@ import (
 
 /**
  * [INPUT]: 依赖 mygo/ui 的 Context/TitleBar（窗口控件带几何）、gorex_style 的图标按钮与配色、router 路由态、runtime/time
- * [OUTPUT]: 对外提供 Shell.titlebar（窗口标题栏：红绿灯对齐、每条路由同一版式的双行身份块——Workspace 为面包屑 + cwd、其余路由为 route_header.go 的标题块、工具区、Windows 控件）、titlebarHeight（灯带对齐的行高纯函数，所有路由同一 42 下限）、showViewTerminal/showViewChat/showViewChanges/showViewHistory（四个视图的唯一切换入口）、toggleWindowPinned（窗口置顶的唯一入口）
+ * [OUTPUT]: 对外提供 Shell.titlebar（窗口标题栏：红绿灯对齐、身份区——Terminal/Chat 为面包屑 + cwd 双行，Changes 与各内页为 route_header.go 的单行 Title 大字标题、工具区、Windows 控件）、titlebarHeight（灯带对齐的行高纯函数，所有路由同一 42 下限）、showViewTerminal/showViewChat/showViewChanges/showViewHistory（四个视图的唯一切换入口）、toggleWindowPinned（窗口置顶的唯一入口）
  * [POS]: nativeui 的窗口 chrome 所有者，被 shell.View 顶部消费；高度与 MyGo 红灯带对齐（F142），页面标题与页面动作的唯一归属（2026-10-14：内页只画内容），视图切换、Agent 活动浮层入口与窗口置顶在此收口
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -20,20 +20,19 @@ import (
 // the window top to bottom, so this bar only spans the content — the page's
 // identity and the trailing tools, on the canvas color with no fill of its
 // own. The identity is the one place a page is named (2026-10-14): the
-// workspace shows its switcher path over the selected Pane's directory,
-// every other route its title crumbs, context line and Actions menu
-// (route_header.go). Pages render content only, so no two pages open with
-// a different header of their own.
+// Terminal and Chat show their switcher path over the selected Pane's
+// directory, Changes and every other route one large title with its Actions
+// menu (route_header.go). Pages render content only, so no two pages open
+// with a different header of their own.
 func (s *Shell) titlebar(c *ui.Context) {
 	t := c.Theme()
 	k := gorexColorsOf(t.Dark)
 	bar := c.TitleBar()
-	// Two rows on every route: the title crumbs above, a muted context line
-	// below. The row never grows past bar.Height (2026-10-06 annotation
-	// F142): the traffic lights sit centered inside exactly bar.Height (MyGo
-	// places them btnHeight + 2×TrafficLightPosition.Y tall), so centering
-	// this row's content in the same height puts every control on the
-	// lights' horizontal line.
+	// The row never grows past bar.Height (2026-10-06 annotation F142): the
+	// traffic lights sit centered inside exactly bar.Height (MyGo places
+	// them btnHeight + 2×TrafficLightPosition.Y tall), so centering this
+	// row's content in the same height puts every control on the lights'
+	// horizontal line.
 	height := titlebarHeight(bar.Height)
 	// While the sidebar slides shut the content column reaches the window's
 	// left edge: its content then clears the traffic lights and the toggle.
@@ -45,14 +44,14 @@ func (s *Shell) titlebar(c *ui.Context) {
 		DragWindow().
 		AlignItems(ui.Center).
 		Children(func() {
-			if s.router.Path() == routeWorkspace {
+			if spec, ok := s.routeHeader(); ok {
+				ui.Column(c).Grow(1).MinWidth(0).Children(func() {
+					s.routeHeaderBlock(c, spec)
+				})
+			} else if s.router.Path() == routeWorkspace {
 				ui.Column(c).Grow(1).MinWidth(0).Children(func() {
 					s.breadcrumbRow(c)
 					s.crumbPathRow(c)
-				})
-			} else if spec, ok := s.routeHeader(t.Dark); ok {
-				ui.Column(c).Grow(1).MinWidth(0).Children(func() {
-					s.routeHeaderBlock(c, spec)
 				})
 			} else {
 				ui.Box(c).Grow(1).PassThrough()
@@ -98,8 +97,8 @@ func (s *Shell) sidebarToggle(c *ui.Context) {
 // centers the traffic lights inside exactly bar.Height (button height +
 // 2× TrafficLightPosition.Y), so centering the bar's content in that same
 // height lines every control up with the lights (2026-10-06 annotation
-// F142). Every route shows two rows (crumbs and a context line), so the 42
-// floor is the same everywhere and the title never moves between pages.
+// F142). The 42 floor is the same on every route, so the identity never
+// moves between pages.
 func titlebarHeight(barHeight float32) float32 {
 	return max(barHeight, 42)
 }
