@@ -106,6 +106,7 @@ rg -n 'Padding\(14, 9, 9\)' --glob '!*_test.go' .                      # 侧栏�
 - 标题栏接管所有内页标题/动作：`route_header.go`（Changes、Sessions、Session 详情、Files、Hosts、Settings、Inspector），统一为单行 Title 大字标题（先前是 crumb 胶囊 + 第二行上下文，太拘谨，2026-10-14 第二轮去掉）；`pageHeader` 退出生产页面；侧栏不再回声标题。
 - 四个视图按钮（Changes/Sessions/Files/Hosts）从标题栏右上移到侧栏顶部等宽图标标签条（2026-10-14 第二轮）；标题栏工具区只剩 Agent 活动与置顶；侧栏页脚返回键统一叫 `Back`。
 - Refresh 收口为每个上下文一个图标；Hosts 页内 Refresh 与侧栏重复的已删。
+- 并排的同类图标按钮要同一种语法（第二轮审计）：Files 树工具条曾是裸 `+`（新建文件）配文件夹轮廓（新建文件夹）——动作符号配对象符号；改成成对的 `iconFilePlus`/`iconFolderPlus`（在 `iconFile`/`iconFolder` 路径上加 +，`icons.go`）。新增图标沿用 24 栅格 + `iconStroke` 一个描边，不另起一套。
 - 窗格卡头：标签已写出目录或单卡时不再出 cwd（`paneCardCaption`/`titleSpellsOutDir`）。
 - 开关脸统一：Files 忽略开关与 Sessions 的 Select/Trash 从蓝/accent 改为 `gorexToggleFace` 的中性芯片。
 - 旧 `iconButton`（28/14，半径 6）并入 `gorexIconButton`：侧栏页脚设置齿轮走工具栏档，Workspace 区 "+" 走密集档。

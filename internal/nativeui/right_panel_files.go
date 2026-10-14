@@ -44,10 +44,10 @@ func (s *Shell) filesTreeToolbar(c *ui.Context) {
 		// open a naming dialog advertise it) — F160. The buttons are the
 		// shared dense icon button (2026-10-14): its on state is the same
 		// neutral chip every toggle wears, not a private accent tint.
-		if gorexIconButton(c, k, iconPlus, "New File…", "New File…", false, gorexPaneBtn, gorexPaneGlyph).Clicked() {
+		if gorexIconButton(c, k, iconFilePlus, "New File…", "New File…", false, gorexPaneBtn, gorexPaneGlyph).Clicked() {
 			s.filesNewFile(s.rightPanel.currentRoot)
 		}
-		if gorexIconButton(c, k, iconFolder, "New Folder…", "New Folder…", false, gorexPaneBtn, gorexPaneGlyph).Clicked() {
+		if gorexIconButton(c, k, iconFolderPlus, "New Folder…", "New Folder…", false, gorexPaneBtn, gorexPaneGlyph).Clicked() {
 			s.filesNewFolder(s.rightPanel.currentRoot)
 		}
 		ui.Spacer(c)
