@@ -181,8 +181,7 @@ func (s *Shell) workspaceChatSurface(c *ui.Context) {
 // conversation id at a time; live decoding is the 0.6 live-source lane.
 func (s *Shell) chatPage(c *ui.Context) {
 	sp := Spacing()
-	ui.Column(c).Grow(1).MinWidth(0).Background(designTokens(c.Theme().Dark).Content).Children(func() {
-		pageHeader(c, "Chat", "")
+	ui.Column(c).Grow(1).MinWidth(0).Children(func() {
 		if s.chatConversationID == "" {
 			emptyState(c, "No conversation", "Open one from Sessions or an agent.")
 			return
@@ -191,7 +190,7 @@ func (s *Shell) chatPage(c *ui.Context) {
 			loadingState(c, "Loading conversation…")
 			return
 		}
-		ui.Row(c).Padding(0, sp.XL, sp.S).Gap(sp.M).AlignItems(ui.Center).Children(func() {
+		ui.Row(c).Padding(pageTopInset(), sp.XL, sp.S).Gap(sp.M).AlignItems(ui.Center).Children(func() {
 			summary := s.chatDispositionSummary()
 			statusPill(c, summary, dispositionTone(s.chatDispositionNow()))
 		})

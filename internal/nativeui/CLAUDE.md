@@ -13,11 +13,12 @@ run_command_button.go: 窗格卡片头的项目命令运行控件：嗅探命令
 run_command_button_test.go: 运行控件状态机回归（命令菜单内容、last-used 置顶、忙碌换 Stop、Agent 繁忙隐藏、无命令隐藏、headless 点击安全丢弃）与 computePaneBusy 纯函数、合并形状测试
 breadcrumb_switcher.go: 标题栏面包屑与快速切换弹层所有者，Pane 顺序与 Herdr 实际布局对齐并展示品牌图标
 titlebar.go: 内容列标题栏（身份区：Terminal/Chat 为面包屑 + cwd 双行，Changes 与各内页为 route_header.go 的单行 Title 大字标题；标题栏是页面标题与页面动作的唯一归属）、整高侧栏上的红绿灯带与侧栏切换钮（sidebarBand/sidebarToggle）、showViewChanges/History/Files/Hosts 视图切换入口（History 内页先返回根）与 Windows 平台窗口控件支持；工具区只剩 Agent 活动与置顶，四个视图按钮已移到侧栏顶部（sidebar.go sidebarViewTabs）
-route_header.go: Terminal/Chat 以外各页的标题栏身份（routeHeader/routeHeaderSpec：Changes[Diff/Commit 表面，Actions=表面菜单]、Sessions、Session 详情[灰色父级 Sessions › 会话标题，可返回，同行事实，会话操作菜单]、Files[选中文件时 Copy Path/Reveal in Finder，根路径只在标题悬停提示]、Hosts[SSH 配置路径只在悬停提示；选中主机时 Actions=该主机菜单]、Settings[灰色 Settings › 分组，由 settingsSections 命名]、Inspector）与 routeHeaderBlock（单行 Title 大字加粗标题，无 crumb 胶囊无第二行，每页同字号同位置）；headerDetailRow 只服务 Workspace 面包屑的第二行
-unified_header_test.go: 标题栏单一归属回归——内页标题只在标题栏且各路由（含 Changes）落在同一位置、标题为 Title 大字单行（不复述根路径/配置路径成第二行）、内页/侧栏不自画页头或标题回声、每个内页至多一个 Refresh 且为图标、Sessions/Settings/Hosts 侧栏列表同一起点（x/y）、Session 详情标题栏可返回列表、各路由 routeHeader 身份
+route_header.go: Terminal/Chat 以外各页的标题栏身份（routeHeader/routeHeaderSpec：Changes[Diff/Commit 表面，Actions=表面菜单]、Sessions、Session 详情[灰色父级 Sessions › 会话标题，可返回，同行事实，会话操作菜单]、Files[选中文件时 Copy Path/Reveal in Finder，根路径只在标题悬停提示]、Hosts[SSH 配置路径只在悬停提示；选中主机时 Actions=该主机菜单]、Settings[灰色 Settings › 分组，由 settingsSections 命名]、Inspector、遗留 /chat 整页）与 routeHeaderBlock（单行 Title 大字加粗标题，无 crumb 胶囊无第二行，每页同字号同位置）；headerDetailRow 只服务 Workspace 面包屑的第二行
+unified_header_test.go: 标题栏单一归属回归——内页标题只在标题栏且各路由（含 Changes 与遗留 /chat）落在同一位置、标题为 Title 大字单行（不复述根路径/配置路径成第二行）、内页/侧栏不自画页头或标题回声、每个内页至多一个 Refresh 且为图标、Sessions/Settings/Hosts 侧栏列表同一起点（x/y）、Session 详情标题栏可返回列表、各路由 routeHeader 身份
 toggle_face_test.go: 开关「开」态回归——Sessions 工具栏的文字开关（Select/Trash）与标题栏图标开关同为中性芯片，不再是蓝色选中色（像素采样，深浅两套外观）
 copy_style_test.go: 文案大小写回归——emptyState/workspaceEmptyBanner 的字面标题一律句首大写（专有名词除外）；菜单项（.Item("…") 字面量）一律 Title Case（冠词/短介词小写），拦下两个方向的大小写漂移
-router.go: 单一 Router 的页面归属、精确 History 路径分类与窗口标题路由语义
+button_tier_test.go: 按钮字号回归——扫描 ui.Button/ui.PrimaryButton 调用链上的 .FontSize(…) 字面覆盖（只许 ds_components.go 的 compact 两档），拦下同排按钮两种高度
+router.go: 单一 Router 的页面归属、精确 History 路径分类与窗口标题路由语义；遗留 /chat 整页与其他内页同走 gorexContentCard
 navigation_semantics_test.go: UI-009 顶栏/侧栏同级返回、重复点击、深链接与浏览历史回归
 panel_motion.go: 整高侧栏（macOS vibrancy 材质、无 vibrancy 时不透明回退）的收起/展开动画与尾缘拖拽调宽（sidebarLimits 钳制，宽度会话持久化）；无右栏布局宿主
 panel_motion_test.go: Reduce Motion 下左导航收起/恢复，以及各窗口宽度无右栏回归
@@ -67,21 +68,21 @@ page_providers.go: Agents 设置页——单一分组列表，每个 Agent 一�
 page_hosts.go, hosts_nav.go, hosts_groups.go, hosts_form.go, hosts_editor.go: /hosts 内页（详情中心 + 侧栏 SSH Config/Herdr Machines 列表）；页面无自带页头，列表头的图标刷新是该页唯一的 Refresh；侧栏按配置自带分组（SSH Config Editor 式注释标记 + Include 文件，只读，`hostGroups`）可折叠，无可分组内容时平铺，行/分组头走共享 sidebarTreeRow/sidebarSectionHeader（悬停 Connect 图标、右键与标题栏 Actions 同一份 hostEntryMenu）；详情 = 一行标题（Heading + file:line）+ Connect + 铅笔图标 + 单个 settingsGroup 指令列表，结构化编辑就地发生（Cancel/Save 顶替、Return 保存），生效配置是折叠行；hostsMainFile 用索引解析后的主文件判断 include
 providers_ui.go: Providers 统一状态机（经 herdr.RunCLI 取 integration 状态；失败只显示人话——integrationErrorText，细节进日志；一次审计同时覆盖两面、进入/刷新/动作后审计、hook 主导 + fallback 修复动作门控、在途防重、一次性 toast、两面状态→语义色映射）
 workspace.go: Terminal/Chat/Diff/Commit 唯一主表面，Changes 主内容采用上下可调 Git Review，Chat 保持 Agent 身份门禁
-chat_ui.go: Chat Timeline/Composer 和身份消失时的安全空态，不得泄漏旧 transcript；bindChatWindow（Tail 窗口）供 Workspace 历史绑定与 Sessions 详情只读绑定共用，releaseHistoryChat 保证只读绑定不外泄给窗格/Inspector
-gd_surface.go: 下方 Git Diff、无仓库/无变更/无匹配状态，clean 时直达 All Commits 或 Terminal；历史模式只读，工作树工具栏单一调用点；大 diff 为一行占位（Large diff · Show/Retry），点 Show 才按需读取；卡片头按 gdCardWidth（窗口−侧栏−已打开的文件导航−边距，与 gitFilePaneLimits/gitFilePaneOpen 同源）分档，窄卡让出复制/打开按钮与 Viewed 文案、文件夹退到第二行，保证文件名完整
+chat_ui.go: Chat Timeline/Composer 和身份消失时的安全空态，不得泄漏旧 transcript；bindChatWindow（Tail 窗口）供 Workspace 历史绑定与 Sessions 详情只读绑定共用，releaseHistoryChat 保证只读绑定不外泄给窗格/Inspector；整页 /chat 不画自有页头与底色（标题在标题栏，底色来自 gorexContentCard）
+gd_surface.go: 下方 Git Diff、无仓库/无变更/无匹配状态，clean 时直达 All Commits 或 Terminal；历史模式只读，工作树工具栏单一调用点；大 diff 为一行占位（Large diff · Show/Retry），点 Show 才按需读取；卡片头按 gdCardWidth（窗口−侧栏−已打开的文件导航−边距，与 gitFilePaneLimits/gitFilePaneOpen 同源）分档，窄卡让出复制/打开按钮与 Viewed 文案、文件夹退到第二行，保证文件名完整；gdIconButton/gdPulldown 是 gorexIconButton/gorexPulldown 的薄壳（同脸，只多一个 .Focusable() Tab 停靠点——文件头 Copy 按钮用 FocusVisible 显现）
 gd_header_test.go: 卡片头响应式回归——900 宽（用户打开导航、双栏全开）文件名不被压成省略桩、宽窗口保留全部控件、gdCardWidth 随侧栏/导航开合与拖拽变化
 gd_perf_test.go: Diff 大文件基线（行模型构建/帧耗时 benchmark）与惰性计算结构性回归——词级 diff 按需、度量只算一次、快照刷新保留缓存、就近优先加载
 gd_large_test.go: 大 diff 占位→Show→按需读取→渲染 端到端回归（真实仓库）；失败重试、过大无动作、刷新保留/失效语义、不预读颜色
 git_workbench_actions.go: Git 视图操作条（Stage/Unstage All、Fetch/Pull/Push 图标、始终可见 Split/Unified、Git actions 下拉）；仓库 Refresh 唯一入口在 Git 侧栏，按 Diff 实际宽度折叠批量操作；首位是文件列表开关（gitFilePaneToggle）
 git_sidebar_tree.go: 左侧 Git 引用导航，Worktrees/Branches/Remotes/Tags/Stashes 共用 sidebarTreeRow 与 sidebarSectionHeader；分区悬停 "+" 与右键菜单承载创建动作，无 "···"
 git_ref_tree.go: Git 引用按斜线构树、目录键稳定、筛选时独立折叠/再次展开、行经 sidebarTreeRow（网格+导向线）、右键菜单，不执行 Git IO
-git_review_split.go: Changes 双模式主工作台，Local Changes 文件树+Diff+底部 Commit 分离按钮（经 Pi 只填 Subject）；All Commits 为图谱上层+只读文件树/Diff 下层；文件导航宽度及上限唯一来源 gitFilePaneLimits；中心区（窗口−侧栏）<750 时导航自动收起，开合偏好按宽/窄两档各自记忆，工具栏 gitFilePaneToggle 取回（Local Changes 操作条与 All Commits 的 Changes 页签共用）
-git_review_split_test.go: Git 双模式分栏、960 DIP 几何、拖拽、历史只读与底部草稿统一 Commit Modal 测试；文件导航窄窗口自动收起/按中心区判断/宽窄两档偏好各自记忆/提交评审同规则
+git_review_split.go: Changes 双模式主工作台，Local Changes 文件树+Diff+底部 Commit 分离按钮（经 Pi 只填 Subject）；All Commits 为图谱上层+只读文件树/Diff 下层；文件导航宽度及上限唯一来源 gitFilePaneLimits；中心区（窗口−侧栏）<750 时导航自动收起，开合偏好按宽/窄两档各自记忆，工具栏 gitFilePaneToggle 取回（Local Changes 操作条与 All Commits 的 Changes 页签共用）；All Commits 下层的 Commit/Changes/File Tree 是原生 ui.Segmented（条高 36）；底部 Commit 按钮走 compactPrimaryButton，Commit options 下拉走共享图标按钮脸
+git_review_split_test.go: Git 双模式分栏、960 DIP 几何、拖拽、历史只读与底部草稿统一 Commit Modal 测试；文件导航窄窗口自动收起/按中心区判断/宽窄两档偏好各自记忆/提交评审同规则；下层视图是 Segmented（选中脸对照普通 Segmented、点击切换）；两个 Commit 主按钮取档（快捷条 compact、对话框页脚与 Cancel 同高）
 git_tree_interaction_test.go: 所有 Git 引用组反复折叠/展开、筛选后目录折叠与恢复回归
 git_file_tree_fold_test.go: Local Changes/All Commits 中重复点击相同文件目录的折叠与再展开回归
 git_directory_actions.go: Staged/Unstaged 独立目录子文件解析，路径边界准确，不以目录路径批量 Git add
 git_quick_ai.go: 底部 Pi 提交生成器；异步 root/snapshot/草稿门禁、仅安全元数据、只填 Subject，拒绝自动提交
-git_workbench_polish_test.go: Split/Unified 真实点击、目录选中与边界、唯一 Refresh、Git actions 菜单和异步草稿门禁回归
+git_workbench_polish_test.go: Split/Unified 真实点击、目录选中与边界、唯一 Refresh、Git actions 菜单和异步草稿门禁回归；Git 图标按钮/下拉与 Commit options 悬停脸对照同尺寸共享按钮、工具栏 Tab 必达（Fetch/Pull/Push/Git actions/Copy path）
 git_commit_graph.go: 历史提交真实父 SHA 的 merge lanes 纯渲染投影；无运行时 Git IO
 git_commit_graph_test.go: 提交父节点拓扑及合并分支回归
 git_layout_render_test.go: 仅显式启用时输出 Local Changes/All Commits 实际 MyGo 渲染截图
@@ -100,7 +101,7 @@ sidebar_tree_test.go: 网格对齐、导向线连续、分区无 "···"、悬�
 changes_tree_test.go: Changes 文件树共用网格（逐层缩进一格）与行内图标动作命名回归
 layout_width_test.go: 宽窗口内容列居中封顶（Settings 760、Sessions 1040、提交表单 760）回归
 git_service_snapshot.go: 仓库绑定快照/提交历史及本地远程跟踪引用的分离异步获取与 generation root 隔离
-commit_surface.go: 原生 Commit Dialog 唯一草稿，滚动正文 + 固定底部 Commit/Cancel、Select all/Clear selection
+commit_surface.go: 原生 Commit Dialog 唯一草稿，滚动正文 + 固定底部 Commit/Cancel、Select all/Clear selection；页脚主按钮用默认档（与 Cancel Commit 同高，不内联字号）
 commit_ai_ui.go: Commit 内折叠的 Pi 生成、敏感路径受限 Prompt 原文预览与复制、手动候选消息编辑；默认只展示必要选项
 commit_modal_layout_test.go: 960×640/1200×800 长文件与 Pi 展开后固定 CTA 几何、文件选择批量操作回归
 branch_menu_filter_test.go: 搜索过滤与当前分支优先

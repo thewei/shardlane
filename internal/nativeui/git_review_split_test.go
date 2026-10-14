@@ -244,6 +244,111 @@ func TestGitCommitReviewNavigatorClosesInANarrowWindow(t *testing.T) {
 	}
 }
 
+// The commit review's Commit / Changes / File Tree views are a native
+// segmented control: choosing a segment switches the lower view, and the
+// selected one wears the face of a plain ui.Segmented — one face for every
+// segmented control in the app, not a hand-painted tab with a tint of its own.
+func TestGitCommitReviewViewsAreASegmentedControl(t *testing.T) {
+	root := t.TempDir()
+	s := gitSurfaceTestShell(t, root)
+	s.git.rootOf[root] = root
+	s.git.refreshing = true
+	cm := gitworkbench.CommitInfo{Hash: "0123456789abcdef0123456789abcdef01234567", Short: "0123456", Subject: "Add split review", Author: "Example", Time: time.Now()}
+	s.git.commits = []gitworkbench.CommitInfo{cm}
+	s.showSurface(WorkspaceSurfaceDiff)
+	s.commitsMode = true
+	s.git.source = gdSourceCommit
+	s.git.commitHash = cm.Hash
+	commitSnap := *s.git.snapshot
+	s.git.commitSnap = &commitSnap
+	s.git.commitMeta = &cm
+	s.git.gdFilesFor = nil
+	s.gitLowerTab = 1
+	s.rebuildDiffRows()
+
+	// The review rendered without the title bar (which also says "Changes"),
+	// above a plain Segmented to compare faces with.
+	reference := 1
+	tt := ui.NewTester(func(c *ui.Context) {
+		ui.Column(c).FillWidth().Grow(1).Children(func() {
+			ui.Segmented(c, &reference, "Ref A", "Ref B").Shrink(0)
+			ui.Column(c).Grow(1).MinHeight(0).Children(func() { s.gitCommitReview(c) })
+		})
+	}, 1100, 700)
+	tt.Frame()
+	if _, ok := tt.Find("Commit view"); !ok {
+		t.Fatalf("the lower views are not one labelled segmented control; texts=%q", tt.Texts())
+	}
+	// A spot just inside the left edge of a segment's text, clear of glyphs.
+	chip := func(label string) [4]uint8 {
+		t.Helper()
+		rect, ok := tt.Find(label)
+		if !ok {
+			t.Fatalf("no %q segment; texts=%q", label, tt.Texts())
+		}
+		return pixelAt(tt, int(rect.X)-3, int(rect.Y+rect.H/2))
+	}
+	tt.Move(1090, 690)
+	tt.Frame()
+	selected, native := chip("Changes"), chip("Ref B")
+	if rgbDiff(selected, native) > 2 {
+		t.Fatalf("the selected view wears %v where a plain Segmented's selected segment wears %v", selected, native)
+	}
+	if idle := chip("File Tree"); rgbDiff(selected, idle) < 6 {
+		t.Fatalf("the selected view (%v) is not told apart from an unselected one (%v)", selected, idle)
+	}
+
+	if err := tt.Click("File Tree"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if s.gitLowerTab != 2 {
+		t.Fatalf("File Tree did not switch the lower view: tab=%d", s.gitLowerTab)
+	}
+	if err := tt.Click("Changes"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if s.gitLowerTab != 1 {
+		t.Fatalf("Changes did not switch the lower view back: tab=%d", s.gitLowerTab)
+	}
+}
+
+// The two Commit buttons take their size from a shared tier instead of an
+// inline font size: the dense Git strip's composer wears the compact tier,
+// and the Commit dialog's footer pairs the primary with Cancel Commit on the
+// regular one — the two were the only Buttons restating Body / BodySmall.
+func TestCommitPrimaryButtonsTakeTheirSizeFromASharedTier(t *testing.T) {
+	s := gitSurfaceTestShell(t, t.TempDir())
+	s.showSurface(WorkspaceSurfaceDiff)
+
+	composer := ui.NewTester(func(c *ui.Context) { s.gitQuickCommitForm(c, s.git.snapshot) }, 600, 200)
+	composer.Frame()
+	reference := ui.NewTester(func(c *ui.Context) { compactPrimaryButton(c, "Commit") }, 200, 60)
+	reference.Frame()
+	got, ok := composer.Find("Commit")
+	want, refOK := reference.Find("Commit")
+	if !ok || !refOK {
+		t.Fatalf("missing Commit button; composer=%q", composer.Texts())
+	}
+	if got.H != want.H {
+		t.Fatalf("composer Commit text is %.2f high, the compact primary tier's is %.2f", got.H, want.H)
+	}
+
+	s.openCommitSurface()
+	footer := ui.NewTester(s.commitActionFooter, 800, 100)
+	footer.Frame()
+	selected := len(s.selectedCommitPaths())
+	cancel, cancelOK := footer.Find("Cancel Commit")
+	primary, primaryOK := footer.Find("Commit " + itoa(selected) + " file" + pluralS(selected))
+	if !cancelOK || !primaryOK {
+		t.Fatalf("footer lacks its buttons; texts=%q", footer.Texts())
+	}
+	if cancel.H != primary.H {
+		t.Fatalf("Cancel Commit text is %.2f high but the primary beside it is %.2f", cancel.H, primary.H)
+	}
+}
+
 // A history tab opened before its first commit arrives must never expose
 // stage/commit controls for the unrelated worktree beneath it.
 func TestGitHistoryEmptyCannotMutateWorktree(t *testing.T) {

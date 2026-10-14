@@ -22,7 +22,7 @@ description: Use when polishing or unifying the Shardlane MyGo client's UI/UX �
 | 2 | **进出内页同一套路**：进入 = **侧栏顶部四个等宽图标视图标签**（Changes/Sessions/Files/Hosts，每条路由同一位置；再点亮着的回 Terminal，Sessions 内页先回列表）；退出 = **侧栏页脚唯一返回键**，一律叫 `Back`（tooltip 写去向：会话详情→Sessions，其余→Terminal）；页内不再放第二个返回；⌘W 只关 Tab；窗口标题 = `Shardlane — <路由>` | `sidebarViewTabs`/`gorexIconTab`、`showViewHistory/Files/Hosts`、`sidebarBackRow`、`syncWindowTitle` | `navigation_semantics_test.go`、`TestSidebarViewTabs*`、`TestSessionBarLeadsBackToTheList` |
 | 3 | **同类动作每个上下文只有一个**：Refresh 是图标按钮、不是导航行；同一目的地只有一个名字（Files/Sessions/Hosts，菜单/⌘K/tooltip/窗口标题一致）；信息只出现一次（窗格卡头不复述标题栏已有的 cwd） | Workspace/Files 侧栏项目头图标；Hosts 侧栏列表头图标；Sessions 工具条图标；Agents 设置工具条图标；`paneCardCaption`/`titleSpellsOutDir` | `TestEachRouteHasOneRefreshAndItIsAnIcon`、`pane_header_visuals_test.go` |
 | 4 | **高亮只有两类，各一种脸**：*按钮*处于开（开关/视图工具/模式）= 中性芯片；*行*被选中（导航/树/列表/Agent 卡）= `SidebarSelect`。业务代码不再自涂 Accent 底 | `gorexToggleFace(b,k,on)`（按下 `k.pressed` / 悬停 `k.hover` / 开 `k.tabActive`）；行走 `rowTint`；"当前分支/当前引用"是状态标记（accent 字 + 0.11 底），不是选中 | `toggle_face_test.go` |
-| 5 | **同一组件同一尺寸**：图标按钮只有两档——工具栏 28/16（`gorexIconBtn/Glyph`）、密集 24/14（`gorexPaneBtn/Glyph`），全走 `gorexIconButton`（等分一行的标签条走同脸的 `gorexIconTab`）；文字按钮只有 regular 与 `compactButton`（Micro 10）；"…" 文本按钮一律换图标按钮/`gorexPulldown`；空态 `emptyState`/`workspaceEmptyBanner`、加载 `loadingState`、提示 `inlineNotice`、分组 `settingsGroup/formRow`、内页列宽 `contentColumn(760 表单 / 1040 列表)` | 见左 | `copy_style_test.go`（空态标题）+ 下方扫描 |
+| 5 | **同一组件同一尺寸**：图标按钮只有两档——工具栏 28/16（`gorexIconBtn/Glyph`）、密集 24/14（`gorexPaneBtn/Glyph`），全走 `gorexIconButton`（等分一行的标签条走同脸的 `gorexIconTab`；Git 工作台的 `gdIconButton`/`gdPulldown` 是它与 `gorexPulldown` 的薄壳，只多一个 `.Focusable()` Tab 停靠点）；文字按钮只有 regular（默认）与 `compactButton`/`compactPrimaryButton`（Micro 10），**业务代码不在 Button 上内联字号**；互斥视图一律 `ui.Segmented`（含 Git 下半区 Commit/Changes/File Tree）；"…" 文本按钮一律换图标按钮/`gorexPulldown`；空态 `emptyState`/`workspaceEmptyBanner`、加载 `loadingState`、提示 `inlineNotice`、分组 `settingsGroup/formRow`、内页列宽 `contentColumn(760 表单 / 1040 列表)` | 见左 | `copy_style_test.go`（空态标题）、`button_tier_test.go`（Button 无内联字号）、`TestGitIconButtonsWearTheSharedFace`、`TestGitCommitReviewViewsAreASegmentedControl` + 下方扫描 |
 
 ## 键盘模型（一类列表一套手感）
 
@@ -44,7 +44,7 @@ description: Use when polishing or unifying the Shardlane MyGo client's UI/UX �
 | 画布层次 | 渐变、浮卡、粗边框、大阴影、紫橄榄配色 | 平面中性画布 + 整高 macOS vibrancy 侧栏（无材质回退不透明）；Apple 中性灰 + 系统蓝强调；深度只靠表面对比，**只有终端 pane 是卡片**，内页是平面全幅 `gorexContentCard`；Chat WebView 调色板对齐原生 |
 | 字体 | 字号/字重满地飘（650/700/.Bold()、8~16 乱字号） | 只用 `Typography()`：Title 20 / Heading 16 / Section 13 / Body 12 / BodySmall 11 / Caption 10.5 / Micro 10；字重只用 400/500/600/700，**正文最多 semibold，bold 只给页标题和数字**；重点 = 深浅色 + 字号 + 字重的小步进（参考 Pulse）；窗格头标题 12 semibold + 路径 11 regular 弱化色 |
 | 图标 | Lucide 粗描边、机器人头像、文本字符冒充图标（↻ ← ↑↓ −） | 全部细线 1.5（iOS 风格）；彩色圆角方块 `iconTile` 只标目的地/类别（设置导航、Agent 列表、Sessions 行），状态一律 `StatusTone`；刷新/返回/展开用 SVG |
-| 布局 | 互斥项并排按钮、整页拉伸、窄窗挤成单字列 | 互斥项 → Segmented tabs（Git 侧栏 Local Changes/All Commits、Theme/Density、Sessions Agent 标签条；只有一个来源不显示）；设置页 = macOS 分组列表（原生 Switch、右对齐紧凑控件、行内分隔线）；内页居中最大宽度，宽窗长边距；窄窗 `Wrap().Basis()` 让操作换行到消息下方；侧栏统一对齐网格 + 折叠结构线（`TreeLine`） |
+| 布局 | 互斥项并排按钮、整页拉伸、窄窗挤成单字列 | 互斥项 → Segmented tabs（Git 侧栏 Local Changes/All Commits、Git 下半区 Commit/Changes/File Tree、Theme/Density、Sessions Agent 标签条；只有一个来源不显示）；设置页 = macOS 分组列表（原生 Switch、右对齐紧凑控件、行内分隔线）；内页居中最大宽度，宽窗长边距；窄窗 `Wrap().Basis()` 让操作换行到消息下方；侧栏统一对齐网格 + 折叠结构线（`TreeLine`） |
 | 间距 / 圆角 / 分隔线 | 5/7/12/16 混搭圆角、一次性间距、各页各画分隔 | Spacing `2/4/6/8/12/20`（XXS…XL）；Radius Control 6 / Row 8 / Card 10 / Pill，图标按钮 `size/2.6`；控件高 Compact 24 / Regular 28 / Row 31；分隔线一律 1px `BorderSubtle`，分组列表里从 `rowInset`（14）起、`attached` 行不画；卡 = `Panel` 底 + 1px `BorderSubtle`，无阴影；页面不写字面量 |
 | 交互 | 每行常驻三个按钮、"…" 文本按钮、各页高亮色不同、编辑要另开一张卡 | **编辑就地发生**（值变输入框，主按钮换成 Cancel/Save，Return 保存，不另开卡）；行内操作 = 悬停才现的菜单入口 + 右键菜单，**占位固定，悬停不位移**（有变异测试）；原生控件优先（Switch/Segmented/Pulldown/SearchField）；破坏性确认默认焦点不在 Confirm；**浮层只有一层**——点击条目 = 直达面板并收起浮层，不在浮层里再开详情层/返回键；主动作只有点击，其余进右键菜单，行尾至多一个快捷图标；浮层复用侧栏同一张卡片 |
 | 动效 | 装饰性动画、卡顿的重排 | 悬停/按下/开态颜色 120 ms；重排/拖动占位 150–190 ms；浮层进出场 140 ms（Enter Y+6 / Exit Y−4）；侧栏滑动 200 ms（拖动时 1 ms 直落）；Reduce Motion 直接落位；不为装饰加动画 |
@@ -68,8 +68,7 @@ description: Use when polishing or unifying the Shardlane MyGo client's UI/UX �
 
 ```sh
 cd internal/nativeui
-rg -n 'pageHeader\('                        --glob '!*_test.go' .   # 页内页头（仅遗留 /chat 允许）
-rg -n 'ui\.(Primary)?Button\([^)]*\)\.FontSize' --glob '!*_test.go' .  # Button 内联字号（应走 compactButton）
+rg -n 'ui\.(Primary)?Button\([^)]*\)\.FontSize' --glob '!*_test.go' .  # Button 内联字号（只许 ds_components.go 的两档；TestButtonSizeComesFromTheTiers 守卫）
 rg -n 'ButtonBase\(c[^)]*\)[^\n]*Size\((2|3)[0-9], (2|3)[0-9]\)' --glob '!*_test.go' .  # 自制图标按钮
 rg -n 'Accent\.Alpha\(|rowTint\(' --glob '!*_test.go' .              # 开关自涂高亮（应走 gorexToggleFace）
 rg -n '"Refresh[^"]*"' --glob '!*_test.go' .                          # 每个上下文只应有一处
@@ -116,13 +115,14 @@ rg -n 'Padding\(14, 9, 9\)' --glob '!*_test.go' .                      # 侧栏�
 - Sessions 删除（2026-10-14 第二轮）：**Hide 没有意义**——Hide/Restore 与 Hidden 开关退役，删除 = 移入应用内回收站（`internal/sessiontrash`，Provider 文件只往返于自己的目录；清单不含会话内容，回收站行按需从被搬走的文件读回）。**可撤销的动作不弹确认**：移入回收站只给带 `Undo` 的提示条（`pendingToastAction`）；**不可撤销的才确认**：`Delete Forever…`/`Empty Trash`（共享确认框）。Trash 开关只在回收站有内容（或视图已打开）时出现，与"无可操作的控件不显示"同一规则；回收站视图复用同一分组列表，行键是条目 id、选择常开、有勾选才出批量条。保护：运行中 Agent 的会话身份命中或 60 秒内刚写过的会话不搬，并说清原因。旧 `hidden_sessions` 设置键读时忽略、下次保存丢弃（被隐藏过的会话重新出现）。
 - 菜单项一律 Title Case（Git 分支/标签/Stash/提交/文件夹菜单 20 项）、Finder 定位统一 `Reveal in Finder`、Git 确认框标题对齐菜单（`Undo Last Commit?`、`Delete Tag “x”?`）：`TestMenuItemsAreTitleCase`。
 
+- 第一轮遗留四项收尾（2026-10-14 第二轮）：①遗留 `/chat` 整页并入 `gorexContentCard`、标题进标题栏（`routeHeader` 增 `/chat`），自画页头 `pageHeader` 随之删除。②Git 下半区 Commit/Changes/File Tree 换成原生 `ui.Segmented`（条高 36，与上方 All Commits 头同高）；`TestGitCommitReviewViewsAreASegmentedControl` 在同一棵树里放一个普通 Segmented，比对选中脸像素。③Commit 两个主按钮不再内联字号：快捷提交条走 `compactPrimaryButton`（Git 密集条、与同排 Cancel 同档），Commit 对话框页脚走默认档（见待办里的取舍）；`TestCommitPrimaryButtonsTakeTheirSizeFromASharedTier` 钉同排同高，`TestButtonSizeComesFromTheTiers` 扫全包。④Git 工作台 `gdIconButton`/`gdPulldown` 与 Commit options 下拉并入 `gorexIconButton`/`gorexPulldown` 同脸（半径 size/2.6、`k.hover/k.pressed`、悬停字形变深、120 ms）。**键盘语义先评估再换壳**：共享 Box 版按钮不是 Tab 停靠点、点击也不抢焦点，而 Git 评审靠键盘（文件头 Copy 按钮用 `FocusVisible` 显现），直接换会让整条工具栏脱离键盘——所以 `gdIconButton` 在共享脸上多一个 `.Focusable()`（带 Menu 的下拉本就可聚焦）。`TestGitIconButtonsWearTheSharedFace` 用悬停像素（边缘填色 + 角落留白）对照同尺寸共享按钮，`TestGitToolbarIconButtonsStayTabStops` 钉 Tab 必达 Fetch/Pull/Push/Git actions/Copy path。
+
 ## 已知例外与待办（下一轮从这里接）
 
 - **终端窗格卡头保留**（N19 #7：Terminal⇄Chat 开关在卡头；去掉会改 PTY 尺寸）；只做信息去重，不做结构搬家。
-- Git 工作台自带一套图标按钮/下拉（`gd_surface.go` 的 `gdIconButton`/`gdPulldown`，28/半径 7、灰度 alpha 悬停）与 `git_review_split.go:202`、`page_history.go` 行内悬停的 22×22 下拉入口、`gd_surface.go:965` 的 5/7 圆角小按钮：与 `gorexIconButton` 同类不同脸。换壳要先确认 Box 版按钮的键盘焦点/`FocusVisible` 语义。
-- 两个 Commit 主按钮（`commit_surface.go:168`、`git_review_split.go:189`）内联字号，未入 `compactButton` 档。
-- Git 下半区标签条（Commit/Changes/File Tree）选中脸是 `SurfaceHover`，Segmented 用 MyGo 原生脸。
-- `/chat` 遗留页仍用 `pageHeader` 与自涂 `Content` 底（仅测试/遗留路由）；`Refresh Runtime` 菜单项保留（命令级入口，不是页面按钮）。
+- 仍在自成一脸的小控件（同类不同脸，下一轮评估）：`gd_surface.go` 的 `gdLayoutControl`（Split/Unified，30×24 图标分段，选中脸 `pal.headerBg`）、`gdSearchInput`（灰度 alpha 底、半径 7）与 `gdPalette.hover/pill`（行脸）、`changes_panel.go` 行内 18×18 操作按钮、`page_history.go` 行内悬停的 22×22 更多入口。
+- Commit 对话框页脚的主按钮取**默认档**而非 `compactPrimaryButton`：同排 Cancel Commit 与丢弃草稿提示（Keep Editing/Discard Draft）都是默认档，只降主按钮会比兄弟矮，整排降档则对话框里 30 高的输入框旁出现 22 高的主动作。要降档需整排一起。
+- `Refresh Runtime` 菜单项保留（命令级入口，不是页面按钮）。
 
 ## 反模式速查
 

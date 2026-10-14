@@ -55,6 +55,11 @@ func TestChatBindFillsTurnsFromHistory(t *testing.T) {
 			t.Fatalf("chat page missing %q; texts=%q", want, tester.Texts())
 		}
 	}
+	// The title bar owns the page's title, so the status row starts one
+	// shared inset below it — not flush against the bar.
+	if pill, ok := tester.Find(shell.chatDispositionSummary()); !ok || pill.Y < float32(titlebarHeight(0))+pageTopInset() {
+		t.Fatalf("status row at %+v (found=%v) sits closer than pageTopInset to the title bar", pill, ok)
+	}
 	// Tool details live inside the collapsed tool-activity disclosure.
 	if err := tester.Click("Tool activity"); err != nil {
 		t.Fatal(err)

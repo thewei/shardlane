@@ -57,6 +57,11 @@ func headerRoutes() []headerRoute {
 			s.showSurface(WorkspaceSurfaceDiff)
 			return s
 		}},
+		{"chat", "Chat", func(t *testing.T) *Shell { // the legacy full page
+			s := NewShell()
+			s.router.Replace("/chat")
+			return s
+		}},
 	}
 }
 
@@ -126,6 +131,7 @@ func TestPagesDrawNoHeaderOfTheirOwn(t *testing.T) {
 	sessions := newMultiAgentHistoryShell(t)
 	files := rightPanelTestShell(t, root)
 	settings := NewShell()
+	chat := NewShell()
 	for _, tc := range []struct {
 		name  string
 		title string
@@ -139,6 +145,7 @@ func TestPagesDrawNoHeaderOfTheirOwn(t *testing.T) {
 		{"files", "Files", files.filesPage, false},
 		{"sessions", "Sessions", sessions.historyPage, false},
 		{"settings", "General", func(c *ui.Context) { settingsPage(c, func() { settings.settingsGeneral(c) }) }, false},
+		{"chat", "Chat", chat.chatPage, false},
 	} {
 		tester := ui.NewTester(tc.page, 900, 700)
 		settleFrames(tester, 2)

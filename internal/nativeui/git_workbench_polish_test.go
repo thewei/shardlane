@@ -63,6 +63,95 @@ func TestGitLayoutButtonsActuallySwitchAndStayVisible(t *testing.T) {
 	tt.CloseMenu()
 }
 
+// A button's face, probed by hand: whether hovering fills a point along its
+// edge, and whether it leaves a point near a corner bare (a rounded square
+// of the shared radius does; a flatter radius paints into the corner).
+func hoverFaceOf(tt *ui.Tester, label string) (edgeFilled, cornerBare bool) {
+	rect, ok := tt.Find(label)
+	if !ok {
+		return false, false
+	}
+	at := func() (edge, corner [4]uint8) {
+		settleFrames(tt, 2) // hover takes a pass to be seen, a second to be painted
+		return pixelAt(tt, int(rect.X)+2, int(rect.Y+rect.H/2)), pixelAt(tt, int(rect.X)+2, int(rect.Y)+2)
+	}
+	tt.Move(1, 1)
+	idleEdge, idleCorner := at()
+	tt.Move(rect.X+rect.W/2, rect.Y+rect.H/2)
+	hotEdge, hotCorner := at()
+	return rgbDiff(hotEdge, idleEdge) > 6, rgbDiff(hotCorner, idleCorner) <= 2
+}
+
+// The Git review's icon buttons wear the shared icon-button face
+// (gorexIconButton) rather than a look of their own: hovered, each paints the
+// same rounded square as a shared button of its size — the toolbar icons and
+// the Git actions pull-down at the toolbar size, the composer's Commit options
+// chevron at the denser pane-header size.
+func TestGitIconButtonsWearTheSharedFace(t *testing.T) {
+	for _, dark := range []bool{false, true} {
+		shared := func(size, glyph float32) (edge, corner bool) {
+			reference := ui.NewTester(func(c *ui.Context) {
+				ui.Row(c).FillWidth().Padding(20).Background(designTokens(c.Theme().Dark).Content).Children(func() {
+					gorexIconButton(c, gorexColorsOf(c.Theme().Dark), iconFetch, "Reference", "", false, size, glyph)
+				})
+			}, 200, 80)
+			reference.SetDark(dark)
+			reference.SetPreferences(ui.Preferences{ReduceMotion: true})
+			reference.Frame()
+			return hoverFaceOf(reference, "Reference")
+		}
+		toolbarEdge, toolbarCorner := shared(gorexIconBtn, gorexIconGlyph)
+		paneEdge, paneCorner := shared(gorexPaneBtn, gorexPaneGlyph)
+		if !toolbarEdge || !toolbarCorner || !paneEdge {
+			t.Fatalf("dark=%v: the probe cannot read the shared face (toolbar edge=%v corner=%v, pane edge=%v)",
+				dark, toolbarEdge, toolbarCorner, paneEdge)
+		}
+
+		s := gitSurfaceTestShell(t, t.TempDir())
+		s.showSurface(WorkspaceSurfaceDiff)
+		tt := ui.NewTester(s.View, 1280, 760)
+		tt.SetDark(dark)
+		tt.SetPreferences(ui.Preferences{ReduceMotion: true})
+		tt.Frame()
+		for _, tc := range []struct {
+			label        string
+			edge, corner bool
+		}{
+			{"Fetch", toolbarEdge, toolbarCorner},
+			{"Pull (fast-forward only)", toolbarEdge, toolbarCorner},
+			{"Push", toolbarEdge, toolbarCorner},
+			{"Git actions", toolbarEdge, toolbarCorner},
+			{"Commit options", paneEdge, paneCorner},
+		} {
+			if edge, corner := hoverFaceOf(tt, tc.label); edge != tc.edge || corner != tc.corner {
+				t.Errorf("dark=%v %s: hover fills its edge=%v and leaves the corner bare=%v; the shared face does %v and %v",
+					dark, tc.label, edge, corner, tc.edge, tc.corner)
+			}
+		}
+	}
+}
+
+// The shared face must not cost the Git review its keyboard: unlike the
+// shared Box buttons its toolbar icons stay Tab stops (the file-header Copy
+// button even appears with FocusVisible), and the Git actions pull-down too.
+func TestGitToolbarIconButtonsStayTabStops(t *testing.T) {
+	s := gitSurfaceTestShell(t, t.TempDir())
+	s.showSurface(WorkspaceSurfaceDiff)
+	tt := ui.NewTester(s.View, 1280, 760)
+	tt.Frame()
+	for _, label := range []string{"Fetch", "Pull (fast-forward only)", "Push", "Git actions", "Copy path"} {
+		reached := false
+		for i := 0; i < 80 && !reached; i++ {
+			tt.Key(0, ui.KeyTab)
+			tt.Frame()
+			reached = tt.Focused(label)
+		}
+		if !reached {
+			t.Errorf("Tab never reaches %q; the Git review's toolbar is no longer keyboard-reachable", label)
+		}
+	}
+}
+
 func TestGitDirectoryPathsRespectPaneAndPrefixBoundary(t *testing.T) {
 	snap := &gitworkbench.ChangesSnapshot{Files: []gitworkbench.ChangeFile{
 		{Path: "src/a.go", Unstaged: true},

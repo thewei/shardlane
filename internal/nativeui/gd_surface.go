@@ -854,35 +854,19 @@ func gdDirName(path string) (dir, name string) {
 	return "", path
 }
 
-// gdIconButton is a button showing an icon alone, as in a toolbar.
+// gdIconButton is a button showing an icon alone, as in a toolbar, in the
+// shared icon-button face (gorexIconButton) so Git's toolbars read as every
+// other toolbar. Unlike the shared Box buttons it stays a Tab stop: the Git
+// review is driven from the keyboard, its file-header actions appear with
+// FocusVisible, and every toolbar action must stay reachable without the pointer.
 func gdIconButton(c *ui.Context, svg *ui.SVG, tip string) ui.Element {
-	t := c.Theme()
-	b := ui.ButtonBase(c).Size(28, 28).Radius(7).Center().Label(tip).Tooltip(tip).TextColor(t.TextMuted)
-	if b.Pressed() {
-		b.Background(ui.RGBA(127, 127, 127, 0.22))
-	} else if b.Hovered() {
-		b.Background(ui.RGBA(127, 127, 127, 0.13))
-	}
-	b.Children(func() { ui.Icon(c, svg).FontSize(16) })
-	return b
+	return gorexIconButton(c, gorexColorsOf(c.Theme().Dark), svg, tip, tip, false, gorexIconBtn, gorexIconGlyph).Focusable()
 }
 
-// gdPulldown is gdIconButton's pull-down sibling: an icon with a small
-// chevron, as a native toolbar pop-up button reads. The caller attaches the
-// Menu.
+// gdPulldown is gdIconButton's pull-down sibling, in the shared pull-down face
+// (gorexPulldown). The caller attaches the Menu, which makes it a Tab stop.
 func gdPulldown(c *ui.Context, svg *ui.SVG, tip string) ui.Element {
-	t := c.Theme()
-	b := ui.ButtonBase(c).Height(28).Padding(0, 6).Gap(3).Radius(7).Center().Label(tip).Tooltip(tip).TextColor(t.TextMuted)
-	if b.Pressed() {
-		b.Background(ui.RGBA(127, 127, 127, 0.22))
-	} else if b.Hovered() {
-		b.Background(ui.RGBA(127, 127, 127, 0.13))
-	}
-	b.Children(func() {
-		ui.Icon(c, svg).FontSize(16)
-		ui.Icon(c, iconChevronDown).FontSize(9)
-	})
-	return b
+	return gorexPulldown(c, gorexColorsOf(c.Theme().Dark), svg, tip, gorexIconBtn, gorexIconGlyph)
 }
 
 // gdSearchInput is a field filtering a list, as the search fields of

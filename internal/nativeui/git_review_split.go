@@ -186,7 +186,7 @@ func (s *Shell) gitQuickCommitForm(c *ui.Context, snap *gitworkbench.ChangesSnap
 			ui.Textf(c, "%d files", len(snap.Files)).FontSize(Typography().Micro).TextColor(t.TextMuted)
 			blocked := s.git.opBusy || s.git.committing || s.git.branchBusy ||
 				len(snap.Files) == 0 || (s.git.sequencerChecked && s.git.sequencer.Active())
-			button := ui.PrimaryButton(c, "Commit").FontSize(Typography().BodySmall)
+			button := compactPrimaryButton(c, "Commit")
 			button.Disabled(blocked || s.piQuickRunning)
 			if button.Clicked() {
 				s.openCommitSurface()
@@ -199,9 +199,8 @@ func (s *Shell) gitQuickCommitForm(c *ui.Context, snap *gitworkbench.ChangesSnap
 			}
 			// The dropdown is independent of Commit: it only requests a Pi
 			// candidate and fills Subject after root/snapshot/draft checks.
-			dropdown := ui.ButtonBase(c).Size(24, 26).Radius(5).Center().
-				Label("Commit options").Tooltip("Commit options")
-			dropdown.Children(func() { ui.Icon(c, iconChevronDown).FontSize(13) })
+			dropdown := gorexIconButton(c, gorexColorsOf(t.Dark), iconChevronDown, "Commit options", "Commit options",
+				false, gorexPaneBtn, gorexPaneGlyph)
 			dropdown.Menu(func(m *ui.Menu) {
 				if m.Item("Draft Subject with Pi").Disabled(blocked || s.piQuickRunning).Chosen() {
 					s.startQuickAICommit()
@@ -242,19 +241,13 @@ func (s *Shell) gitCommitHistoryPane(c *ui.Context) {
 func (s *Shell) gitCommitReview(c *ui.Context) {
 	t := c.Theme()
 	ui.Column(c).Grow(1).MinHeight(0).MinWidth(0).Children(func() {
-		ui.Row(c).FillWidth().Height(30).Padding(0, 10).Gap(9).AlignItems(ui.Center).
+		ui.Row(c).FillWidth().Height(36).Padding(0, 10).Gap(9).AlignItems(ui.Center).
 			Background(t.Surface).Children(func() {
-			tabs := []string{"Commit", "Changes", "File Tree"}
-			for i, tab := range tabs {
-				i := i
-				btn := ui.ButtonBase(c).Padding(3, 9).Radius(4).Label(tab).FocusRing(false)
-				if s.gitLowerTab == i {
-					btn.Background(t.SurfaceHover).TextColor(t.Text)
-				}
-				btn.Children(func() { ui.Text(c, tab).FontSize(Typography().BodySmall).FontWeight(WeightSemibold) })
-				if btn.Clicked() {
-					s.gitLowerTab = i
-				}
+			// The reviewer's views are a segmented control like every other
+			// one in the app — the native face, not a hand-painted tab.
+			tab := s.gitLowerTab
+			if ui.Segmented(c, &tab, "Commit", "Changes", "File Tree").Label("Commit view").Changed() {
+				s.gitLowerTab = tab
 			}
 			if s.gitLowerTab == 1 {
 				ui.Spacer(c)

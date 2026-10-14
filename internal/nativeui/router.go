@@ -64,7 +64,7 @@ func (s *Shell) routeView(c *ui.Context) {
 			gorexContentCard(c, gorexColorsOf(c.Theme().Dark), func() { s.historyPage(c) })
 		case r.Match("/chat"):
 			r.Title("Chat")
-			s.chatPage(c)
+			gorexContentCard(c, gorexColorsOf(c.Theme().Dark), func() { s.chatPage(c) })
 		case r.Match("/settings/{section...}"):
 			gorexContentCard(c, gorexColorsOf(c.Theme().Dark), func() { s.settingsLayout(c, r) })
 		default:

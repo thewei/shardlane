@@ -165,7 +165,7 @@ func (s *Shell) commitActionFooter(c *ui.Context) {
 			if ui.Button(c, "Cancel Commit").Clicked() {
 				s.requestCancelCommit()
 			}
-			button := ui.PrimaryButton(c, label).FontSize(Typography().Body)
+			button := ui.PrimaryButton(c, label)
 			button.Disabled(!ready)
 			if button.Clicked() && ready {
 				s.submitCommitAmend(strings.TrimSpace(s.surface.commit.Subject),

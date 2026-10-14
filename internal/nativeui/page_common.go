@@ -1,26 +1,6 @@
 package nativeui
 
-import (
-	"strings"
-
-	"github.com/egoist/mygo/ui"
-)
-
-// pageHeader is the shared page header band (Design System v2).
-func pageHeader(c *ui.Context, title, subtitle string) {
-	t := c.Theme()
-	typ := Typography()
-	sp := Spacing()
-	ui.Column(c).
-		Padding(sp.XL, sp.XL, sp.L).
-		Gap(sp.XS).
-		Children(func() {
-			ui.Text(c, title).FontSize(typ.Title).FontWeight(WeightBold)
-			if subtitle != "" {
-				ui.Text(c, subtitle).FontSize(typ.BodySmall).TextColor(t.TextMuted)
-			}
-		})
-}
+import "strings"
 
 func fallbackText(values ...string) string {
 	for _, value := range values {
