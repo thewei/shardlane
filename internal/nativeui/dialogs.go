@@ -165,7 +165,7 @@ func (s *Shell) submitTextDialog(kind, target, value string) {
 
 func (s *Shell) submitConfirm(kind, target string) {
 	if strings.HasPrefix(kind, "git-") && (s.git == nil || s.confirmRepoRoot == "" || s.git.root != s.confirmRepoRoot) {
-		s.pendingToast = "Repository changed. Please reopen the Git action before confirming."
+		s.pendingToast = "Repository changed. Reopen the dialog to continue."
 		return
 	}
 	switch kind {

@@ -56,6 +56,7 @@ description: Use when polishing or unifying the Shardlane MyGo client's UI/UX �
 - **不自圆其说**：不写向读者解释设计意图的句子（"One conversation surface over…"、"Native Terminal" toast）；空态 = 一句标题 + 可选一句下一步。标题不带句号，说明句带句号。
 - **大小写**：按钮/菜单项/对话框标题 Title Case（冠词与 ≤4 字母介词小写：`Merge into Current…`、`Draft Subject with Pi`；Git 复合词沿用既有写法 `Cherry-pick`）；**空态标题与 tooltip sentence case**。守卫：`TestMenuItemsAreTitleCase`（扫 `.Item("…")` 字面量）、`TestEmptyStateTitlesAreSentenceCase`（专有名词 Git/SSH 除外）。
 - **确认框标题是问句**（2026-10-14 第二轮审计）：全仓其余 19 个字面确认标题都是 `Close Tab?` / `Delete “x”?` / `Discard Changes in 3 files?`，唯独自己加的回收站两个写成 `Delete Forever` / `Empty Trash`——后者还和触发它的工具栏按钮 `Empty Trash` 重名，对话框标题读起来像又一个按钮。已改成 `…?`；守卫 `TestConfirmTitlesAreQuestions`（AST 扫 `openConfirm` 的标题实参：字面量、`+` 链末尾必须是字面量 `?`、Sprintf 格式；变量标题不可判定则跳过）。
+- **不写填充词**（2026-10-14 第二轮审计）：`Please` / `successfully` / `Oops` 不出现——说发生了什么 + 下一步。全仓只有一处漏网：同一事件（对话框打开后仓库变了）三种写法，其中 `Repository changed. Please reopen the Git action before confirming.` 是唯一带 Please 的，已并到 `Repository changed. Reopen the dialog to continue.`；守卫 `TestCopyHasNoFillerWords`（AST 扫全部生产字符串字面量，4600+ 个）。
 - **同动作一个名字**：在 Finder 里定位统一 `Reveal in Finder`（Files 树/标题栏 Actions、Git worktree、Settings 日志、Sessions 的 `Reveal Source File in Finder` 只在宾语上多一个限定）；复制路径统一 `Copy Path`。
 - **HIG**：打开对话框/需要再输入的项加 "…"；已换成图标按钮/下拉的不再用 "…" 文本按钮；复数用 `pluralS`；名称引号用弯引号。
 - **可恢复**：任何截断文本必有 Tooltip；计数先于名称存活。
@@ -84,7 +85,7 @@ rg -n 'Padding\(14, 9, 9\)' --glob '!*_test.go' .                      # 侧栏�
 1. **基线**：改动前先出 headless 证据 `SHARDLANE_UI_EVIDENCE=/tmp/x/before GOTOOLCHAIN=go1.27.1 go test ./internal/nativeui -run 'TestUIEvidence$' -count=1`（深/浅各 12 页：Workspace、Settings 各分组、Sessions、详情、Files、Agent 面板、Hosts）；用户正在用的 App 只做被动观察（cua-driver 后台 AX/截图，边界见 `shardlane-ui-audit`）。
 2. **收集问题**，分四类：重复（入口/标题/刷新/路径回声）、不一致（同组件两种脸/尺寸/文案）、AI 味（自圆其说/泄漏/装饰）、断路（死按钮/无 Tooltip 截断）。每条记 `文件:行`。
 3. **修**：先判规则归属（五条不变量或 token），改唯一实现，不堆页面特例。需求有歧义（例如"把终端标题移进 Header"）→ 按保守解读做信息去重，并列出备选交给用户，不擅自删结构。
-4. **钉**：每个修复一条回归测试 + **变异检查**（`cp` 备份 → 改回旧实现 → 测试必须红 → 从备份还原并复核）。像素断言用 `pixelAt`/`rgbDiff`（`sidebar_tree_test.go`），布局断言用 `Tester.Find` 矩形（按钮文字的矩形是字，不是按钮；比对齐线而不是高度）；路由动画用真实时钟，测试用 `settleFrames`。**`Tester.HasText` 是子串匹配**：页面会打印路径，`t.TempDir()` 路径带测试名（`…NoConnect` 的测试就"出现"了 Connect）——否定断言一律用精确 `Find`（`onScreen`），种子目录用 `os.MkdirTemp`；`applyOnUI` 在 headless 下默认丢弃，需要落地就设 `uiApplyOverride` 队列。
+4. **钉**：每个修复一条回归测试 + **变异检查**（`cp` 备份 → 改回旧实现 → 测试必须红 → 从备份还原并复核）。像素断言用 `pixelAt`/`rgbDiff`（`sidebar_tree_test.go`），布局断言用 `Tester.Find` 矩形（按钮文字的矩形是字，不是按钮；比对齐线而不是高度）；路由动画用真实时钟，测试用 `settleFrames`。**`Tester.HasText` 是子串匹配**：页面会打印路径，`t.TempDir()` 路径带测试名（`…NoConnect` 的测试就"出现"了 Connect）——否定断言一律用精确 `Find`（`onScreen`），种子目录用 `os.MkdirTemp`；`applyOnUI` 在 headless 下默认丢弃，需要落地就设 `uiApplyOverride` 队列。**顺序/可见性断言以渲染为准，不以注册表为准**：⌘P 面板一个区按字母序列出，`buildCommandCenterActions()` 的顺序不是界面顺序（曾据注册表钉过一条"面板与 Go 菜单同序"的测试，渲染一张图才发现与界面不符）——写顺序断言前先渲一张图看。
 5. **证据**：重出 after 图并排对比（`Read` 看 PNG），再看一次浅色与深色。
 6. **门禁**（全部实跑）：
    ```sh
@@ -128,6 +129,7 @@ rg -n 'Padding\(14, 9, 9\)' --glob '!*_test.go' .                      # 侧栏�
 - 仍在自成一脸的小控件（同类不同脸，下一轮评估）：`gd_surface.go` 的 `gdLayoutControl`（Split/Unified，30×24 图标分段，选中脸 `pal.headerBg`）、`gdSearchInput`（灰度 alpha 底、半径 7）与 `gdPalette.hover/pill`（行脸）、`changes_panel.go` 行内 18×18 操作按钮、`page_history.go` 行内悬停的 22×22 更多入口。
 - Commit 对话框页脚的主按钮取**默认档**而非 `compactPrimaryButton`：同排 Cancel Commit 与丢弃草稿提示（Keep Editing/Discard Draft）都是默认档，只降主按钮会比兄弟矮，整排降档则对话框里 30 高的输入框旁出现 22 高的主动作。要降档需整排一起。
 - `Refresh Runtime` 菜单项保留（命令级入口，不是页面按钮）。
+- **待产品决定：图标按钮 tooltip 的大小写**（F192）。现状两派：与菜单项同源的命令名是 Title Case（`Split Right`/`Close Pane`/`Show Sidebar`/`New File…`，`header_overflow.go` 的菜单项复用同一串）；Git 工具条与直写 `.Tooltip(…)` 是 sentence case（`Show file list`/`Copy path`/`Commit options`/`Pane menu`）。本文"tooltip sentence case"与"同动作一个名字（`Copy Path`）"在这里互相冲突，在决定前不要单点改。
 - **待产品决定：⌘2–⌘5 作 Changes/Sessions/Files/Hosts 的加速器**。侧栏收起时四个标签随之消失，今天的键盘路径只有 ⌘P；加速器只能挂在「去往」形态（`goChanges`/`goFiles` 与幂等的路由跳转）上，不能挂在侧栏的切换形态上（F13/F101/F103/F162 的历史教训）。另：没有 View 菜单（显示/隐藏侧栏、全屏只在应用内 ⌘B）、Window 菜单缺 Bring All to Front——都是显式没做，等决定。
 
 ## 反模式速查

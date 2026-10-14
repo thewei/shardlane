@@ -13,8 +13,8 @@ import (
 )
 
 /**
- * [INPUT]: 依赖 nativeui 包内非测试源码里 emptyState / workspaceEmptyBanner 的字面标题、菜单项（.Item("…")）的字面标签与 openConfirm 的标题实参
- * [OUTPUT]: 对外提供文案回归：空态标题句首大写（专有名词除外），菜单项 Title Case（短介词/冠词小写），确认框标题一律是问句——同一类组件只有一种写法
+ * [INPUT]: 依赖 nativeui 包内非测试源码里 emptyState / workspaceEmptyBanner 的字面标题、菜单项（.Item("…")）的字面标签与 openConfirm 的标题实参、全部生产字符串字面量
+ * [OUTPUT]: 对外提供文案回归：空态标题句首大写（专有名词除外），菜单项 Title Case（短介词/冠词小写），确认框标题一律是问句，文案里没有 Please/successfully/Oops 这类填充词——同一类组件只有一种写法
  * [POS]: 2026-10-14 文案统一的守卫测试；新增空态/菜单项时由它拦下大小写漂移
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -159,5 +159,48 @@ func TestConfirmTitlesAreQuestions(t *testing.T) {
 	}
 	if seen < 18 {
 		t.Fatalf("matched only %d confirm titles; the scan no longer finds the call sites", seen)
+	}
+}
+
+// fillerWord matches words that pad a sentence without telling the reader
+// anything: "Please reopen…", "Saved successfully", "Oops".
+var fillerWord = regexp.MustCompile(`(?i)\b(please|successfully|oops)\b`)
+
+// TestCopyHasNoFillerWords keeps the product voice plain: say what happened
+// and what to do next. It scans every string literal of production code, so
+// toasts, tooltips, dialogs and empty states are all covered.
+func TestCopyHasNoFillerWords(t *testing.T) {
+	files, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fset := token.NewFileSet()
+	seen := 0
+	for _, name := range files {
+		if strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		file, err := parser.ParseFile(fset, name, nil, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ast.Inspect(file, func(n ast.Node) bool {
+			lit, ok := n.(*ast.BasicLit)
+			if !ok || lit.Kind != token.STRING {
+				return true
+			}
+			text, err := strconv.Unquote(lit.Value)
+			if err != nil {
+				return true
+			}
+			seen++
+			if word := fillerWord.FindString(text); word != "" {
+				t.Errorf("%s: %q uses %q; say what happened and what to do next", fset.Position(lit.Pos()), text, word)
+			}
+			return true
+		})
+	}
+	if seen < 1000 {
+		t.Fatalf("scanned only %d string literals; the scan no longer finds the source", seen)
 	}
 }
