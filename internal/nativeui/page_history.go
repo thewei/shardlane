@@ -357,11 +357,7 @@ func (s *Shell) sessionGroup(c *ui.Context, group sessionGroupView, defaultOpen 
 		}
 		activated := s.nav.sessions.row(c, header, navRow{Key: groupKey, Section: true, Folder: true, Expanded: open})
 		header.Children(func() {
-			chevron := iconChevronDown
-			if collapsed {
-				chevron = iconChevron
-			}
-			ui.Icon(c, chevron).Size(11, 11).TextColor(t.TextMuted).Shrink(0).PassThrough()
+			treeChevron(c, true, open, t.TextMuted)
 			if s.historySelecting() {
 				s.groupSelectionBox(c, group)
 			}

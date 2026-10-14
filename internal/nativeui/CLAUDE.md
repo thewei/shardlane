@@ -52,7 +52,7 @@ reorder.go: 作用域隔离的拖放语义与目标插入索引、跨 Tab/Projec
 reorder_test.go: Drag/Drop 真正鼠标事件、插入索引、跨 Tab/Project 移动校验、窗格卡片放置动作推导和投影排序回归
 components.go: 共用导航树行与视觉组件（treeRow 悬停图标动作 Action）、sidebarRowHeight 密度令牌，拖动时提供原生浮动预览、同级插入占位条、容器高亮、动画及命中目标
 workbench.go: 桌面工作台状态中枢，Agent 目录与运行时事件分发
-page_history.go: Sessions 中心列表布局（参照 magpie 会话历史）：Agent 标签条（All + 各 Provider，带会话数；回收站里按回收站内容计数）、搜索/Select/Trash（+Empty Trash）工具簇（刷新不在这里：侧栏项目头里唯一一个；窄窗口整体换行；Select 与 Trash 只在挂了回收站时出现，Trash 有内容或视图打开才显示）、项目分组卡片（默认只展开最近一个项目，头部在卡内）与行（标题/事实行/Token 列/日期↔悬停菜单固定占位，点行内展开预览；回收站视图复用同一列表，行键是条目 id、选择常开）、行菜单 Move to Trash（无回收站则无此项）、listNav 键盘（进页聚焦开场行；j/k 跨项目头、h/l 折叠项目与行内预览、o 切换预览；光标亮时 d 移入回收站，回收站里 u 放回、d 永久删除——先确认；行离开后光标让位邻行）、有界结果计数文案、扫描未结束时的 Updating 提示（分批渐进加载）
+page_history.go: Sessions 中心列表布局（参照 magpie 会话历史）：Agent 标签条（All + 各 Provider，带会话数；回收站里按回收站内容计数）、搜索/Select/Trash（+Empty Trash）工具簇（刷新不在这里：侧栏项目头里唯一一个；窄窗口整体换行；Select 与 Trash 只在挂了回收站时出现，Trash 有内容或视图打开才显示）、项目分组卡片（默认只展开最近一个项目，头部在卡内，chevron 取树侧栏同一枚 treeChevron）与行（标题/事实行/Token 列/日期↔悬停菜单固定占位，点行内展开预览；回收站视图复用同一列表，行键是条目 id、选择常开）、行菜单 Move to Trash（无回收站则无此项）、listNav 键盘（进页聚焦开场行；j/k 跨项目头、h/l 折叠项目与行内预览、o 切换预览；光标亮时 d 移入回收站，回收站里 u 放回、d 永久删除——先确认；行离开后光标让位邻行）、有界结果计数文案、扫描未结束时的 Updating 提示（分批渐进加载）
 history_state.go: HistoryService 列表查询的生成代际隔离，筛选清空旧可选行/预览/多选；范围状态（scopeAll/scopeRoot/projectTotal/allTotal；请求带 ProjectPath，只有无范围且无筛选的加载才喂 Recent）；Provider 元数据选择与各 Provider 总数（可选 HistoryProviderCountView / HistoryProjectCountView，标签计数取当前范围）、扫描分批上报（可选 HistoryScanProgressView：每批约 100 个来源在窗口线程刷新一次可见列表，数千个单会话文件夹不再把页面按在 Loading 态）；分组展开、多选、行内预览与详情页帧戳（只读 Chat 绑定的空闲释放）状态；回收站条目缓存与视图开关（trashItems/showTrash，trashGen 代际防过期）
 history_select.go: Sessions 多选：行/项目头勾选标记、底部批量栏（会话视图：Move to Trash；回收站：Put Back / Delete Forever…，有勾选才出现）；选择只是 UI 状态，文件搬动全在 history_trash.go
 history_preview.go: 行内会话预览：点行懒读原始会话末尾若干条（Tail 窗口，代际防过期），只读展示，带 Open/Continue/Move to Trash；不缓存任何会话内容
@@ -72,7 +72,7 @@ text_clip_test.go: 截断的 Unicode 边界、行/字符上限与截断标记回
 history_filter_test.go: History 筛选空态、结果计数、Provider 选项与旧行不可点击的 headless 验证
 history_scope_test.go: Sessions 范围回归（真实夹具会话）：默认只列当前项目含子文件夹、范围行与计数、切 All 与切回、方向键+Enter 移动选择、随项目切换重载并复位 Agent 标签、无项目/远程即全部、空项目出路、回收站与 Empty Trash 随范围、Recent 不被范围污染
 history_layout_test.go: Sessions 页 Agent 标签（含数量）、行 Token 列与悬停占位、有界计数文案、Trash 开关出现规则与窄窗口工具条换行回归
-sidebar.go: 唯一左栏宿主——Git/Files/Sessions 三个项目作用域页共用同一个项目头（sidebarProjectHeader + 分隔线）；栏顶五个等宽图标视图标签（sidebarViewTabs：Terminal/Changes/Sessions/Files/Hosts，每条路由同位置；Terminal 标签是回 Workspace 的唯一入口之一，点亮的其他页再点也回 Terminal；Changes 用 Git 分叉图标 iconGit）、Workspace/Agent/Pin 树、Git 引用导航、内页（Settings/History/Files）自有导航；**只有 Settings 保留页脚 Back**（它不是视图标签的目的地；取代 Workspace 切换页脚，tooltip 写去向 Terminal），其余内页与 Git 视图没有页脚，经 Terminal 标签离开
+sidebar.go: 唯一左栏宿主——Git/Files/Sessions 三个项目作用域页共用同一个项目头（sidebarProjectHeader + 分隔线）；栏顶五个等宽图标视图标签（sidebarViewTabs：Terminal/Changes/Sessions/Files/Hosts，每条路由同位置；Terminal 标签是回 Workspace 的唯一入口之一，点亮的其他页再点也回 Terminal；Changes 用 Git 分叉图标 iconGit）、Workspace/Agent/Pin 树（三个分区头同走 sidebarSectionHeader，标题带计数；Changes 面板的 Staged/Unstaged 头同款，Stage/Unstage 是头部尾端文字动作）、Git 引用导航、内页（Settings/History/Files）自有导航；**只有 Settings 保留页脚 Back**（它不是视图标签的目的地；取代 Workspace 切换页脚，tooltip 写去向 Terminal），其余内页与 Git 视图没有页脚，经 Terminal 标签离开
 sidebar_test.go: 内页侧栏导航与页脚 Back 的位置/文案、栏顶四个视图标签的位置/等宽/同位置/点击语义、Settings 导航、Pin 区块回归
 detail_fact.go: Agent 详情复用的只读字段样式，从退役 Inspector 解耦
 shell.go: 核心 Shell 宿主，协调 Router/Window/Titlebar；首次 Herdr 加载独占中心展示并淡入工作区，Git sidebar 与双模式分栏展示态仅本地持有；WithSessionTrash 挂 Sessions 回收站，pendingToastAction 在 View 里发带按钮（Undo）的提示条；原生窗口标题经 setWindowTitle 接缝（AttachWindow 绑到窗口、headless 换记录器）由 window_actions.go 每帧幂等同步，恢复到内页的启动也会带上路由名
@@ -106,11 +106,12 @@ runtime.go: 首次 Herdr 列举、异步 Projection、初次 terminal coordinati
 panel_motion.go: Git/Terminal 左栏统一宽度（默认 252 DIP，可拖拽 200–400）和折叠动画，不再依路由改变宽度
 repo_bar.go: 仅保留变更文件点击与 toggleMenu popover 辅助函数；仓库菜单见 git_sidebar_tree 与 sidebar_switchers
 branch_menu.go: 当前分支优先的搜索过滤与受保护的切换/创建入口，弹层由 sidebar_switchers 持有
-sidebar_tree.go: 侧栏层级唯一对齐网格（行圆角 treeRowRadius，chevron 槽·图标·标题、首层对齐分区标题）、导向线、统一行构建器 sidebarTreeRow（Selected 选中脸、键盘光标同脸 SidebarSelect、Action 悬停行内图标）、可折叠分组头 sidebarSectionHeader 与行高令牌 treeRowHeight；两个构建器返回 (行, clicked)（clicked 兼收鼠标点击与键盘激活），经 Spec.Nav 注册进 listNav；Git 引用、Files 树与 Hosts 列表共用
+sidebar_tree.go: 侧栏层级唯一对齐网格（行圆角 treeRowRadius，chevron 槽·图标·标题、首层对齐分区标题）、导向线、统一行构建器 sidebarTreeRow（Selected 选中脸、键盘光标同脸 SidebarSelect、Action 悬停行内图标）、可折叠分组头 sidebarSectionHeader（Spec.Trailing 放头部尾端的文字动作如 Stage/Unstage，sectionTextAction 是它的唯一脸；Workspace/Agents/Pin、Git 引用、Changes 面板、Hosts 分组全走这一个头：前置旋转 chevron·半粗体标题·计数）与行高令牌 treeRowHeight；两个构建器返回 (行, clicked)（clicked 兼收鼠标点击与键盘激活），经 Spec.Nav 注册进 listNav；Git 引用、Files 树与 Hosts 列表共用
 list_nav.go: 侧栏列表/树与 Sessions 列表唯一的键盘模型 listNav——真焦点即光标（FocusGroup 单 Tab 停靠点，方向键由它认领故不回绕），j/k·↓/↑ 移动、h/l·←/→ 折叠展开或进出层级、o 打开、gg/G·Home/End 首尾、Ctrl-d/u 跳十行，Enter/Space 本就是行点击；进页聚焦开场行但光标不亮——键盘用过它才亮（Tab 进入自带亮；离开列表/重进页面复暗；点击不亮），会改东西的行键（Files 的 a/A/r/d/y，Sessions 的 d/u）等光标亮了才响应；Git 引用树不抢进页焦点（窗口级 j/k 归 Diff）；对话框关闭后 navTrackDialogs 把焦点还给光标行（MyGo 对 AutoFocus 对话框的焦点恢复缺口，应用侧补）；Hosts 光标移动即选中；Sessions 的项目卡头与会话行自行注册（行内预览当作该行的折叠），stay 让删除/放回后光标落到邻行（优先下一行，其次上一行，不落在项目头）；虚拟化 ui.List（Changes）不走这里
 list_nav_test.go: Files/Git 引用/Hosts 的真键盘回归（Sessions 见 history_nav_test.go）——移动与不回绕、gg/G/Ctrl-d/u、h/l/o 层级、单 Tab 停靠点与记忆、进页聚焦（含列表晚到）、对话框后焦点回到光标行、Files 行键 a/A/r/d/y、Hosts 选中跟随与机器行不属于末组、光标脸（键盘用过才亮、Tab 进入即亮、离开/重进复暗、点击不亮）
+session_selector.go: 左栏页脚的会话选择器，以及 Workspace 树的分区壳 Shell.sidebarSection（共享树头 + 折叠状态归调用方；Workspace 分区的 + 是悬停动作与右键菜单项，标题自带项目数）
 sidebar_switchers.go: Git/Files/Sessions 侧栏共用头部：项目名与分支名各自是可搜索的 pull-down 快速切换，外加刷新图标
-sidebar_tree_test.go: 网格对齐、导向线连续、分区无 "···"、悬停 "+"、创建对话框、项目/分支快速切换、Workspace 行无 "…" 与标题栏 Actions 回归
+sidebar_tree_test.go: 网格对齐、导向线连续、分区无 "···"、悬停 "+"、创建对话框、项目/分支快速切换、Workspace 行无 "…" 与标题栏 Actions 回归；折叠头同一语法（TestSectionHeadersWearOneGrammar）与唯一 disclosure chevron（TestOneDisclosureChevron，禁止折叠头自行互换 chevron 图标）
 changes_tree_test.go: Changes 文件树共用网格（逐层缩进一格）与行内图标动作命名回归；一个文件的状态读作 "1 file"（列表头与 Commit 旁计数）而非 "1 files"
 layout_width_test.go: 宽窗口内容列居中封顶（Settings 760、Sessions 1040、提交表单 760）回归
 git_service_snapshot.go: 仓库绑定快照/提交历史及本地远程跟踪引用的分离异步获取与 generation root 隔离

@@ -156,6 +156,7 @@ rg -n 'Padding\(14, 9, 9\)' --glob '!*_test.go' .                      # 侧栏�
 | 浮层里点条目又进下一层详情 / 返回键 | 交互行 | 点击直达面板并收起；其余动作进右键菜单 |
 | 内容驱动高度的预算常数凭估算填 | 打磨循环 4 | 用 `Tester.Find` 矩形测真实高度，写贴合测试（不越界、空白有上限），预算改常数而非猜 |
 | 新树/列表自己写 j/k、`Shortcut` 或焦点环 | 键盘模型 | 行走 `sidebarTreeRow`/`sidebarSectionHeader` + `Nav`，容器走 `navList` |
+| 折叠分区头自己画（Text + `iconChevron`/`iconChevronDown` 互换、9.5pt 弱化大写、chevron 在行尾、没有计数） | 不变量 5（同角色同实现） | 一律 `sidebarSectionHeader`：前置 `treeChevron`·半粗体标题·计数；文字动作（Stage/Unstage）走 `Trailing` + `sectionTextAction`，悬停动作走 `Action`；Workspace/Agents/Pin 用 `Shell.sidebarSection`。守卫 `TestSectionHeadersWearOneGrammar`/`TestOneDisclosureChevron` |
 | 菜单/快捷键只是 `router.Push(路由)`，而目标是同一路由的另一个表面 | 不变量 2 | 同路由 Push 被去重＝按了没反应；落点要走与 Terminal 标签/Back 相同的 `showViewTerminal`/`showSurface` 这类显式落地函数，测试从每个表面各按两遍 |
 | 新页面入口只加在一处（侧栏图标），⌘P 和菜单栏漏了 | 不变量 2 | 页面入口三处同名（侧栏标签 / ⌘P / Go 菜单；Go 菜单与标签同序，面板按字母序）；菜单项说"去往"（幂等），只有侧栏标签是切换；改动时跑 `TestLaunchersAgreeOnViewDestinations` |
 | 镜像到系统的状态（窗口标题等）只挂在"变化"事件上 | 打磨循环 4 | 启动恢复直接写初始状态、没有变化事件；每帧幂等推导 + 去重，测试里走"恢复后首帧" |

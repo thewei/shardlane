@@ -2,7 +2,7 @@ package nativeui
 
 /**
  * [INPUT]: row level, MyGo Context/Painter, TreeLine token 与 Shell 的 density 偏好
- * [OUTPUT]: 侧栏层级共用的对齐网格（treeGlyphX/treeGuideX）、导向线绘制、disclosure chevron、统一行构建器 sidebarTreeRow、可折叠分组头 sidebarSectionHeader、行高 token treeRowHeight，以及键盘光标脸与两个构建器返回的 clicked（鼠标点击或键盘激活）
+ * [OUTPUT]: 侧栏层级共用的对齐网格（treeGlyphX/treeGuideX）、导向线绘制、disclosure chevron、统一行构建器 sidebarTreeRow、可折叠分组头 sidebarSectionHeader（含尾端文字动作 Trailing/sectionTextAction）、行高 token treeRowHeight，以及键盘光标脸与两个构建器返回的 clicked（鼠标点击或键盘激活）
  * [POS]: Git 引用树、Files 树与 Hosts 列表共享的呈现层；数据、折叠状态、动作与菜单仍由各自的树持有，键盘移动归 listNav（list_nav.go）
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -190,6 +190,10 @@ type sidebarSectionSpec struct {
 	Action *treeRowAction
 	// Menu is the header's context menu.
 	Menu func(*ui.Menu)
+	// Trailing draws content at the header's right edge, after the count, in
+	// place of the hover Action's slot: the Changes panes' visible Stage and
+	// Unstage (sectionTextAction).
+	Trailing func()
 	// Nav is the list's keyboard model; nil leaves the header to the mouse.
 	Nav *listNav
 }
@@ -218,6 +222,10 @@ func (s *Shell) sidebarSectionHeader(c *ui.Context, spec sidebarSectionSpec) (ui
 		ui.Box(c).Width(treeGlyphGap).Shrink(0).PassThrough()
 		ui.Text(c, spec.Title).FontSize(Typography().Body).FontWeight(WeightSemibold).Grow(1).MinWidth(0).SingleLine()
 		ui.Textf(c, "%d", spec.Count).FontSize(Typography().Micro).TextColor(t.TextMuted).Shrink(0)
+		if spec.Trailing != nil {
+			spec.Trailing()
+			return
+		}
 		ui.Box(c).Size(gorexRowBtn+2, gorexRowBtn).Shrink(0).Center().Children(func() {
 			if spec.Action == nil || !row.Hovered() {
 				return
@@ -229,4 +237,20 @@ func (s *Shell) sidebarSectionHeader(c *ui.Context, spec sidebarSectionSpec) (ui
 		})
 	})
 	return row, activated || row.Clicked()
+}
+
+// sectionTextAction is a header's visible text action — Stage, Unstage — at
+// the row-button tier: muted, the text color under the pointer. It is a
+// Trailing of sidebarSectionSpec; the click is the caller's.
+func sectionTextAction(c *ui.Context, label, tooltip string) ui.Element {
+	t := c.Theme()
+	b := ui.ButtonBase(c).Height(gorexRowBtn).Padding(0, 7).Radius(treeRowRadius).
+		AlignItems(ui.Center).FocusRing(false).Label(label).Tooltip(tooltip).TextColor(t.TextMuted)
+	if b.Hovered() {
+		b.Background(t.SurfaceHover).TextColor(t.Text)
+	}
+	b.Children(func() {
+		ui.Text(c, label).FontSize(Typography().Micro).FontWeight(WeightSemibold).PassThrough()
+	})
+	return b
 }

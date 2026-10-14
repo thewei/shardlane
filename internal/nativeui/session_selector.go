@@ -8,43 +8,17 @@ import (
 	"github.com/wh-studio/herdr-client/internal/herdr"
 )
 
-// sidebarSectionHeader is the shared collapsible section title row. Every
-// sidebar section title shares this one style (9.5/650, muted) so Agents,
-// Pin and Workspace read as one scale (2026-10-06: Agents/Pin previously
-// used mygo's larger SidebarSection title). Clicking the row toggles the
-// section; trailing draws controls before the disclosure chevron.
-func sidebarSectionHeader(c *ui.Context, title string, open *bool, trailing func()) {
-	t := c.Theme()
-	head := ui.Row(c).FillWidth().Height(24).Padding(0, 8).Gap(4).AlignItems(ui.Center).
-		Label(title + " section")
-	if head.Clicked() && open != nil {
-		*open = !*open
-	}
-	head.Children(func() {
-		ui.Text(c, title).FontSize(Typography().Micro).FontWeight(WeightSemibold).
-			TextColor(t.TextMuted).Grow(1).SingleLine()
-		if trailing != nil {
-			trailing()
-		}
-		if open != nil {
-			glyph := iconChevron
-			if *open {
-				glyph = iconChevronDown
-			}
-			ui.Icon(c, glyph).Size(11, 11).TextColor(t.TextMuted).Shrink(0)
-		}
-	})
-}
-
-// sidebarSection is one collapsible sidebar block: the shared header plus
-// its items while open. lead adds breathing room above non-first sections.
-func sidebarSection(c *ui.Context, title string, open *bool, first bool, trailing func(), items func()) {
+// sidebarSection is one collapsible block of the Workspace sidebar: the shared
+// tree header (chevron, semibold title, count — the same row the Git
+// references and the Hosts groups wear) over its items while open. The fold
+// state is the caller's open flag.
+func (s *Shell) sidebarSection(c *ui.Context, spec sidebarSectionSpec, open *bool, items func()) {
 	ui.Column(c).Shrink(0).Children(func() {
-		if !first {
-			ui.Box(c).Height(6).PassThrough()
+		spec.Closed = !*open
+		if _, clicked := s.sidebarSectionHeader(c, spec); clicked {
+			*open = !*open
 		}
-		sidebarSectionHeader(c, title, open, trailing)
-		if open == nil || *open {
+		if *open {
 			items()
 		}
 	})
@@ -55,11 +29,15 @@ func sidebarSection(c *ui.Context, title string, open *bool, first bool, trailin
 // Workspace) with a "+" on the header that creates one from a system
 // folder.
 func (s *Shell) workspaceSection(c *ui.Context) {
-	sidebarSection(c, "Workspace", &s.projectsOpen, false, func() {
-		if s.projectsOpen && gorexIconButton(c, gorexColorsOf(c.Theme().Dark), iconPlus, "New Workspace from Folder…", "New Workspace from Folder…", false, gorexPaneBtn, gorexPaneGlyph).Clicked() {
-			s.createWorkspaceFromFolder()
-		}
-	}, func() {
+	add := &treeRowAction{Label: "New Workspace from Folder…", Glyph: iconPlus, Run: s.createWorkspaceFromFolder}
+	s.sidebarSection(c, sidebarSectionSpec{
+		Key: "section:workspace", Title: "Workspace", Count: len(s.projection.Projects), Action: add,
+		Menu: func(m *ui.Menu) {
+			if m.Item(add.Label).Chosen() {
+				add.Run()
+			}
+		},
+	}, &s.projectsOpen, func() {
 		s.projectItems(c)
 	})
 }

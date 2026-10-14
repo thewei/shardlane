@@ -221,9 +221,9 @@ func TestSidebarRendersServiceActivity(t *testing.T) {
 	tester.Frame()
 
 	// The Workspace header shares the same builder and toggle; collapsing
-	// it drops the tree rows — asserted through the header's "+" which only
-	// exists while the section is open (the titlebar breadcrumb keeps
-	// repeating the Project/Tab labels, so row labels prove nothing).
+	// it drops the tree rows. The selected Project/Tab/Pane keep showing in
+	// the titlebar breadcrumb, so the probe is the unselected "Pane A2",
+	// which only the tree draws.
 	if err := tester.Click("Workspace"); err != nil {
 		t.Fatalf("workspace header click: %v", err)
 	}
@@ -231,7 +231,7 @@ func TestSidebarRendersServiceActivity(t *testing.T) {
 		t.Fatalf("workspace header click did not collapse the section")
 	}
 	tester.Frame()
-	if tester.HasText("New Workspace from Folder") {
+	if tester.HasText("Pane A2") {
 		t.Fatalf("workspace section still open while collapsed; texts=%q", tester.Texts())
 	}
 	if err := tester.Click("Workspace"); err != nil {
@@ -241,7 +241,7 @@ func TestSidebarRendersServiceActivity(t *testing.T) {
 		t.Fatalf("workspace header click did not reopen the section")
 	}
 	tester.Frame()
-	if !tester.HasText("New Workspace from Folder") {
+	if !tester.HasText("Pane A2") {
 		t.Fatalf("workspace section did not render its rows again; texts=%q", tester.Texts())
 	}
 }

@@ -55,13 +55,13 @@ func (s *Shell) sidebar(c *ui.Context) {
 		} else if s.sidebarInnerPage() {
 			s.sidebarInnerNav(c)
 		} else if ui.Sidebar(c, &s.selected, func() {
-			// The Agents/Pin/Workspace sections share one header builder so
-			// every section title reads at the same compact scale.
-			sidebarSection(c, "Agents", &s.agentsOpen, true, nil, func() {
+			// The Agents/Pin/Workspace sections wear the same tree header as
+			// the Git references and the Hosts groups.
+			s.sidebarSection(c, sidebarSectionSpec{Key: "section:agents", Title: "Agents", Count: len(s.workbenchCards())}, &s.agentsOpen, func() {
 				s.agentItems(c)
 			})
 			if pins := s.pinnedPaneIDs(); len(pins) > 0 {
-				sidebarSection(c, "Pin", &s.pinsOpen, false, nil, func() {
+				s.sidebarSection(c, sidebarSectionSpec{Key: "section:pin", Title: "Pin", Count: len(pins)}, &s.pinsOpen, func() {
 					s.pinnedItemsView(c)
 				})
 			}
@@ -245,7 +245,7 @@ func (s *Shell) sidebarFilesView(c *ui.Context) {
 			// The Unstaged pane (untracked files included) takes the space
 			// above the divider. The pane action targets the Cmd/Shift
 			// selection when there is one, else the whole pane.
-			s.gdSectionHeader(c, pal, "Unstaged Files", len(unstagedFiles), &s.unstagedOpen,
+			s.gdSectionHeader(c, "Unstaged Files", len(unstagedFiles), &s.unstagedOpen,
 				"Stage", gdActionPaths(&s.unstagedChoice, unstagedFiles), s.stageFiles)
 			if s.unstagedOpen && len(unstagedRows) > 0 {
 				s.gdChangedTreeList(c, pal, unstagedRows, &s.unstagedList, &s.unstagedSelected,
@@ -257,7 +257,7 @@ func (s *Shell) sidebarFilesView(c *ui.Context) {
 			}
 
 			// The Staged pane sits below the divider at the dragged height.
-			s.gdSectionHeader(c, pal, "Staged Files", len(stagedFiles), &s.stagedOpen,
+			s.gdSectionHeader(c, "Staged Files", len(stagedFiles), &s.stagedOpen,
 				"Unstage", gdActionPaths(&s.stagedChoice, stagedFiles), s.unstageFiles)
 			if s.stagedOpen && len(stagedRows) > 0 {
 				list := s.gdChangedTreeList(c, pal, stagedRows, &s.stagedList, &s.stagedSelected,
@@ -474,46 +474,21 @@ func gdActionPaths(choice *ui.Selection[string], files []gitworkbench.ChangeFile
 	return paths
 }
 
-// gdSectionHeader is one pane's title row with its Stage/Unstage action.
-func (s *Shell) gdSectionHeader(c *ui.Context, pal *gdPalette, title string, count int, open *bool, actionLabel string, paths []string, action func([]string)) {
-	t := c.Theme()
-	ui.Row(c).FillWidth().Padding(4, 10, 2).Gap(6).AlignItems(ui.Center).Children(func() {
-		// The title toggles the pane's collapse, chevron rotating as in
-		// the file cards.
-		toggle := ui.ButtonBase(c).Height(20).Padding(0, 4).Radius(5).Gap(4).
-			Label("Toggle " + title).FocusRing(false).TextColor(t.TextMuted)
-		if toggle.Hovered() {
-			toggle.Background(pal.hover)
-		}
-		toggle.Children(func() {
-			ic := ui.Icon(c, iconChevronDown).FontSize(11).TextColor(t.TextMuted)
-			target := float32(0)
-			if !*open {
-				target = -90
+// gdSectionHeader is one pane's title row: the shared tree header (chevron,
+// semibold title, count) with the pane's Stage/Unstage action kept visible at
+// its right edge.
+func (s *Shell) gdSectionHeader(c *ui.Context, title string, count int, open *bool, actionLabel string, paths []string, action func([]string)) {
+	spec := sidebarSectionSpec{Key: "changes:" + title, Title: title, Count: count, Closed: !*open}
+	if count > 0 && !s.git.opBusy {
+		spec.Trailing = func() {
+			if sectionTextAction(c, actionLabel, actionLabel+" ("+pluralFiles(len(paths))+")").Clicked() {
+				action(paths)
 			}
-			ic.Rotate(ic.Animate("rot", target, 150*time.Millisecond))
-		})
-		toggleMenu(open, toggle)
-		ui.Text(c, title).FontSize(Typography().BodySmall).FontWeight(WeightSemibold).LetterSpacing(0.4).TextColor(t.TextMuted)
-		if count > 0 {
-			ui.Text(c, itoa(count)).FontSize(Typography().BodySmall).FontWeight(WeightSemibold).TextColor(t.TextMuted)
 		}
-		ui.Spacer(c)
-		if count == 0 || s.git.opBusy {
-			return
-		}
-		b := ui.ButtonBase(c).Height(20).Padding(0, 7).Radius(5).Gap(4).
-			Label(actionLabel).Tooltip(actionLabel + " (" + pluralFiles(len(paths)) + ")").TextColor(t.TextMuted)
-		if b.Hovered() {
-			b.Background(pal.hover).TextColor(t.Text)
-		}
-		b.Children(func() {
-			ui.Text(c, actionLabel).FontSize(Typography().Micro).FontWeight(WeightSemibold)
-		})
-		if b.Clicked() {
-			action(paths)
-		}
-	})
+	}
+	if _, clicked := s.sidebarSectionHeader(c, spec); clicked {
+		*open = !*open
+	}
 }
 
 // gdPaneDivider is the draggable line between the two panes: dragging it

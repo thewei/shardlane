@@ -2,7 +2,7 @@ package nativeui
 
 /**
  * [INPUT]: 官方 MyGo headless Tester、Git 侧栏夹具（分支/标签/贮藏/工作树）与 Files 目录夹具
- * [OUTPUT]: 验证侧栏层级共用的网格（首层对齐分区标题、逐层缩进一格、导向线连续）、分区不再有 "···"、悬停 "+" 与右键菜单、Git/Files 共用头部的项目/分支快速切换
+ * [OUTPUT]: 验证侧栏层级共用的网格（首层对齐分区标题、逐层缩进一格、导向线连续）、分区不再有 "···"、悬停 "+" 与右键菜单、Git/Files 共用头部的项目/分支快速切换、折叠头同一语法与唯一 disclosure chevron
  * [POS]: 侧栏树与头部交互回归；网格常量只在 sidebar_tree.go 一处生效
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -568,4 +569,87 @@ func TestTitleBarNewTabNeedsAProjectTheRuntimeStillHas(t *testing.T) {
 		t.Fatalf("Actions menu offers New Tab for a project that is gone: %q", menu)
 	}
 	tester.CloseMenu()
+}
+
+// TestSectionHeadersWearOneGrammar pins the collapsible header across the
+// surfaces that have one: the Git references (left rail), the Changes panes
+// (centre column) and the Workspace sections all draw the same row — one
+// height, the title the same distance after the chevron slot, one title size.
+func TestSectionHeadersWearOneGrammar(t *testing.T) {
+	_, git, _ := treeTestShell(t)
+	ws := ui.NewTester(rightPanelTestShell(t, t.TempDir()).View, 1200, 800)
+	settleFrames(ws, 3)
+	probes := []struct {
+		name   string
+		tester *ui.Tester
+		title  string
+	}{
+		{"git references", git, "Branches"},
+		{"changes panes", git, "Unstaged Files"},
+		{"changes panes", git, "Staged Files"},
+		{"workspace sections", ws, "Agents"},
+		{"workspace sections", ws, "Workspace"},
+	}
+	var want [3]float32
+	for i, p := range probes {
+		row, ok := p.tester.Find("Toggle " + p.title)
+		if !ok {
+			t.Fatalf("%s: no header row %q; texts=%q", p.name, "Toggle "+p.title, p.tester.Texts())
+		}
+		title, ok := p.tester.Find(p.title)
+		if !ok {
+			t.Fatalf("%s: no title %q", p.name, p.title)
+		}
+		got := [3]float32{title.X - row.X, row.H, title.H}
+		if i == 0 {
+			want = got
+			continue
+		}
+		for k, label := range []string{"title offset", "row height", "title height"} {
+			if math.Abs(float64(got[k]-want[k])) > 0.5 {
+				t.Errorf("%s %q: %s %.1f, the Git references' %.1f", p.name, p.title, label, got[k], want[k])
+			}
+		}
+	}
+}
+
+// TestOneDisclosureChevron pins the section header's chevron to the one
+// rotating treeChevron: no second collapsible header with a chevron of its
+// own — hand-rotated (Animate "rot") or swapped between the right- and
+// down-pointing glyphs. The two other chevrons are deliberate: the diff file
+// card's own 15pt one, and the Workspace tree rows' hover chevron.
+func TestOneDisclosureChevron(t *testing.T) {
+	rotates := regexp.MustCompile(`Animate\("rot"`)
+	swaps := regexp.MustCompile(`\biconChevron\b`)
+	allowedRotate := map[string]bool{"sidebar_tree.go": true, "gd_surface.go": true}
+	allowedSwap := map[string]bool{"icons.go": true, "components.go": true}
+	files, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rotated, swapped := map[string]int{}, map[string]int{}
+	for _, name := range files {
+		if strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		src, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rotated[name] = len(rotates.FindAllIndex(src, -1))
+		swapped[name] = len(swaps.FindAllIndex(src, -1))
+	}
+	for name, n := range rotated {
+		if n > 0 && !allowedRotate[name] {
+			t.Errorf("%s hand-rotates a chevron (%d×): a collapsible header draws treeChevron", name, n)
+		}
+	}
+	for name, n := range swapped {
+		if n > 0 && !allowedSwap[name] {
+			t.Errorf("%s swaps the right-pointing chevron (%d×): a collapsible header draws treeChevron", name, n)
+		}
+	}
+	if rotated["sidebar_tree.go"] == 0 || rotated["gd_surface.go"] == 0 || swapped["components.go"] == 0 {
+		t.Fatalf("the scan no longer finds the known chevrons (rotate %v, swap %v)", rotated, swapped)
+	}
 }

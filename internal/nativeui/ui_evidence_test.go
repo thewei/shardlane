@@ -121,6 +121,7 @@ func evidenceShell(t *testing.T) *Shell {
 	shell.reconcileLocalSelection(shell.projection)
 	shell.reconcileWorkbench()
 	shell.selectedProjectID, shell.selectedTabID, shell.selectedPaneID = "w1", "t1", "p1"
+	shell.surface.resetToTerminal(shell.workspaceContext()) // as the first projection does: the Terminal tab is lit
 
 	script := map[string]string{
 		"term-1": "\x1b[2J\x1b[1;1H\x1b[1mπ\x1b[0m Pi  \x1b[2mgpt-5 · 41k tokens\x1b[0m\r\n\r\n\x1b[36m●\x1b[0m Running tests\r\n  \x1b[32m✓\x1b[0m go test ./internal/nativeui\r\n  \x1b[32m✓\x1b[0m go vet ./...\r\n\r\n> Make the sidebar quieter_",
@@ -195,7 +196,11 @@ func TestUIEvidence(t *testing.T) {
 			render(fmt.Sprintf("%02d-%s", 2+i, strings.ReplaceAll(strings.TrimPrefix(path, "/"), "/", "-")))
 		}
 		shell.router.Push("/history")
-		render("08-history")
+		render("08-history") // the project's own sessions: the default scope
+		if err := tt.Click("All sessions"); err != nil {
+			t.Fatal(err)
+		}
+		render("08a-history-all")
 		if err := tt.Click("Pi"); err != nil {
 			t.Fatal(err)
 		}
