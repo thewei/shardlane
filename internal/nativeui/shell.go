@@ -727,6 +727,7 @@ func (s *Shell) View(c *ui.Context) {
 	s.hist.viewFrame++
 	s.navTrackDialogs()
 	s.releaseIdleHistoryChat()
+	highContrast.Store(s.settings.General.HighContrast)
 	theme := shardlaneTheme(s.resolvedDark(c.Theme().Dark))
 	c.SetTheme(theme)
 	// The window's sidebar material shows wherever the view draws no

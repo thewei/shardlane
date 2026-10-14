@@ -81,9 +81,31 @@ var gorexDarkColors = gorexColors{
 	attention: ui.Hex("#fbbf24"),
 }
 
+// Increase contrast keeps every surface and strengthens what is drawn on it:
+// the card's hairline and the secondary text and icon tones.
+var (
+	gorexLightHighContrast = func() gorexColors {
+		k := gorexLightColors
+		k.cardBorder = ui.RGBA(0, 0, 0, 0.35)
+		k.textMuted, k.textFaint, k.iconMuted = ui.Hex("#3f3f46"), ui.Hex("#52525b"), ui.Hex("#52525b")
+		return k
+	}()
+	gorexDarkHighContrast = func() gorexColors {
+		k := gorexDarkColors
+		k.cardBorder = ui.RGBA(255, 255, 255, 0.35)
+		k.textMuted, k.textFaint, k.iconMuted = ui.Hex("#d4d4d8"), ui.Hex("#b0b0b8"), ui.Hex("#c4c4cc")
+		return k
+	}()
+)
+
 func gorexColorsOf(dark bool) *gorexColors {
-	if dark {
+	switch {
+	case dark && highContrast.Load():
+		return &gorexDarkHighContrast
+	case dark:
 		return &gorexDarkColors
+	case highContrast.Load():
+		return &gorexLightHighContrast
 	}
 	return &gorexLightColors
 }

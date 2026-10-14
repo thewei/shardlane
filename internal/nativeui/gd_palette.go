@@ -12,6 +12,7 @@ import (
 // gdPalette is the colors of the review, in the light or the dark: those
 // of codiff and of the diff renderer it uses.
 type gdPalette struct {
+	dark       bool
 	appBg      ui.Color // behind the cards: the gorex card's own paper, so the pinned-header bands continue it seamlessly
 	code       ui.Color // the code's own color
 	lineNumber ui.Color
@@ -73,6 +74,7 @@ var (
 		muted:      ui.RGBA(17, 17, 17, 0.48),
 	}
 	gdDarkPalette = gdPalette{
+		dark:       true,
 		appBg:      ui.Hex("#1e1e22"), // gorexStyle cardFocused (dark)
 		code:       ui.Hex("#c8c8c8"),
 		lineNumber: ui.Hex("#6c6c6c"),
@@ -129,11 +131,28 @@ func init() {
 	for k, v := range dark {
 		gdDarkPalette.syntax[k] = ui.Hex(v)
 	}
+
+	// Increase contrast keeps the diff's own colors and strengthens the
+	// card hairline and the quiet text: counts, line numbers, gap labels.
+	gdLightHighContrast, gdDarkHighContrast = gdLightPalette, gdDarkPalette
+	gdLightHighContrast.cardBorder = ui.RGBA(17, 17, 17, 0.35)
+	gdLightHighContrast.muted = ui.RGBA(17, 17, 17, 0.72)
+	gdLightHighContrast.lineNumber, gdLightHighContrast.gapText = ui.Hex("#6b6b6b"), ui.Hex("#5a5a5a")
+	gdDarkHighContrast.cardBorder = ui.RGBA(230, 230, 230, 0.35)
+	gdDarkHighContrast.muted = ui.RGBA(230, 230, 230, 0.78)
+	gdDarkHighContrast.lineNumber, gdDarkHighContrast.gapText = ui.Hex("#9a9a9a"), ui.Hex("#b0b0b0")
 }
 
+var gdLightHighContrast, gdDarkHighContrast gdPalette
+
 func gdPaletteFor(t *ui.Theme) *gdPalette {
-	if t.Dark {
+	switch {
+	case t.Dark && highContrast.Load():
+		return &gdDarkHighContrast
+	case t.Dark:
 		return &gdDarkPalette
+	case highContrast.Load():
+		return &gdLightHighContrast
 	}
 	return &gdLightPalette
 }

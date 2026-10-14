@@ -21,6 +21,7 @@ search_field_test.go: 搜索/筛选框只有官方 ui.SearchField 一种脸（AS
 modal_title_test.go: 对话框标题回归——Merge/Commit/文本输入三种自建对话框的标题行高一致（渲染比较）；Title 字号（20）只许 route_header.go 的页标题使用，对话框与卡片用 Heading
 hairline_test.go: 分隔线只有一种粗细——AST 扫描 .Background(x)/.BorderColor(x) 的实参，控件描边色 theme.Border（不透明、比发丝线重数倍）不得当分隔线/面板边缘的颜色，一律 BorderSubtle；扫描数下限防失效
 segmented_face_test.go: 分段控件回归——segmentedTrack/segmentFace 搭的控件选中段像素与官方 ui.Segmented 一致（深浅两套）；Git 的 Split/Unified 是 SegmentedBase 分段（轨道标签 Diff layout），真实点击切换 splitLayout
+appearance_test.go: 外观设置回归——密度/高对比的读写与映射；「Increase contrast」逐来源（Theme/DesignTokens/gorex/gd 共 11 项读数）必须更强且达到 WCAG 底线（次要文字 7:1、最淡 4.5:1、控件描边 3:1），View 每帧发布设置，渲染整页变化占比 ≥1%（修复前仅 0.25%）
 field_tier_test.go: 单行输入框高度回归——ui.TextInput 调用链上不许键入数字高度，只认 Controls() 档（Commit 主题输入框在行内编辑区与弹窗曾是 28/30，描述框 26）
 checkbox_face_test.go: 勾选框回归——Sessions 多选的 selectionMark 与官方 ui.Checkbox 的 16×16 盒子和对勾逐像素一致（深浅×选中/未选中）
 button_tier_test.go: 按钮字号回归——扫描 ui.Button/ui.PrimaryButton 调用链上的 .FontSize(…) 字面覆盖（只许 ds_components.go 的 compact 两档），拦下同排按钮两种高度；另扫图标按钮构造（gdIconButton/gdPulldown/gorexIconButton/gorexPulldown/gorexIconTab）调用链尾的 .Size(…)，并拦下 gorexIconButton/gorexPulldown 构造处的数字字面尺寸——图标按钮尺寸只来自 gorexIconBtn/gorexPaneBtn/gorexRowBtn 三档
@@ -118,7 +119,7 @@ branch_menu_filter_test.go: 搜索过滤与当前分支优先
 commit_pi.go: Pi 一次性候选生成 UI 协调、后台取消/超时、repo/snapshot/paths identity fence，拒绝自动 git commit
 page_settings_git.go: Git 配置页：可编辑的只含风格的 Conventional Commit 规则（安全约束固定在 agent.BuildPiCommitPrompt，不在页面展示）、显式保存/恢复、Pi CLI 可执行路径
 design_system.go: 排版/间距/圆角/控件高度/TileTone 令牌，字号字重只经此处取值，禁止字面量
-theme.go: 中性调色板与 DesignTokens；Sidebar 仅在窗口无 vibrancy 材质时作为不透明回退
+theme.go: 中性调色板与 DesignTokens；Sidebar 仅在窗口无 vibrancy 材质时作为不透明回退；`highContrast`（设置「Increase contrast」的进程级镜像，Shell.View 每帧发布）让框架 Theme（Border/TextMuted）、DesignTokens、gorexColors、gdPalette 四个颜色来源同时加强边框与次要文字
 ui_evidence_test.go: 显式启用的视觉取证（SHARDLANE_UI_EVIDENCE=<dir> 渲染主要视图的深浅色 PNG，不访问真实会话）
 commit_pi_test.go, settings_git_test.go: Pi 后台时序/过期消息隔离、Git Settings 持久化及 MyGo 控件回归
 commit_message_import.go: 生成候选文本纯校验与 Subject/Body 导入，已有手写消息时必须二次确认，不触发 Git 提交

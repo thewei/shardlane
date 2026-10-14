@@ -67,6 +67,7 @@ description: Use when polishing or unifying the Shardlane MyGo client's UI/UX �
 2. **改一处**：在 `design_system.go` / `gorex_style.go` / `ds_components.go` 改，不在业务组件 inline 覆盖。
 3. **同步清理**：清掉业务侧同类 inline override；孤儿 helper（如 2026-10-14 删掉的旧 `iconButton`）随手删并更新 README/L2。
 4. **全项目扫同类**，再钉测试。
+5. **颜色只有四个来源**：框架 `ui.Theme`（`shardlaneTheme`）、`DesignTokens`、`gorexColors`（窗格卡）、`gdPalette`（Diff 评审）。改色或新增调色板，必须同时给出「Increase contrast」变体并加进 `TestIncreaseContrastStrengthensEveryPalette` 的读数表——该设置曾只移动 0.25% 的像素（几条发丝线），因为 54 处 `designTokens(dark)` 读不到设置、两张调色板和框架主题完全不知道它；现在 `highContrast` 由 `Shell.View` 每帧发布，四个来源都读它。
 
 ```sh
 cd internal/nativeui
@@ -112,6 +113,7 @@ rg -n 'Padding\(14, 9, 9\)' --glob '!*_test.go' .                      # 侧栏�
 - 对话框标题只有一个（第二轮审计）：自建对话框（Merge、Commit、文本输入）的标题用 `modalTitle`（`Heading` 16 semibold），`Title` 20 只属于标题栏的页标题——Merge/Commit 曾直接拿页标题字号；对话框内层间距取 `Spacing().L`（与 `ui.Modal` 面板默认的 12 一致），页脚按钮间距取 `Spacing().M`（与官方 `AlertDialog` 的 8 一致）；标题 Title Case（`Commit Changes`）。守卫：`modal_title_test.go`。
 - 单行输入框的高度只来自 `Controls()` 档（第二轮审计）：同一个 Commit 主题输入框在行内编辑区是 28、在 Commit 弹窗里是 30，旁边的描述输入框又是 26——三个数字都是手敲的。现在显式高度一律 `Controls().RegularHeight`，`TestFieldHeightComesFromTheTiers` 拦数字字面量（多行 TextArea 按内容定高，不在此列）。
 - 勾选框只有一张脸（第二轮审计）：Sessions 多选的标记曾是线描的 task/square 图标，提交文件列表里的官方 `ui.Checkbox` 是实心强调色盒子加白色对勾。标记本身不是控件（点击归行/表头按钮，官方控件会再添一个 Tab 停靠点、还会吞点击），所以 `selectionMark` 画官方的盒子和对勾，`TestSelectionMarkWearsTheCheckboxFace` 与官方逐像素比（深浅×选中/未选中，四个变异均 KILLED）。同一模式见分段控件：官方只给 Base，脸自己搭，就拿官方像素当真值。
+- 设置开关要有渲染证据（第二轮审计）：「Increase contrast」的 token 函数有测试，但没有任何测试证明设置真的到达了屏幕。给每个外观开关写一条"打开前后整页像素变化占比"的下限测试（`TestIncreaseContrastChangesTheRenderedPage`），再加一条"每个来源逐项更强且达标"的读数表。
 - 一个角色一个控件（第二轮审计）：搜索/筛选列表的输入框只用官方 `ui.SearchField`（放大镜 + 边框 + 清除钮 + Esc 清空）。曾同时存在三种脸——官方的、Git 面手搓的无边框灰底版（连清除钮都自绘）、无放大镜的裸 `TextInput`——改后一律官方；`search_field_test.go` 用 AST 扫描拦下「`TextInput` 链上带 Search/Filter 提示」与「手绘 Clear 钮」。注意官方控件的占位字固定为 `Search`（`.Placeholder()` 对它无效），具体名字放 `.Label(…)`；先扫「同一角色有几种实现」再动手，别只看当前文件。
 - 分隔线只用发丝线 token（第二轮审计）：`theme.Border` 是控件描边（输入框、Segmented 轨道），不透明、比 `BorderSubtle` 重数倍，不能拿来画分隔线或面板边缘——Git 工作台四处曾这样做，与侧栏边线并排一粗一细。`hairline_test.go` 拦下 `.Background(t.Border)` / `.BorderColor(t.Border)`。
 - 窗格卡头：标签已写出目录或单卡时不再出 cwd（`paneCardCaption`/`titleSpellsOutDir`）。

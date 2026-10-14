@@ -1,6 +1,17 @@
 package nativeui
 
-import "github.com/egoist/mygo/ui"
+import (
+	"sync/atomic"
+
+	"github.com/egoist/mygo/ui"
+)
+
+// highContrast mirrors Settings → General → Increase contrast for the whole
+// process. Colors reach the views through plain functions of (dark) — the
+// theme, the design tokens and the two surface palettes — that most call
+// sites read without a Shell at hand, so Shell.View publishes the window's
+// one preference here before it builds the frame's theme.
+var highContrast atomic.Bool
 
 // Oklch accent colors (MyGo 0.2.15 ui.Oklch): the same Apple-blue family
 // as the old sRGB hex values — each call was hill-climbed in a probe so
@@ -66,7 +77,7 @@ func shardlaneTheme(dark bool) *ui.Theme {
 		t.Focus = ui.RGBA(10, 132, 255, 0.45)
 		t.Radius = 7
 		t.Spacing = 3.5
-		return &t
+		return strengthened(&t)
 	}
 
 	t := *ui.DarkTheme()
@@ -88,7 +99,22 @@ func shardlaneTheme(dark bool) *ui.Theme {
 	t.Focus = ui.RGBA(10, 132, 255, 0.52)
 	t.Radius = 7
 	t.Spacing = 3.5
-	return &t
+	return strengthened(&t)
+}
+
+// strengthened applies Increase contrast to the framework theme: the outline
+// of every control and the secondary text tone, which is what the widgets and
+// most of the views read.
+func strengthened(t *ui.Theme) *ui.Theme {
+	if !highContrast.Load() {
+		return t
+	}
+	if t.Dark {
+		t.Border, t.TextMuted = ui.Hex("#8e8e98"), ui.Hex("#d4d4d8")
+	} else {
+		t.Border, t.TextMuted = ui.Hex("#8b8b94"), ui.Hex("#3f3f46")
+	}
+	return t
 }
 
 // SidebarDensity configures vertical density and breathing room in the sidebar (0.9 P19).
@@ -130,7 +156,7 @@ func (s *Shell) tokens(dark bool) DesignTokens {
 }
 
 func designTokens(dark bool) DesignTokens {
-	return designTokensWithContrast(dark, false)
+	return designTokensWithContrast(dark, highContrast.Load())
 }
 
 func designTokensWithContrast(dark bool, highContrast bool) DesignTokens {

@@ -770,7 +770,7 @@ func (s *Shell) gdLineSpans(f *gdFile, ls gdLineSide, sd gdSide, pal *gdPalette,
 			return gdCodeSpans(ls.text, ls.segs, marks, pal)
 		}
 	}
-	key := gdSpanKey{hunk: ls.hunk, index: ls.index, num: int32(ls.num), side: sd, dark: pal == &gdDarkPalette}
+	key := gdSpanKey{hunk: ls.hunk, index: ls.index, num: int32(ls.num), side: sd, dark: pal.dark}
 	if spans, ok := f.spans[key]; ok {
 		return spans
 	}
