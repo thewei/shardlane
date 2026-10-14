@@ -8,8 +8,7 @@ import (
 // changesPanelState is the Changes tool's presentation state (filter,
 // footer totals are derived).
 type changesPanelState struct {
-	filter      string
-	filterFocus bool
+	filter string
 }
 
 // gdChangedTreeList renders one Godiff-style changed-file tree list over the

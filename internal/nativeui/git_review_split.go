@@ -232,7 +232,7 @@ func (s *Shell) gitCommitHistoryPane(c *ui.Context) {
 			ui.Textf(c, "%d", len(s.git.commits)).FontSize(Typography().BodySmall).TextColor(t.TextMuted)
 		})
 		ui.Row(c).FillWidth().Padding(0, 12, 5).Children(func() {
-			gdSearchInput(c, &s.gitCommitFilter, "Search commits", &s.changes.filterFocus, &s.git.gdTyping)
+			gdSearchInput(c, &s.gitCommitFilter, "Search commits", &s.git.gdTyping)
 		})
 		s.commitsPane(c, gdPaletteFor(t))
 	})
@@ -300,7 +300,7 @@ func (s *Shell) gitCommitFiles(c *ui.Context) {
 			}
 		})
 		ui.Row(c).FillWidth().Padding(0, 8, 3).Children(func() {
-			gdSearchInput(c, &s.gitCommitFilesFilter, "Filter commit files", &s.changes.filterFocus, &s.git.gdTyping)
+			gdSearchInput(c, &s.gitCommitFilesFilter, "Filter commit files", &s.git.gdTyping)
 		})
 		if snap == nil {
 			ui.Column(c).Grow(1).Center().Children(func() { ui.Spinner(c).Size(15, 15) })

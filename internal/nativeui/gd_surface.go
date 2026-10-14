@@ -869,39 +869,16 @@ func gdPulldown(c *ui.Context, svg *ui.SVG, tip string) ui.Element {
 	return gorexPulldown(c, gorexColorsOf(c.Theme().Dark), svg, tip, gorexIconBtn, gorexIconGlyph)
 }
 
-// gdSearchInput is a field filtering a list, as the search fields of
-// macOS: a magnifying glass, the text, and a button clearing it, as Escape
-// does. It reports a change; typing reports a focused field.
-func gdSearchInput(c *ui.Context, query *string, placeholder string, focus, typing *bool) bool {
-	t := c.Theme()
-	changed := false
-	box := ui.Row(c).Height(28).Padding(0, 6, 0, 8).Gap(6).Radius(7).Background(ui.RGBA(127, 127, 127, 0.12))
-	box.Children(func() {
-		ui.Icon(c, iconSearch).FontSize(13).TextColor(t.TextMuted)
-		in := ui.TextInputBase(c, query).Placeholder(placeholder).Label(placeholder).FontSize(Typography().Section).Grow(1).MinWidth(0)
-		if *focus {
-			in.Focus()
-			*focus = false
-		}
-		if in.Changed() {
-			changed = true
-		}
-		if in.Focused() {
-			box.Shadow(0, 0, 0, 3, t.Focus.Alpha(0.45))
-			if typing != nil {
-				*typing = true
-			}
-		}
-		if *query != "" {
-			clear := ui.ButtonBase(c).Size(16, 16).Radius(8).Center().Background(t.TextMuted.Alpha(0.45)).Label("Clear").FocusRing(false)
-			clear.Children(func() { ui.Icon(c, iconClose).FontSize(10).TextColor(t.Background) })
-			if clear.Clicked() || in.Shortcut(0, ui.KeyEscape) {
-				*query = ""
-				changed = true
-			}
-		}
-	})
-	return changed
+// gdSearchInput is a field filtering a list of the Git surface: the official
+// search field — the face of the Sessions search and the palette — named by
+// label. It fills its row, reports a change, and while it holds the focus
+// sets typing so the surface's letter keys stay text.
+func gdSearchInput(c *ui.Context, query *string, label string, typing *bool) bool {
+	field := ui.SearchField(c, query).Label(label).Grow(1).MinWidth(0)
+	if typing != nil && field.FocusWithin() {
+		*typing = true
+	}
+	return field.Changed()
 }
 
 // gdEmptyPanel says why there is nothing to show.

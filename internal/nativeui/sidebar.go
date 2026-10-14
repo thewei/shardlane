@@ -197,7 +197,7 @@ func (s *Shell) sidebarFilesView(c *ui.Context) {
 		})
 
 		ui.Row(c).FillWidth().Padding(8, 10, 10).Children(func() {
-			if gdSearchInput(c, &s.changes.filter, "Filter files", &s.changes.filterFocus, &s.git.gdTyping) {
+			if gdSearchInput(c, &s.changes.filter, "Filter files", &s.git.gdTyping) {
 				s.changesTree = nil
 				s.git.gdRowsDirty = true
 			}

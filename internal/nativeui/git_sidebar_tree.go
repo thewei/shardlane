@@ -37,8 +37,7 @@ func (s *Shell) gitRepositorySidebar(c *ui.Context) {
 				s.showGitCommits()
 			}
 		}
-		filter := ui.TextInput(c, &s.gitRefsFilter).FillWidth().Height(28).
-			Placeholder("Filter references").Label("Filter Git references")
+		filter := ui.SearchField(c, &s.gitRefsFilter).FillWidth().Label("Filter Git references")
 		if filter.Changed() {
 			// A new search starts expanded, without carrying stale
 			// search-scoped folds into a different result set.

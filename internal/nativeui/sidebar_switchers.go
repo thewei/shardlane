@@ -98,7 +98,7 @@ func (s *Shell) sidebarProjectHeader(c *ui.Context, root, refreshLabel string, r
 // switcherSearch is the search field every switcher panel opens with. It
 // reports Enter, which picks the first match.
 func switcherSearch(c *ui.Context, text *string, label string) (submitted bool) {
-	field := ui.TextInput(c, text).FillWidth().Height(28).AutoFocus().Placeholder(label).Label(label)
+	field := ui.SearchField(c, text).FillWidth().AutoFocus().Label(label)
 	return field.Submitted()
 }
 
