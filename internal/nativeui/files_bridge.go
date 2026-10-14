@@ -1,7 +1,7 @@
 package nativeui
 
 /**
- * [INPUT]: rightPanel.selectedFilePath/currentRoot、filesview.ReadPreview/ReadImageDataURL（flavor 上限 + symlink 守卫）、platform.OpenURL、mygo Bind 事件
+ * [INPUT]: rightPanel.selectedFilePath/currentRoot、filesview.ReadPreview/ReadImageDataURL（flavor 上限 + symlink 守卫）、mygo.Shell.OpenExternal、mygo Bind 事件
  * [OUTPUT]: FilesPreviewBridge 绑定服务（Current/Open/OpenExternal）与 files:preview 事件、Shell.publishFilesPreview（有序发布）
  * [POS]: Files 预览 WebView（产品决策 2026-10-13，2026-10-14 收窄为 Markdown 渲染与网页图片）唯一表现层桥：只读——页面没有任何写通道（OpenExternal 仅放行 http/https 出站），文件操作仍走原生对话框 + filesview 域服务；文本/代码由原生 editor 显示、WebView 兜不住的文件由 Native 兜底层接管，均不经此桥；不新增 Herdr 方法，无 localhost HTTP
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
@@ -17,7 +17,6 @@ import (
 
 	"github.com/egoist/mygo"
 	"github.com/wh-studio/herdr-client/internal/filesview"
-	"github.com/wh-studio/herdr-client/internal/platform"
 )
 
 // FilesPreviewTarget is the selection metadata the page hears through the
@@ -133,7 +132,7 @@ func (b *FilesPreviewBridge) OpenExternal(ctx context.Context, rawURL string) er
 	target := parsed.String()
 	var openErr error
 	b.shell.callOnWindow(func() {
-		openErr = platform.OpenURL(target)
+		openErr = mygo.Shell.OpenExternal(target)
 	})
 	return openErr
 }

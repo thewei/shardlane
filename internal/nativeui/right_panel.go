@@ -8,10 +8,10 @@ package nativeui
  */
 
 import (
+	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/editor"
 	"github.com/wh-studio/herdr-client/internal/filesview"
-	"github.com/wh-studio/herdr-client/internal/platform"
 	"github.com/wh-studio/herdr-client/internal/preview"
 	"sync"
 	"sync/atomic"
@@ -140,7 +140,7 @@ func (m *previewManager) controllerFor(targetURL string) *preview.WindowControll
 		return c
 	}
 	c := preview.NewWindowController(preview.WithOpenExternal(func(url string) error {
-		if err := platform.OpenURL(url); err != nil {
+		if err := mygo.Shell.OpenExternal(url); err != nil {
 			// The toast reaches the main window on its next frame; the
 			// operation log line (preview package) carries the shape.
 			if m.report != nil {

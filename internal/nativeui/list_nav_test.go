@@ -305,22 +305,12 @@ func TestFilesTreeNewKeyTargetsTheRowsFolder(t *testing.T) {
 }
 
 func TestFilesTreeYCopiesThePath(t *testing.T) {
-	out := filepath.Join(t.TempDir(), "clip")
-	bin := t.TempDir()
-	if err := os.WriteFile(filepath.Join(bin, "pbcopy"), []byte("#!/bin/sh\ncat > \"$CLIP_OUT\"\n"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
-	t.Setenv("CLIP_OUT", out)
+	got := captureClipboard(t)
 	_, tester, root := navFilesShell(t)
 	pressText(tester, "jj")
 	pressText(tester, "y")
-	got, err := os.ReadFile(out)
-	if err != nil {
-		t.Fatalf("y must copy through the clipboard tool: %v", err)
-	}
-	if want := filepath.Join(root, "gamma.txt"); string(got) != want {
-		t.Fatalf("clipboard %q, want %q", got, want)
+	if want := filepath.Join(root, "gamma.txt"); len(*got) != 1 || (*got)[0] != want {
+		t.Fatalf("clipboard writes %q, want exactly %q", *got, want)
 	}
 }
 

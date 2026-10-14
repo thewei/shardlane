@@ -14,7 +14,6 @@ import (
 	"sync"
 
 	"github.com/egoist/mygo"
-	"github.com/wh-studio/herdr-client/internal/platform"
 )
 
 // ErrNotLoopback indicates an attempt to preview a non-loopback address.
@@ -140,7 +139,7 @@ func (c *WindowController) OpenPreviewWindow(targetURL string) (*mygo.Window, er
 }
 
 func openExternalBrowser(rawURL string) error {
-	return platform.OpenURL(rawURL)
+	return mygo.Shell.OpenExternal(rawURL)
 }
 
 // externalDestination reduces a URL to scheme://host for bounded logging.

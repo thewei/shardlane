@@ -4,10 +4,12 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
 	"strings"
 	"time"
 
-	"github.com/wh-studio/herdr-client/internal/platform"
+	"github.com/egoist/mygo"
+	"github.com/egoist/mygo/transfer"
 	"github.com/wh-studio/herdr-client/internal/scripts"
 )
 
@@ -134,18 +136,29 @@ func dedupePorts(ports []uint16) []uint16 {
 	return out
 }
 
-// copyTextToClipboard writes text through platform tools.
+// The desktop calls below are MyGo's own (Clipboard and Shell), vars so that
+// tests, which run no application loop for them to wait on, never reach them.
+var (
+	writeClipboard = func(text string) error { return mygo.Clipboard.Write(transfer.TextData(text)) }
+	revealInFinder = mygo.Shell.ShowItemInFolder
+)
+
+// copyTextToClipboard puts text on the system clipboard. MyGo writes the
+// pasteboard itself: a pbcopy child of a Finder-launched app has no UTF-8
+// locale and turns CJK text into mojibake.
 func (s *Shell) copyTextToClipboard(text string) {
-	if err := platform.WriteClipboard(text); err != nil {
+	if err := writeClipboard(text); err != nil {
 		s.status = "Clipboard unavailable"
 	}
 }
 
-// openExternalPathParent reveals a path in the platform file manager,
-// reporting failure through the same status channel as its clipboard
-// sibling instead of silently doing nothing (F175).
+// openExternalPathParent reveals a path in Finder, reporting one that is gone
+// through the same status channel as its clipboard sibling instead of
+// silently doing nothing (F175).
 func (s *Shell) openExternalPathParent(path string) {
-	if err := platform.RevealFile(path); err != nil {
+	if _, err := os.Lstat(path); err != nil {
 		s.status = "Could not reveal the file in Finder"
+		return
 	}
+	revealInFinder(path)
 }
