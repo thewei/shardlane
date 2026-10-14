@@ -48,7 +48,7 @@ func (s *Shell) gitSplitReviewSurface(c *ui.Context) {
 			})
 			handle := ui.Row(c).Height(8).FillWidth().Shrink(0).Cursor(ui.CursorResizeNS).
 				Label("Resize Git history and diff panes").Center().Children(func() {
-				ui.Box(c).FillWidth().Height(1).Background(t.Border)
+				ui.Box(c).FillWidth().Height(1).Background(s.tokens(t.Dark).BorderSubtle)
 			})
 			if _, dy, held := handle.Dragged(); held {
 				s.gitUpperHeight = clampF(upper+dy, gitSplitMinTop, maxTop)
@@ -141,7 +141,7 @@ func (s *Shell) gitFileNavigationColumn(c *ui.Context, body func()) {
 	ui.Column(c).Width(width).FillHeight().Shrink(0).MinHeight(0).Children(body)
 	handle := ui.Box(c).Width(gitFileSplitterWidth).Shrink(0).Cursor(ui.CursorResizeEW).
 		Label("Resize Git file navigator").Children(func() {
-		ui.Box(c).Width(1).FillHeight().Background(t.Border)
+		ui.Box(c).Width(1).FillHeight().Background(s.tokens(t.Dark).BorderSubtle)
 	})
 	if dx, _, held := handle.Dragged(); held {
 		s.gitFilePaneWidth = clampF(width+dx, gitFilePaneMinWidth, maxWidth)
@@ -157,7 +157,7 @@ func (s *Shell) gitQuickCommitComposer(c *ui.Context) {
 		return
 	}
 	ui.Column(c).FillWidth().Shrink(0).Padding(8, 12).
-		BorderWidth(1, 0, 0, 0).BorderColor(t.Border).Children(func() {
+		BorderWidth(1, 0, 0, 0).BorderColor(s.tokens(t.Dark).BorderSubtle).Children(func() {
 		contentColumn(c, formColumnWidth, func() {
 			s.gitQuickCommitForm(c, snap)
 		})
@@ -256,7 +256,7 @@ func (s *Shell) gitCommitReview(c *ui.Context) {
 		})
 		if cm := s.git.commitMeta; cm != nil {
 			ui.Row(c).FillWidth().Height(27).Padding(0, 12).Gap(10).AlignItems(ui.Center).
-				BorderWidth(0, 0, 1, 0).BorderColor(t.Border).Children(func() {
+				BorderWidth(0, 0, 1, 0).BorderColor(s.tokens(t.Dark).BorderSubtle).Children(func() {
 				ui.Text(c, cm.Author).FontSize(Typography().BodySmall).FontWeight(WeightSemibold)
 				ui.Text(c, cm.Short).Font(gdCodeFont()).FontSize(Typography().Micro).TextColor(t.TextMuted)
 				ui.Text(c, cm.Subject).FontSize(Typography().BodySmall).SingleLine().Grow(1).MinWidth(0)

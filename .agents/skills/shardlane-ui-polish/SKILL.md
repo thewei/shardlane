@@ -108,6 +108,7 @@ rg -n 'Padding\(14, 9, 9\)' --glob '!*_test.go' .                      # 侧栏�
 - Refresh 收口为每个上下文一个图标；Hosts 页内 Refresh 与侧栏重复的已删。
 - 并排的同类图标按钮要同一种语法（第二轮审计）：Files 树工具条曾是裸 `+`（新建文件）配文件夹轮廓（新建文件夹）——动作符号配对象符号；改成成对的 `iconFilePlus`/`iconFolderPlus`（在 `iconFile`/`iconFolder` 路径上加 +，`icons.go`）。新增图标沿用 24 栅格 + `iconStroke` 一个描边，不另起一套。
 - 一个角色一个控件（第二轮审计）：搜索/筛选列表的输入框只用官方 `ui.SearchField`（放大镜 + 边框 + 清除钮 + Esc 清空）。曾同时存在三种脸——官方的、Git 面手搓的无边框灰底版（连清除钮都自绘）、无放大镜的裸 `TextInput`——改后一律官方；`search_field_test.go` 用 AST 扫描拦下「`TextInput` 链上带 Search/Filter 提示」与「手绘 Clear 钮」。注意官方控件的占位字固定为 `Search`（`.Placeholder()` 对它无效），具体名字放 `.Label(…)`；先扫「同一角色有几种实现」再动手，别只看当前文件。
+- 分隔线只用发丝线 token（第二轮审计）：`theme.Border` 是控件描边（输入框、Segmented 轨道），不透明、比 `BorderSubtle` 重数倍，不能拿来画分隔线或面板边缘——Git 工作台四处曾这样做，与侧栏边线并排一粗一细。`hairline_test.go` 拦下 `.Background(t.Border)` / `.BorderColor(t.Border)`。
 - 窗格卡头：标签已写出目录或单卡时不再出 cwd（`paneCardCaption`/`titleSpellsOutDir`）。
 - 开关脸统一：Files 忽略开关与 Sessions 的 Select/Trash 从蓝/accent 改为 `gorexToggleFace` 的中性芯片。
 - 旧 `iconButton`（28/14，半径 6）并入 `gorexIconButton`：侧栏页脚设置齿轮走工具栏档，Workspace 区 "+" 走密集档。
