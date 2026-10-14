@@ -108,7 +108,7 @@ func init() {
 	light := map[codehl.Class]string{
 		codehl.Comment: "#919191", codehl.Preproc: "#adadad", codehl.Keyword: "#352de3",
 		codehl.Type: "#c56e0e", codehl.LangConst: "#626fc9", codehl.Function: "#284181",
-		codehl.ClassName: "#bb28c7", codehl.Exception: "#f93232", codehl.Number: "#dd3c2f",
+		codehl.Exception: "#f93232", codehl.Number: "#dd3c2f",
 		codehl.String: "#00a33f", codehl.Escape: "#00a33f", codehl.Regexp: "#699d36",
 		codehl.Tag: "#0072c8", codehl.Attribute: "#0072c8", codehl.Property: "#444444",
 		codehl.Heading: "#111111", codehl.Inserted: "#1a7f37", codehl.Deleted: "#c4232e",
@@ -116,7 +116,7 @@ func init() {
 	dark := map[codehl.Class]string{
 		codehl.Comment: "#919191", codehl.Preproc: "#adadad", codehl.Keyword: "#6a93cf",
 		codehl.Type: "#eb9a3d", codehl.LangConst: "#7b8cfd", codehl.Function: "#7b8cfd",
-		codehl.ClassName: "#f06efb", codehl.Exception: "#f93232", codehl.Number: "#db584d",
+		codehl.Exception: "#f93232", codehl.Number: "#db584d",
 		codehl.String: "#52ce81", codehl.Escape: "#52ce81", codehl.Regexp: "#699d36",
 		codehl.Tag: "#6a93cf", codehl.Attribute: "#6a93cf", codehl.Property: "#c8c8c8",
 		codehl.Heading: "#e8e8e8", codehl.Inserted: "#56d364", codehl.Deleted: "#ff7b72",

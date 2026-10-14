@@ -301,3 +301,58 @@ func TestCodeEditorThemeFollowsTheReviewPalette(t *testing.T) {
 		}
 	}
 }
+
+// TestReviewAndFilesPaintACharacterTheSameColor: the review's lines and the
+// Files code view run one tokenizer through one palette, so a character has
+// one color on both surfaces — the promise of codehl.KindClasses, checked
+// character by character instead of table against table.
+func TestReviewAndFilesPaintACharacterTheSameColor(t *testing.T) {
+	lines := []string{
+		"package main",
+		`import "fmt"`,
+		"/* a block",
+		"still comment */ var n int = 42",
+		`func main() { fmt.Println("x\n", n) } // done`,
+	}
+	for _, dark := range []bool{false, true} {
+		theme := ui.LightTheme()
+		if dark {
+			theme = ui.DarkTheme()
+		}
+		files, review := codeEditorTheme(theme), gdPaletteFor(theme)
+		segs := codehl.Lines("main.go", lines)
+		var (
+			state  uint64
+			tokens []editor.Token
+		)
+		for row, line := range lines {
+			tokens, state = editor.LanguageFor("main.go").Tokenizer.Tokenize(line, state, tokens[:0])
+			want := make([]ui.Color, len(line))
+			for i := range want {
+				want[i] = files.Text
+			}
+			start := 0
+			for _, tok := range tokens {
+				for i := start; i < min(tok.End, len(line)); i++ {
+					want[i] = files.Tokens[tok.Kind].Color
+				}
+				start = max(start, tok.End)
+			}
+			var got []ui.Color
+			for _, span := range gdCodeSpans(line, segs[row], nil, review) {
+				for range len(span.Text) {
+					got = append(got, span.Color)
+				}
+			}
+			if len(got) != len(want) {
+				t.Fatalf("dark=%v line %d: review painted %d characters, Files %d", dark, row, len(got), len(want))
+			}
+			for i := range want {
+				if got[i] != want[i] {
+					t.Errorf("dark=%v line %d col %d (%q of %q): review %v, Files %v", dark, row, i, line[i], line, got[i], want[i])
+					break
+				}
+			}
+		}
+	}
+}

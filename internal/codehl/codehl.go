@@ -1,17 +1,14 @@
 // Code tokenizing for the diff review, ported from egoist/godiff
 // internal/highlight (commit 88b89e0, 2026-10-05) under the product decision
-// to adopt Godiff's review presentation. Chroma is MIT licensed.
-// Package codehl colors source code by its tokens, with Chroma's lexers
-// and the palettes of codiff's Licht and Dunkel themes.
+// to adopt Godiff's review presentation; since 2026-10-14 the lexing is
+// MyGo's own (ui/editor tokenizers, the ones the Files code view paints
+// with) instead of Chroma's, so one engine colors code everywhere.
+// Package codehl colors source code by its tokens, in the palettes of
+// codiff's Licht and Dunkel themes.
 package codehl
 
 import (
-	"path/filepath"
-	"strings"
-	"sync"
-
-	"github.com/alecthomas/chroma/v2"
-	"github.com/alecthomas/chroma/v2/lexers"
+	"github.com/egoist/mygo/ui/editor"
 )
 
 // Class is the kind of a token, which picks its color.
@@ -25,7 +22,6 @@ const (
 	Type
 	LangConst
 	Function
-	ClassName
 	Exception
 	Number
 	String
@@ -49,93 +45,55 @@ type Seg struct {
 // MaxBytes bounds the files worth highlighting.
 const MaxBytes = 1 << 20
 
-var (
-	lexerMu    sync.Mutex
-	lexerCache = map[string]chroma.Lexer{}
-)
-
-// Lexer returns the lexer for a file name, nil for plain text. Lexers are
-// kept by the file's extension, or its name without one: finding one
-// tries the patterns of every lexer.
-func Lexer(name string) chroma.Lexer {
-	base := name
-	if i := strings.LastIndexByte(base, '/'); i >= 0 {
-		base = base[i+1:]
-	}
-	key := base
-	if i := strings.LastIndexByte(base, '.'); i > 0 && !specialName(base) {
-		key = "*" + strings.ToLower(base[i:])
-	}
-	lexerMu.Lock()
-	l, ok := lexerCache[key]
-	lexerMu.Unlock()
-	if ok {
-		return l
-	}
-	l = findLexer(name)
-	lexerMu.Lock()
-	lexerCache[key] = l
-	lexerMu.Unlock()
-	return l
+// KindClasses is the one table pairing the review's color classes with the
+// editor's token kinds. Lines colors a diff's lines through it and the Files
+// code view dresses the editor's theme with it, so the same code reads in
+// the same colors on both surfaces. Kinds the review has no class for
+// (emphasis, strong) read as plain code.
+var KindClasses = []struct {
+	Class Class
+	Kinds []editor.TokenKind
+}{
+	{Plain, []editor.TokenKind{editor.TokenText, editor.TokenVariable, editor.TokenOperator, editor.TokenPunctuation}},
+	{Comment, []editor.TokenKind{editor.TokenComment}},
+	{Preproc, []editor.TokenKind{editor.TokenMeta}},
+	{Keyword, []editor.TokenKind{editor.TokenKeyword}},
+	{Type, []editor.TokenKind{editor.TokenType}},
+	{LangConst, []editor.TokenKind{editor.TokenConstant}},
+	{Function, []editor.TokenKind{editor.TokenFunction}},
+	{Exception, []editor.TokenKind{editor.TokenInvalid}},
+	{Number, []editor.TokenKind{editor.TokenNumber}},
+	{String, []editor.TokenKind{editor.TokenString, editor.TokenCode}},
+	{Escape, []editor.TokenKind{editor.TokenEscape}},
+	{Regexp, []editor.TokenKind{editor.TokenRegexp}},
+	{Tag, []editor.TokenKind{editor.TokenTag, editor.TokenLink}},
+	{Attribute, []editor.TokenKind{editor.TokenAttribute}},
+	{Property, []editor.TokenKind{editor.TokenProperty}},
+	{Heading, []editor.TokenKind{editor.TokenHeading}},
+	{Inserted, []editor.TokenKind{editor.TokenInserted}},
+	{Deleted, []editor.TokenKind{editor.TokenDeleted}},
 }
 
-var (
-	specialOnce     sync.Once
-	specialPatterns []string
-)
+var classOfKind = func() map[editor.TokenKind]Class {
+	m := map[editor.TokenKind]Class{}
+	for _, group := range KindClasses {
+		for _, kind := range group.Kinds {
+			m[kind] = group.Class
+		}
+	}
+	return m
+}()
 
-// specialName reports whether a lexer matches a file name by more than
-// its extension, as CMakeLists.txt or *.d.ts, or the name ends as backups
-// do: its lexer is found by its whole name.
-func specialName(base string) bool {
-	specialOnce.Do(func() {
-		for _, l := range lexers.GlobalLexerRegistry.Lexers {
-			for _, glob := range l.Config().Filenames {
-				ext, ok := strings.CutPrefix(glob, "*.")
-				if !ok || strings.ContainsAny(ext, ".*?[") {
-					specialPatterns = append(specialPatterns, glob)
-				}
-			}
-		}
-	})
-	for _, suffix := range []string{"~", ".bak", ".old", ".orig", ".dpkg-dist", ".dpkg-old", ".ucf-dist", ".ucf-new", ".ucf-old", ".rpmnew", ".rpmorig", ".rpmsave"} {
-		if strings.HasSuffix(base, suffix) {
-			return true
-		}
-	}
-	for _, glob := range specialPatterns {
-		if ok, _ := filepath.Match(glob, base); ok {
-			return true
-		}
-	}
-	return false
-}
-
-func findLexer(name string) chroma.Lexer {
-	l := lexers.Match(name)
-	if l == nil {
-		base := name
-		if i := strings.LastIndexByte(base, '/'); i >= 0 {
-			base = base[i+1:]
-		}
-		switch base {
-		case "Makefile", "makefile", "GNUmakefile":
-			l = lexers.Get("make")
-		case "Dockerfile":
-			l = lexers.Get("docker")
-		}
-	}
-	if l == nil {
-		return nil
-	}
-	return chroma.Coalesce(l)
-}
+// ClassOf returns the class a token kind is colored as, Plain for the kinds
+// the review does not color.
+func ClassOf(kind editor.TokenKind) Class { return classOfKind[kind] }
 
 // Lines tokenizes lines of the file named name, and returns the segments of
-// each line, nil for plain text.
+// each line, nil for plain text: a file of a language MyGo has no tokenizer
+// for, or one past MaxBytes. It is safe to call from several goroutines.
 func Lines(name string, lines []string) [][]Seg {
-	lexer := Lexer(name)
-	if lexer == nil || len(lines) == 0 {
+	lang := editor.LanguageFor(name)
+	if lang == nil || lang.Tokenizer == nil || len(lines) == 0 {
 		return nil
 	}
 	size := 0
@@ -145,90 +103,27 @@ func Lines(name string, lines []string) [][]Seg {
 	if size > MaxBytes {
 		return nil
 	}
-	text := strings.Join(lines, "\n") + "\n"
-	it, err := lexer.Tokenise(nil, text)
-	if err != nil {
-		return nil
-	}
 	out := make([][]Seg, len(lines))
-	row, col := 0, 0
-	for tok := it(); tok != chroma.EOF; tok = it() {
-		class := classOf(tok.Type)
-		v := tok.Value
-		for v != "" && row < len(lines) {
-			nl := strings.IndexByte(v, '\n')
-			part := v
-			if nl >= 0 {
-				part = v[:nl]
-			}
-			if part != "" {
-				end := min(col+len(part), len(lines[row]))
-				if class != Plain && end > col {
-					segs := out[row]
-					if n := len(segs); n > 0 && segs[n-1].Class == class && int(segs[n-1].End) == col {
-						segs[n-1].End = int32(end)
-					} else {
-						segs = append(segs, Seg{Start: int32(col), End: int32(end), Class: class})
-					}
-					out[row] = segs
+	var (
+		tokens []editor.Token
+		state  uint64
+	)
+	for row, line := range lines {
+		tokens, state = lang.Tokenizer.Tokenize(line, state, tokens[:0])
+		start := 0
+		for _, tok := range tokens {
+			end := min(tok.End, len(line))
+			if class := ClassOf(tok.Kind); class != Plain && end > start {
+				segs := out[row]
+				if n := len(segs); n > 0 && segs[n-1].Class == class && int(segs[n-1].End) == start {
+					segs[n-1].End = int32(end)
+				} else {
+					segs = append(segs, Seg{Start: int32(start), End: int32(end), Class: class})
 				}
-				col = end
+				out[row] = segs
 			}
-			if nl < 0 {
-				break
-			}
-			v = v[nl+1:]
-			row++
-			col = 0
+			start = max(start, end)
 		}
 	}
 	return out
-}
-
-func classOf(t chroma.TokenType) Class {
-	switch t {
-	case chroma.KeywordType:
-		return Type
-	case chroma.KeywordConstant, chroma.NameBuiltinPseudo, chroma.NameVariableMagic:
-		return LangConst
-	case chroma.NameFunction, chroma.NameFunctionMagic, chroma.NameBuiltin, chroma.NameDecorator:
-		return Function
-	case chroma.NameClass:
-		return ClassName
-	case chroma.NameException:
-		return Exception
-	case chroma.NameConstant, chroma.LiteralStringSymbol:
-		return Number
-	case chroma.NameTag, chroma.NameEntity:
-		return Tag
-	case chroma.NameAttribute:
-		return Attribute
-	case chroma.NameProperty, chroma.NameLabel:
-		return Property
-	case chroma.LiteralStringEscape:
-		return Escape
-	case chroma.LiteralStringRegex:
-		return Regexp
-	case chroma.CommentPreproc, chroma.CommentPreprocFile:
-		return Preproc
-	case chroma.GenericHeading, chroma.GenericSubheading:
-		return Heading
-	case chroma.GenericInserted:
-		return Inserted
-	case chroma.GenericDeleted:
-		return Deleted
-	}
-	switch t.Category() {
-	case chroma.Keyword, chroma.Operator:
-		return Keyword
-	case chroma.Comment:
-		return Comment
-	}
-	switch t.SubCategory() {
-	case chroma.LiteralString:
-		return String
-	case chroma.LiteralNumber:
-		return Number
-	}
-	return Plain
 }

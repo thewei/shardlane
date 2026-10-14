@@ -14,7 +14,8 @@ import (
 )
 
 // codeEditorTheme dresses the framework's code editor in the review's
-// palette: its code color, line numbers and syntax classes. Kinds the
+// palette: its code color, line numbers and syntax classes, through the one
+// table (codehl.KindClasses) the review's own coloring reads too. Kinds the
 // review has no class for (variables, operators, punctuation) read as
 // plain code, as in the review; links and inline code borrow the tag and
 // string colors.
@@ -23,28 +24,10 @@ func codeEditorTheme(t *ui.Theme) *editor.Theme {
 	p := gdPaletteFor(t)
 	th.Text = p.code
 	th.LineNumber = p.lineNumber
-	set := func(class codehl.Class, kinds ...editor.TokenKind) {
-		for _, kind := range kinds {
-			th.Tokens[kind].Color = p.syntax[class]
+	for _, group := range codehl.KindClasses {
+		for _, kind := range group.Kinds {
+			th.Tokens[kind].Color = p.syntax[group.Class]
 		}
 	}
-	set(codehl.Plain, editor.TokenText, editor.TokenVariable, editor.TokenOperator, editor.TokenPunctuation)
-	set(codehl.Comment, editor.TokenComment)
-	set(codehl.Preproc, editor.TokenMeta)
-	set(codehl.Keyword, editor.TokenKeyword)
-	set(codehl.Type, editor.TokenType)
-	set(codehl.LangConst, editor.TokenConstant)
-	set(codehl.Function, editor.TokenFunction)
-	set(codehl.Exception, editor.TokenInvalid)
-	set(codehl.Number, editor.TokenNumber)
-	set(codehl.String, editor.TokenString, editor.TokenCode)
-	set(codehl.Escape, editor.TokenEscape)
-	set(codehl.Regexp, editor.TokenRegexp)
-	set(codehl.Tag, editor.TokenTag, editor.TokenLink)
-	set(codehl.Attribute, editor.TokenAttribute)
-	set(codehl.Property, editor.TokenProperty)
-	set(codehl.Heading, editor.TokenHeading)
-	set(codehl.Inserted, editor.TokenInserted)
-	set(codehl.Deleted, editor.TokenDeleted)
 	return th
 }

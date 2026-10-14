@@ -72,7 +72,7 @@ internal/
 ├─ services/         — resident service monitoring
 ├─ commandcenter/    — fast command entry point
 ├─ scripts/          — user-defined project scripts
-├─ codehl/           — syntax highlighting via Chroma lexers
+├─ codehl/           — syntax coloring for the diff review through MyGo editor tokenizers
 ├─ diagnostics/      — diagnostics & log export
 ├─ applog/           — bounded structured logging
 └─ platform/         — platform integration

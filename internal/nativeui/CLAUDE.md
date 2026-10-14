@@ -26,8 +26,8 @@ right_panel.go: 旧会话设置兼容字段及 Files 缓存、根目录 identity
 right_panel_files.go: /files 左侧目录缓存/树（共用侧栏网格行与项目/分支头部；工具条用共用 gorexIconButton，开关态与全 App 同一枚中性芯片，无私有 accent 底；整棵树是 listNav 焦点组，进页即聚焦打开的文件/首行，光标行上 Vim 键见 list_nav.go，a/A/r/d/y 经 files_ops.go 的 filesRowKeys 直通新建/重命名/删除/复制路径）及点击加载预览的适配器
 page_files.go: Header Files 独立页面：左树/中预览（查看条 + 分级预览体）、当前 Tab CWD 归属和空态；页面只画内容，标题/根路径/文件动作在标题栏（route_header.go）
 files_native_preview.go: Files 预览分级计划与原生层——选中后离 UI lane 探测 size×flavor×偏好：文本/代码/Markdown 源码进只读 editor.View（Buffer 离 UI lane 构建，8 MiB 上限、截断胶囊、散文自动换行），Markdown 渲染与网页图片交 WebView 页，解码得了的图片原生位图，其余给真实失败态；查看条（名称/大小/截断/Rendered⇄Source 分段）横跨所有层级；重命名、偏好切换、Source 切换都重新计划
-code_theme.go: codeEditorTheme——把 Git 评审的语法色/代码色/行号色（gd_palette 单一来源）穿到框架 editor 上，同一份代码在 Files 与 Git 评审里同色
-files_preview_test.go: 预览分级回归（文本/代码原生、Markdown 渲染⇄源码与超限、网页图片与「Rich file preview」关闭、截断/二进制/空文件/CJK、重命名重新计划、桥只放行页面拥有的文件、语法配色单一来源）
+code_theme.go: codeEditorTheme——把 Git 评审的语法色/代码色/行号色（gd_palette 调色板，经 codehl.KindClasses 这张 token→类表）穿到框架 editor 上，同一份代码在 Files 与 Git 评审里同色
+files_preview_test.go: 预览分级回归（文本/代码原生、Markdown 渲染⇄源码与超限、网页图片与「Rich file preview」关闭、截断/二进制/空文件/CJK、重命名重新计划、桥只放行页面拥有的文件、语法配色单一来源且 Files/评审逐字符同色）
 quick_panel.go: 托盘与顶栏 Agent 快捷浮层宿主：顶部 Agents/Services 分段（浮层无标题），Agents 列表按状态分组，一层到底——点击行直达面板并收起浮层；高度随内容增长（预算常数取自真实布局）
 quick_panel_services.go: Agent 浮层里的 Services 内容：当前 Tab Scripts 与观测端口（分区标题与 Agents 分组同一构件）
 quick_panel_test.go: QuickPanel 高度预算（纯函数 + 真实布局贴合含用量行）、状态分组、点击直达（Terminal/Chat/记忆面板/从 Diff 返回）、右键菜单与行尾标记已审阅回归
