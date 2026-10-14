@@ -112,11 +112,18 @@ func (s *Shell) buildCommandCenterActions() []commandcenter.Action {
 	// One Sessions entry: /history-projects serves the same page for
 	// decode compatibility, so a second palette command only duplicated it
 	// (F162, same shape as the F16 Settings pair).
+	//
+	// The destinations run in the Go menu's order (Workspace, then the
+	// sidebar's view tabs): TestLaunchersAgreeOnViewDestinations.
 	actions = append(actions,
+		commandcenter.Action{ID: "app.workspace", Title: "Workspace", Section: "App",
+			Keywords: []string{"terminal"}, Kind: commandcenter.TargetRoute, TargetID: "action:open-workspace", Available: true},
 		commandcenter.Action{ID: "app.changes", Title: "Changes", Section: "App",
 			Keywords: []string{"git", "diff", "review", "commit", "staged"}, Kind: commandcenter.TargetRoute, TargetID: "action:open-changes", Available: true},
 		commandcenter.Action{ID: "app.history", Title: "Sessions", Section: "App",
 			Keywords: []string{"history", "conversations"}, Kind: commandcenter.TargetRoute, TargetID: "/history", Available: true},
+		commandcenter.Action{ID: "app.open-files", Title: "Files", Section: "App",
+			Keywords: []string{"browse files", "directory", "tree", "file preview"}, Kind: commandcenter.TargetRoute, TargetID: "action:open-files", Available: true},
 		commandcenter.Action{ID: "app.hosts", Title: "Hosts", Section: "App",
 			Keywords: []string{"ssh", "machines", "servers"}, Kind: commandcenter.TargetRoute, TargetID: "/hosts", Available: true},
 		// One Settings entry: the old Appearance/General pair both pushed
@@ -125,8 +132,6 @@ func (s *Shell) buildCommandCenterActions() []commandcenter.Action {
 			Keywords: []string{"preferences", "appearance", "theme", "density", "language"}, Kind: commandcenter.TargetSetting, TargetID: "/settings/general", Available: true},
 		commandcenter.Action{ID: "app.hook-doctor", Title: "Set Up Agents", Section: "App",
 			Keywords: []string{"agents", "hooks", "integration", "install", "update", "claude", "antigravity"}, Kind: commandcenter.TargetRoute, TargetID: "/settings/providers", Available: true},
-		commandcenter.Action{ID: "app.open-files", Title: "Files", Section: "App",
-			Keywords: []string{"browse files", "directory", "tree", "file preview"}, Kind: commandcenter.TargetRoute, TargetID: "action:open-files", Available: true},
 	)
 	return actions
 }
@@ -349,6 +354,8 @@ func (s *Shell) executeCommandCenterResult(result commandcenter.Result) {
 		// size supplies the same geometry that View gets from c.Size(); in
 		// headless mode a zero width means geometry is not yet established.
 		switch action.TargetID {
+		case "action:open-workspace":
+			s.showViewTerminal()
 		case "action:open-changes":
 			s.goChanges()
 		case "action:open-files":

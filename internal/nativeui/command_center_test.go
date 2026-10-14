@@ -154,10 +154,14 @@ func TestCommandCenterKeys(t *testing.T) {
 	if shell.commandCenterSelected != 1 {
 		t.Fatalf("selection = %d after arrow down", shell.commandCenterSelected)
 	}
-	tester.Key(0, ui.KeyPageDown)
-	tester.Frame()
-	if shell.commandCenterSelected != len(results)-1 {
-		t.Fatalf("selection = %d after PgDn, want %d", shell.commandCenterSelected, len(results)-1)
+	for shell.commandCenterSelected != len(results)-1 {
+		before := shell.commandCenterSelected
+		tester.Key(0, ui.KeyPageDown)
+		tester.Frame()
+		want := min(before+commandCenterPageSize, len(results)-1)
+		if shell.commandCenterSelected != want {
+			t.Fatalf("selection = %d after PgDn from %d, want %d", shell.commandCenterSelected, before, want)
+		}
 	}
 	tester.Key(0, ui.KeyDown)
 	tester.Frame()

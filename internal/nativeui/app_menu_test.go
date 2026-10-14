@@ -82,6 +82,17 @@ func TestMenuBarFollowsTheMacConventions(t *testing.T) {
 		t.Fatalf("%q accelerator = %q — ⌘H must hide the app", hide.Label, hide.Accelerator)
 	}
 
+	// The Go menu's accelerators are muscle memory: ⌘1 Workspace, ⌘W Close
+	// Tab (tab-scoped, never the window — F103), ⇧⌘P Command Center.
+	goMenu := menuNamed(t, menu, "Go").Submenu
+	for label, want := range map[string]string{
+		"Workspace": "CmdOrCtrl+1", "Close Tab": "CmdOrCtrl+W", "Command Center": "CmdOrCtrl+Shift+P",
+	} {
+		if item := menuItemNamed(goMenu, label); item == nil || item.Accelerator != want {
+			t.Errorf("Go ▸ %s accelerator = %+v, want %s", label, item, want)
+		}
+	}
+
 	seen := map[string]string{}
 	for _, name := range []string{"Shardlane", "Go"} {
 		for _, it := range menuNamed(t, menu, name).Submenu {
@@ -108,7 +119,8 @@ var viewDestinations = []struct{ tab, name string }{
 
 // TestLaunchersAgreeOnViewDestinations pins the rule that a page reachable
 // from the sidebar is reachable from the palette and the menu bar, under one
-// name and in the tabs' order: the Changes view was once a sidebar-only page.
+// name and in the tabs' order after Workspace: the Changes view was once a
+// sidebar-only page, and the palette once had no way back to the Terminal.
 func TestLaunchersAgreeOnViewDestinations(t *testing.T) {
 	var tabs []string
 	for _, d := range viewDestinations {
@@ -117,33 +129,29 @@ func TestLaunchersAgreeOnViewDestinations(t *testing.T) {
 	if !slices.Equal(tabs, sidebarViewTabLabels) {
 		t.Fatalf("destinations %q must cover the sidebar tabs %q, in order", tabs, sidebarViewTabLabels)
 	}
+	want := []string{"Workspace"}
+	for _, d := range viewDestinations {
+		want = append(want, d.name)
+	}
 
 	s := NewShell()
-	palette := map[string]bool{}
+	var palette []string
 	for _, a := range s.buildCommandCenterActions() {
-		if a.Section == "App" && a.Available {
-			palette[a.Title] = true
+		if a.Section == "App" && a.Available && slices.Contains(want, a.Title) {
+			palette = append(palette, a.Title)
 		}
 	}
-	goMenu := menuLabels(menuNamed(t, s.MenuBar(nil), "Go").Submenu)
-	var inMenu []string
-	for _, d := range viewDestinations {
-		if !palette[d.name] {
-			t.Errorf("%s has no %q action in the Command Center", d.tab, d.name)
-		}
-		if !slices.Contains(goMenu, d.name) {
-			t.Errorf("%s has no %q item in the Go menu %q", d.tab, d.name, goMenu)
-		}
-		if i := slices.Index(goMenu, d.name); i >= 0 {
-			inMenu = append(inMenu, goMenu[i])
+	if !slices.Equal(palette, want) {
+		t.Errorf("Command Center lists the destinations as %q, want %q (Go menu order)", palette, want)
+	}
+	var goMenu []string
+	for _, label := range menuLabels(menuNamed(t, s.MenuBar(nil), "Go").Submenu) {
+		if slices.Contains(want, label) {
+			goMenu = append(goMenu, label)
 		}
 	}
-	var order []string
-	for _, d := range viewDestinations {
-		order = append(order, d.name)
-	}
-	if !slices.IsSorted(indexesIn(goMenu, order)) {
-		t.Errorf("Go menu lists the views as %q, the tabs run %q", inMenu, order)
+	if !slices.Equal(goMenu, want) {
+		t.Errorf("Go menu lists the destinations as %q, want %q", goMenu, want)
 	}
 }
 
@@ -153,6 +161,27 @@ func indexesIn(list, names []string) []int {
 		out = append(out, slices.Index(list, n))
 	}
 	return out
+}
+
+// launch runs a destination through one launcher: the Go menu item or the
+// Command Center App action of the same name.
+func launch(t *testing.T, s *Shell, via, name string) {
+	t.Helper()
+	if via == "menu" {
+		item := menuItemNamed(menuNamed(t, s.MenuBar(nil), "Go").Submenu, name)
+		if item == nil {
+			t.Fatalf("no %q in the Go menu", name)
+		}
+		item.Click(item, nil)
+		return
+	}
+	for _, a := range s.buildCommandCenterActions() {
+		if a.Title == name && a.Section == "App" {
+			s.executeCommandCenterResult(commandcenter.Result{Action: a})
+			return
+		}
+	}
+	t.Fatalf("no %q in the Command Center", name)
 }
 
 // TestNamingTheCurrentViewKeepsIt pins the destination form of the view
@@ -179,23 +208,7 @@ func TestNamingTheCurrentViewKeepsIt(t *testing.T) {
 		for _, d := range viewDestinations {
 			s := gitSurfaceTestShell(t, t.TempDir())
 			s.hosts.loaded = true // never read the developer's real ~/.ssh/config
-			choose := func() {
-				if via == "menu" {
-					item := menuItemNamed(menuNamed(t, s.MenuBar(nil), "Go").Submenu, d.name)
-					if item == nil {
-						t.Fatalf("no %q in the Go menu", d.name)
-					}
-					item.Click(item, nil)
-					return
-				}
-				for _, a := range s.buildCommandCenterActions() {
-					if a.Title == d.name && a.Section == "App" {
-						s.executeCommandCenterResult(commandcenter.Result{Action: a})
-						return
-					}
-				}
-				t.Fatalf("no %q in the Command Center", d.name)
-			}
+			choose := func() { launch(t, s, via, d.name) }
 			expected := want(s, d.name)
 			choose()
 			first := landing(s)
@@ -210,18 +223,11 @@ func TestNamingTheCurrentViewKeepsIt(t *testing.T) {
 	}
 }
 
-// TestWorkspaceMenuLandsTheTerminalFromAnySurface pins Go ▸ Workspace (⌘1):
-// from the Workspace's own Changes or Chat surface a bare route push was a
-// no-op (same route), so the item looked dead; it lands the Terminal like
-// Back does, and choosing it again keeps the Terminal.
-func TestWorkspaceMenuLandsTheTerminalFromAnySurface(t *testing.T) {
-	goTo := func(s *Shell) {
-		item := menuItemNamed(menuNamed(t, s.MenuBar(nil), "Go").Submenu, "Workspace")
-		if item == nil {
-			t.Fatal("no Workspace in the Go menu")
-		}
-		item.Click(item, nil)
-	}
+// TestWorkspaceLandsTheTerminalFromAnySurface pins Go ▸ Workspace (⌘1) and
+// the palette's Workspace: from the Workspace's own Changes or Chat surface a
+// bare route push was a no-op (same route), so the item looked dead. Both
+// land the Terminal like Back does, and choosing again keeps the Terminal.
+func TestWorkspaceLandsTheTerminalFromAnySurface(t *testing.T) {
 	starts := map[string]func(s *Shell){
 		"Changes": func(s *Shell) { s.showViewChanges() },
 		"Chat":    func(s *Shell) { s.surface.openChat(s.workspaceContext()) },
@@ -231,16 +237,18 @@ func TestWorkspaceMenuLandsTheTerminalFromAnySurface(t *testing.T) {
 		},
 		"Files": func(s *Shell) { s.router.Push(routeFiles) },
 	}
-	for name, start := range starts {
-		s := gitSurfaceTestShell(t, t.TempDir())
-		start(s)
-		goTo(s)
-		if got := s.router.Path(); got != routeWorkspace || s.surface.current() != WorkspaceSurfaceTerminal {
-			t.Errorf("Workspace from %s landed on %s showing %q, want the Terminal at %s", name, got, s.surface.current(), routeWorkspace)
-		}
-		goTo(s)
-		if got := s.router.Path(); got != routeWorkspace || s.surface.current() != WorkspaceSurfaceTerminal {
-			t.Errorf("Workspace a second time (from %s) left the Terminal: %s showing %q", name, got, s.surface.current())
+	for _, via := range []string{"palette", "menu"} {
+		for name, start := range starts {
+			s := gitSurfaceTestShell(t, t.TempDir())
+			start(s)
+			launch(t, s, via, "Workspace")
+			if got := s.router.Path(); got != routeWorkspace || s.surface.current() != WorkspaceSurfaceTerminal {
+				t.Errorf("%s Workspace from %s landed on %s showing %q, want the Terminal at %s", via, name, got, s.surface.current(), routeWorkspace)
+			}
+			launch(t, s, via, "Workspace")
+			if got := s.router.Path(); got != routeWorkspace || s.surface.current() != WorkspaceSurfaceTerminal {
+				t.Errorf("%s Workspace a second time (from %s) left the Terminal: %s showing %q", via, name, got, s.surface.current())
+			}
 		}
 	}
 }
