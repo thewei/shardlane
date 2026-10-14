@@ -37,7 +37,7 @@ func pressText(tester *ui.Tester, keys string) {
 func letterKey(r rune) ui.Key {
 	return map[rune]ui.Key{
 		'a': ui.KeyA, 'd': ui.KeyD, 'g': ui.KeyG, 'h': ui.KeyH, 'j': ui.KeyJ, 'k': ui.KeyK,
-		'l': ui.KeyL, 'o': ui.KeyO, 'r': ui.KeyR, 'y': ui.KeyY,
+		'l': ui.KeyL, 'o': ui.KeyO, 'r': ui.KeyR, 'u': ui.KeyU, 'y': ui.KeyY,
 	}[r]
 }
 

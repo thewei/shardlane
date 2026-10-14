@@ -2,7 +2,7 @@ package nativeui
 
 /**
  * [INPUT]: 依赖只读 HistoryService 的列表状态、多选/行内预览状态和共享 MyGo Design Tokens
- * [OUTPUT]: 提供 Sessions 列表（Agent 标签/搜索/Select/Hidden 工具条、项目分组卡片与行、行菜单）、Provider 过滤、扫描中的 Updating 提示、Markdown 导出与本地隐藏
+ * [OUTPUT]: 提供 Sessions 列表（Agent 标签/搜索/Select/Trash 工具条、项目分组卡片与行、行菜单）、Provider 过滤、扫描中的 Updating 提示、Markdown 导出与删除入口（回收站见 history_trash.go）
  * [POS]: History 的列表页；会话详情是 history_detail.go（共享 Chat 视图），本页不再渲染转录
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -38,7 +38,7 @@ func distinctAgents(summaries []history.SessionSummary) []history.AgentID {
 }
 
 // historyNav is the Sessions sidebar body (N19 #9: History is now the
-// Sessions view): the index entry — search, provider filters, the recycle
+// Sessions view): the index entry — search, provider filters, the Trash
 // toggle, refresh and the count live in the page toolbar, so the sidebar
 // foot holds only Back, as on every inner page. The title bar names the
 // page, so the list starts at its entry.
@@ -52,6 +52,9 @@ func (s *Shell) historyNav(c *ui.Context) {
 func (s *Shell) historyPage(c *ui.Context) {
 	if !s.hist.loaded && !s.hist.loading && s.hist.errText == "" {
 		s.requestHistoryList()
+	}
+	if s.hist.trash != nil && !s.hist.trashRequested {
+		s.requestTrashList()
 	}
 	ui.Column(c).Grow(1).MinWidth(0).Children(func() {
 		contentColumn(c, listColumnWidth, func() {
@@ -69,11 +72,12 @@ func (s *Shell) historyPage(c *ui.Context) {
 }
 
 // historyToolbar is the Sessions control strip, laid out after magpie's:
-// the Agent tabs lead, the search field, Select, the Hidden toggle and
-// Refresh trail as one cluster. A control with nothing to act on stays out
-// (one Agent needs no tabs, no hidden session needs no Hidden, an empty
-// list needs no Select). A narrow window wraps the cluster onto a second
-// line as a whole instead of squeezing the field to nothing.
+// the Agent tabs lead, the search field, Select, the Trash toggle (with
+// Empty Trash inside the Trash) and Refresh trail as one cluster. A control
+// with nothing to act on stays out (one Agent needs no tabs, an empty Trash
+// needs no toggle, an empty list needs no Select). A narrow window wraps the
+// cluster onto a second line as a whole instead of squeezing the field to
+// nothing.
 func (s *Shell) historyToolbar(c *ui.Context) {
 	sp := Spacing()
 	k := gorexColorsOf(c.Theme().Dark)
@@ -85,11 +89,16 @@ func (s *Shell) historyToolbar(c *ui.Context) {
 			if field.Changed() || field.Submitted() {
 				s.applyHistoryFilters()
 			}
-			if len(s.hist.sessions) > 0 || s.hist.selecting {
+			if s.hist.trash != nil && !s.hist.showTrash && (len(s.hist.sessions) > 0 || s.hist.selecting) {
 				s.historySelectToggle(c)
 			}
-			if len(s.settings.Session.HiddenSessions) > 0 || s.hist.showHidden {
-				s.historyHiddenToggle(c)
+			if s.trashAvailable() {
+				s.historyTrashToggle(c)
+			}
+			if s.hist.showTrash && len(s.hist.trashItems) > 0 {
+				if ui.Button(c, "Empty Trash").Clicked() {
+					s.confirmEmptyTrash()
+				}
 			}
 			if gorexIconButton(c, k, iconRefresh, "Refresh", "Refresh", false, gorexIconBtn, gorexIconGlyph).Clicked() {
 				s.refreshHistoryScan()
@@ -102,29 +111,30 @@ func (s *Shell) historyToolbar(c *ui.Context) {
 // the catalog, each carrying its session total. A catalog with a single
 // Provider needs no switch — every row already names its Agent.
 func (s *Shell) historyAgentTabs(c *ui.Context) {
-	if len(s.hist.providers) < 2 {
+	providers := s.historyProviders()
+	if len(providers) < 2 {
 		return
 	}
 	t := c.Theme()
 	chosen := 0
-	for i, id := range s.hist.providers {
+	for i, id := range providers {
 		if string(id) == s.hist.provider {
 			chosen = i + 1
 		}
 	}
-	tabs := ui.SegmentedBase(c, &chosen, len(s.hist.providers)+1)
+	tabs := ui.SegmentedBase(c, &chosen, len(providers)+1)
 	tabs.Track.Label("Agent").AlignItems(ui.Center).Shrink(0).Padding(t.Space(0.5)).Gap(t.Space(0.5)).
 		Radius(t.Radius).Background(t.Surface).Border(1, t.Border)
 	tabs.Track.Children(func() {
-		for i := 0; i <= len(s.hist.providers); i++ {
+		for i := 0; i <= len(providers); i++ {
 			name, count := "All", 0
 			var provider history.AgentID
 			if i == 0 {
-				for _, id := range s.hist.providers {
+				for _, id := range providers {
 					count += s.historyTabCount(id)
 				}
 			} else {
-				provider = s.hist.providers[i-1]
+				provider = providers[i-1]
 				name, count = provider.DisplayName(), s.historyTabCount(provider)
 			}
 			// Segment metrics follow ui.Segmented's own, so every segmented
@@ -151,28 +161,26 @@ func (s *Shell) historyAgentTabs(c *ui.Context) {
 	})
 	if tabs.Track.Changed() {
 		s.hist.provider = ""
-		if chosen > 0 && chosen <= len(s.hist.providers) {
-			s.hist.provider = string(s.hist.providers[chosen-1])
+		if chosen > 0 && chosen <= len(providers) {
+			s.hist.provider = string(providers[chosen-1])
 		}
 		s.applyHistoryFilters()
 	}
 }
 
 // historyTabCount is a Provider's tab total, matching what the list below
-// shows: the catalog total less the sessions the user hid, or — in the
-// Hidden view — the hidden ones. Hidden keys carry their Provider as prefix.
+// shows: the catalog total, or — in the Trash — what the Trash holds of it.
 func (s *Shell) historyTabCount(provider history.AgentID) int {
-	hidden := 0
-	prefix := string(provider) + ":"
-	for _, key := range s.settings.Session.HiddenSessions {
-		if strings.HasPrefix(key, prefix) {
-			hidden++
+	if !s.hist.showTrash {
+		return s.hist.counts[provider]
+	}
+	count := 0
+	for _, item := range s.hist.trashItems {
+		if item.Agent == provider {
+			count++
 		}
 	}
-	if s.hist.showHidden {
-		return hidden
-	}
-	return max(s.hist.counts[provider]-hidden, 0)
+	return count
 }
 
 // historySelectToggle enters or leaves the multi-select mode.
@@ -190,83 +198,93 @@ func (s *Shell) historySelectToggle(c *ui.Context) {
 	}
 }
 
-// historyHiddenToggle switches the list between the sessions and the ones
-// the user hid, with the hidden total beside its label.
-func (s *Shell) historyHiddenToggle(c *ui.Context) {
-	t := c.Theme()
-	toggle := ui.ButtonBase(c).Height(Controls().RegularHeight).Padding(0, Spacing().L).Gap(Spacing().S).
-		Radius(Radius().Control).AlignItems(ui.Center).Label("Hidden sessions").Tooltip("Hidden sessions")
-	gorexToggleFace(toggle, gorexColorsOf(t.Dark), s.hist.showHidden)
-	toggle.Children(func() {
-		ui.Icon(c, iconEyeOff).Size(13, 13).TextColor(t.TextMuted).PassThrough()
-		ui.Text(c, "Hidden").FontSize(Typography().Body).PassThrough()
-		if hidden := len(s.settings.Session.HiddenSessions); hidden > 0 {
-			ui.Text(c, itoa(hidden)).FontSize(Typography().Caption).TextColor(t.TextMuted).PassThrough()
-		}
-	})
-	if toggle.Clicked() {
-		s.hist.showHidden = !s.hist.showHidden
-		s.closeHistoryPreview()
-		s.clearHistorySelection()
-	}
-}
-
 func (s *Shell) historyListBody(c *ui.Context) {
-	t := c.Theme()
 	switch {
 	case s.hist.service == nil:
 		emptyState(c, "Sessions unavailable", "")
+	case s.hist.showTrash:
+		s.trashListBody(c)
 	case (s.hist.loading || s.hist.scanning) && len(s.hist.sessions) == 0:
 		loadingState(c, "Loading sessions…")
 	case s.hist.errText != "" && len(s.hist.sessions) == 0:
 		emptyState(c, "Couldn't load sessions", "Try Refresh.")
 	case s.hist.loaded && len(s.hist.sessions) == 0 && historyFiltersActive(s.hist.query, s.hist.provider):
-		ui.Column(c).Grow(1).Center().Gap(Spacing().M).Children(func() {
-			ui.Text(c, "No matching sessions").FontWeight(WeightSemibold)
-			ui.Text(c, "Try another search or agent.").FontSize(Typography().BodySmall).TextColor(t.TextMuted)
-			if ui.Button(c, "Clear filters").Clicked() {
-				s.clearHistoryFilters()
-			}
-		})
+		s.noMatchingSessions(c)
 	case s.hist.loaded && len(s.hist.sessions) == 0:
 		emptyState(c, "No sessions yet", "")
 	default:
-		sp := Spacing()
-		groups := s.groupedSessionView()
-		shown := 0
-		for _, group := range groups {
-			shown += len(group.sessions)
+		s.historyGroupsBody(c)
+	}
+}
+
+// trashListBody is the Trash view's body: loading, empty, filtered to
+// nothing, or the same project-grouped list the sessions use.
+func (s *Shell) trashListBody(c *ui.Context) {
+	switch rows := s.trashRows(); {
+	case !s.hist.trashLoaded:
+		loadingState(c, "Loading Trash…")
+	case len(rows) == 0 && historyFiltersActive(s.hist.query, s.hist.provider):
+		s.noMatchingSessions(c)
+	case len(rows) == 0:
+		emptyState(c, "Trash is empty", "Deleted sessions wait here until you delete them for good.")
+	default:
+		s.historyGroupsBody(c)
+	}
+}
+
+// noMatchingSessions is the empty state of a search or Agent tab that matches
+// nothing, with the way out.
+func (s *Shell) noMatchingSessions(c *ui.Context) {
+	t := c.Theme()
+	ui.Column(c).Grow(1).Center().Gap(Spacing().M).Children(func() {
+		ui.Text(c, "No matching sessions").FontWeight(WeightSemibold)
+		ui.Text(c, "Try another search or agent.").FontSize(Typography().BodySmall).TextColor(t.TextMuted)
+		if ui.Button(c, "Clear filters").Clicked() {
+			s.clearHistoryFilters()
 		}
-		count := fmt.Sprintf("%d session%s", shown, pluralS(shown))
-		switch {
-		case s.hist.showHidden:
-			count = fmt.Sprintf("%d hidden", shown)
-		case len(s.hist.sessions) >= HistoryListLimit:
-			// The query is bounded: say so rather than imply a catalog total.
-			count = fmt.Sprintf("Latest %d session%s", shown, pluralS(shown))
-		}
-		searching := strings.TrimSpace(s.hist.query) != ""
-		ui.Scroll(c).Grow(1).Children(func() {
-			contentColumn(c, listColumnWidth, func() {
-				ui.Column(c).FillWidth().Padding(0, sp.XL, sp.XL).Gap(sp.L).Children(func() {
-					ui.Text(c, count).FontSize(Typography().Caption).TextColor(t.TextMuted).Padding(0, 0, 0, sp.XS)
-					for i, group := range groups {
-						// The latest project opens by default; a search opens
-						// every project it matched in.
-						s.sessionGroup(c, group, i == 0 || searching)
-					}
-					if s.hist.loading || s.hist.scanning {
-						// Rows are already visible while the catalog is still
-						// being read (batched scan); say so instead of leaving
-						// a partial page looking complete.
-						ui.Text(c, "Updating…").FontSize(Typography().Caption).TextColor(t.TextMuted)
-					}
-				})
+	})
+}
+
+// historyGroupsBody is the project-grouped session list with its count line
+// (and the selection bar under it), shared by the sessions and the Trash.
+func (s *Shell) historyGroupsBody(c *ui.Context) {
+	t := c.Theme()
+	sp := Spacing()
+	groups := s.groupedSessionView()
+	shown := 0
+	for _, group := range groups {
+		shown += len(group.sessions)
+	}
+	count := fmt.Sprintf("%d session%s", shown, pluralS(shown))
+	switch {
+	case s.hist.showTrash:
+		count = fmt.Sprintf("%d in Trash · Nothing is deleted automatically", shown)
+	case len(s.hist.sessions) >= HistoryListLimit:
+		// The query is bounded: say so rather than imply a catalog total.
+		count = fmt.Sprintf("Latest %d session%s", shown, pluralS(shown))
+	}
+	searching := strings.TrimSpace(s.hist.query) != ""
+	s.navList(c, &s.nav.sessions, true, ui.Scroll(c).Grow(1), func() {
+		contentColumn(c, listColumnWidth, func() {
+			ui.Column(c).FillWidth().Padding(0, sp.XL, sp.XL).Gap(sp.L).Children(func() {
+				ui.Text(c, count).FontSize(Typography().Caption).TextColor(t.TextMuted).Padding(0, 0, 0, sp.XS)
+				for i, group := range groups {
+					// The latest project opens by default; a search opens
+					// every project it matched in, and so does the Trash —
+					// what is there is what Put Back can reach.
+					s.sessionGroup(c, group, i == 0 || searching || s.hist.showTrash)
+				}
+				if !s.hist.showTrash && (s.hist.loading || s.hist.scanning) {
+					// Rows are already visible while the catalog is still
+					// being read (batched scan); say so instead of leaving
+					// a partial page looking complete.
+					ui.Text(c, "Updating…").FontSize(Typography().Caption).TextColor(t.TextMuted)
+				}
 			})
 		})
-		if s.hist.selecting {
-			s.historySelectionBar(c, groups)
-		}
+	})
+	if s.selectionBarShown() {
+		s.historySelectionBar(c, groups)
 	}
 }
 
@@ -277,18 +295,23 @@ type sessionGroupView struct {
 	sessions []history.SessionSummary
 }
 
+// sessionsInView is the list the page shows: the catalog's sessions, or the
+// Trash's entries.
+func (s *Shell) sessionsInView() []history.SessionSummary {
+	if s.hist.showTrash {
+		return s.trashRows()
+	}
+	return s.hist.sessions
+}
+
 // groupedSessionView groups the filtered sessions by project path — the
 // Sessions view is project-grouped, only (N19 #9) — the group order
 // following each project's most recent session.
 func (s *Shell) groupedSessionView() []sessionGroupView {
-	hidden := s.hiddenSessionSet()
 	groups := map[string]*sessionGroupView{}
 	order := []string{}
-	for _, summary := range s.hist.sessions {
+	for _, summary := range s.sessionsInView() {
 		if summary.Meta.Archived {
-			continue
-		}
-		if s.hist.showHidden != hidden[summary.Meta.Key] {
 			continue
 		}
 		path := summary.Meta.ProjectPath
@@ -344,18 +367,23 @@ func (s *Shell) sessionGroup(c *ui.Context, group sessionGroupView, defaultOpen 
 	collapsed := !open
 	ui.Column(c).FillWidth().Radius(Radius().Card).Background(tokens.Panel).
 		Border(1, tokens.BorderSubtle).Clip().Children(func() {
-		header := ui.ButtonBase(c).FillWidth().Height(36).Padding(0, rowInset).Gap(sp.S).AlignItems(ui.Center).
-			Label("Project " + group.name)
-		if header.Hovered() {
+		groupKey := "group:" + group.path
+		header := ui.ButtonBase(c.Key(groupKey)).FillWidth().Height(36).Padding(0, rowInset).Gap(sp.S).AlignItems(ui.Center).
+			FocusRing(false).Label("Project " + group.name)
+		switch {
+		case s.nav.sessions.showsCursor(header):
+			header.Background(tokens.SidebarSelect)
+		case header.Hovered():
 			header.Background(tokens.PanelHover)
 		}
+		activated := s.nav.sessions.row(c, header, navRow{Key: groupKey, Section: true, Folder: true, Expanded: open})
 		header.Children(func() {
 			chevron := iconChevronDown
 			if collapsed {
 				chevron = iconChevron
 			}
 			ui.Icon(c, chevron).Size(11, 11).TextColor(t.TextMuted).Shrink(0).PassThrough()
-			if s.hist.selecting {
+			if s.historySelecting() {
 				s.groupSelectionBox(c, group)
 			}
 			ui.Text(c, group.name).FontSize(Typography().Body).FontWeight(WeightSemibold).SingleLine().Shrink(0).PassThrough()
@@ -363,7 +391,7 @@ func (s *Shell) sessionGroup(c *ui.Context, group sessionGroupView, defaultOpen 
 				SingleLine().Ellipsis("…").Grow(1).MinWidth(0).Tooltip(group.path)
 			ui.Text(c, fmt.Sprintf("%d session%s", len(group.sessions), pluralS(len(group.sessions)))).FontSize(Typography().Caption).TextColor(t.TextMuted).Shrink(0).PassThrough()
 		})
-		if header.Clicked() {
+		if header.Clicked() || activated {
 			if s.hist.groupOpen == nil {
 				s.hist.groupOpen = map[string]bool{}
 			}
@@ -383,7 +411,7 @@ func (s *Shell) sessionGroup(c *ui.Context, group sessionGroupView, defaultOpen 
 				})
 			}
 			s.sessionRow(c, summary)
-			if !s.hist.selecting && s.hist.preview.key == summary.Meta.Key {
+			if !s.historySelecting() && s.hist.preview.key == summary.Meta.Key {
 				s.sessionPreview(c, summary)
 			}
 		}
@@ -402,14 +430,24 @@ func (s *Shell) sessionRow(c *ui.Context, summary history.SessionSummary) {
 	key := summary.Meta.Key
 	title := fallbackText(summary.Meta.Title, history.Untitled)
 	menu := func(m *ui.Menu) { s.sessionMenu(m, summary.Meta, true) }
-	selecting := s.hist.selecting
+	if s.hist.showTrash {
+		menu = func(m *ui.Menu) { s.trashMenu(m, summary.Meta) }
+	}
+	selecting := s.historySelecting()
 	selected := selecting && s.hist.selected[key]
-	row := ui.ButtonBase(c).FillWidth().Padding(sp.M, rowInset).Gap(sp.L).AlignItems(ui.Center).Label(title)
+	row := ui.ButtonBase(c.Key("session:"+key)).FillWidth().Padding(sp.M, rowInset).Gap(sp.L).AlignItems(ui.Center).
+		FocusRing(false).Label(title)
 	switch {
-	case selected:
+	case selected, s.nav.sessions.showsCursor(row):
 		row.Background(tokens.SidebarSelect)
 	case row.Hovered(), !selecting && s.hist.preview.key == key:
 		row.Background(tokens.PanelHover)
+	}
+	// The inline preview is the row's fold: l opens it, h closes it, and
+	// while selecting (or in the Trash) a row is a plain leaf that ticks.
+	activated := s.nav.sessions.row(c, row, navRow{Key: key, Folder: !selecting, Expanded: !selecting && s.hist.preview.key == key})
+	if s.nav.sessions.showsCursor(row) {
+		s.sessionRowKeys(c, row, summary.Meta)
 	}
 	row.Children(func() {
 		if selecting {
@@ -446,7 +484,7 @@ func (s *Shell) sessionRow(c *ui.Context, summary history.SessionSummary) {
 		}
 	})
 	row.ContextMenu(menu)
-	if row.Clicked() {
+	if row.Clicked() || activated {
 		if selecting {
 			s.setHistorySelected([]string{key}, !selected)
 		} else {
@@ -486,13 +524,34 @@ func (s *Shell) sessionMenu(m *ui.Menu, meta history.SessionMeta, withOpen bool)
 	if m.Item("Export as Markdown…").Chosen() {
 		s.exportSessionMarkdown(meta)
 	}
-	m.Separator()
-	label := "Hide"
-	if s.hiddenSessionSet()[meta.Key] {
-		label = "Restore"
+	if s.hist.trash != nil {
+		m.Separator()
+		if m.Item("Move to Trash").Chosen() {
+			s.moveSessionsToTrash([]history.SessionMeta{meta})
+		}
 	}
-	if m.Item(label).Chosen() {
-		s.toggleSessionHidden(meta.Key)
+}
+
+// sessionRowKeys are the row menu's reversible actions on the cursor row's
+// keys, as the Files tree spells its own: d moves a session to the Trash; in
+// the Trash, u puts it back and d deletes it for good — after the same
+// confirm. The cursor steps onto the neighbouring row first, so it keeps its
+// place when the row leaves.
+func (s *Shell) sessionRowKeys(c *ui.Context, row ui.Element, meta history.SessionMeta) {
+	remove := row.Shortcut(0, ui.KeyD)
+	if s.hist.showTrash {
+		switch putBack := row.Shortcut(0, ui.KeyU); {
+		case putBack:
+			s.nav.sessions.stay(c, meta.Key)
+			s.restoreFromTrash([]string{meta.Key})
+		case remove:
+			s.confirmDeleteForever([]string{meta.Key})
+		}
+		return
+	}
+	if remove && s.hist.trash != nil {
+		s.nav.sessions.stay(c, meta.Key)
+		s.moveSessionsToTrash([]history.SessionMeta{meta})
 	}
 }
 
@@ -652,21 +711,6 @@ func writeSessionMessage(b *strings.Builder, message history.TranscriptMessage) 
 			fmt.Fprintf(b, "> %s\n\n", message.Text)
 		}
 	}
-}
-
-// hiddenSessionSet reads the local recycle list as a set.
-func (s *Shell) hiddenSessionSet() map[string]bool {
-	hidden := map[string]bool{}
-	for _, key := range s.settings.Session.HiddenSessions {
-		hidden[key] = true
-	}
-	return hidden
-}
-
-// toggleSessionHidden hides or restores one session locally — provider
-// files are never touched (the history catalog is read-only).
-func (s *Shell) toggleSessionHidden(key string) {
-	s.setSessionsHidden([]string{key}, !s.hiddenSessionSet()[key])
 }
 
 // copySessionResume copies the resume command for one session.

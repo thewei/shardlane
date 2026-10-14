@@ -4,10 +4,11 @@ import (
 	"testing"
 
 	"github.com/egoist/mygo/ui"
+	"github.com/wh-studio/herdr-client/internal/sessiontrash"
 )
 
 /**
- * [INPUT]: 依赖 gorexToggleFace、Sessions 工具栏的 Select/Hidden 开关与 ui.Tester 像素采样
+ * [INPUT]: 依赖 gorexToggleFace、Sessions 工具栏的 Select/Trash 开关与 ui.Tester 像素采样
  * [OUTPUT]: 对外提供开关「开」态回归：文字开关与标题栏图标开关共用同一枚中性底色，不再是蓝色选中色
  * [POS]: 2026-10-14 高亮色统一决策的守卫测试；与 gorex_style.go 的 gorexToggleFace 同生共死
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
@@ -22,14 +23,14 @@ func TestToggleOnFaceIsTheSharedNeutralChip(t *testing.T) {
 		turn  func(s *Shell, on bool)
 	}{
 		{"Select sessions", func(s *Shell, on bool) { s.hist.selecting = on }},
-		{"Hidden sessions", func(s *Shell, on bool) { s.hist.showHidden = on }},
+		{"Trash", func(s *Shell, on bool) { s.hist.showTrash = on }},
 	}
 	for _, dark := range []bool{false, true} {
 		for _, toggle := range toggles {
 			sample := func(on bool) [4]uint8 {
 				shell := newMultiAgentHistoryShell(t)
 				shell.router.Replace(routeHistory)
-				shell.setSessionsHidden([]string{"pi:p2"}, true) // the Hidden toggle only exists beside hidden sessions
+				shell.hist.trash = &fakeTrash{items: []sessiontrash.Item{trashItemFixture("1700000000000-aaaaaaaa", "Old one")}} // Select and Trash only exist beside a Trash
 				toggle.turn(shell, on)
 				tester := ui.NewTester(shell.View, 1200, 700)
 				tester.SetDark(dark)

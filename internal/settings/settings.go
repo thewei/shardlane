@@ -130,10 +130,6 @@ type SessionSettings struct {
 	// PaneSurfaces remembers which surface (terminal/chat) each pane was
 	// last used on, so sidebar Agent clicks land where the user left them.
 	PaneSurfaces map[string]string `json:"pane_surfaces,omitempty"`
-	// HiddenSessions is the local recycle list: session catalog keys hidden
-	// from the Sessions list. Provider files are never touched (the
-	// history catalog is read-only); Restore returns them to the list.
-	HiddenSessions []string `json:"hidden_sessions,omitempty"`
 	// Sidebar section visibility and tree expansion cosmetics.
 	ProjectsOpen     bool     `json:"projects_open"`
 	AgentsOpen       bool     `json:"agents_open"`

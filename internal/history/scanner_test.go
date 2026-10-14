@@ -306,3 +306,33 @@ func fileMTime(t *testing.T, path string) int64 {
 	}
 	return info.ModTime().UnixMilli()
 }
+
+// TestSummarizeSourceReadsOneListRow pins the on-demand row read the
+// Sessions Trash uses instead of persisting metadata: the same title,
+// project and bounded description the scanner would index, from the file
+// alone — and a provider without an adapter fails closed.
+func TestSummarizeSourceReadsOneListRow(t *testing.T) {
+	dir := t.TempDir()
+	path := writeCodexSessionFile(t, dir, "rollout-2026-08-02T09-15-00-22222222-aaaa-bbbb-cccc-000000000002.jsonl", codexFixtureRollout)
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reference := SessionFileRef{
+		Agent: AgentCodex, NativeID: "22222222-aaaa-bbbb-cccc-000000000002",
+		FilePath: path, MtimeMS: info.ModTime().UnixMilli(), SizeBytes: info.Size(),
+	}
+
+	summary, err := SummarizeSource(reference)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.Meta.Title != "Build history" || summary.Description != "Build history" {
+		t.Fatalf("summary = %+v", summary)
+	}
+
+	reference.Agent = AgentGrok
+	if _, err := SummarizeSource(reference); err == nil {
+		t.Fatal("a provider without an adapter must fail closed")
+	}
+}

@@ -15,7 +15,7 @@ Architecture ownership lives only in `docs/client-product-architecture.md`; ad-h
 
 - **Shardlane is the macOS client/product.**
 - **Herdr is the backend/runtime authority** for workspaces, tabs, panes, layouts, terminal sessions, agents, scrollback, persistence, and process lifecycle.
-- External Agent conversation history is a separate read-only catalog; it must not become a second runtime. Runtime continuation from history must go through Herdr.
+- External Agent conversation history is a separate read-only catalog; it must not become a second runtime. Runtime continuation from history must go through Herdr. The one mutation is the user-initiated, reversible Sessions Trash (2026-10-14), owned only by `internal/sessiontrash`.
 - Use mature ownership before custom code: **Herdr API → MyGo native components/official plugins → proven compatible implementation → custom**.
 - Do not invent Herdr protocol methods or socket shapes. Inspect the live/actual API.
 
@@ -38,7 +38,7 @@ git diff --cached --check
 
 - `internal/nativeui` owns presentation only: shell/titlebar/sidebar/project tree, theme/icons/components, one long-lived MyGo `ui.Router` (persistent Sidebar/Titlebar sit outside the router), per-page files, runtime/watcher/dialog adapters, and visibility-scoped Terminal layout.
 - `internal/herdr` owns the Go Herdr CLI/socket boundary: session discovery/bootstrap, RPC, events, direct terminal attach. Keep framework/platform code out of it and out of ordinary domain packages.
-- `internal/history` is the read-only history catalog/transcript/live-tailing domain; `internal/agent` owns Agent product semantics; `internal/gitworkbench` owns the local Git review model; `internal/applog` owns bounded structured logging.
+- `internal/history` is the read-only history catalog/transcript/live-tailing domain; `internal/sessiontrash` is the only package that moves Provider session files (the Sessions Trash: provider root ⇄ `<userDataDir>/SessionTrash/`, never overwriting, no conversation content in its manifest); `internal/agent` owns Agent product semantics; `internal/gitworkbench` owns the local Git review model; `internal/applog` owns bounded structured logging.
 - Herdr `session.snapshot.layouts` remains the Pane topology authority; native UI only maps visible Pane rectangles to official MyGo Terminal elements running supported `herdr terminal attach <terminal_id>`. No client-owned PTY/layout/runtime may appear.
 - Automatic attach must never use `--takeover`; hidden Tabs keep no attachment fleet.
 - Product decision 2026-10-11: Chat presentation moves onto the official MyGo `ui.WebView` (v0.4.1) over a single bound-service bridge (`mygo.Bind` + streaming channels + typed events; TS client via `mygo generate`). The bridge is presentation-only — the conversation runtime, Agent semantics and every Herdr method stay untouched, and the page may only ever talk to its own bridge from the app content origin (`mygo://localhost` embedded by `mygo build`; no localhost HTTP backend, no private AppKit embedding). History/Terminal/Git surfaces stay Native UI until a separate explicit task moves an HTML-suited piece of them; the native Chat implementation is retired only at acceptance parity.

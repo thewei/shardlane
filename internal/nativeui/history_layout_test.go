@@ -2,7 +2,7 @@ package nativeui
 
 /**
  * [INPUT]: 依赖真实 HistoryService/Catalog 夹具、官方 MyGo headless Tester 与 History 页面状态
- * [OUTPUT]: 验证 Sessions 的 Agent 标签（含数量）、隐藏扣减、有界计数文案、行指标列与悬停占位
+ * [OUTPUT]: 验证 Sessions 的 Agent 标签（含数量）、有界计数文案、行指标列与悬停占位、工具栏的 Trash 开关出现规则与窄窗换行
  * [POS]: Sessions 页版式回归（参照 magpie 会话历史模块），不依赖真实 Agent 或用户终端
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -14,6 +14,7 @@ import (
 
 	"github.com/egoist/mygo/ui"
 	"github.com/wh-studio/herdr-client/internal/history"
+	"github.com/wh-studio/herdr-client/internal/sessiontrash"
 )
 
 // newMultiAgentHistoryShell seeds a real catalog with three Providers: two Pi
@@ -45,8 +46,8 @@ func newMultiAgentHistoryShell(t *testing.T) *Shell {
 }
 
 // TestHistoryAgentTabsCarryCounts pins the Sessions tab strip: "All" plus one
-// tab per catalog Provider, counts that follow the hidden list, and a click
-// that scopes the list to that Provider.
+// tab per catalog Provider, each with its session total, and a click that
+// scopes the list to that Provider.
 func TestHistoryAgentTabsCarryCounts(t *testing.T) {
 	shell := newMultiAgentHistoryShell(t)
 	shell.router.Replace(routeHistory)
@@ -62,22 +63,6 @@ func TestHistoryAgentTabsCarryCounts(t *testing.T) {
 			t.Fatalf("%s count = %d, want %d", provider, got, want)
 		}
 	}
-
-	// Hiding a session takes it off its Provider's count.
-	shell.toggleSessionHidden("pi:p2")
-	if got := shell.historyTabCount(history.AgentPi); got != 1 {
-		t.Fatalf("Pi count after hiding one = %d, want 1", got)
-	}
-	if got := shell.historyTabCount(history.AgentCodex); got != 1 {
-		t.Fatalf("hiding a Pi session changed the Codex count to %d", got)
-	}
-	// In the Hidden view the tabs count the hidden sessions instead.
-	shell.hist.showHidden = true
-	if pi, codex := shell.historyTabCount(history.AgentPi), shell.historyTabCount(history.AgentCodex); pi != 1 || codex != 0 {
-		t.Fatalf("Hidden view counts: Pi=%d Codex=%d, want 1 and 0", pi, codex)
-	}
-	shell.hist.showHidden = false
-	shell.toggleSessionHidden("pi:p2")
 
 	if err := tester.Click("Pi"); err != nil {
 		t.Fatal(err)
@@ -183,7 +168,7 @@ func TestSessionDetailHeaderActionsAreAPulldown(t *testing.T) {
 	}
 	tester.Frame()
 	menu := tester.Menu()
-	for _, want := range []string{"Copy Resume Command", "Copy Session ID", "Export as Markdown…", "Hide"} {
+	for _, want := range []string{"Copy Resume Command", "Copy Session ID", "Export as Markdown…"} {
 		if !containsText(menu, want) {
 			t.Fatalf("detail actions %q missing %q", menu, want)
 		}
@@ -221,11 +206,12 @@ func TestHistoryCountCaptionIsHonestWhenBounded(t *testing.T) {
 func TestHistoryToolbarWrapsInNarrowWindow(t *testing.T) {
 	shell := newMultiAgentHistoryShell(t)
 	shell.router.Replace(routeHistory)
-	shell.setSessionsHidden([]string{"pi:p2"}, true) // the Hidden toggle shows once something is hidden
+	shell.hist.trash = &fakeTrash{items: []sessiontrash.Item{trashItemFixture("1700000000000-aaaaaaaa", "Old one")}}
 	const width = 720
 	tester := ui.NewTester(shell.View, width, 600)
 	tester.Frame()
-	for _, label := range []string{"Claude Code", "Select", "Hidden", "Search sessions"} {
+	tester.Frame() // the first frame requests the Trash list; this one lays it out
+	for _, label := range []string{"Claude Code", "Select", "Trash", "Search sessions"} {
 		rect, ok := tester.Find(label)
 		if !ok {
 			t.Fatalf("%q missing at %d wide; texts=%q", label, width, tester.Texts())
@@ -238,29 +224,36 @@ func TestHistoryToolbarWrapsInNarrowWindow(t *testing.T) {
 
 // TestHistoryToolbarKeepsOutControlsWithNothingToAct pins the one rule behind
 // the Agent tabs (one Agent needs no switch), carried to the other toggles:
-// Hidden appears once a session is hidden, and stays while its view is open.
+// Trash appears once something is in it, and stays while its view is open.
 func TestHistoryToolbarKeepsOutControlsWithNothingToAct(t *testing.T) {
 	shell := newMultiAgentHistoryShell(t)
+	fake := &fakeTrash{}
+	shell.hist.trash = fake
 	shell.router.Replace(routeHistory)
 	tester := ui.NewTester(shell.View, 1200, 800)
 	tester.Frame()
-	if tester.HasText("Hidden") {
-		t.Fatalf("Hidden shows with nothing hidden; texts=%q", tester.Texts())
+	if _, ok := tester.Find("Trash"); ok {
+		t.Fatalf("Trash shows with nothing in it; texts=%q", tester.Texts())
 	}
 
-	shell.setSessionsHidden([]string{"pi:p2"}, true)
+	fake.items = []sessiontrash.Item{trashItemFixture("1700000000000-aaaaaaaa", "Old one")}
+	shell.requestTrashList()
 	tester.Frame()
-	if !tester.HasText("Hidden") {
-		t.Fatalf("Hidden missing once a session is hidden; texts=%q", tester.Texts())
+	if _, ok := tester.Find("Trash"); !ok {
+		t.Fatalf("Trash missing once something is in it; texts=%q", tester.Texts())
 	}
 
-	if err := tester.Click("Hidden sessions"); err != nil {
+	if err := tester.Click("Trash"); err != nil {
 		t.Fatal(err)
 	}
-	shell.setSessionsHidden([]string{"pi:p2"}, false)
+	fake.items = nil
+	shell.requestTrashList()
 	tester.Frame()
-	if !shell.hist.showHidden || !tester.HasText("Hidden") {
-		t.Fatalf("the open Hidden view lost its way back; texts=%q", tester.Texts())
+	if _, ok := tester.Find("Trash"); !shell.hist.showTrash || !ok {
+		t.Fatalf("the open Trash view lost its way back; texts=%q", tester.Texts())
+	}
+	if !tester.HasText("Trash is empty") {
+		t.Fatalf("an empty Trash must say so; texts=%q", tester.Texts())
 	}
 }
 

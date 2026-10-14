@@ -49,6 +49,7 @@ var (
 	iconChanges     = icon(`<path d="M12 3v14"/><path d="M5 10h14"/><path d="M5 21h14"/>`)
 	iconPin         = icon(`<path d="M12 17v5"/><path d="M9 3h6l1 7 3 3H5l3-3 1-7Z"/>`)
 	iconEyeOff      = icon(`<path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.4 10.4 0 0 1 12 5c7 0 10 7 10 7a13.2 13.2 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.5 13.5 0 0 0 2 12s3 7 10 7a9.7 9.7 0 0 0 5.39-1.61"/><path d="M2 2l20 20"/>`)
+	iconTrash       = icon(`<path d="M10 11v6"/><path d="M14 11v6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>`)
 	// iconActions marks every pull-down of secondary actions (title bar, Git
 	// toolbar, session detail): sliders, never a row of dots.
 	iconActions = icon(`<path d="M21 4h-7M10 4H3M21 12h-9M8 12H3M21 20h-5M12 20H3M14 2v4M8 10v4M16 18v4"/>`)

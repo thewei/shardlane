@@ -183,12 +183,8 @@ func (s *Shell) sessionPreview(c *ui.Context, summary history.SessionSummary) {
 					s.requestContinue(meta, nil)
 				}
 				ui.Spacer(c)
-				label := "Hide"
-				if s.hiddenSessionSet()[meta.Key] {
-					label = "Restore"
-				}
-				if ui.Button(c, label).Clicked() {
-					s.toggleSessionHidden(meta.Key)
+				if s.hist.trash != nil && ui.Button(c, "Move to Trash").Clicked() {
+					s.moveSessionsToTrash([]history.SessionMeta{meta})
 					s.closeHistoryPreview()
 				}
 			})

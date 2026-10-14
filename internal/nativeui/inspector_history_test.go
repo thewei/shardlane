@@ -138,15 +138,4 @@ func TestSessionsGroupsByProject(t *testing.T) {
 	if tester.HasText("First") || !tester.HasText("Loose") {
 		t.Fatalf("the latest project must collapse on a click, others stay; texts=%q", tester.Texts())
 	}
-	// Hidden by default: the recycle toggle reveals them, Restore returns.
-	shell.toggleSessionHidden("codex:c")
-	tester = ui.NewTester(shell.View, 1200, 800)
-	if tester.HasText("Loose") {
-		t.Fatalf("hidden session leaked into the list; texts=%q", tester.Texts())
-	}
-	shell.hist.showHidden = true
-	tester = ui.NewTester(shell.View, 1200, 800)
-	if !tester.HasText("1 hidden") || !tester.HasText("Loose") {
-		t.Fatalf("recycle view missing the hidden session; texts=%q", tester.Texts())
-	}
 }

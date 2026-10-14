@@ -313,8 +313,10 @@ type Shell struct {
 	branchMenuOpen  bool
 	branchFilter    string
 	// pendingToast is flushed as a toast on the next frame (background
-	// lanes cannot toast).
-	pendingToast string
+	// lanes cannot toast). pendingToastAction is the same with one button
+	// (Undo after a session is moved to the Trash).
+	pendingToast       string
+	pendingToastAction toastAction
 	// terminalFind owns the Terminal-surface find bar (CopySearch adapter).
 	terminalFind terminalFindState
 	// userDataDir is the production persistence root ("" in headless tests).
@@ -466,6 +468,16 @@ func WithHistory(service *history.HistoryService) ShellOption {
 	return func(s *Shell) {
 		if service != nil {
 			s.hist.service = service
+		}
+	}
+}
+
+// WithSessionTrash injects the Sessions Trash. Without it the Sessions page
+// offers no delete (headless tests, degraded startup).
+func WithSessionTrash(store SessionTrashView) ShellOption {
+	return func(s *Shell) {
+		if store != nil {
+			s.hist.trash = store
 		}
 	}
 }
@@ -721,6 +733,10 @@ func (s *Shell) View(c *ui.Context) {
 	if s.pendingToast != "" {
 		c.Toast(s.pendingToast)
 		s.pendingToast = ""
+	}
+	if pending := s.pendingToastAction; pending.message != "" {
+		s.pendingToastAction = toastAction{}
+		c.ToastAction(pending.message, pending.label, pending.action)
 	}
 	// Loading text never toasts (statusShown seeds it), and repeats of the
 	// same value stay silent; a changed status announces exactly once.

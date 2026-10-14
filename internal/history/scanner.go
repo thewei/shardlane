@@ -221,6 +221,18 @@ dispatch:
 	return next, ctx.Err()
 }
 
+// SummarizeSource reads one provider session file into its list-row summary
+// (title, counts, project, bounded description) and keeps nothing: the
+// Sessions Trash lists trashed sessions this way, straight from the moved
+// file, instead of persisting metadata about them.
+func SummarizeSource(reference SessionFileRef) (SessionSummary, error) {
+	transcript, err := parseByAgent(reference)
+	if err != nil {
+		return SessionSummary{}, err
+	}
+	return SessionSummary{Meta: transcript.Meta, Description: descriptionFromMessages(transcript.Mainline)}, nil
+}
+
 // parseRow parses one changed source exactly once, keeps only the session's
 // list-row metadata, and drops the transcript.
 func (s *Scanner) parseRow(ctx context.Context, reference SessionFileRef) (indexedRow, error) {

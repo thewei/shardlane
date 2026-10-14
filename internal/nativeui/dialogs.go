@@ -183,6 +183,10 @@ func (s *Shell) submitConfirm(kind, target string) {
 		s.runContinue(target)
 	case "files-delete":
 		s.runFilesDelete(target)
+	case deleteForeverConfirm:
+		s.deleteFromTrash(strings.Split(target, confirmIDSeparator))
+	case emptyTrashConfirm:
+		s.emptyTrash()
 	default:
 		s.runGitConfirm(kind, target)
 	}

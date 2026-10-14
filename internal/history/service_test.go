@@ -298,3 +298,29 @@ func TestServiceOpenTailReturnsNewestWindow(t *testing.T) {
 }
 
 func ptr(value int) *int { return &value }
+
+// TestServiceForgetRemovesRowsFromEveryRead pins that a forgotten session
+// is gone from the list and from the by-key lookup at once, without
+// waiting for the next scan's cleanup.
+func TestServiceForgetRemovesRowsFromEveryRead(t *testing.T) {
+	service, _ := newTestService(t)
+	for _, key := range []string{"one", "two"} {
+		meta := catalogTestSession("codex:"+key, "Session "+key, "/nowhere/"+key+".jsonl", "/work")
+		meta.Agent = AgentCodex
+		service.Catalog().Put(meta, 1000, "")
+	}
+
+	if removed := service.Forget("codex:one"); removed != 1 {
+		t.Fatalf("Forget removed %d, want 1", removed)
+	}
+	summaries, err := service.List(context.Background(), HistoryQuery{Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(summaries) != 1 || summaries[0].Meta.Key != "codex:two" {
+		t.Fatalf("list after Forget = %+v", summaries)
+	}
+	if counts, _ := service.ProviderCounts(context.Background()); len(counts) != 1 || counts[0].Count != 1 {
+		t.Fatalf("provider counts after Forget = %+v", counts)
+	}
+}

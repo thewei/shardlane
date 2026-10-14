@@ -26,15 +26,15 @@ description: Use when polishing or unifying the Shardlane MyGo client's UI/UX �
 
 ## 键盘模型（一类列表一套手感）
 
-侧栏的树/列表只有一个键盘实现——`list_nav.go` 的 `listNav`。新树/新列表**接入它，不要自己写 `Shortcut` 或焦点环**。
+侧栏的树/列表与 Sessions 列表只有一个键盘实现——`list_nav.go` 的 `listNav`。新树/新列表**接入它，不要自己写 `Shortcut` 或焦点环**。
 
 - **真焦点即光标**：当前行就是 MyGo 的键盘焦点，脸 = 选中同脸 `SidebarSelect`（统一画在 `sidebarTreeRow`/`sidebarSectionHeader` 里，经 `listNav.showsCursor`）；整棵树是一个 `FocusGroup(ui.Vertical)` = 一个 Tab 停靠点，Shift-Tab 回到记住的行。
 - **光标不亮不等于没有**：进页时光标停在开场行但**不亮**（鼠标打开的列表和从前一个样，没有"看起来被选中其实没选"的行）；任一列表键用过它才亮，Tab 进入自带亮（MyGo `FocusVisible`），离开列表或重进页面复暗，点击不亮。会改东西的行键（Files 的 `a/A/r/d/y`）等光标亮了才响应——不对看不见的光标动手。
-- **键位**（表驱动 `navBindings`）：`j/k`·`↓/↑` 移动且**不回绕**（方向键由行认领，绕开 MyGo 焦点组的回绕）；`h/←` 已展开则折叠、否则回父级；`l/→` 已折叠则展开、已展开则进首个子项、叶子则打开；`o` 打开；`gg`/`G`/`Home`/`End` 首尾；`Ctrl-d/u` 跳十行；Enter/Space 本就是行点击。树自己的动作键归各树（Files：`a/A` 新建文件/文件夹、`r` 重命名、`d` 删除、`y` 复制路径，与右键菜单走同一份实现）。
+- **键位**（表驱动 `navBindings`）：`j/k`·`↓/↑` 移动且**不回绕**（方向键由行认领，绕开 MyGo 焦点组的回绕）；`h/←` 已展开则折叠、否则回父级；`l/→` 已折叠则展开、已展开则进首个子项、叶子则打开；`o` 打开；`gg`/`G`/`Home`/`End` 首尾；`Ctrl-d/u` 跳十行；Enter/Space 本就是行点击。树自己的动作键归各树（Files：`a/A` 新建文件/文件夹、`r` 重命名、`d` 删除、`y` 复制路径；Sessions：`d` 移入回收站，回收站里 `u` 放回、`d` 永久删除——都与右键菜单走同一份实现，永久删除照样先确认）。
 - **接入**：容器用 `s.navList(c, &s.nav.<树>, autoFocus, box, rows)`；行/分组头 spec 带 `Nav: &s.nav.<树>`；选择与折叠仍由各树处理——构建器返回的 `clicked` 已兼收鼠标点击与键盘激活。进页聚焦：Files/Hosts 开（落在打开的文件/选中项，否则首行），Git 引用树关（窗口级 j/k 归 Diff）。
-- **虚拟化 `ui.List`（Sessions、Changes）不走这里**：`listNav` 要求每帧画出全部行。
+- **虚拟化 `ui.List`（Changes）不走这里**：`listNav` 要求每帧画出全部行。Sessions 不是虚拟化（`ui.Scroll` + 项目卡），**走它**——项目卡头注册为 `Section`、会话行自注册，行内预览当作该行的折叠（`l` 只开不关、`h` 收起再 `h` 回项目头、`o` 切换）；选择模式与回收站里行是叶子（`o/l` 勾选）；删除/放回让行离开前用 `stay` 把光标落到邻行（先下后上，不落项目头）。
 - **对话框坑**：MyGo 只把焦点还给"仍然存在的打开者"，带 AutoFocus 输入框的对话框会让它失效；`navTrackDialogs` 在对话框开/关时记住并还原光标行——新对话框只要计入 `dialogOpen/confirmOpen/mergeDialogOpen`。
-- **守卫**：`list_nav_test.go`（移动与不回绕、gg/G/Ctrl-d、h/l/o、单 Tab 停靠点、进页聚焦含列表晚到、对话框后焦点、Files 行键、Hosts 选中跟随与机器行、光标脸的亮/暗四种时机），22 种变异检查全红。headless 里用 `Tester.Key` 发行键——`TypeKey` 会把文字投进刚打开的对话框，只用于输入框。
+- **守卫**：`list_nav_test.go` 与 `history_nav_test.go`（Sessions）（移动与不回绕、gg/G/Ctrl-d、h/l/o、单 Tab 停靠点、进页聚焦含列表晚到、对话框后焦点、Files 行键、Hosts 选中跟随与机器行、光标脸的亮/暗四种时机），22 种变异检查全红。headless 里用 `Tester.Key` 发行键——`TypeKey` 会把文字投进刚打开的对话框，只用于输入框。
 - **验证边界**：App 在后台时 MyGo 的 `Focused()` 需要窗口焦点，被动观察验证不了按键；键盘只靠 headless 测试，真机只做外观被动核对。
 
 ## 去 AI 味配方（本项目真实做过的，按维度）
@@ -106,19 +106,20 @@ rg -n 'Padding\(14, 9, 9\)' --glob '!*_test.go' .                      # 侧栏�
 - 四个视图按钮（Changes/Sessions/Files/Hosts）从标题栏右上移到侧栏顶部等宽图标标签条（2026-10-14 第二轮）；标题栏工具区只剩 Agent 活动与置顶；侧栏页脚返回键统一叫 `Back`。
 - Refresh 收口为每个上下文一个图标；Hosts 页内 Refresh 与侧栏重复的已删。
 - 窗格卡头：标签已写出目录或单卡时不再出 cwd（`paneCardCaption`/`titleSpellsOutDir`）。
-- 开关脸统一：Files 忽略开关与 Sessions 的 Select/Hidden 从蓝/accent 改为 `gorexToggleFace` 的中性芯片。
+- 开关脸统一：Files 忽略开关与 Sessions 的 Select/Trash 从蓝/accent 改为 `gorexToggleFace` 的中性芯片。
 - 旧 `iconButton`（28/14，半径 6）并入 `gorexIconButton`：侧栏页脚设置齿轮走工具栏档，Workspace 区 "+" 走密集档。
 - 空态标题统一 sentence case；Inspector 路由补回 `gorexContentCard`。
 - Hosts 侧栏列表不再二次内缩（原比 Sessions/Settings 低 14、窄 9）：`TestInnerSidebarsShareOneInset`。
 - Agent 浮层（标题栏/托盘）重排（2026-10-14 第二轮）：顶部 Agents/Services 分段、浮层自身无标题；Agents 按状态分组（Needs attention › Review › Working › Idle，空组省略；分组头 = 状态点 + 名称 + 计数，Services 分区标题用同一构件 `quickPanelGroupHeader`），行复用侧栏 `agentCardRow`；点击行**直达面板并收起浮层**（待交互 → Chat；blocked/failed → Terminal；其余回到该 pane 上次所在面板），行尾 ✓ = 标记已审阅（不跳转），其余动作在右键菜单；去掉详情层、统计筛选卡与浮层标题。高度随内容增长至上限 480：预算常数取自真实布局（`quickPanelChromeHeight/GroupHeight/RowHeight/UsageHeight`），不是估的——估的 72/28/44 实测多出 57 px 空白，`TestQuickPanelHeightHoldsTheContent` 现在钉贴合（含用量行）。
 - Hosts 重做（2026-10-14 第二轮）：**侧栏**按配置自带分组可折叠——`#SCE_GROUP:<id>:::<名>` / `#SCEGroup <id>`（SSH Config Editor 的注释标记，只读解析 `sshconfig.Index.Groups`，不写回、不建第二注册表）→ 声明组 › Ungrouped › 各 Include 文件，没有可分组内容时保持平铺；分组头与行都走共享的 `sidebarSectionHeader`/`sidebarTreeRow`（Git 分区头已委托同一构件，`Selected` 用 `SidebarSelect` 脸，`Action` = 悬停才现的行内主动作图标，占位固定）。**详情**不再是"标题 + 三个按钮 + 三张卡"：一行标题（Heading 16 semibold + 灰色 `file:line`，非主机则前缀 `Wildcard pattern ·`/`Match rule ·` 交代为何没有 Connect）+ 主按钮 Connect + 铅笔图标；指令只有一个 `settingsGroup`，**编辑就地发生**（值变输入框、Cancel/Save 顶替 Connect/铅笔、Return 保存、一句话说明其余内容原样保留），生效配置是折叠行（`ssh -G`）。长值走 `valueText`（单行省略 + 全文 tooltip，所有事实行共用）。次要动作（Add Herdr Machine…/Edit File）进标题栏 Actions，与行右键菜单是同一份 `hostEntryMenu`。守卫：`hosts_test.go`（分组折叠与计数、平铺、符号链接配置不被当 include、选中脸、悬停连接、就地编辑与放弃确认、Return 保存落盘、Actions 随选中出现）、`hosts_groups_test.go`、`sshconfig` 的标记解析测试。
-- 键盘（2026-10-14 第二轮）：Files/Git 引用/Hosts 侧栏共用 `listNav`（见「键盘模型」）；光标脸与选中同为 `SidebarSelect`，Hosts 光标移动即选中，Files 光标行上 `a/A/r/d/y` 直通右键菜单同一批动作。
+- 键盘（2026-10-14 第二轮）：Files/Git 引用/Hosts 侧栏与 Sessions 列表共用 `listNav`（见「键盘模型」）；光标脸与选中同为 `SidebarSelect`，Hosts 光标移动即选中，Files 光标行上 `a/A/r/d/y`、Sessions 光标行上 `d/u` 直通右键菜单同一批动作。
+- Sessions 删除（2026-10-14 第二轮）：**Hide 没有意义**——Hide/Restore 与 Hidden 开关退役，删除 = 移入应用内回收站（`internal/sessiontrash`，Provider 文件只往返于自己的目录；清单不含会话内容，回收站行按需从被搬走的文件读回）。**可撤销的动作不弹确认**：移入回收站只给带 `Undo` 的提示条（`pendingToastAction`）；**不可撤销的才确认**：`Delete Forever…`/`Empty Trash`（共享确认框）。Trash 开关只在回收站有内容（或视图已打开）时出现，与"无可操作的控件不显示"同一规则；回收站视图复用同一分组列表，行键是条目 id、选择常开、有勾选才出批量条。保护：运行中 Agent 的会话身份命中或 60 秒内刚写过的会话不搬，并说清原因。旧 `hidden_sessions` 设置键读时忽略、下次保存丢弃（被隐藏过的会话重新出现）。
 - 菜单项一律 Title Case（Git 分支/标签/Stash/提交/文件夹菜单 20 项）、Finder 定位统一 `Reveal in Finder`、Git 确认框标题对齐菜单（`Undo Last Commit?`、`Delete Tag “x”?`）：`TestMenuItemsAreTitleCase`。
 
 ## 已知例外与待办（下一轮从这里接）
 
 - **终端窗格卡头保留**（N19 #7：Terminal⇄Chat 开关在卡头；去掉会改 PTY 尺寸）；只做信息去重，不做结构搬家。
-- Git 工作台自带一套图标按钮/下拉（`gd_surface.go` 的 `gdIconButton`/`gdPulldown`，28/半径 7、灰度 alpha 悬停）与 `git_review_split.go:202`、`page_history.go:436`（行内 "…"）、`gd_surface.go:965` 的 5/7 圆角小按钮：与 `gorexIconButton` 同类不同脸。换壳要先确认 Box 版按钮的键盘焦点/`FocusVisible` 语义。
+- Git 工作台自带一套图标按钮/下拉（`gd_surface.go` 的 `gdIconButton`/`gdPulldown`，28/半径 7、灰度 alpha 悬停）与 `git_review_split.go:202`、`page_history.go` 行内悬停的 22×22 下拉入口、`gd_surface.go:965` 的 5/7 圆角小按钮：与 `gorexIconButton` 同类不同脸。换壳要先确认 Box 版按钮的键盘焦点/`FocusVisible` 语义。
 - 两个 Commit 主按钮（`commit_surface.go:168`、`git_review_split.go:189`）内联字号，未入 `compactButton` 档。
 - Git 下半区标签条（Commit/Changes/File Tree）选中脸是 `SurfaceHover`，Segmented 用 MyGo 原生脸。
 - `/chat` 遗留页仍用 `pageHeader` 与自涂 `Content` 底（仅测试/遗留路由）；`Refresh Runtime` 菜单项保留（命令级入口，不是页面按钮）。

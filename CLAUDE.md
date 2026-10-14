@@ -3,7 +3,7 @@
 Current implementation: Go 1.27.1 + MyGo Native UI (pinned v0.4.8, patched fork vendored under `third_party/mygo`) + official MyGo Terminal/Ghostty; Herdr remains the runtime authority. The previous Rust/GPUI implementation lives only on `rewrite/mygo`/`main`.
 
 <directory>
-internal/ - Go application/domain packages (nativeui presentation, apphook in-app IPC engine, agenthooks Hook Doctor provisioning, herdr adapter, agent/history/gitworkbench domains, settings, applog, ...)
+internal/ - Go application/domain packages (nativeui presentation, apphook in-app IPC engine, agenthooks Hook Doctor provisioning, herdr adapter, agent/history/sessiontrash/gitworkbench domains, settings, applog, ...)
 resources/ - MyGo packaging resources (app icon)
 third_party/ - vendored patched MyGo framework fork (go.mod replace target; see third_party/mygo/LOCAL-PATCH.md)
 site/ - public site (landing + downloads page) published to GitHub Pages (static HTML/CSS, no build step)
@@ -22,7 +22,7 @@ docs/mygo-native-migration-roadmap.md - active migration roadmap and task order
 .github/workflows/pages.yml - GitHub Pages deployment for site/
 </config>
 
-Product rule: **Shardlane is the client and brand. Herdr is the backend/runtime.** Shardlane must not introduce a second Workspace registry, pane runtime, terminal authority, or process lifecycle owner. Herdr remains authoritative for workspaces, tabs, panes, layouts, agents, scrollback, persistence, terminal sessions, and process lifecycle. Shardlane owns native macOS presentation, local interaction state/preferences, and the read-only Agent-history browsing/index layer.
+Product rule: **Shardlane is the client and brand. Herdr is the backend/runtime.** Shardlane must not introduce a second Workspace registry, pane runtime, terminal authority, or process lifecycle owner. Herdr remains authoritative for workspaces, tabs, panes, layouts, agents, scrollback, persistence, terminal sessions, and process lifecycle. Shardlane owns native macOS presentation, local interaction state/preferences, and the read-only Agent-history browsing/index layer (plus its user-initiated, reversible Sessions Trash).
 
 Implementation rule: do not hand-roll capabilities while mature owners exist. Search in order: Herdr API → MyGo native components/official plugins → a proven compatible implementation → custom code. Missing runtime APIs are fixed at the Herdr boundary rather than bypassed with a parallel terminal/process path.
 

@@ -69,6 +69,12 @@ func NewHistoryService(catalog *Catalog, roots []SourceRoot) *HistoryService {
 // Catalog exposes the underlying catalog for the scanner caller and tests.
 func (s *HistoryService) Catalog() *Catalog { return s.catalog }
 
+// Forget drops the catalog rows of sessions whose files left the provider
+// roots (moved to the Sessions Trash), so list, counts and lookups stop
+// naming them at once instead of at the next scan. Memory only: the service
+// itself never moves or deletes a provider file.
+func (s *HistoryService) Forget(keys ...string) int { return s.catalog.Forget(keys...) }
+
 // Scan reconciles the catalog with the provider sources (background lane).
 func (s *HistoryService) Scan(ctx context.Context) (ScanResult, error) {
 	return s.scanner.Scan(ctx)

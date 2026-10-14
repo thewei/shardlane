@@ -23,6 +23,7 @@ import (
 	"github.com/wh-studio/herdr-client/internal/applog"
 	"github.com/wh-studio/herdr-client/internal/history"
 	"github.com/wh-studio/herdr-client/internal/nativeui"
+	"github.com/wh-studio/herdr-client/internal/sessiontrash"
 	"github.com/wh-studio/herdr-client/internal/settings"
 )
 
@@ -91,8 +92,13 @@ func main() {
 		slog.Info("removed legacy history catalog", "freed_bytes", freed)
 	}
 	home, _ := os.UserHomeDir()
+	// Deleted sessions move into the Trash under the user-data directory, from
+	// and back to the provider roots — the one place a provider file is ever
+	// moved.
+	historyRoots := history.DefaultRoots(home)
 	historyOpts := []nativeui.ShellOption{
-		nativeui.WithHistory(history.NewHistoryService(history.NewCatalog(), history.DefaultRoots(home))),
+		nativeui.WithHistory(history.NewHistoryService(history.NewCatalog(), historyRoots)),
+		nativeui.WithSessionTrash(sessiontrash.New(filepath.Join(userDataDir, "SessionTrash"), historyRoots)),
 	}
 
 	shell := nativeui.NewShell(append([]nativeui.ShellOption{

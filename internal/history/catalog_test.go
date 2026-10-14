@@ -257,3 +257,29 @@ func TestDescriptionPrefersFirstUserText(t *testing.T) {
 		t.Fatalf("fallback candidate = %q", got)
 	}
 }
+
+// TestCatalogForgetDropsRowsAndTheirPaths pins the immediate follow-up of a
+// session leaving its provider root: the named rows (and their file-path
+// claims) go, unknown keys are ignored, everything else stays.
+func TestCatalogForgetDropsRowsAndTheirPaths(t *testing.T) {
+	catalog := NewCatalog()
+	for _, key := range []string{"a", "b", "c"} {
+		catalog.Put(catalogTestSession(key, "Title "+key, "/w/"+key+".jsonl", "/w"), 1000, "")
+	}
+
+	if removed := catalog.Forget("a", "c", "missing"); removed != 2 {
+		t.Fatalf("Forget removed %d, want 2", removed)
+	}
+	if catalog.Session("a") != nil || catalog.Session("c") != nil || catalog.Session("b") == nil {
+		t.Fatal("Forget dropped the wrong rows")
+	}
+	known := catalog.KnownFiles()
+	if _, ok := known["/w/a.jsonl"]; ok || len(known) != 1 {
+		t.Fatalf("known files after Forget = %v", known)
+	}
+	// The freed path can be claimed again by a later scan.
+	catalog.Put(catalogTestSession("a2", "Again", "/w/a.jsonl", "/w"), 2000, "")
+	if catalog.Session("a2") == nil {
+		t.Fatal("a forgotten path could not be indexed again")
+	}
+}

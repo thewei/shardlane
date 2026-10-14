@@ -16,6 +16,7 @@ import (
 
 	"github.com/egoist/mygo/ui"
 	"github.com/wh-studio/herdr-client/internal/history"
+	"github.com/wh-studio/herdr-client/internal/sessiontrash"
 )
 
 // RecentFeedLimit bounds the Sidebar Recent section.
@@ -87,12 +88,23 @@ type historyState struct {
 
 	// N19 #9: the grouped Sessions view state — the user's explicit
 	// open/closed choice per project (absent: the default, the latest
-	// project open) and the recycle toggle.
-	groupOpen  map[string]bool
-	showHidden bool
+	// project open).
+	groupOpen map[string]bool
+
+	// The Sessions Trash (history_trash.go): the store (nil = the page offers
+	// no delete), whether the page shows it instead of the catalog, and the
+	// entries last listed from it. trashRequested keeps the page from
+	// re-asking on every frame; trashGen makes the newest list win.
+	trash          SessionTrashView
+	showTrash      bool
+	trashItems     []sessiontrash.Item
+	trashLoaded    bool
+	trashRequested bool
+	trashGen       atomic.Uint64
 
 	// Multi-select (history_select.go): selecting is the mode, selected the
-	// session keys ticked in it. Transient — filters and Done clear both.
+	// session keys ticked in it (in the Trash view: the entry ids — rows
+	// there are always selectable). Transient — filters and Done clear both.
 	selecting bool
 	selected  map[string]bool
 

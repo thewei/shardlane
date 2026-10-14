@@ -136,6 +136,26 @@ func (c *Catalog) Put(meta SessionMeta, mtimeMS int64, description string) {
 	c.byPath[meta.FilePath] = meta.Key
 }
 
+// Forget drops the rows of the given session keys and frees their file
+// paths, the immediate follow-up of a session leaving its provider root (it
+// was moved to the Trash): the next scan would only notice at its cleanup
+// step. Unknown keys are ignored; the number of rows dropped is returned.
+func (c *Catalog) Forget(keys ...string) int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	removed := 0
+	for _, key := range keys {
+		entry, ok := c.entries[key]
+		if !ok {
+			continue
+		}
+		delete(c.entries, key)
+		delete(c.byPath, entry.meta.FilePath)
+		removed++
+	}
+	return removed
+}
+
 // RemoveMissing drops rows whose file paths were not observed by the last
 // scan. Unobserved roots never reach here (cleanup only follows a complete
 // observation).

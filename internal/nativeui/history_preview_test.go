@@ -37,7 +37,7 @@ func TestHistoryRowClickUnfoldsPreviewInPlace(t *testing.T) {
 	if shell.router.Path() != routeHistory {
 		t.Fatalf("a row click navigated away: %q", shell.router.Path())
 	}
-	for _, want := range []string{"Implemented.", "You", "Assistant", "Open", "Hide"} {
+	for _, want := range []string{"Implemented.", "You", "Assistant", "Open"} {
 		if !tester.HasText(want) {
 			t.Fatalf("preview missing %q; texts=%q", want, tester.Texts())
 		}
@@ -53,26 +53,12 @@ func TestHistoryRowClickUnfoldsPreviewInPlace(t *testing.T) {
 }
 
 // TestHistoryPreviewOpensDetailOnlyOnRequest pins that Open is the way into
-// the conversation, and Hide folds the row away.
+// the conversation.
 func TestHistoryPreviewOpensDetailOnlyOnRequest(t *testing.T) {
 	shell, _, _ := newHistoryTestShell(t)
 	shell.router.Replace(routeHistory)
 	tester := ui.NewTester(shell.View, 1200, 800)
 	tester.Frame()
-	if err := tester.Click("Build history"); err != nil {
-		t.Fatal(err)
-	}
-	tester.Frame()
-	if err := tester.Click("Hide"); err != nil {
-		t.Fatal(err)
-	}
-	tester.Frame()
-	if !shell.hiddenSessionSet()[previewTestKey] || shell.hist.preview.key != "" {
-		t.Fatalf("Hide: hidden=%v preview=%q", shell.settings.Session.HiddenSessions, shell.hist.preview.key)
-	}
-	shell.toggleSessionHidden(previewTestKey)
-	tester.Frame()
-
 	if err := tester.Click("Build history"); err != nil {
 		t.Fatal(err)
 	}

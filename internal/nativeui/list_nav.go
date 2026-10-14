@@ -3,7 +3,7 @@ package nativeui
 /**
  * [INPUT]: 侧栏列表/树这一帧画出的可见行（key、层级、折叠态）与 MyGo 的真焦点、Element.Shortcut、ScrollIntoView、FocusGroup
  * [OUTPUT]: listNav —— 侧栏列表与树唯一的键盘模型：真焦点就是光标；j/k·↓/↑ 移动，h/l·←/→ 折叠展开或进出层级，o 打开，gg/G·Home/End 首尾，Ctrl-d/u 跳十行；进页时光标停在开场行但不亮，键盘用过它才亮（Tab 进入除外，MyGo 自带 FocusVisible）
- * [POS]: Files 树、Git 引用树、Hosts 列表共用（行经 sidebarTreeRow/sidebarSectionHeader 注册）；折叠、选择与动作仍归各树——nav 只移动焦点，并把 o/l/h 翻译成该行的"点击"（Enter/Space 本来就是点击）
+ * [POS]: Files 树、Git 引用树、Hosts 列表（行经 sidebarTreeRow/sidebarSectionHeader 注册）与 Sessions 列表（项目卡头与会话行自行注册）共用；折叠、选择与动作仍归各列表——nav 只移动焦点，并把 o/l/h 翻译成该行的"点击"（Enter/Space 本来就是点击）
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 
@@ -275,6 +275,31 @@ func (n *listNav) edge(c *ui.Context, from string, last bool) {
 	}
 }
 
+// stay asks for the cursor to land next to key in the next pass — on the row
+// below, else the one above, never a bare group header — for an action that
+// is about to take the row under the cursor away, so the keyboard keeps its
+// place instead of losing the focus with the row.
+func (n *listNav) stay(c *ui.Context, key string) {
+	i := n.index(key)
+	if i < 0 {
+		return
+	}
+	for j := i + 1; j < len(n.prev); j++ {
+		if !n.prev[j].Section {
+			n.want = n.prev[j].Key
+			c.AnimationFrame()
+			return
+		}
+	}
+	for j := i - 1; j >= 0; j-- {
+		if !n.prev[j].Section {
+			n.want = n.prev[j].Key
+			c.AnimationFrame()
+			return
+		}
+	}
+}
+
 // to asks for the cursor on key in the next pass and, for lists whose
 // selection follows the cursor, selects it.
 func (n *listNav) to(c *ui.Context, key string) {
@@ -287,7 +312,7 @@ func (n *listNav) to(c *ui.Context, key string) {
 
 // listNavs are the Shell's keyboard-driven sidebar lists.
 type listNavs struct {
-	files, gitRefs, hosts listNav
+	files, gitRefs, hosts, sessions listNav
 }
 
 // dialog is the Shell's report, on each change, of whether a dialog is up. A
@@ -296,7 +321,7 @@ type listNavs struct {
 // list notes its cursor as the dialog opens and returns to it as it closes,
 // and `a`, `r`, `d` do not end the keyboard's visit to the tree.
 func (ns *listNavs) dialog(open bool, pass uint64) {
-	for _, n := range []*listNav{&ns.files, &ns.gitRefs, &ns.hosts} {
+	for _, n := range []*listNav{&ns.files, &ns.gitRefs, &ns.hosts, &ns.sessions} {
 		switch {
 		case open && n.seen+1 >= pass:
 			n.opener = n.cursor
