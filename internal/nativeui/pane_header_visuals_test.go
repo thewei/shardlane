@@ -3,14 +3,15 @@ package nativeui
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/wh-studio/herdr-client/internal/herdr"
 )
 
 /**
- * [INPUT]: 依赖 nativeui 的 Shell/paneHeaderVisuals/paneStackInfo/shortDir/samePath/procFriendlyName, herdr
- * [OUTPUT]: 对外提供 TestPaneHeaderVisualsAgent/TestPaneHeaderVisualsProcess/TestShortDirAndSamePath/TestPaneStackInfoAndStackedVisuals
+ * [INPUT]: 依赖 nativeui 的 Shell/paneHeaderVisuals/paneCardCaption/paneStackInfo/shortDir/samePath/procFriendlyName, herdr
+ * [OUTPUT]: 对外提供 TestPaneHeaderVisualsAgent/TestPaneHeaderVisualsProcess/TestPaneHeaderVisualsDropsDirTheLabelSpellsOut/TestPaneCardCaptionShowsDirOnlyAmongSiblings/TestShortDirAndSamePath/TestPaneStackInfoAndStackedVisuals
  * [POS]: 窗格卡片头部视觉解析、Agent 图标与名称解析、跨平台路径格式化以及多终端堆叠状态的单元测试
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -230,6 +231,54 @@ func TestShellAndFriendlyNames(t *testing.T) {
 	}
 	if got := procFriendlyName("kubectl"); got != "Kubectl" {
 		t.Fatalf("procFriendlyName(kubectl) = %q, want 'Kubectl'", got)
+	}
+}
+
+// A shell label that already spells the directory out ("host:~/a/b/c") must
+// not get the directory again in the dim slot. shortDir shortens a deep path
+// to "…/e/f", which the full label never contains — F168's Contains check
+// missed exactly the long paths that wrap worst (2026-10-14 audit: the same
+// path showed three times in one Terminal view).
+func TestPaneHeaderVisualsDropsDirTheLabelSpellsOut(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		t.Skip("no home directory to build a ~-relative path from")
+	}
+	s := NewShell()
+	deep := filepath.Join(home, "w", "a", "b", "c", "d", "e")
+	if short := shortDir(deep); !strings.HasPrefix(short, "…") {
+		t.Fatalf("fixture must be a path shortDir truncates, got %q", short)
+	}
+	for name, label := range map[string]string{
+		"from ~":   "me@host:" + tildePath(deep),
+		"absolute": "me@host:" + deep,
+		"tail":     "me@host:…" + string(filepath.Separator) + "d" + string(filepath.Separator) + "e",
+	} {
+		_, _, detail := s.paneHeaderVisuals(&terminalSurface{paneID: "p", label: label, cwd: deep}, false)
+		if detail != "" {
+			t.Errorf("%s: label %q already carries the directory, detail = %q", name, label, detail)
+		}
+	}
+	// A label that does not carry it keeps the detail: it is the only place
+	// the directory shows.
+	if _, _, detail := s.paneHeaderVisuals(&terminalSurface{paneID: "p", label: "zsh", cwd: deep}, false); detail != shortDir(deep) {
+		t.Errorf("a plain label keeps the directory, got %q want %q", detail, shortDir(deep))
+	}
+}
+
+// The title bar's second row shows the selected Pane's directory. A lone
+// card IS that pane, so its header says the directory only when siblings
+// need telling apart from each other.
+func TestPaneCardCaptionShowsDirOnlyAmongSiblings(t *testing.T) {
+	s := NewShell()
+	surface := &terminalSurface{paneID: "p1", label: "zsh", cwd: "/Users/test/project"}
+	s.terminals = map[string]*terminalSurface{"t1": surface}
+	if _, _, detail := s.paneCardCaption(surface, false); detail != "" {
+		t.Fatalf("a lone card repeats the title bar's directory line: %q", detail)
+	}
+	s.terminals["t2"] = &terminalSurface{paneID: "p2", label: "zsh", cwd: "/Users/test/other"}
+	if _, _, detail := s.paneCardCaption(surface, false); detail != shortDir(surface.cwd) {
+		t.Fatalf("split cards each keep their directory, got %q want %q", detail, shortDir(surface.cwd))
 	}
 }
 

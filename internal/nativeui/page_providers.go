@@ -42,7 +42,7 @@ func (s *Shell) settingsProviders(c *ui.Context) {
 			ui.Text(c, "Checking…").FontSize(Typography().Caption).TextColor(t.TextMuted)
 		}
 		ui.Box(c).Grow(1)
-		if ui.Button(c, "Refresh").Clicked() {
+		if gorexIconButton(c, gorexColorsOf(t.Dark), iconRefresh, "Refresh", "Refresh", false, gorexIconBtn, gorexIconGlyph).Clicked() {
 			s.requestProvidersAudit()
 		}
 	})

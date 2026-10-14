@@ -39,14 +39,18 @@ func appearanceFromIndex(index int) string {
 	return strings.ToLower(appearanceOptions[index])
 }
 
-// settingsSections is the Settings inner-page navigation; it renders in the
-// app sidebar while the section content owns the route area.
-var settingsSections = []struct {
+// settingsSection is one entry of the Settings navigation.
+type settingsSection struct {
 	path  string
 	label string
 	icon  *ui.SVG
 	tone  TileTone
-}{
+}
+
+// settingsSections is the Settings inner-page navigation; it renders in the
+// app sidebar while the section content owns the route area. The title bar
+// names the open section from the same table (route_header.go).
+var settingsSections = []settingsSection{
 	{"/settings/general", "General", iconSettings, TileGray},
 	{"/settings/terminal", "Terminal", iconTerminal, TileGreen},
 	{"/settings/providers", "Agents", iconAgent, TilePurple},
@@ -55,9 +59,9 @@ var settingsSections = []struct {
 }
 
 // settingsNav is the Settings sidebar body: the section navigation that used
-// to be the page's own inner column (inner-page style).
+// to be the page's own inner column (inner-page style). The title bar names
+// the page, so the list starts at its first section.
 func (s *Shell) settingsNav(c *ui.Context) {
-	ui.Text(c, "Settings").FontSize(Typography().Section).FontWeight(WeightSemibold).Padding(6, 8, 8)
 	for _, section := range settingsSections {
 		section := section
 		selected := s.router.Path() == section.path
@@ -67,16 +71,16 @@ func (s *Shell) settingsNav(c *ui.Context) {
 	}
 }
 
-// settingsPage is the one layout owner for Settings. The heading remains
-// fixed outside the scroll viewport; each section renders only controls.
+// settingsPage is the one layout owner for Settings. The title bar names the
+// open section, so the page is the scroll viewport and each section renders
+// only controls.
 const settingsContentMaxWidth float32 = 760
 
-func settingsPage(c *ui.Context, title string, body func()) {
+func settingsPage(c *ui.Context, body func()) {
 	ui.Column(c).Grow(1).MinWidth(0).Children(func() {
-		contentColumn(c, formColumnWidth, func() { pageHeader(c, title, "") })
 		ui.Scroll(c).Grow(1).MinHeight(0).Children(func() {
 			contentColumn(c, formColumnWidth, func() {
-				ui.Column(c).FillWidth().Padding(Spacing().S, Spacing().XL, Spacing().XL).Gap(Spacing().XL).Children(body)
+				ui.Column(c).FillWidth().Padding(pageTopInset(), Spacing().XL, Spacing().XL).Gap(Spacing().XL).Children(body)
 			})
 		})
 	})
@@ -88,23 +92,23 @@ func (s *Shell) settingsLayout(c *ui.Context, r *ui.Route) {
 			switch {
 			case r.Match("/general") || r.Match("/"):
 				r.Title("Settings · General")
-				settingsPage(c, "General", func() { s.settingsGeneral(c) })
+				settingsPage(c, func() { s.settingsGeneral(c) })
 			case r.Match("/terminal"):
 				r.Title("Settings · Terminal")
-				settingsPage(c, "Terminal", func() { s.settingsTerminal(c) })
+				settingsPage(c, func() { s.settingsTerminal(c) })
 			case r.Match("/providers"):
 				r.Title("Settings · Agents")
-				settingsPage(c, "Agents", func() { s.settingsProviders(c) })
+				settingsPage(c, func() { s.settingsProviders(c) })
 			case r.Match("/git"):
 				r.Title("Settings · Git")
-				settingsPage(c, "Git", func() { s.settingsGit(c) })
+				settingsPage(c, func() { s.settingsGit(c) })
 			case r.Match("/diagnostics"):
 				r.Title("Settings · Diagnostics")
-				settingsPage(c, "Diagnostics", func() { s.settingsDiagnostics(c) })
+				settingsPage(c, func() { s.settingsDiagnostics(c) })
 			default:
 				r.Title("Settings · General")
 				// Unknown sections stay usable through the canonical fallback.
-				settingsPage(c, "General", func() { s.settingsGeneral(c) })
+				settingsPage(c, func() { s.settingsGeneral(c) })
 			}
 		})
 	})

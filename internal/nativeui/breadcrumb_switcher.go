@@ -6,7 +6,7 @@ import (
 
 /**
  * [INPUT]: 依赖 mygo/ui 的 Context/Theme/Popover, gorex_style, agent_visual, proc_brands, brands 的 agentProvider/agentMark 与 Herdr Pane layout 排序
- * [OUTPUT]: 对外提供 crumbSegment, Shell.breadcrumbSegments, Shell.breadcrumbSegmentsWithTheme, Shell.breadcrumbRow, crumbItemRow
+ * [OUTPUT]: 对外提供 crumbSegment, crumbOpts/crumbButton（面包屑与内页标题共用的唯一一枚 crumb 渲染）, Shell.breadcrumbSegments, Shell.breadcrumbSegmentsWithTheme, Shell.breadcrumbRow, crumbItemRow
  * [POS]: nativeui 标题栏面包屑与快速切换弹层所有者，展示工作区/Tab/Pane层次并呈现 Agent 与进程品牌图标
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -87,10 +87,70 @@ func (s *Shell) breadcrumbSegmentsWithTheme(dark bool) []crumbSegment {
 	return path
 }
 
+// crumbOpts shapes one crumbButton.
+type crumbOpts struct {
+	last  bool // the current crumb: wears the quiet face, no "›" after it
+	fit   bool // truncates a long label (a session title) instead of pushing the bar's tools off the edge
+	plain bool // not interactive: no hover tint, no pointer, no focus stop
+}
+
+// crumbButton is one crumb of the title-bar path: the mark, the label and —
+// unless it is the current one — the "›" that leads on. The workspace
+// switcher and every inner page's title draw through it, so a crumb reads
+// the same on each route. Clickable affordance is the hover tint (and the
+// popover or navigation behind it); only the current crumb reads as
+// selected. The tints are the gorex header's (2026-10-06): a white pill for
+// the current crumb, a quiet face on hover. A plain crumb is the same face
+// without the control behind it.
+func crumbButton(c *ui.Context, segment crumbSegment, opts crumbOpts) ui.Element {
+	t := c.Theme()
+	k := gorexColorsOf(t.Dark)
+	sp := Spacing()
+	shrink := float32(0)
+	if opts.fit {
+		shrink = 1
+	}
+	var trigger ui.Element
+	ui.Box(c).Shrink(shrink).MinWidth(0).Children(func() {
+		var b ui.Element
+		if opts.plain {
+			b = ui.Row(c).Label(segment.label)
+		} else {
+			b = ui.ButtonBase(c).Label(segment.label)
+		}
+		b.Shrink(shrink).MinWidth(0).Radius(Radius().Row).Padding(2, sp.S)
+		switch {
+		case opts.last:
+			b.Background(k.tabActive)
+		case !opts.plain && b.Hovered():
+			b.Background(k.hover)
+		}
+		b.Children(func() {
+			ui.Row(c).Gap(4).AlignItems(ui.Center).MinWidth(0).Children(func() {
+				if segment.mark.bmp != nil || segment.mark.svg != nil {
+					ui.Box(c).Size(12, 12).Shrink(0).Children(func() {
+						markView(c, segment.mark, 12, t.Text)
+					})
+				}
+				label := ui.Text(c, segment.label).FontSize(Typography().Caption).
+					FontWeight(WeightSemibold).SingleLine().Shrink(shrink).MinWidth(0)
+				if opts.fit {
+					label.Ellipsis("…").Tooltip(segment.label)
+				}
+				if !opts.last {
+					ui.Text(c, "›").FontSize(Typography().Micro).
+						TextColor(t.TextMuted).Shrink(0)
+				}
+			})
+		})
+		trigger = b
+	})
+	return trigger
+}
+
 // breadcrumbRow renders the switcher path plus the Actions pull-down.
 func (s *Shell) breadcrumbRow(c *ui.Context) {
 	t := c.Theme()
-	sp := Spacing()
 	segments := s.breadcrumbSegmentsWithTheme(t.Dark)
 	if len(segments) == 0 {
 		ui.Text(c, "Herdr").TextColor(t.TextMuted).Grow(1).SingleLine()
@@ -100,41 +160,7 @@ func (s *Shell) breadcrumbRow(c *ui.Context) {
 		for i, segment := range segments {
 			segment := segment
 			last := i == len(segments)-1
-			var trigger ui.Element
-			ui.Box(c).Shrink(0).Children(func() {
-				b := ui.ButtonBase(c).
-					Shrink(0).
-					Radius(Radius().Row).
-					Padding(2, sp.S).
-					Label(segment.label)
-				// Clickable affordance is the hover tint and the popover;
-				// only the current segment reads as selected. The tints are
-				// the gorex header's (2026-10-06): a white pill for the
-				// current segment, a quiet face on hover.
-				k := gorexColorsOf(t.Dark)
-				switch {
-				case last:
-					b.Background(k.tabActive)
-				case b.Hovered():
-					b.Background(k.hover)
-				}
-				b.Children(func() {
-					ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
-						if segment.mark.bmp != nil || segment.mark.svg != nil {
-							ui.Box(c).Size(12, 12).Shrink(0).Children(func() {
-								markView(c, segment.mark, 12, t.Text)
-							})
-						}
-						ui.Text(c, segment.label).FontSize(Typography().Caption).
-							FontWeight(WeightSemibold).SingleLine().Shrink(0)
-						if !last {
-							ui.Text(c, "›").FontSize(Typography().Micro).
-								TextColor(t.TextMuted).Shrink(0)
-						}
-					})
-				})
-				trigger = b
-			})
+			trigger := crumbButton(c, segment, crumbOpts{last: last})
 			if trigger.Clicked() {
 				// One popover at a time.
 				s.crumbOpen = [3]bool{}

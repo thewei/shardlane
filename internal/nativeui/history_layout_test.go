@@ -160,9 +160,10 @@ func TestHistoryRowHoverKeepsColumnsInPlace(t *testing.T) {
 	}
 }
 
-// TestSessionDetailHeaderActionsAreAPulldown pins the detail header's menu
-// trigger: a labeled icon + chevron pull-down (never a bare "…") whose menu
-// is the session's action list without the list-only "Open".
+// TestSessionDetailHeaderActionsAreAPulldown pins the detail's menu trigger,
+// which is the title bar's Actions pull-down (the page draws no header of
+// its own): a labeled icon + chevron (never a bare "…") whose menu is the
+// session's action list without the list-only "Open".
 func TestSessionDetailHeaderActionsAreAPulldown(t *testing.T) {
 	shell := newMultiAgentHistoryShell(t)
 	shell.router.Replace(routeHistory)
@@ -177,7 +178,7 @@ func TestSessionDetailHeaderActionsAreAPulldown(t *testing.T) {
 	if tester.HasText("…") {
 		t.Fatalf("detail header still shows a bare ellipsis: %q", tester.Texts())
 	}
-	if err := tester.Click("Actions for Rename the settings groups"); err != nil {
+	if err := tester.Click("Actions"); err != nil {
 		t.Fatalf("detail header has no actions pull-down: %v; texts=%q", err, tester.Texts())
 	}
 	tester.Frame()

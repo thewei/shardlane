@@ -27,6 +27,11 @@ func contentColumn(c *ui.Context, maxWidth float32, body func()) {
 	})
 }
 
+// pageTopInset is the gap between the title bar and a page's first row. The
+// title bar owns every page title, so pages start with content and share
+// this one inset instead of each spacing itself from a heading it lost.
+func pageTopInset() float32 { return Spacing().L }
+
 // sectionHeader labels one card/section.
 func sectionHeader(c *ui.Context, label string) {
 	typ := Typography()

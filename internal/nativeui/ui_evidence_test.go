@@ -2,7 +2,7 @@ package nativeui
 
 /**
  * [INPUT]: Headless MyGo renderer, a synthetic multi-workspace projection (agents, split panes) and a seeded history catalog
- * [OUTPUT]: Optional dark/light PNGs of Workspace, Settings pages, History (all, one Agent tab, a session detail), Files and the Agent panel for visual review
+ * [OUTPUT]: Optional dark/light PNGs of Workspace, Settings pages, History (all, one Agent tab, a session detail), Files, Hosts (seeded temp ssh config) and the Agent panel for visual review
  * [POS]: Visual QA only, enabled by SHARDLANE_UI_EVIDENCE; never touches a live Herdr session
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -21,6 +21,7 @@ import (
 	"github.com/egoist/mygo/ui"
 	"github.com/wh-studio/herdr-client/internal/herdr"
 	"github.com/wh-studio/herdr-client/internal/history"
+	"github.com/wh-studio/herdr-client/internal/sshconfig"
 )
 
 // evidenceHistory seeds a catalog with a handful of Codex sessions so the
@@ -209,6 +210,22 @@ func TestUIEvidence(t *testing.T) {
 		render("08c-history-detail")
 		shell.router.Push("/files")
 		render("09-files")
+
+		// Hosts reads a seeded temp config, never the developer's real one.
+		config := filepath.Join(t.TempDir(), "config")
+		if err := os.WriteFile(config, []byte("Host dev-box\n  HostName 10.0.0.12\n  User wilson\n\nHost staging\n  HostName staging.example.com\n  User deploy\n  Port 2222\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		index, err := sshconfig.IndexPath(config)
+		if err != nil {
+			t.Fatal(err)
+		}
+		shell.hosts.loaded, shell.hosts.mainPath, shell.hosts.entries, shell.hosts.files = true, index.MainPath, index.Entries, index.Files
+		if len(index.Entries) > 0 {
+			shell.hosts.selected = hostEntryKey(index.Entries[0])
+		}
+		shell.router.Push("/hosts")
+		render("11-hosts")
 
 		panel := ui.NewTester(shell.QuickPanelView, QuickPanelWidth, QuickPanelHeight)
 		panel.SetDark(dark)

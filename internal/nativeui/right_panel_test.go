@@ -65,15 +65,22 @@ func TestFilesHeaderOpensDedicatedRouteAndInlinePreview(t *testing.T) {
 	}
 	tester.Frame()
 	// The preview content itself renders in the WebView page; the native
-	// side records the selection and exposes its header actions.
+	// side records the selection and exposes its actions in the title bar's
+	// Actions menu — the page draws no header buttons of its own (2026-10-14).
 	if s.rightPanel.selectedFilePath != readme {
 		t.Fatalf("selection = %q, want README", s.rightPanel.selectedFilePath)
 	}
+	if err := tester.Click("Actions"); err != nil {
+		t.Fatalf("selection has no title-bar Actions menu: %v; texts=%q", err, tester.Texts())
+	}
+	tester.Frame()
+	menu := tester.Menu()
 	for _, want := range []string{"Copy Path", "Reveal in Finder"} {
-		if !tester.HasText(want) {
-			t.Fatalf("selection actions missing %q: %q", want, tester.Texts())
+		if !containsText(menu, want) {
+			t.Fatalf("selection actions missing %q: %q", want, menu)
 		}
 	}
+	tester.CloseMenu()
 	if err := tester.Click("docs"); err != nil {
 		t.Fatal(err)
 	}

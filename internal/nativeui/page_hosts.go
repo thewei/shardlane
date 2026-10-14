@@ -69,33 +69,14 @@ func (s *Shell) showViewHosts() {
 	s.router.Push(routeHosts)
 }
 
-// hostsPage is the route content: the detail center. The host list lives in
-// the shared sidebar (hostsNav); the page never touches the config file on
-// the render lane — ensureHostsIndex refreshes the index in the background.
+// hostsPage is the route content: the detail center, content only. The title
+// bar names the page and the config it indexes (route_header.go) and the
+// sidebar owns the one Refresh. The host list lives in the shared sidebar
+// (hostsNav); the page never touches the config file on the render lane —
+// ensureHostsIndex refreshes the index in the background.
 func (s *Shell) hostsPage(c *ui.Context) {
 	s.ensureHostsIndex()
-	t := c.Theme()
-	sp := Spacing()
-	tokens := designTokens(t.Dark)
 	ui.Column(c).FillWidth().Grow(1).MinWidth(0).MinHeight(0).Children(func() {
-		ui.Row(c).FillWidth().Padding(sp.M, sp.L).Gap(sp.S).AlignItems(ui.Center).
-			BorderWidth(0, 0, 1, 0).BorderColor(tokens.BorderSubtle).Children(func() {
-			ui.Icon(c, iconGlobe).Size(16, 16).TextColor(t.TextMuted)
-			ui.Column(c).Grow(1).MinWidth(0).Gap(sp.XXS).Children(func() {
-				ui.Text(c, "Hosts").FontSize(Typography().Section).FontWeight(WeightSemibold)
-				path := s.hosts.mainPath
-				if path == "" {
-					path = "~/.ssh/config"
-				}
-				ui.Text(c, compactSearchPath(path)).FontSize(Typography().Caption).
-					TextColor(t.TextMuted).SingleLine().Tooltip(path)
-			})
-			if !s.hosts.editing {
-				if compactButton(c, "Refresh").Clicked() {
-					s.refreshHostsIndex(true)
-				}
-			}
-		})
 		switch {
 		case s.hosts.editing:
 			s.hostsEditor(c)

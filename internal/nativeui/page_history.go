@@ -40,10 +40,10 @@ func distinctAgents(summaries []history.SessionSummary) []history.AgentID {
 // historyNav is the Sessions sidebar body (N19 #9: History is now the
 // Sessions view): the index entry — search, provider filters, the recycle
 // toggle, refresh and the count live in the page toolbar, so the sidebar
-// foot holds only Back, as on every inner page.
+// foot holds only Back, as on every inner page. The title bar names the
+// page, so the list starts at its entry.
 func (s *Shell) historyNav(c *ui.Context) {
 	path := s.router.Path()
-	ui.Text(c, "Sessions").FontSize(Typography().Section).FontWeight(WeightSemibold).Padding(6, 8, 8)
 	if navTileButton(c, iconHistory, TileBlue, "All sessions", path == routeHistory).Clicked() {
 		s.showHistoryIndex()
 	}
@@ -55,7 +55,6 @@ func (s *Shell) historyPage(c *ui.Context) {
 	}
 	ui.Column(c).Grow(1).MinWidth(0).Children(func() {
 		contentColumn(c, listColumnWidth, func() {
-			pageHeader(c, "Sessions", "")
 			if s.hist.errText != "" {
 				inlineNotice(c, ToneError, s.hist.errText, func() {
 					s.hist.loading = false
@@ -78,7 +77,7 @@ func (s *Shell) historyPage(c *ui.Context) {
 func (s *Shell) historyToolbar(c *ui.Context) {
 	sp := Spacing()
 	k := gorexColorsOf(c.Theme().Dark)
-	ui.Row(c).FillWidth().Padding(0, sp.XL, sp.M).Gap(sp.M).AlignItems(ui.Center).Wrap().Children(func() {
+	ui.Row(c).FillWidth().Padding(pageTopInset(), sp.XL, sp.M).Gap(sp.M).AlignItems(ui.Center).Wrap().Children(func() {
 		s.historyAgentTabs(c)
 		ui.Spacer(c)
 		ui.Row(c).Shrink(0).Gap(sp.M).AlignItems(ui.Center).Children(func() {

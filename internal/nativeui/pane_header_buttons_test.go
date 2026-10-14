@@ -96,22 +96,19 @@ func TestPaneHeaderButtonsRespondWithoutHoverFrame(t *testing.T) {
 }
 
 // TestTitlebarHeightTracksTrafficLightBand pins the 2026-10-06 annotation
-// A1/F142: the workspace bar stops growing past the window controls' band
-// (MyGo centers the lights inside exactly bar.Height), so content stays on
-// the lights' horizontal line instead of sagging below it with a dead band
-// underneath. The 42 floor still fits the two breadcrumb rows.
+// A1/F142: the bar stops growing past the window controls' band (MyGo
+// centers the lights inside exactly bar.Height), so content stays on the
+// lights' horizontal line instead of sagging below it with a dead band
+// underneath. Every route shows the same two rows (crumbs and a context
+// line), so the 42 floor is one value for all of them.
 func TestTitlebarHeightTracksTrafficLightBand(t *testing.T) {
-	if got := titlebarHeight(46, true); got != 46 {
-		t.Fatalf("workspace bar must stay at bar.Height=46, got %v", got)
+	if got := titlebarHeight(46); got != 46 {
+		t.Fatalf("bar must stay at bar.Height=46, got %v", got)
 	}
-	if got := titlebarHeight(46, false); got != 46 {
-		t.Fatalf("plain bar must stay at bar.Height=46, got %v", got)
-	}
-	if got := titlebarHeight(38, true); got != 42 {
-		t.Fatalf("workspace bar keeps its 42 two-row floor, got %v", got)
-	}
-	if got := titlebarHeight(28, false); got != 34 {
-		t.Fatalf("plain bar keeps its 34 one-row floor, got %v", got)
+	for _, band := range []float32{38, 28} {
+		if got := titlebarHeight(band); got != 42 {
+			t.Fatalf("bar keeps its 42 two-row floor under a %v band, got %v", band, got)
+		}
 	}
 }
 

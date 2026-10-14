@@ -11,29 +11,30 @@ import (
 
 /**
  * [INPUT]: 依赖 mygo/ui 的 Context/TitleBar（窗口控件带几何）、gorex_style 的图标按钮与配色、router 路由态、runtime/time
- * [OUTPUT]: 对外提供 Shell.titlebar（窗口标题栏：红绿灯对齐、双行面包屑、工具区、Windows 控件）、titlebarHeight（灯带对齐的行高纯函数）、showViewTerminal/showViewChat/showViewChanges/showViewHistory（四个视图的唯一切换入口）、toggleWindowPinned（窗口置顶的唯一入口）
- * [POS]: nativeui 的窗口 chrome 所有者，被 shell.View 顶部消费；高度与 MyGo 红灯带对齐（F142），视图切换、Agent 活动浮层入口与窗口置顶在此收口
+ * [OUTPUT]: 对外提供 Shell.titlebar（窗口标题栏：红绿灯对齐、每条路由同一版式的双行身份块——Workspace 为面包屑 + cwd、其余路由为 route_header.go 的标题块、工具区、Windows 控件）、titlebarHeight（灯带对齐的行高纯函数，所有路由同一 42 下限）、showViewTerminal/showViewChat/showViewChanges/showViewHistory（四个视图的唯一切换入口）、toggleWindowPinned（窗口置顶的唯一入口）
+ * [POS]: nativeui 的窗口 chrome 所有者，被 shell.View 顶部消费；高度与 MyGo 红灯带对齐（F142），页面标题与页面动作的唯一归属（2026-10-14：内页只画内容），视图切换、Agent 活动浮层入口与窗口置顶在此收口
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 
 // The content column's title bar (2026-10-12): the sidebar owns the left of
-// the window top to bottom, so this bar only spans the content — the
-// workspace identity (switcher path over the selected Pane's directory) and
-// the trailing tools, on the canvas color with no fill of its own. Other
-// routes carry their own page title, so the bar stays empty there instead
-// of repeating it.
+// the window top to bottom, so this bar only spans the content — the page's
+// identity and the trailing tools, on the canvas color with no fill of its
+// own. The identity is the one place a page is named (2026-10-14): the
+// workspace shows its switcher path over the selected Pane's directory,
+// every other route its title crumbs, context line and Actions menu
+// (route_header.go). Pages render content only, so no two pages open with
+// a different header of their own.
 func (s *Shell) titlebar(c *ui.Context) {
 	t := c.Theme()
 	k := gorexColorsOf(t.Dark)
 	bar := c.TitleBar()
-	// Two rows on the workspace route: the switcher path above, the selected
-	// Pane's path below. The row never grows past bar.Height (2026-10-06
-	// annotation F142): the traffic lights sit centered inside exactly
-	// bar.Height (MyGo places them btnHeight + 2×TrafficLightPosition.Y
-	// tall), so centering this row's content in the same height puts every
-	// control on the lights' horizontal line.
-	workspace := s.router.Path() == routeWorkspace
-	height := titlebarHeight(bar.Height, workspace)
+	// Two rows on every route: the title crumbs above, a muted context line
+	// below. The row never grows past bar.Height (2026-10-06 annotation
+	// F142): the traffic lights sit centered inside exactly bar.Height (MyGo
+	// places them btnHeight + 2×TrafficLightPosition.Y tall), so centering
+	// this row's content in the same height puts every control on the
+	// lights' horizontal line.
+	height := titlebarHeight(bar.Height)
 	// While the sidebar slides shut the content column reaches the window's
 	// left edge: its content then clears the traffic lights and the toggle.
 	left := max(gorexGap*2, sidebarToggleClearance(bar)-s.sidebarSlideW)
@@ -44,10 +45,14 @@ func (s *Shell) titlebar(c *ui.Context) {
 		DragWindow().
 		AlignItems(ui.Center).
 		Children(func() {
-			if workspace {
+			if s.router.Path() == routeWorkspace {
 				ui.Column(c).Grow(1).MinWidth(0).Children(func() {
 					s.breadcrumbRow(c)
 					s.crumbPathRow(c)
+				})
+			} else if spec, ok := s.routeHeader(t.Dark); ok {
+				ui.Column(c).Grow(1).MinWidth(0).Children(func() {
+					s.routeHeaderBlock(c, spec)
 				})
 			} else {
 				ui.Box(c).Grow(1).PassThrough()
@@ -93,13 +98,10 @@ func (s *Shell) sidebarToggle(c *ui.Context) {
 // centers the traffic lights inside exactly bar.Height (button height +
 // 2× TrafficLightPosition.Y), so centering the bar's content in that same
 // height lines every control up with the lights (2026-10-06 annotation
-// F142). The workspace route needs at least 42 for its two breadcrumb
-// rows; other routes at least 34 for one row.
-func titlebarHeight(barHeight float32, workspace bool) float32 {
-	if workspace {
-		return max(barHeight, 42)
-	}
-	return max(barHeight, 34)
+// F142). Every route shows two rows (crumbs and a context line), so the 42
+// floor is the same everywhere and the title never moves between pages.
+func titlebarHeight(barHeight float32) float32 {
+	return max(barHeight, 42)
 }
 
 // titlebarTools is the header's trailing edge. The Terminal/Chat/Changes/
@@ -322,16 +324,12 @@ func (s *Shell) showViewHistory() {
 // crumbPathRow shows the selected Pane's working directory under the
 // switcher path, as muted small text behind a folder glyph.
 func (s *Shell) crumbPathRow(c *ui.Context) {
-	t := c.Theme()
 	cwd := s.selectedTabCWD()
 	if cwd == "" {
-		ui.Box(c).Height(2).Grow(1).PassThrough()
+		headerDetailRow(c, nil, "", "")
 		return
 	}
-	ui.Row(c).Height(12).MinWidth(0).Gap(4).AlignItems(ui.Center).Tooltip(cwd).Children(func() {
-		ui.Icon(c, iconFolder).Size(9, 9).TextColor(t.TextMuted).Shrink(0)
-		ui.Text(c, shortDir(cwd)).FontSize(Typography().Micro).TextColor(t.TextMuted).SingleLine()
-	})
+	headerDetailRow(c, nil, shortDir(cwd), cwd)
 }
 
 // titlebarActivity is the Agent activity control (2026-10-07): a persistent

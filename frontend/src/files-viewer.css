@@ -104,11 +104,6 @@
   border-radius: 4px;
 }
 
-.viewer-muted {
-  font-size: 12px;
-  color: var(--text-muted);
-}
-
 .pill {
   font-size: 11px;
   padding: 2px 8px;

@@ -562,10 +562,26 @@ func (s *Shell) paneHeaderVisuals(surface *terminalSurface, dark bool) (visualMa
 	detail := shortDir(surface.cwd)
 	// Shell labels are already "host:cwd" — repeating the same path in the
 	// dim slot only doubles the truncation (F168).
-	if detail != "" && strings.Contains(title, detail) {
+	if detail != "" && titleSpellsOutDir(title, surface.cwd) {
 		detail = ""
 	}
 	return visualMark{svg: iconTerminal}, title, detail
+}
+
+// titleSpellsOutDir reports whether a pane label already carries its working
+// directory: in full, from ~, or by the tail shortDir keeps. Matching only
+// shortDir's own output (F168) missed every deep path — its leading "…"
+// never appears in the label that spells the path out.
+func titleSpellsOutDir(title, cwd string) bool {
+	if cwd == "" {
+		return false
+	}
+	for _, form := range []string{cwd, tildePath(cwd), shortDir(cwd), strings.TrimPrefix(shortDir(cwd), "…")} {
+		if form != "" && strings.Contains(title, form) {
+			return true
+		}
+	}
+	return false
 }
 
 // paneStackInfo reports whether surface's pane belongs to a multi-pane split
@@ -622,9 +638,22 @@ func (s *Shell) paneLogoView(c *ui.Context, k *gorexColors, surface *terminalSur
 	})
 }
 
+// paneCardCaption is what a card's header says about its Pane:
+// paneHeaderVisuals, less the directory when the card stands alone. The title
+// bar's second row already shows the selected Pane's directory (2026-10-14
+// duplicate audit), so a lone card — which is that Pane — repeats it only
+// when siblings need telling apart from each other.
+func (s *Shell) paneCardCaption(surface *terminalSurface, dark bool) (visualMark, string, string) {
+	mark, title, detail := s.paneHeaderVisuals(surface, dark)
+	if len(s.terminals) == 1 {
+		detail = ""
+	}
+	return mark, title, detail
+}
+
 func (s *Shell) paneCardHeader(c *ui.Context, k *gorexColors, surface *terminalSurface, focused, hovered bool) {
 	dark := c.Theme().Dark
-	mark, title, detail := s.paneHeaderVisuals(surface, dark)
+	mark, title, detail := s.paneCardCaption(surface, dark)
 	isStacked, stackCount := s.paneStackInfo(surface.paneID)
 	h := ui.Row(c).Height(gorexHeaderH).Padding(0, gorexGap, 0, 12).Gap(7).AlignItems(ui.Center).MinWidth(0)
 	// The pane menu lives here since the F144 real-terminal round: the

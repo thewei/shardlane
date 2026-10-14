@@ -29,11 +29,6 @@ func (s *Shell) inspectorPage(c *ui.Context, paneID string) {
 	sp := Spacing()
 	ui.Column(c).Grow(1).MinWidth(0).Background(designTokens(t.Dark).Content).Children(func() {
 		card, ok := s.workbench.directory.Get(agent.AgentKey{InstanceID: s.activeInstance, TerminalID: s.inspector.agentKey.TerminalID})
-		title := "Agent Inspector"
-		if ok {
-			title = card.Title
-		}
-		contentColumn(c, formColumnWidth, func() { pageHeader(c, title, "") })
 		if s.inspector.errText != "" {
 			inlineNotice(c, ToneError, s.inspector.errText, nil)
 		}
@@ -43,7 +38,7 @@ func (s *Shell) inspectorPage(c *ui.Context, paneID string) {
 		}
 		ui.Scroll(c).Grow(1).Children(func() {
 			contentColumn(c, formColumnWidth, func() {
-				ui.Column(c).FillWidth().Padding(0, sp.XL, sp.XL).Gap(sp.XL).Children(func() {
+				ui.Column(c).FillWidth().Padding(pageTopInset(), sp.XL, sp.XL).Gap(sp.XL).Children(func() {
 					if ok {
 						settingsGroup(c, "Status",
 							row("Runtime", "", func() { valueText(c, string(card.RuntimePhase)) }),

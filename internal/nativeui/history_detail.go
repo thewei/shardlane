@@ -2,7 +2,7 @@ package nativeui
 
 /**
  * [INPUT]: 依赖共享 Chat 状态的只读绑定（bindChatWindow）、chatWebviewBody 的 WebView 页面与原生时间线回退
- * [OUTPUT]: 提供 /history/{id} 会话详情页：头部（标题、Provider · 项目 · 模型、操作菜单）+ 共享 Chat 视图（只读、最新消息优先、向上懒加载）
+ * [OUTPUT]: 提供 /history/{id} 会话详情页：共享 Chat 视图（只读、最新消息优先、向上懒加载）；会话标题、Provider · 项目 · 模型与操作菜单由标题栏承载（route_header.go）
  * [POS]: Sessions 详情与 Chat 共用同一条阅读管线；每次打开现读原始会话文件，页面不保存任何会话内容，也没有第二套转录渲染
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -29,7 +29,6 @@ func (s *Shell) historyDetailPage(c *ui.Context, key string) {
 	sp := Spacing()
 	t := c.Theme()
 	ui.Column(c).Grow(1).MinWidth(0).Children(func() {
-		s.historyDetailHeader(c, key)
 		if !s.chatReadOnly || s.chatConversationID != key {
 			return
 		}
@@ -97,48 +96,6 @@ func (s *Shell) historyDetailMeta(key string) *history.SessionMeta {
 		}
 	}
 	return nil
-}
-
-// historyDetailHeader is the title band: the session title over its facts,
-// and the session's action menu at the trailing edge. Back lives at the foot
-// of the sidebar, the same place on every inner page.
-func (s *Shell) historyDetailHeader(c *ui.Context, key string) {
-	sp := Spacing()
-	t := c.Theme()
-	tokens := designTokens(t.Dark)
-	meta := s.historyDetailMeta(key)
-	title, subtitle := "Session", ""
-	if meta != nil {
-		title = fallbackText(meta.Title, history.Untitled)
-		facts := []string{meta.ProjectName, meta.Agent.DisplayName()}
-		if s.chatModel != "" {
-			facts = append(facts, s.chatModel)
-		}
-		subtitle = strings.Join(nonEmptyStrings(facts), " · ")
-	}
-	ui.Row(c).FillWidth().Padding(sp.L, sp.XL).Gap(sp.M).AlignItems(ui.Center).Children(func() {
-		ui.Column(c).Grow(1).MinWidth(0).Gap(2).Children(func() {
-			// The list rows carry a tooltip for truncated titles; so does this.
-			ui.Text(c, title).FontSize(Typography().Heading).FontWeight(WeightSemibold).
-				SingleLine().Ellipsis("…").Tooltip(title)
-			if subtitle != "" {
-				ui.Text(c, subtitle).FontSize(Typography().Caption).TextColor(t.TextMuted).SingleLine().Ellipsis("…")
-			}
-		})
-		if meta != nil {
-			snapshot := *meta
-			more := ui.ButtonBase(c).Height(28).Padding(0, 8).Gap(3).Radius(Radius().Control).Shrink(0).Center().
-				Label("Actions for " + title).Tooltip("Session actions")
-			if more.Hovered() {
-				more.Background(tokens.SidebarHover)
-			}
-			more.Children(func() {
-				ui.Icon(c, iconActions).Size(15, 15).TextColor(t.TextMuted)
-				ui.Icon(c, iconChevronDown).Size(9, 9).TextColor(t.TextMuted)
-			})
-			more.Menu(func(m *ui.Menu) { s.sessionMenu(m, snapshot, false) })
-		}
-	})
 }
 
 // nonEmptyStrings drops the blank entries, keeping order.

@@ -67,11 +67,18 @@ func (s *Shell) filesRowMenu(m *ui.Menu, e filesview.Entry) {
 		s.filesDelete(e.Path, isDir)
 	}
 	m.Separator()
+	s.filesPathItems(m, e.Path)
+}
+
+// filesPathItems are the read-only path helpers of one file or folder. The
+// tree row's right-click menu and the title bar's Actions menu (for the
+// file open in the preview) both show them from here.
+func (s *Shell) filesPathItems(m *ui.Menu, path string) {
 	if m.Item("Copy Path").Chosen() {
-		s.copyToClipboard(e.Path)
+		s.copyToClipboard(path)
 	}
 	if m.Item("Reveal in Finder").Chosen() {
-		s.openExternalPathParent(e.Path)
+		s.openExternalPathParent(path)
 	}
 }
 

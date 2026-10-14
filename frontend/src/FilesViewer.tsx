@@ -316,42 +316,40 @@ export function FilesViewer() {
 
   return (
     <div className="viewer">
-      <div className="viewer-bar">
-        {target?.name ? (
-          <>
-            <span className="viewer-name" title={target.path}>
-              {target.name}
+      {/* The bar belongs to an open file; with none, the body's empty state
+          is the only thing to say (no second "nothing selected" line). */}
+      {target?.name ? (
+        <div className="viewer-bar">
+          <span className="viewer-name" title={target.path}>
+            {target.name}
+          </span>
+          {content && content.sizeBytes > 0 ? (
+            <span className="viewer-size">{formatSize(content.sizeBytes)}</span>
+          ) : null}
+          {content?.truncated && flavor !== "image" ? (
+            <span className="pill">Preview limited to 1 MiB</span>
+          ) : null}
+          {loading ? <span className="viewer-loading">Loading…</span> : null}
+          {content && !content.isBinary && flavor === "markdown" ? (
+            <span className="viewer-seg" role="tablist" aria-label="Markdown view">
+              <button
+                type="button"
+                className={markdownRendered ? "pick" : ""}
+                onClick={() => setMarkdownRendered(true)}
+              >
+                Rendered
+              </button>
+              <button
+                type="button"
+                className={!markdownRendered ? "pick" : ""}
+                onClick={() => setMarkdownRendered(false)}
+              >
+                Source
+              </button>
             </span>
-            {content && content.sizeBytes > 0 ? (
-              <span className="viewer-size">{formatSize(content.sizeBytes)}</span>
-            ) : null}
-            {content?.truncated && flavor !== "image" ? (
-              <span className="pill">Preview limited to 1 MiB</span>
-            ) : null}
-            {loading ? <span className="viewer-loading">Loading…</span> : null}
-            {content && !content.isBinary && flavor === "markdown" ? (
-              <span className="viewer-seg" role="tablist" aria-label="Markdown view">
-                <button
-                  type="button"
-                  className={markdownRendered ? "pick" : ""}
-                  onClick={() => setMarkdownRendered(true)}
-                >
-                  Rendered
-                </button>
-                <button
-                  type="button"
-                  className={!markdownRendered ? "pick" : ""}
-                  onClick={() => setMarkdownRendered(false)}
-                >
-                  Source
-                </button>
-              </span>
-            ) : null}
-          </>
-        ) : (
-          <span className="viewer-muted">No file selected</span>
-        )}
-      </div>
+          ) : null}
+        </div>
+      ) : null}
       <div className="viewer-body">
         {showEditor ? <div className="viewer-editor" ref={hostRef} /> : null}
         {showMarkdown ? <RenderedMarkdown content={content!} /> : null}
@@ -368,7 +366,7 @@ export function FilesViewer() {
           <div className="viewer-state">
             <p className="viewer-title">Can’t show this image</p>
             <p className="viewer-hint">
-              {target?.name} can’t be rendered here. Use “Reveal in Finder” above to open it.
+              {target?.name} can’t be rendered here. Use Actions › Reveal in Finder in the title bar to open it.
             </p>
           </div>
         ) : null}
@@ -385,7 +383,7 @@ export function FilesViewer() {
               <>
                 <p className="viewer-title">Binary file</p>
                 <p className="viewer-hint">
-                  {target?.name} isn’t text. Use “Reveal in Finder” above to open it.
+                  {target?.name} isn’t text. Use Actions › Reveal in Finder in the title bar to open it.
                 </p>
               </>
             ) : target?.name ? (
