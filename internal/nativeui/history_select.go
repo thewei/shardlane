@@ -77,18 +77,29 @@ func (s *Shell) selectedSessionKeys(groups []sessionGroupView) []string {
 	return keys
 }
 
-// selectionMark draws a check box glyph that only shows state: its owner
-// (the row or the header button around it) handles the click. A glyph, not
-// the Checkbox widget — the widget writes through the pointer it was built
-// with, which here would be a per-frame copy, and a passed-through widget
-// swallows the owner's click.
+// selectionMark draws a check box that only shows state: its owner (the row
+// or the header button around it) handles the click. Not the Checkbox widget
+// — the widget writes through the pointer it was built with, which here
+// would be a per-frame copy, a passed-through widget swallows the owner's
+// click, and one more focusable per row would break the list's single tab
+// stop — but the widget's own face, box and check, so a tick reads the same
+// here as in the Commit file list (TestSelectionMarkWearsTheCheckboxFace).
 func selectionMark(c *ui.Context, checked bool) {
 	t := c.Theme()
+	box := ui.Box(c).Size(t.Space(4), t.Space(4)).Radius(t.Space(1)).Shrink(0).PassThrough()
 	if checked {
-		ui.Icon(c, iconTask).Size(16, 16).TextColor(t.Accent).Shrink(0).PassThrough()
-		return
+		box.Background(t.Accent)
+	} else {
+		box.Background(t.Background).Border(1, t.Border.Mix(t.Text, 0.25))
 	}
-	ui.Icon(c, iconSquare).Size(16, 16).TextColor(t.TextMuted).Shrink(0).PassThrough()
+	box.DrawOver(func(p *ui.Painter, r ui.Rect) {
+		if !checked {
+			return
+		}
+		var tick ui.Path
+		tick.MoveTo(r.X+r.W*0.22, r.Y+r.H*0.52).LineTo(r.X+r.W*0.42, r.Y+r.H*0.71).LineTo(r.X+r.W*0.78, r.Y+r.H*0.31)
+		p.StrokePath(&tick, t.Space(0.5), t.AccentText)
+	})
 }
 
 // groupSelectionBox is a project header's checkbox: checked when every
