@@ -113,8 +113,9 @@ func (s *Shell) buildCommandCenterActions() []commandcenter.Action {
 	// decode compatibility, so a second palette command only duplicated it
 	// (F162, same shape as the F16 Settings pair).
 	//
-	// The destinations run in the Go menu's order (Workspace, then the
-	// sidebar's view tabs): TestLaunchersAgreeOnViewDestinations.
+	// Every page the sidebar's view tabs and the Go menu reach is here under
+	// the same name (TestLaunchersAgreeOnViewDestinations). The palette lists
+	// a section alphabetically, so the order below is only reading order.
 	actions = append(actions,
 		commandcenter.Action{ID: "app.workspace", Title: "Workspace", Section: "App",
 			Keywords: []string{"terminal"}, Kind: commandcenter.TargetRoute, TargetID: "action:open-workspace", Available: true},

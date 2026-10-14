@@ -118,9 +118,11 @@ var viewDestinations = []struct{ tab, name string }{
 }
 
 // TestLaunchersAgreeOnViewDestinations pins the rule that a page reachable
-// from the sidebar is reachable from the palette and the menu bar, under one
-// name and in the tabs' order after Workspace: the Changes view was once a
-// sidebar-only page, and the palette once had no way back to the Terminal.
+// from the sidebar is reachable from the palette and the menu bar under one
+// name: the Changes view was once a sidebar-only page, and the palette once
+// had no way back to the Terminal. The Go menu also keeps the sidebar tabs'
+// order after Workspace; the palette lists a section alphabetically, so only
+// its names are pinned.
 func TestLaunchersAgreeOnViewDestinations(t *testing.T) {
 	var tabs []string
 	for _, d := range viewDestinations {
@@ -135,14 +137,16 @@ func TestLaunchersAgreeOnViewDestinations(t *testing.T) {
 	}
 
 	s := NewShell()
-	var palette []string
+	palette := map[string]bool{}
 	for _, a := range s.buildCommandCenterActions() {
-		if a.Section == "App" && a.Available && slices.Contains(want, a.Title) {
-			palette = append(palette, a.Title)
+		if a.Section == "App" && a.Available {
+			palette[a.Title] = true
 		}
 	}
-	if !slices.Equal(palette, want) {
-		t.Errorf("Command Center lists the destinations as %q, want %q (Go menu order)", palette, want)
+	for _, name := range want {
+		if !palette[name] {
+			t.Errorf("the Command Center has no App action %q", name)
+		}
 	}
 	var goMenu []string
 	for _, label := range menuLabels(menuNamed(t, s.MenuBar(nil), "Go").Submenu) {
@@ -153,14 +157,6 @@ func TestLaunchersAgreeOnViewDestinations(t *testing.T) {
 	if !slices.Equal(goMenu, want) {
 		t.Errorf("Go menu lists the destinations as %q, want %q", goMenu, want)
 	}
-}
-
-func indexesIn(list, names []string) []int {
-	out := make([]int, 0, len(names))
-	for _, n := range names {
-		out = append(out, slices.Index(list, n))
-	}
-	return out
 }
 
 // launch runs a destination through one launcher: the Go menu item or the
