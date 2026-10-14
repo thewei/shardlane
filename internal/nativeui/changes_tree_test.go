@@ -57,8 +57,13 @@ func TestChangesRowActionsAreNamedIconButtons(t *testing.T) {
 		t.Fatalf("a row action is still a text glyph: %q", texts)
 	}
 	for _, label := range []string{"Stage folder src", "Stage src/main.go", "Unstage src/main.go"} {
-		if _, ok := tester.Find(label); !ok {
+		rect, ok := tester.Find(label)
+		if !ok {
 			t.Fatalf("row action %q missing: %q", label, tester.Texts())
+		}
+		// The same button every hovered row wears (tree rows, Sessions).
+		if rect.W != gorexRowBtn || rect.H != gorexRowBtn {
+			t.Fatalf("row action %q is %.0fx%.0f, want the row tier %dx%d", label, rect.W, rect.H, gorexRowBtn, gorexRowBtn)
 		}
 	}
 	if err := tester.Click("Stage src/main.go"); err != nil {

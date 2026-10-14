@@ -458,14 +458,10 @@ func (s *Shell) sessionRow(c *ui.Context, summary history.SessionSummary) {
 			}
 		})
 		if row.Hovered() && !selecting {
-			// 22 wide plus the margin fills the date's footprint, so the
+			// The button plus the margin fills the date's footprint, so the
 			// hover swap does not shift the row.
-			more := ui.ButtonBase(c).Size(22, 22).Margin(0, 0, 0, historyDateWidth-22).Radius(5).Shrink(0).Center().
-				Label("Actions for " + title)
-			if more.Hovered() {
-				more.Background(tokens.SidebarHover)
-			}
-			more.Children(func() { ui.Icon(c, iconChevronDown).Size(12, 12).TextColor(t.TextMuted) })
+			more := gorexIconButton(c, gorexColorsOf(t.Dark), iconChevronDown, "Actions for "+title, "", false, gorexRowBtn, gorexRowGlyph).
+				Margin(0, 0, 0, historyDateWidth-gorexRowBtn).Shrink(0)
 			more.Menu(menu)
 		} else {
 			ui.Text(c, historyShortDate(summary.Meta.UpdatedAt, time.Now())).FontSize(Typography().Caption).

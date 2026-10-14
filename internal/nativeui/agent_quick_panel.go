@@ -115,7 +115,7 @@ func (s *Shell) quickPanelEntryRow(c *ui.Context, entry StatusCenterEntry, dupPr
 				return
 			}
 			k := gorexColorsOf(t.Dark)
-			if gorexIconButton(c, k, iconCheck, "Mark Reviewed", "Mark Reviewed", false, 20, 12).Clicked() {
+			if gorexIconButton(c, k, iconCheck, "Mark Reviewed", "Mark Reviewed", false, gorexRowBtn, gorexRowGlyph).Clicked() {
 				s.markAgentReviewed(card.Key)
 				s.fitQuickPanel()
 			}

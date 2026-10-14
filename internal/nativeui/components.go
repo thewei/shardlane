@@ -297,7 +297,7 @@ func treeRow(c *ui.Context, spec treeRowSpec) ui.Element {
 				ui.Icon(c, glyph).Size(11, 11).TextColor(t.TextMuted).Shrink(0).PassThrough()
 			}
 			if spec.Action != nil && hovered {
-				action := gorexIconButton(c, gorexColorsOf(t.Dark), spec.Action.Glyph, spec.Action.Label, spec.Action.tooltip(), false, 20, 12)
+				action := gorexIconButton(c, gorexColorsOf(t.Dark), spec.Action.Glyph, spec.Action.Label, spec.Action.tooltip(), false, gorexRowBtn, gorexRowGlyph)
 				if action.Clicked() {
 					spec.Action.Run()
 				}

@@ -130,15 +130,11 @@ func (s *Shell) renderChangesRow(c *ui.Context, pal *gdPalette, row gitworkbench
 					if pane == gdViewStaged {
 						glyph, verb, action = iconMinus, "Unstage", s.unstageFiles
 					}
-					button := ui.ButtonBase(c).Size(18, 18).Radius(4).Center().Shrink(0).TextColor(muted).
-						Label(verb + " folder " + node.Path).Tooltip(verb + " " + node.Path + " (" + itoa(len(paths)) + " files)")
-					if button.Hovered() {
-						button.Background(pal.hover).TextColor(t.Text)
-					}
+					button := gorexIconButton(c, gorexColorsOf(t.Dark), glyph, verb+" folder "+node.Path,
+						verb+" "+node.Path+" ("+itoa(len(paths))+" files)", false, gorexRowBtn, gorexRowGlyph).Shrink(0)
 					if !r.Hovered() && !button.Hovered() {
 						button.Opacity(0)
 					}
-					button.Children(func() { ui.Icon(c, glyph).FontSize(12) })
 					button.Disabled(s.git.opBusy)
 					if button.Clicked() {
 						action(paths)
@@ -161,15 +157,10 @@ func (s *Shell) renderChangesRow(c *ui.Context, pal *gdPalette, row gitworkbench
 			// The per-file Stage/Unstage button shows while the row is hovered,
 			// as Fork's +/- does; which one depends on the pane.
 			if action, glyph, verb := s.gdRowAction(&cf, pane); action != nil {
-				b := ui.ButtonBase(c).Size(18, 18).Radius(4).Center().Shrink(0).
-					Label(verb + " " + cf.Path).Tooltip(verb).TextColor(muted)
-				if b.Hovered() {
-					b.Background(pal.hover).TextColor(t.Text)
-				}
+				b := gorexIconButton(c, gorexColorsOf(t.Dark), glyph, verb+" "+cf.Path, verb, false, gorexRowBtn, gorexRowGlyph).Shrink(0)
 				if !r.Hovered() && !b.Hovered() {
 					b.Opacity(0)
 				}
-				b.Children(func() { ui.Icon(c, glyph).FontSize(12) })
 				if b.Clicked() {
 					action([]string{cf.Path})
 				}

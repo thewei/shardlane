@@ -96,11 +96,14 @@ const (
 	gorexCardR   = 10 // Radius().Card: pane cards and grouped panels share it
 	gorexHeaderH = 34
 	// Toolbar buttons are gorexIconBtn with a gorexIconGlyph glyph; the
-	// denser pane-header and find-bar buttons use the smaller pair.
+	// denser pane-header and find-bar buttons use the smaller pair, and the
+	// actions that appear inside a hovered list or tree row the smallest.
 	gorexIconBtn   = 28
 	gorexIconGlyph = 16
 	gorexPaneBtn   = 24
 	gorexPaneGlyph = 14
+	gorexRowBtn    = 20
+	gorexRowGlyph  = 12
 	// Each card frame insets half the gutter, so adjacent cards keep a
 	// full gorexGap between them; the canvas padding adds the other half,
 	// completing the edge gutter (edges land on exactly gorexGap too).

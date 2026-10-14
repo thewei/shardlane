@@ -136,6 +136,9 @@ func TestHistoryRowHoverKeepsColumnsInPlace(t *testing.T) {
 	if got, want := more.X+more.W, date.X+date.W; got < want-0.5 || got > want+0.5 {
 		t.Fatalf("menu button ends at %.1f, date ended at %.1f", got, want)
 	}
+	if more.W != gorexRowBtn || more.H != gorexRowBtn {
+		t.Fatalf("menu button is %.0fx%.0f, want the row tier %dx%d", more.W, more.H, gorexRowBtn, gorexRowBtn)
+	}
 	after, ok := tester.Find("507k")
 	if !ok {
 		t.Fatalf("token total vanished on hover; texts=%q", tester.Texts())

@@ -13,7 +13,7 @@ import (
 
 /**
  * [INPUT]: 依赖 nativeui 包内非测试源码里 ui.Button / ui.PrimaryButton 调用链上的 .FontSize(…) 字面覆盖，以及图标按钮/下拉（gdIconButton/gdPulldown/gorexIconButton/gorexPulldown/gorexIconTab）调用链上的 .Size(…)
- * [OUTPUT]: 对外提供按钮尺寸回归：Button 的字号只来自 compactButton / compactPrimaryButton 两档（或默认档），图标按钮的尺寸只来自 gorexIconBtn/gorexPaneBtn 两档，业务代码不在按钮上内联覆盖
+ * [OUTPUT]: 对外提供按钮尺寸回归：Button 的字号只来自 compactButton / compactPrimaryButton 两档（或默认档），图标按钮的尺寸只来自 gorexIconBtn/gorexPaneBtn/gorexRowBtn 三档，业务代码不在按钮上内联覆盖
  * [POS]: 2026-10-14 同组件同尺寸审计的守卫测试；Commit 两个主按钮曾各自内联 Body / BodySmall，与同排兄弟按钮高度不一
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -58,10 +58,15 @@ var iconButtonConstructors = map[string]bool{
 	"gdIconButton": true, "gdPulldown": true, "gorexIconButton": true, "gorexPulldown": true, "gorexIconTab": true,
 }
 
+// iconButtonSizeArg is where each constructor takes its size: the button's
+// edge for gorexIconButton, the pull-down's height for gorexPulldown.
+var iconButtonSizeArg = map[string]int{"gorexIconButton": 6, "gorexPulldown": 4}
+
 // TestIconButtonSizeComesFromTheTiers is the same rule for icon buttons: a
-// shared icon button is 28/16 (toolbar) or 24/14 (dense) by the size it is
-// built with — never a .Size(w, h) chained on afterwards, which is how a
-// Dismiss button became a third, 22-point size.
+// shared icon button is 28/16 (toolbar), 24/14 (dense) or 20/12 (inside a
+// hovered row) by the size it is built with — never a .Size(w, h) chained on
+// afterwards (how a Dismiss button became a third, 22-point size) and never a
+// number typed at the call site (how row actions came in 18, 20 and 22).
 func TestIconButtonSizeComesFromTheTiers(t *testing.T) {
 	files, err := filepath.Glob("*.go")
 	if err != nil {
@@ -84,11 +89,16 @@ func TestIconButtonSizeComesFromTheTiers(t *testing.T) {
 			}
 			if fn, isIdent := call.Fun.(*ast.Ident); isIdent && iconButtonConstructors[fn.Name] {
 				built++
+				if i, ok := iconButtonSizeArg[fn.Name]; ok && i < len(call.Args) {
+					if lit, isLit := call.Args[i].(*ast.BasicLit); isLit {
+						t.Errorf("%s: %s is built at the literal size %s; use a tier (gorexIconBtn / gorexPaneBtn / gorexRowBtn)", fset.Position(call.Pos()), fn.Name, lit.Value)
+					}
+				}
 				return true
 			}
 			if sel, isSel := call.Fun.(*ast.SelectorExpr); isSel && sel.Sel.Name == "Size" {
 				if root := callRoot(sel.X); iconButtonConstructors[root] {
-					t.Errorf("%s: %s(...).Size(...) restates an icon button size; build it at a tier (gorexIconBtn / gorexPaneBtn)", fset.Position(call.Pos()), root)
+					t.Errorf("%s: %s(...).Size(...) restates an icon button size; build it at a tier (gorexIconBtn / gorexPaneBtn / gorexRowBtn)", fset.Position(call.Pos()), root)
 				}
 			}
 			return true
