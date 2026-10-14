@@ -103,24 +103,11 @@ func titlebarHeight(barHeight float32) float32 {
 	return max(barHeight, 42)
 }
 
-// titlebarTools is the header's trailing edge. The Terminal/Chat/Changes/
-// History view switch renders on every route (2026-10-07 product note): the
-// buttons never change or disappear on inner pages, so a view is always one
-// click away and clicking the active view exits back to Terminal. After it
-// come the Agent activity button (floating panel), the Right Panel toggle,
-// and the window pin (always on top).
+// titlebarTools is the header's trailing edge: the Agent activity button
+// (floating panel), the window pin (always on top) and, on Windows, the
+// window controls. The view switch (Changes/Sessions/Files/Hosts) lives at
+// the top of the sidebar (sidebar.go sidebarViewTabs).
 func (s *Shell) titlebarTools(c *ui.Context, k *gorexColors) {
-	s.titlebarViewSwitch(c, k)
-	// Files is a top-level workbench; its tree shares the left navigation,
-	// and preview owns the whole center instead of stealing a right rail.
-	if gorexIconButton(c, k, iconFolder, "Files view", "Browse project files", s.router.Path() == routeFiles, gorexIconBtn, gorexIconGlyph).Clicked() {
-		s.showViewFiles()
-	}
-	// Hosts is the local SSH launchpad: ~/.ssh/config entries and the
-	// saved Herdr machines, one click from every route.
-	if gorexIconButton(c, k, iconGlobe, "Hosts view", "SSH hosts and machines", s.router.Path() == routeHosts, gorexIconBtn, gorexIconGlyph).Clicked() {
-		s.showViewHosts()
-	}
 	s.titlebarActivity(c, k)
 	if gorexIconButton(c, k, iconPin, windowPinLabel, windowPinLabel, s.windowPinned, gorexIconBtn, gorexIconGlyph).Clicked() {
 		s.toggleWindowPinned()
@@ -180,7 +167,7 @@ func (s *Shell) windowControls(c *ui.Context, k *gorexColors) {
 }
 
 // windowPinLabel names the titlebar pin for accessibility and its tooltip;
-// the selected face carries the pinned state, as the view switch does.
+// the selected face carries the pinned state, as the sidebar's view tabs do.
 const windowPinLabel = "Keep Window on Top"
 
 // toggleWindowPinned flips the main window's always-on-top level. The Shell
@@ -190,33 +177,6 @@ func (s *Shell) toggleWindowPinned() {
 	s.windowPinned = !s.windowPinned
 	if s.win != nil {
 		s.win.SetAlwaysOnTop(s.windowPinned)
-	}
-}
-
-// titlebarViewSwitch is the persistent Terminal/Chat/Changes/History switch.
-// Terminal is the first-level view; repeating a Workspace secondary surface
-// or the History ROOT exits to Terminal. Repeating History from a nested
-// History route first returns to its index, without discarding reading context.
-// Accessible labels remain stable for shortcuts and assistive technologies;
-// tooltips describe the action that will actually occur.
-func (s *Shell) titlebarViewSwitch(c *ui.Context, k *gorexColors) {
-	_, _, onChanges, onHistory := s.viewSwitchActive()
-	// N19 #7: Terminal and Chat switched inside their card headers now; the
-	// window header keeps the app-level views.
-	if gorexIconButton(c, k, iconChanges, "Changes view", "Changes", onChanges, gorexIconBtn, gorexIconGlyph).Clicked() {
-		s.showViewChanges()
-	}
-	historyTip := "Sessions"
-	switch s.router.Path() {
-	case routeHistory:
-		historyTip = "Back to Terminal"
-	default:
-		if onHistory {
-			historyTip = "All conversations"
-		}
-	}
-	if gorexIconButton(c, k, iconHistory, "History view", historyTip, onHistory, gorexIconBtn, gorexIconGlyph).Clicked() {
-		s.showViewHistory()
 	}
 }
 

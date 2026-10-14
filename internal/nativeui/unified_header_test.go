@@ -281,7 +281,7 @@ func TestLongSessionTitleCannotPushTheBarsToolsOut(t *testing.T) {
 	if !ok {
 		t.Fatalf("Actions pull-down missing; texts=%q", tester.Texts())
 	}
-	tools, ok := tester.Find("Changes view")
+	tools, ok := tester.Find(windowPinLabel)
 	if !ok {
 		t.Fatalf("trailing tools missing; texts=%q", tester.Texts())
 	}

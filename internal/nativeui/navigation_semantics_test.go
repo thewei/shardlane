@@ -68,14 +68,14 @@ func TestSidebarBackToTerminalDoesNotRestoreDiff(t *testing.T) {
 	s.surface.openDiff(s.workspaceContext(), "example.go")
 	s.router.Replace("/settings/general")
 	tester := ui.NewTester(s.View, 1200, 800)
-	if err := tester.Click("Back to Terminal"); err != nil {
+	if err := tester.Click("Back"); err != nil {
 		t.Fatal(err)
 	}
 	if got := s.router.Path(); got != routeWorkspace {
 		t.Fatalf("sidebar back went to %q", got)
 	}
 	if got := s.surface.current(); got != WorkspaceSurfaceTerminal {
-		t.Fatalf("Back to Terminal restored %q instead", got)
+		t.Fatalf("Back restored %q instead of the Terminal", got)
 	}
 }
 
@@ -85,7 +85,7 @@ func TestHistoryDeepLinkBackTargetsParentNotPreviousPage(t *testing.T) {
 	s.router.Replace("/settings/general")
 	s.router.Push("/history/session-direct")
 	tester := ui.NewTester(s.View, 1200, 800)
-	if err := tester.Click("Back to Sessions"); err != nil {
+	if err := tester.Click("Back"); err != nil {
 		t.Fatal(err)
 	}
 	if got := s.router.Path(); got != routeHistory {

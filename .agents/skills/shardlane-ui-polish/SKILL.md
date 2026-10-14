@@ -19,10 +19,10 @@ description: Use when polishing or unifying the Shardlane MyGo client's UI/UX �
 | # | 不变量 | 唯一实现 | 守卫 |
 |---|---|---|---|
 | 1 | **标题只在标题栏，且是一行大字**：Changes/Sessions/Files/Hosts/Settings/Inspector 的标题 = 标题栏里一行 `Title`(20) 加粗；子页前缀灰色父级（`Settings ›`、`Sessions ›`，会话详情的父级可点回列表）；页面动作紧随其后；**没有 crumb 胶囊、没有第二行上下文**——路径/配置路径放标题悬停提示（`titleTip`），会话事实（项目 · Agent · 模型）同行灰字。只有 Terminal/Chat 是面包屑 + cwd 双行。页面只画内容，从 `pageTopInset()`（12）起；侧栏不回声标题 | `routeHeader()`/`routeHeaderBlock`/`headerActions`（Terminal/Chat 走 `breadcrumbRow` + cwd 行）；`titlebarHeight` 全路由同一 42 下限、标题同字号同行 → 进出内页标题不跳；内页侧栏列表由 `sidebarInnerNav` 统一内缩，子导航不再二次 `Padding`（Hosts 曾因此低 14、窄 9） | `unified_header_test.go`（含 `TestInnerTitlesAreOneLargeRow`、`TestInnerSidebarsShareOneInset`） |
-| 2 | **进出内页同一套路**：进入 = 标题栏视图工具（再点同一个回 Terminal；Sessions 内页先回列表）；退出 = **侧栏页脚唯一返回键**（`Back to Terminal`，会话详情 `Back to Sessions`）；页内不再放第二个返回；⌘W 只关 Tab；窗口标题 = `Shardlane — <路由>` | `showViewHistory/Files/Hosts`、`sidebarBackRow`、`syncWindowTitle` | `navigation_semantics_test.go`、`TestSessionBarLeadsBackToTheList` |
+| 2 | **进出内页同一套路**：进入 = **侧栏顶部四个等宽图标视图标签**（Changes/Sessions/Files/Hosts，每条路由同一位置；再点亮着的回 Terminal，Sessions 内页先回列表）；退出 = **侧栏页脚唯一返回键**，一律叫 `Back`（tooltip 写去向：会话详情→Sessions，其余→Terminal）；页内不再放第二个返回；⌘W 只关 Tab；窗口标题 = `Shardlane — <路由>` | `sidebarViewTabs`/`gorexIconTab`、`showViewHistory/Files/Hosts`、`sidebarBackRow`、`syncWindowTitle` | `navigation_semantics_test.go`、`TestSidebarViewTabs*`、`TestSessionBarLeadsBackToTheList` |
 | 3 | **同类动作每个上下文只有一个**：Refresh 是图标按钮、不是导航行；同一目的地只有一个名字（Files/Sessions/Hosts，菜单/⌘K/tooltip/窗口标题一致）；信息只出现一次（窗格卡头不复述标题栏已有的 cwd） | Workspace/Files 侧栏项目头图标；Hosts 侧栏列表头图标；Sessions 工具条图标；Agents 设置工具条图标；`paneCardCaption`/`titleSpellsOutDir` | `TestEachRouteHasOneRefreshAndItIsAnIcon`、`pane_header_visuals_test.go` |
 | 4 | **高亮只有两类，各一种脸**：*按钮*处于开（开关/视图工具/模式）= 中性芯片；*行*被选中（导航/树/列表/Agent 卡）= `SidebarSelect`。业务代码不再自涂 Accent 底 | `gorexToggleFace(b,k,on)`（按下 `k.pressed` / 悬停 `k.hover` / 开 `k.tabActive`）；行走 `rowTint`；"当前分支/当前引用"是状态标记（accent 字 + 0.11 底），不是选中 | `toggle_face_test.go` |
-| 5 | **同一组件同一尺寸**：图标按钮只有两档——工具栏 28/16（`gorexIconBtn/Glyph`）、密集 24/14（`gorexPaneBtn/Glyph`），全走 `gorexIconButton`；文字按钮只有 regular 与 `compactButton`（Micro 10）；"…" 文本按钮一律换图标按钮/`gorexPulldown`；空态 `emptyState`/`workspaceEmptyBanner`、加载 `loadingState`、提示 `inlineNotice`、分组 `settingsGroup/formRow`、内页列宽 `contentColumn(760 表单 / 1040 列表)` | 见左 | `copy_style_test.go`（空态标题）+ 下方扫描 |
+| 5 | **同一组件同一尺寸**：图标按钮只有两档——工具栏 28/16（`gorexIconBtn/Glyph`）、密集 24/14（`gorexPaneBtn/Glyph`），全走 `gorexIconButton`（等分一行的标签条走同脸的 `gorexIconTab`）；文字按钮只有 regular 与 `compactButton`（Micro 10）；"…" 文本按钮一律换图标按钮/`gorexPulldown`；空态 `emptyState`/`workspaceEmptyBanner`、加载 `loadingState`、提示 `inlineNotice`、分组 `settingsGroup/formRow`、内页列宽 `contentColumn(760 表单 / 1040 列表)` | 见左 | `copy_style_test.go`（空态标题）+ 下方扫描 |
 
 ## 去 AI 味配方（本项目真实做过的，按维度）
 
@@ -90,6 +90,7 @@ rg -n 'Padding\(14, 9, 9\)' --glob '!*_test.go' .                      # 侧栏�
 ## 已落地（2026-10-14 一轮）
 
 - 标题栏接管所有内页标题/动作：`route_header.go`（Changes、Sessions、Session 详情、Files、Hosts、Settings、Inspector），统一为单行 Title 大字标题（先前是 crumb 胶囊 + 第二行上下文，太拘谨，2026-10-14 第二轮去掉）；`pageHeader` 退出生产页面；侧栏不再回声标题。
+- 四个视图按钮（Changes/Sessions/Files/Hosts）从标题栏右上移到侧栏顶部等宽图标标签条（2026-10-14 第二轮）；标题栏工具区只剩 Agent 活动与置顶；侧栏页脚返回键统一叫 `Back`。
 - Refresh 收口为每个上下文一个图标；Hosts 页内 Refresh 与侧栏重复的已删。
 - 窗格卡头：标签已写出目录或单卡时不再出 cwd（`paneCardCaption`/`titleSpellsOutDir`）。
 - 开关脸统一：Files 忽略开关与 Sessions 的 Select/Hidden 从蓝/accent 改为 `gorexToggleFace` 的中性芯片。

@@ -2,8 +2,8 @@ package nativeui
 
 /**
  * [INPUT]: 依赖 Shell 当前 Router/Workspace/Agent 投影、共享 agentCardRow 和 native Quick Panel
- * [OUTPUT]: 提供 Sidebar 的 Workspace 树、Git 引用导航、History/Settings 导航、内页底部返回控件（取代 Workspace 切换页脚）与 Agent 行点击/右键动作
- * [POS]: 唯一左栏宿主，Git 引用树由 git_sidebar_tree 负责，Agent 详情复用 Quick Panel；内页返回统一落在页脚
+ * [OUTPUT]: 提供 Sidebar 的顶部视图标签条（Changes/Sessions/Files/Hosts 四个等宽图标标签）、Workspace 树、Git 引用导航、History/Settings 导航、内页底部返回控件（取代 Workspace 切换页脚）与 Agent 行点击/右键动作
+ * [POS]: 唯一左栏宿主，Git 引用树由 git_sidebar_tree 负责，Agent 详情复用 Quick Panel；视图切换在栏顶，内页返回统一落在页脚
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 
@@ -22,9 +22,10 @@ func (s *Shell) sidebar(c *ui.Context) {
 	tokens := s.tokens(t.Dark)
 	// No fill of its own: the sidebar column (sidebarSlide) is the vibrancy
 	// material or its opaque fallback, one continuous surface with the band
-	// beside the traffic lights above this body. The header's trailing
-	// cluster owns the view switch (2026-10-07).
+	// beside the traffic lights above this body. The strip at the top owns
+	// the view switch (2026-10-14).
 	ui.Column(c).Width(s.sidebarW).Grow(1).MinHeight(0).Shrink(0).Children(func() {
+		s.sidebarViewTabs(c)
 		if s.sidebarInDiffMode() {
 			// Git references are full-height navigation, not compressed toolbar chips.
 			s.sidebarProjectHeader(c, s.git.root, "Refresh repository", s.refreshGitChanges)
@@ -112,18 +113,55 @@ func (s *Shell) sidebarInnerPage() bool {
 		strings.HasPrefix(path, "/settings/")
 }
 
-// sidebarBackRow names the destination precisely. A session detail returns
-// to the Sessions list; every other inner page returns to the Workspace's
-// Terminal, not the last visible Diff/Chat/Commit surface. The global router
-// history shortcut remains independent of this explicit product navigation.
+// sidebarViewTabs is the sidebar's first row: the four app-level views —
+// Changes, Sessions, Files, Hosts — as equal-width icon tabs, on every route
+// (they were the title bar's trailing buttons until 2026-10-14). The lit tab
+// is the page on screen; pressing it again leaves for the Terminal (from a
+// nested Sessions page, first back to the list), so a view is always one
+// click away and one click out. Accessible labels stay stable for shortcuts
+// and assistive technologies; tooltips describe the action that will happen.
+func (s *Shell) sidebarViewTabs(c *ui.Context) {
+	k := gorexColorsOf(c.Theme().Dark)
+	_, _, onChanges, onHistory := s.viewSwitchActive()
+	historyTip := "Sessions"
+	switch s.router.Path() {
+	case routeHistory:
+		historyTip = "Back to Terminal"
+	default:
+		if onHistory {
+			historyTip = "All conversations"
+		}
+	}
+	sp := Spacing()
+	ui.Row(c).FillWidth().Padding(0, sidebarGutter, sp.S).Gap(sp.XS).Children(func() {
+		if gorexIconTab(c, k, iconChanges, "Changes view", "Changes", onChanges).Clicked() {
+			s.showViewChanges()
+		}
+		if gorexIconTab(c, k, iconHistory, "History view", historyTip, onHistory).Clicked() {
+			s.showViewHistory()
+		}
+		if gorexIconTab(c, k, iconFolder, "Files view", "Browse project files", s.router.Path() == routeFiles).Clicked() {
+			s.showViewFiles()
+		}
+		if gorexIconTab(c, k, iconGlobe, "Hosts view", "SSH hosts and machines", s.router.Path() == routeHosts).Clicked() {
+			s.showViewHosts()
+		}
+	})
+}
+
+// sidebarBackRow is the one way back, always labelled Back; its tooltip
+// names the destination. A session detail returns to the Sessions list;
+// every other inner page returns to the Workspace's Terminal, not the last
+// visible Diff/Chat/Commit surface. The global router history shortcut
+// remains independent of this explicit product navigation.
 func (s *Shell) sidebarBackRow(c *ui.Context) {
 	if strings.HasPrefix(s.router.Path(), routeHistory+"/") {
-		if navButton(c, iconArrowLeft, "Back to Sessions", "", false).Clicked() {
+		if navButton(c, iconArrowLeft, "Back", "", false).Tooltip("Back to Sessions").Clicked() {
 			s.showHistoryIndex()
 		}
 		return
 	}
-	if navButton(c, iconArrowLeft, "Back to Terminal", "", false).Clicked() {
+	if navButton(c, iconArrowLeft, "Back", "", false).Tooltip("Back to Terminal").Clicked() {
 		s.showViewTerminal()
 	}
 }

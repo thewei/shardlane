@@ -13,7 +13,7 @@ import (
 
 /**
  * [INPUT]: 依赖 github.com/egoist/mygo/plugins/terminal, github.com/egoist/mygo/ui, os, path/filepath, runtime
- * [OUTPUT]: 对外提供 gorexColors/gorexColorsOf/gorexContentCard/gorexToggleFace/gorexIconButton/gorexActivityDot/gorexAttentionDot/shortDir/samePath/tildePath
+ * [OUTPUT]: 对外提供 gorexColors/gorexColorsOf/gorexContentCard/gorexToggleFace/gorexIconButton/gorexIconTab/gorexActivityDot/gorexAttentionDot/shortDir/samePath/tildePath
  * [POS]: nativeui 的窗口 chrome 与终端卡片视觉实现（扁平中性面、细线图标按钮），被 workspace/terminal/titlebar 等模块消费
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -146,6 +146,21 @@ func gorexToggleFace(b ui.Element, k *gorexColors, on bool) {
 // keeps a quiet filled face, as the surface switch's current side does.
 func gorexIconButton(c *ui.Context, k *gorexColors, svg *ui.SVG, label, tooltip string, selected bool, size, iconSize float32) ui.Element {
 	b := ui.Box(c).Size(size, size).Center().Radius(size / 2.6).Cursor(ui.CursorPointer).Role(ui.RoleButton).Label(label)
+	return gorexIconFace(c, b, k, svg, tooltip, selected, iconSize)
+}
+
+// gorexIconTab is gorexIconButton for a strip of equal choices (the sidebar's
+// view tabs): the same faces, but each tab takes an equal share of its row
+// instead of a fixed square.
+func gorexIconTab(c *ui.Context, k *gorexColors, svg *ui.SVG, label, tooltip string, selected bool) ui.Element {
+	b := ui.Box(c).Grow(1).MinWidth(0).Height(gorexIconBtn).Center().Radius(Radius().Row).
+		Cursor(ui.CursorPointer).Role(ui.RoleButton).Label(label)
+	return gorexIconFace(c, b, k, svg, tooltip, selected, gorexIconGlyph)
+}
+
+// gorexIconFace dresses an icon button's box: tooltip, state face, and the
+// glyph that darkens on hover or when on.
+func gorexIconFace(c *ui.Context, b ui.Element, k *gorexColors, svg *ui.SVG, tooltip string, selected bool, iconSize float32) ui.Element {
 	if tooltip != "" {
 		b.Tooltip(tooltip)
 	}

@@ -1,6 +1,7 @@
 package nativeui
 
 import (
+	"math"
 	"testing"
 
 	"github.com/egoist/mygo/ui"
@@ -19,21 +20,26 @@ func TestInnerPageBackPinnedToSidebarFoot(t *testing.T) {
 
 	s.router.Replace(routeWorkspace)
 	tester := ui.NewTester(s.View, 1200, height)
-	if !tester.HasText("Choose Session") || tester.HasText("Back to Terminal") {
+	if !tester.HasText("Choose Session") || tester.HasText("Back") {
 		t.Fatalf("workspace sidebar must keep its Workspace switch and no back control; texts=%q", tester.Texts())
 	}
 
-	for _, tc := range []struct{ route, nav, back string }{
-		{"/settings/general", "General", "Back to Terminal"},
-		{routeHistory, "All sessions", "Back to Terminal"},
-		{"/history-projects", "All sessions", "Back to Terminal"},
-		{"/history/codex:abc", "All sessions", "Back to Sessions"},
+	s.router.Replace("/settings/general")
+	backEntries := countTextExact(ui.NewTester(s.View, 1200, height).Texts(), "Back")
+	if backEntries == 0 {
+		t.Fatal("the Settings sidebar shows no Back control")
+	}
+	for _, tc := range []struct{ route, nav string }{
+		{"/settings/general", "General"},
+		{routeHistory, "All sessions"},
+		{"/history-projects", "All sessions"},
+		{"/history/codex:abc", "All sessions"},
 	} {
 		s.router.Replace(tc.route)
 		tester := ui.NewTester(s.View, 1200, height)
-		back, ok := tester.Find(tc.back)
+		back, ok := tester.Find("Back")
 		if !ok {
-			t.Fatalf("%s: sidebar missing %q; texts=%q", tc.route, tc.back, tester.Texts())
+			t.Fatalf("%s: sidebar missing Back; texts=%q", tc.route, tester.Texts())
 		}
 		if back.X > sidebarWidth || back.Y < height-60 {
 			t.Fatalf("%s: back control at %+v, want the sidebar foot", tc.route, back)
@@ -44,12 +50,9 @@ func TestInnerPageBackPinnedToSidebarFoot(t *testing.T) {
 		if tester.HasText("Choose Session") {
 			t.Fatalf("%s: inner page kept the Workspace switch; texts=%q", tc.route, tester.Texts())
 		}
-		other := "Back to Sessions"
-		if tc.back == other {
-			other = "Back to Terminal"
-		}
-		if tester.HasText(other) {
-			t.Fatalf("%s: unexpected second back control %q; texts=%q", tc.route, other, tester.Texts())
+		// One control, one name: the destination is the tooltip's job.
+		if got := countTextExact(tester.Texts(), "Back"); got != backEntries {
+			t.Fatalf("%s: %d Back entries, want the %d of one control; texts=%q", tc.route, got, backEntries, tester.Texts())
 		}
 	}
 }
@@ -64,9 +67,9 @@ func TestDiffSidebarFootIsBackToTerminal(t *testing.T) {
 	s.showSurface(WorkspaceSurfaceDiff)
 	tester := ui.NewTester(s.View, 1200, height)
 	tester.Frame()
-	back, ok := tester.Find("Back to Terminal")
+	back, ok := tester.Find("Back")
 	if !ok {
-		t.Fatalf("Diff sidebar missing Back to Terminal; texts=%q", tester.Texts())
+		t.Fatalf("Diff sidebar missing Back; texts=%q", tester.Texts())
 	}
 	if back.X > sidebarWidth || back.Y < height-60 {
 		t.Fatalf("back control at %+v, want the sidebar foot", back)
@@ -74,7 +77,7 @@ func TestDiffSidebarFootIsBackToTerminal(t *testing.T) {
 	if tester.HasText("Choose Session") {
 		t.Fatalf("Diff sidebar kept the Workspace switch; texts=%q", tester.Texts())
 	}
-	if err := tester.Click("Back to Terminal"); err != nil {
+	if err := tester.Click("Back"); err != nil {
 		t.Fatal(err)
 	}
 	if s.surface.current() != WorkspaceSurfaceTerminal || s.router.Path() != routeWorkspace {
@@ -93,10 +96,10 @@ func TestInnerPageSidebarPinsPageNavAndBack(t *testing.T) {
 	for _, route := range []string{"/settings/general", "/history", "/history-projects"} {
 		s.router.Replace(route)
 		tester := ui.NewTester(s.View, 1200, 800)
-		if !tester.HasText("Back to Terminal") {
+		if _, ok := tester.Find("Back"); !ok {
 			t.Fatalf("%s: sidebar missing the back control; texts=%q", route, tester.Texts())
 		}
-		if err := tester.Click("Back to Terminal"); err != nil {
+		if err := tester.Click("Back"); err != nil {
 			t.Fatalf("%s: back click failed: %v", route, err)
 		}
 		if got := s.router.Path(); got != "/workspace" {
@@ -228,5 +231,91 @@ func TestProjectAndTabExpansionArePresentationState(t *testing.T) {
 	}
 	if !tester.HasText("Tab B") {
 		t.Fatalf("collapsing Project A should not collapse Project B")
+	}
+}
+
+// sidebarViewTabLabels are the four view tabs' stable accessible names.
+var sidebarViewTabLabels = []string{"Changes view", "History view", "Files view", "Hosts view"}
+
+// TestSidebarViewTabsSitAtTheTopInEqualShares pins the 2026-10-14 move of the
+// four view buttons out of the title bar: on every route they are the first
+// row under the traffic-light band, equal in width, on one line, at the same
+// place whichever page is open — and they are no longer in the title bar.
+func TestSidebarViewTabsSitAtTheTopInEqualShares(t *testing.T) {
+	setups := []headerRoute{{"terminal", "", func(t *testing.T) *Shell {
+		s := NewShell()
+		s.loading = false
+		return s
+	}}}
+	setups = append(setups, headerRoutes()...)
+	var baseline map[string]ui.Rect
+	for _, route := range setups {
+		tester := ui.NewTester(route.setup(t).View, 1200, 800)
+		settleFrames(tester, 3)
+		got := map[string]ui.Rect{}
+		for _, label := range sidebarViewTabLabels {
+			if n := countTextExact(tester.Texts(), label); n != 1 {
+				t.Fatalf("%s: %d %q controls, want exactly one; texts=%q", route.name, n, label, tester.Texts())
+			}
+			rect, _ := tester.Find(label)
+			got[label] = rect
+			if rect.X+rect.W > sidebarWidth {
+				t.Errorf("%s: %q at x=%.0f–%.0f is outside the sidebar", route.name, label, rect.X, rect.X+rect.W)
+			}
+			if rect.Y < 38 || rect.Y+rect.H > 38+gorexIconBtn+16 {
+				t.Errorf("%s: %q at y=%.0f–%.0f is not the sidebar's first row under the band", route.name, label, rect.Y, rect.Y+rect.H)
+			}
+		}
+		first := got[sidebarViewTabLabels[0]]
+		for _, label := range sidebarViewTabLabels[1:] {
+			r := got[label]
+			if math.Abs(float64(r.W-first.W)) > 0.5 || math.Abs(float64(r.Y-first.Y)) > 0.5 {
+				t.Errorf("%s: %q is %.1f×%.1f at y=%.1f, %q is %.1f×%.1f at y=%.1f — tabs must share width and line",
+					route.name, label, r.W, r.H, r.Y, sidebarViewTabLabels[0], first.W, first.H, first.Y)
+			}
+		}
+		if first.W <= gorexIconBtn {
+			t.Errorf("%s: a tab is %.1f wide — equal shares of the row, not fixed squares", route.name, first.W)
+		}
+		if baseline == nil {
+			baseline = got
+			continue
+		}
+		for label, r := range got {
+			if b := baseline[label]; math.Abs(float64(r.X-b.X)) > 0.5 || math.Abs(float64(r.Y-b.Y)) > 0.5 {
+				t.Errorf("%s: %q moved to (%.1f, %.1f) from (%.1f, %.1f) — entering a page must not move the tabs",
+					route.name, label, r.X, r.Y, b.X, b.Y)
+			}
+		}
+	}
+}
+
+// TestSidebarViewTabsOpenAndLeaveTheirPage pins the tabs' contract, unchanged
+// from the title-bar buttons they replaced: a tab opens its page and pressing
+// the lit one leaves for the Terminal.
+func TestSidebarViewTabsOpenAndLeaveTheirPage(t *testing.T) {
+	s := NewShell()
+	s.loading = false
+	s.hosts.loaded = true // never read the developer's real ~/.ssh/config
+	tester := ui.NewTester(s.View, 1200, 800)
+	settleFrames(tester, 2)
+	for _, tc := range []struct{ label, route string }{
+		{"Hosts view", routeHosts},
+		{"History view", routeHistory},
+	} {
+		if err := tester.Click(tc.label); err != nil {
+			t.Fatalf("%s: %v", tc.label, err)
+		}
+		settleFrames(tester, 2)
+		if got := s.router.Path(); got != tc.route {
+			t.Fatalf("%s opened %q, want %q", tc.label, got, tc.route)
+		}
+		if err := tester.Click(tc.label); err != nil {
+			t.Fatalf("%s (leave): %v", tc.label, err)
+		}
+		settleFrames(tester, 2)
+		if got := s.router.Path(); got != routeWorkspace || s.surface.current() != WorkspaceSurfaceTerminal {
+			t.Fatalf("%s again went to %q/%v, want the Terminal", tc.label, got, s.surface.current())
+		}
 	}
 }

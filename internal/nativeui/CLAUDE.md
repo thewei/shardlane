@@ -7,12 +7,12 @@ proc_brands.go: 进程与工具/服务品牌标识解析器，将前台进程、
 brands.go: Agent 品牌位图资产与视觉标识解析器，将 live Agent 映射为全彩品牌 Logo 与 agentMarkForPane 窗格标识
 agent_visual.go: Agent 品牌矢量回退图标字典、窗格 Agent 绑定与状态指示点（statusDot）
 brands_test.go: Agent 品牌位图资产检索、Antigravity 及其它 Provider 标识与 agentProvider 回退回归
-gorex_style.go: 扁平视觉系统：卡片/配色、图标按钮度量（gorexIconBtn·Glyph、gorexPaneBtn·Glyph 为唯一尺寸来源）、gorexToggleFace 按钮的按下/悬停/「开」态唯一来源（图标开关与文字开关同一枚中性芯片；列表/树行的选中仍是 SidebarSelect）、gorexPulldown 图标+下拉箭头（标题栏 Actions）与 shortDir/samePath 路径处理；无渐变、无投影
+gorex_style.go: 扁平视觉系统：卡片/配色、图标按钮度量（gorexIconBtn·Glyph、gorexPaneBtn·Glyph 为唯一尺寸来源）、gorexToggleFace 按钮的按下/悬停/「开」态唯一来源（图标开关与文字开关同一枚中性芯片；列表/树行的选中仍是 SidebarSelect）、gorexIconTab 等分一行的图标标签（侧栏视图标签条，与 gorexIconButton 共用 gorexIconFace 的脸）、gorexPulldown 图标+下拉箭头（标题栏 Actions）与 shortDir/samePath 路径处理；无渐变、无投影
 terminal.go: 终端画布与 Gorex 窗格卡片渲染器，Pane 标题双击最大化/恢复、最大化 Tab 的窗格 Logo 数量角标（Tab 内面板数，无重叠堆叠画）、窗格标题取 Agent 名（Shardlane 生成的短名 <kind>-<6hex> 不当标题，回落到 Agent 品牌名）、标题原生拖动放置（跨窗格/跨 Tab 移动、拆分与交换）与 split 分隔条拖拽调宽高（解析为 Herdr pane.resize，双击回到 50/50；布局权威在 Herdr）；窗格头的目录文案不复述已有信息——标签已写出目录（titleSpellsOutDir，F168 去重对 shortDir 截断路径失效的修复）或单卡时标题栏第二行已是该窗格目录（paneCardCaption）都不再出第三份
 run_command_button.go: 窗格卡片头的项目命令运行控件：嗅探命令（package.json/Makefile/justfile + 手写 Script 合并）经 root 键缓存读盘外构建；Run 直跑最后使用命令、菜单全量列出（last-used 置顶）；忙碌（pane.process_info 扫描事实）非 Agent 窗格变 Stop（pane.send_text 写 ETX=Ctrl+C）；事务走 ShellReady 探测 + pane.send_text 字面写入（agent.send_keys 只认 Agent 目标，2026-10-13 隔离探针验证；headless 按 mutate 规则丢弃），无新 Herdr 方法
 run_command_button_test.go: 运行控件状态机回归（命令菜单内容、last-used 置顶、忙碌换 Stop、Agent 繁忙隐藏、无命令隐藏、headless 点击安全丢弃）与 computePaneBusy 纯函数、合并形状测试
 breadcrumb_switcher.go: 标题栏面包屑与快速切换弹层所有者，Pane 顺序与 Herdr 实际布局对齐并展示品牌图标
-titlebar.go: 内容列标题栏（身份区：Terminal/Chat 为面包屑 + cwd 双行，Changes 与各内页为 route_header.go 的单行 Title 大字标题；标题栏是页面标题与页面动作的唯一归属）、整高侧栏上的红绿灯带与侧栏切换钮（sidebarBand/sidebarToggle）、视图切换（History 内页先返回根）与 Windows 平台窗口控件支持
+titlebar.go: 内容列标题栏（身份区：Terminal/Chat 为面包屑 + cwd 双行，Changes 与各内页为 route_header.go 的单行 Title 大字标题；标题栏是页面标题与页面动作的唯一归属）、整高侧栏上的红绿灯带与侧栏切换钮（sidebarBand/sidebarToggle）、showViewChanges/History/Files/Hosts 视图切换入口（History 内页先返回根）与 Windows 平台窗口控件支持；工具区只剩 Agent 活动与置顶，四个视图按钮已移到侧栏顶部（sidebar.go sidebarViewTabs）
 route_header.go: Terminal/Chat 以外各页的标题栏身份（routeHeader/routeHeaderSpec：Changes[Diff/Commit 表面，Actions=表面菜单]、Sessions、Session 详情[灰色父级 Sessions › 会话标题，可返回，同行事实，会话操作菜单]、Files[选中文件时 Copy Path/Reveal in Finder，根路径只在标题悬停提示]、Hosts[SSH 配置路径只在悬停提示]、Settings[灰色 Settings › 分组，由 settingsSections 命名]、Inspector）与 routeHeaderBlock（单行 Title 大字加粗标题，无 crumb 胶囊无第二行，每页同字号同位置）；headerDetailRow 只服务 Workspace 面包屑的第二行
 unified_header_test.go: 标题栏单一归属回归——内页标题只在标题栏且各路由（含 Changes）落在同一位置、标题为 Title 大字单行（不复述根路径/配置路径成第二行）、内页/侧栏不自画页头或标题回声、每个内页至多一个 Refresh 且为图标、Sessions/Settings/Hosts 侧栏列表同一起点（x/y）、Session 详情标题栏可返回列表、各路由 routeHeader 身份
 toggle_face_test.go: 开关「开」态回归——Sessions 工具栏的文字开关（Select/Hidden）与标题栏图标开关同为中性芯片，不再是蓝色选中色（像素采样，深浅两套外观）
@@ -52,8 +52,8 @@ history_detail_test.go: 详情共享 Chat 只读绑定、最新消息优先与�
 text_clip_test.go: 截断的 Unicode 边界、行/字符上限与截断标记回归
 history_filter_test.go: History 筛选空态、结果计数、Provider 选项与旧行不可点击的 headless 验证
 history_layout_test.go: Sessions 页 Agent 标签（含数量与隐藏扣减）、行 Token 列与悬停占位、有界计数文案、窄窗口工具条换行回归
-sidebar.go: 唯一左栏宿主——Workspace/Agent/Pin 树、Git 引用导航、内页（Settings/History/Files）自有导航；内页返回控件统一固定在侧栏页脚（取代 Workspace 切换页脚；会话详情返回 Sessions，其余返回 Terminal）
-sidebar_test.go: 内页侧栏导航与页脚返回的位置/文案、Settings 导航、Pin 区块回归
+sidebar.go: 唯一左栏宿主——栏顶四个等宽图标视图标签（sidebarViewTabs：Changes/Sessions/Files/Hosts，每条路由同位置，点亮页再点回 Terminal）、Workspace/Agent/Pin 树、Git 引用导航、内页（Settings/History/Files）自有导航；内页返回控件统一固定在侧栏页脚、一律叫 Back（取代 Workspace 切换页脚；tooltip 写去向：会话详情→Sessions，其余→Terminal）
+sidebar_test.go: 内页侧栏导航与页脚 Back 的位置/文案、栏顶四个视图标签的位置/等宽/同位置/点击语义、Settings 导航、Pin 区块回归
 detail_fact.go: Agent 详情复用的只读字段样式，从退役 Inspector 解耦
 shell.go: 核心 Shell 宿主，协调 Router/Window/Titlebar；首次 Herdr 加载独占中心展示并淡入工作区，Git sidebar 与双模式分栏展示态仅本地持有
 page_settings.go: 五个 Settings 分组页（General/Terminal/Agents/Git/Diagnostics）统一 settingsPage Scroll/最大内容宽度（无页内标题：标题栏按 settingsSections 表命名分组，侧栏列表也不再回声 "Settings"）；设置项只经 settingsGroup/formRow 分组行表达，支持外观主题/透明度/密度与终端配置；Diagnostics 兼容分组承载 Rich chat view 开关（实现细节，不放在 General）
