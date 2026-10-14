@@ -431,7 +431,7 @@ func (s *Shell) gdFileHeader(c *ui.Context, pal *gdPalette, idx int, f *gdFile) 
 			if cp.Clicked() {
 				s.copyToClipboard(cf.Path)
 			}
-			open := gdIconButton(c, iconOpen, "Open file in editor").Disabled(cf.Status == gitworkbench.StatusDeleted)
+			open := gdIconButton(c, iconOpen, "Open in Editor").Disabled(cf.Status == gitworkbench.StatusDeleted)
 			if cf.Status == gitworkbench.StatusDeleted {
 				open.Tooltip("Deleted files cannot be opened")
 			}

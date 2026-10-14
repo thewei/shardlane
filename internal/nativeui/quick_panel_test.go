@@ -224,7 +224,7 @@ func TestQuickPanelRowMenuHoldsTheOtherActions(t *testing.T) {
 		t.Fatal(err)
 	}
 	menu := tester.Menu()
-	for _, want := range []string{"Open Terminal", "Open Chat", "Details"} {
+	for _, want := range []string{"Open Terminal", "Open Chat", "Open Inspector"} {
 		if !containsText(menu, want) {
 			t.Fatalf("row menu %q missing %q", menu, want)
 		}
@@ -232,7 +232,13 @@ func TestQuickPanelRowMenuHoldsTheOtherActions(t *testing.T) {
 	if containsText(menu, "Mark Reviewed") {
 		t.Fatalf("row menu %q offers a review mark with nothing to review", menu)
 	}
-	tester.CloseMenu()
+	// The item is named after the page it opens, the title bar's "Agent Inspector".
+	if err := tester.ChooseMenuItem("Open Inspector"); err != nil {
+		t.Fatal(err)
+	}
+	if got := shell.router.Path(); got != "/inspector/p2" {
+		t.Fatalf("Open Inspector landed on %q, want /inspector/p2", got)
+	}
 
 	// Review pending: the mark joins the menu, and the row carries the same
 	// action as a trailing icon that marks without navigating.

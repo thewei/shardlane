@@ -11,6 +11,7 @@ import (
 	"log/slog"
 
 	"github.com/egoist/mygo/ui"
+	"github.com/wh-studio/herdr-client/internal/gitworkbench"
 	"github.com/wh-studio/herdr-client/internal/herdr"
 )
 
@@ -171,10 +172,11 @@ func (s *Shell) diffOverflowItems(m *ui.Menu) {
 	if m.Item(layoutLabel).Chosen() {
 		s.toggleDiffLayout()
 	}
-	if m.Item("Open Editor").Chosen() {
-		if cf, ok := s.selectedChangeFile(); ok {
-			s.openFileInEditor(cf.Path)
-		}
+	// The file header's button and the row menus offer this same command, off
+	// for a deleted file; so does the title bar.
+	cf, picked := s.selectedChangeFile()
+	if m.Item("Open in Editor").Disabled(!picked || cf.Status == gitworkbench.StatusDeleted).Chosen() {
+		s.openFileInEditor(cf.Path)
 	}
 	m.Separator()
 	if m.Item("Commit…").Chosen() {

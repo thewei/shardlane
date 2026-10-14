@@ -60,7 +60,7 @@ func ResolvePiExecutable(preference string) (string, error) {
 			return "", errors.New("Pi executable must be an absolute path")
 		}
 		if st, err := os.Stat(configured); err != nil || st.IsDir() || st.Mode()&0o111 == 0 {
-			return "", errors.New("configured Pi CLI is not executable; check Git Preferences")
+			return "", errors.New("configured Pi CLI is not executable; check Settings → Git")
 		}
 		return configured, nil
 	}

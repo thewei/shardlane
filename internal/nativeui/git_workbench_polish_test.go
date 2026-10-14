@@ -48,7 +48,7 @@ func TestGitLayoutButtonsActuallySwitchAndStayVisible(t *testing.T) {
 	}
 	tt.Frame()
 	menu := strings.Join(tt.Menu(), " | ")
-	for _, want := range []string{"Stash All Changes", "View All Commits", "Git Preferences"} {
+	for _, want := range []string{"Stash All Changes", "View All Commits", "Git Settings"} {
 		if !strings.Contains(menu, want) {
 			t.Fatalf("Git actions lost %s: %s", want, menu)
 		}

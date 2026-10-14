@@ -2,15 +2,18 @@ package nativeui
 
 /**
  * [INPUT]: gitSurfaceTestShell 的内存快照、headless Tester（900/1700 宽度）
- * [OUTPUT]: Diff 文件卡片头在窄窗口下让位于文件名、宽窗口下保留全部控件的回归
+ * [OUTPUT]: Diff 文件卡片头在窄窗口下让位于文件名、宽窗口下保留全部控件的回归；标题栏 Actions 菜单与文件卡片头同名同可用性地提供 Open in Editor
  * [POS]: gdFileHeader 的响应式契约；宽度估算（gdCardWidth）与 gitFileNavigationColumn 共用同一来源
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/egoist/mygo/ui"
+
+	"github.com/wh-studio/herdr-client/internal/gitworkbench"
 )
 
 // gdHeaderShell opens the Diff surface on a file whose name needs room.
@@ -44,7 +47,7 @@ func TestDiffHeaderKeepsItsFileNameWhenNarrow(t *testing.T) {
 	if dir, ok := tester.Find("internal/nativeui/"); !ok || dir.Y <= name.Y {
 		t.Errorf("a narrow header shows the folder below the name: dir=%v (found %v) name=%v", dir, ok, name)
 	}
-	for _, tool := range []string{"Copy Path", "Open file in editor"} {
+	for _, tool := range []string{"Copy Path", "Open in Editor"} {
 		if _, ok := tester.Find(tool); ok {
 			t.Errorf("%q still takes room in a narrow header", tool)
 		}
@@ -64,7 +67,7 @@ func TestDiffHeaderKeepsEveryControlWhenWide(t *testing.T) {
 	tester := ui.NewTester(shell.View, 1700, 800)
 	tester.Frame()
 
-	if _, ok := tester.Find("Open file in editor"); !ok {
+	if _, ok := tester.Find("Open in Editor"); !ok {
 		t.Fatalf("a wide header lost its Open button: %q", tester.Texts())
 	}
 	viewed, ok := tester.Find("Viewed")
@@ -121,4 +124,30 @@ func TestGdCardWidth(t *testing.T) {
 	if want := float32(900 - sidebarWidth - gitFilePaneDefaultWidth - gitFileSplitterWidth - 2*gdListMargin); ctxWidth != want {
 		t.Fatalf("a narrow window with the navigator opened: card width = %v, want %v", ctxWidth, want)
 	}
+}
+
+// The title bar's Actions menu offers the file header's "Open in Editor" under
+// the same name and with the same availability: off for a file that is gone.
+func TestDiffActionsOfferOpenInEditorLikeTheFileHeader(t *testing.T) {
+	shell := gdHeaderShell(t)
+	tester := ui.NewTester(shell.View, 1700, 800)
+	tester.Frame()
+	if err := tester.Click("Actions"); err != nil {
+		t.Fatal(err)
+	}
+	menu := tester.Menu()
+	if !containsText(menu, "Open in Editor") || containsText(menu, "Open Editor") {
+		t.Fatalf("the Actions menu names the command like every other entry point; menu=%q", menu)
+	}
+	tester.CloseMenu()
+
+	shell.git.snapshot.Files[0].Status = gitworkbench.StatusDeleted
+	tester.Frame()
+	if err := tester.Click("Actions"); err != nil {
+		t.Fatal(err)
+	}
+	if err := tester.ChooseMenuItem("Open in Editor"); err == nil || !strings.Contains(err.Error(), "disabled") {
+		t.Errorf("a deleted file cannot be opened, so the menu item is off; got %v", err)
+	}
+	tester.CloseMenu()
 }

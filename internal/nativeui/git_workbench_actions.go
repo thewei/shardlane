@@ -81,7 +81,7 @@ func (s *Shell) gitWorkbenchActionBar(c *ui.Context) {
 				s.showGitCommits()
 			}
 			m.Separator()
-			if m.Item("Git Preferences…").Chosen() {
+			if m.Item("Git Settings…").Chosen() {
 				s.router.Push("/settings/git")
 			}
 		})

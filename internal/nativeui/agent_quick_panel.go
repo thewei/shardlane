@@ -151,7 +151,7 @@ func (s *Shell) quickPanelEntryMenu(m *ui.Menu, entry StatusCenterEntry) {
 		s.hideQuickPanel()
 		s.openChat(card)
 	}
-	if card.PaneID != "" && m.Item("Details").Chosen() {
+	if card.PaneID != "" && m.Item("Open Inspector").Chosen() {
 		s.hideQuickPanel()
 		s.router.Push("/inspector/" + card.PaneID)
 	}
