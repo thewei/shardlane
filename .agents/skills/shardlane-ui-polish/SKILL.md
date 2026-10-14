@@ -55,6 +55,7 @@ description: Use when polishing or unifying the Shardlane MyGo client's UI/UX �
 - **说人话**：不出现 operation id / slug / 协议版本 / 状态枚举 / RPC 原文；错误 = 发生了什么 + 下一步（`Couldn't load sessions` + `Try Refresh.`）。
 - **不自圆其说**：不写向读者解释设计意图的句子（"One conversation surface over…"、"Native Terminal" toast）；空态 = 一句标题 + 可选一句下一步。标题不带句号，说明句带句号。
 - **大小写**：按钮/菜单项/对话框标题 Title Case（冠词与 ≤4 字母介词小写：`Merge into Current…`、`Draft Subject with Pi`；Git 复合词沿用既有写法 `Cherry-pick`）；**空态标题与 tooltip sentence case**。守卫：`TestMenuItemsAreTitleCase`（扫 `.Item("…")` 字面量）、`TestEmptyStateTitlesAreSentenceCase`（专有名词 Git/SSH 除外）。
+- **确认框标题是问句**（2026-10-14 第二轮审计）：全仓其余 19 个字面确认标题都是 `Close Tab?` / `Delete “x”?` / `Discard Changes in 3 files?`，唯独自己加的回收站两个写成 `Delete Forever` / `Empty Trash`——后者还和触发它的工具栏按钮 `Empty Trash` 重名，对话框标题读起来像又一个按钮。已改成 `…?`；守卫 `TestConfirmTitlesAreQuestions`（AST 扫 `openConfirm` 的标题实参：字面量、`+` 链末尾必须是字面量 `?`、Sprintf 格式；变量标题不可判定则跳过）。
 - **同动作一个名字**：在 Finder 里定位统一 `Reveal in Finder`（Files 树/标题栏 Actions、Git worktree、Settings 日志、Sessions 的 `Reveal Source File in Finder` 只在宾语上多一个限定）；复制路径统一 `Copy Path`。
 - **HIG**：打开对话框/需要再输入的项加 "…"；已换成图标按钮/下拉的不再用 "…" 文本按钮；复数用 `pluralS`；名称引号用弯引号。
 - **可恢复**：任何截断文本必有 Tooltip；计数先于名称存活。

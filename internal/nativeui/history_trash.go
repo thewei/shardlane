@@ -383,7 +383,7 @@ func (s *Shell) confirmDeleteForever(ids []string) {
 	if len(ids) > 1 {
 		message = fmt.Sprintf("These %d sessions will be removed from this Mac. This can't be undone.", len(ids))
 	}
-	s.openConfirm(deleteForeverConfirm, strings.Join(ids, confirmIDSeparator), "Delete Forever", message)
+	s.openConfirm(deleteForeverConfirm, strings.Join(ids, confirmIDSeparator), "Delete Forever?", message)
 }
 
 // confirmEmptyTrash asks before the whole Trash is removed for good.
@@ -391,7 +391,7 @@ func (s *Shell) confirmEmptyTrash() {
 	if len(s.hist.trashItems) == 0 {
 		return
 	}
-	s.openConfirm(emptyTrashConfirm, "", "Empty Trash",
+	s.openConfirm(emptyTrashConfirm, "", "Empty Trash?",
 		fmt.Sprintf("All %d session%s in the Trash will be removed from this Mac. This can't be undone.",
 			len(s.hist.trashItems), pluralS(len(s.hist.trashItems))))
 }

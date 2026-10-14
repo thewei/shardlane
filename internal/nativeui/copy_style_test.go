@@ -1,16 +1,20 @@
 package nativeui
 
 import (
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 )
 
 /**
- * [INPUT]: 依赖 nativeui 包内非测试源码里 emptyState / workspaceEmptyBanner 的字面标题与菜单项（.Item("…")）的字面标签
- * [OUTPUT]: 对外提供文案大小写回归：空态标题句首大写（专有名词除外），菜单项 Title Case（短介词/冠词小写）——同一类组件只有一种写法
+ * [INPUT]: 依赖 nativeui 包内非测试源码里 emptyState / workspaceEmptyBanner 的字面标题、菜单项（.Item("…")）的字面标签与 openConfirm 的标题实参
+ * [OUTPUT]: 对外提供文案回归：空态标题句首大写（专有名词除外），菜单项 Title Case（短介词/冠词小写），确认框标题一律是问句——同一类组件只有一种写法
  * [POS]: 2026-10-14 文案统一的守卫测试；新增空态/菜单项时由它拦下大小写漂移
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -86,5 +90,74 @@ func TestMenuItemsAreTitleCase(t *testing.T) {
 	}
 	if seen < 40 {
 		t.Fatalf("matched only %d menu items; the pattern no longer finds the call sites", seen)
+	}
+}
+
+// confirmTitleTail returns the literal tail of an openConfirm title argument:
+// a string literal, the last operand of a "+" chain (which must be a literal),
+// or a Sprintf format. A title that is a plain variable or call result is not
+// decidable here.
+func confirmTitleTail(e ast.Expr) (string, bool) {
+	switch v := e.(type) {
+	case *ast.BasicLit:
+		if v.Kind != token.STRING {
+			return "", false
+		}
+		text, err := strconv.Unquote(v.Value)
+		return text, err == nil
+	case *ast.BinaryExpr:
+		if lit, ok := v.Y.(*ast.BasicLit); ok {
+			return confirmTitleTail(lit)
+		}
+		// A "+" chain must end in its own literal "?", not in a computed value.
+		return "(a computed value)", true
+	case *ast.CallExpr:
+		if sel, ok := v.Fun.(*ast.SelectorExpr); ok && sel.Sel.Name == "Sprintf" && len(v.Args) > 0 {
+			return confirmTitleTail(v.Args[0])
+		}
+	}
+	return "", false
+}
+
+// TestConfirmTitlesAreQuestions pins one voice for confirm dialogs: every
+// openConfirm title asks — "Close Tab?", "Delete Forever?" — so the dialog
+// title never reads like the toolbar button that opened it ("Empty Trash").
+func TestConfirmTitlesAreQuestions(t *testing.T) {
+	files, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fset := token.NewFileSet()
+	seen := 0
+	for _, name := range files {
+		if strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		file, err := parser.ParseFile(fset, name, nil, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ast.Inspect(file, func(n ast.Node) bool {
+			call, ok := n.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			sel, ok := call.Fun.(*ast.SelectorExpr)
+			if !ok || sel.Sel.Name != "openConfirm" || len(call.Args) < 4 {
+				return true
+			}
+			tail, decidable := confirmTitleTail(call.Args[2])
+			if !decidable {
+				return true
+			}
+			seen++
+			if !strings.HasSuffix(tail, "?") {
+				t.Errorf("%s: confirm title ending %q is not a question; confirms read “Close Tab?”", fset.Position(call.Pos()), tail)
+			}
+			return true
+		})
+	}
+	if seen < 18 {
+		t.Fatalf("matched only %d confirm titles; the scan no longer finds the call sites", seen)
 	}
 }
