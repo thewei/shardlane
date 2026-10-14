@@ -116,13 +116,13 @@ func (s *Shell) gdDiffSurface(c *ui.Context) {
 		}
 		s.gdEmptyPanel(c, pal, title, detail, func() {
 			if s.gdSearching() {
-				if ui.Button(c, "Clear diff search").Clicked() {
+				if ui.Button(c, "Clear Diff Search").Clicked() {
 					s.git.gdFinding = false
 					s.git.gdQuery = ""
 					s.git.gdRowsDirty = true
 				}
 			} else if strings.TrimSpace(s.changes.filter) != "" {
-				if ui.Button(c, "Clear file filter").Clicked() {
+				if ui.Button(c, "Clear File Filter").Clicked() {
 					s.changes.filter = ""
 					s.git.gdRowsDirty = true
 				}

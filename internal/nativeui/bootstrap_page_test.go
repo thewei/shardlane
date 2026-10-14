@@ -52,7 +52,7 @@ func TestHerdrBootstrapErrorOffersRetryWithoutLeakingMenus(t *testing.T) {
 	s.errText = "herdr session list timed out"
 	tt := ui.NewTester(s.View, 960, 640)
 	tt.Frame()
-	for _, label := range []string{"Unable to load workspaces", "Retry connection", "herdr session list timed out"} {
+	for _, label := range []string{"Unable to load workspaces", "Retry Connection", "herdr session list timed out"} {
 		if !tt.HasText(label) {
 			t.Fatalf("bootstrap error missing %q: %q", label, tt.Texts())
 		}

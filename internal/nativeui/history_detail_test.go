@@ -91,21 +91,21 @@ func TestHistoryDetailOpensAtNewestAndPagesUp(t *testing.T) {
 		t.Fatalf("bridge state: hasOlder=%v turns=%d", state.HasOlder, len(state.Turns))
 	}
 
-	if err := tester.Click("Earlier messages"); err != nil {
+	if err := tester.Click("Earlier Messages"); err != nil {
 		t.Fatal(err)
 	}
 	tester.Frame()
 	if shell.chatWindowStart != 30 || len(shell.chatWindowMessages) != 2*history.WindowLimit || !shell.chatHasOlder {
 		t.Fatalf("second window: start=%d messages=%d hasOlder=%v", shell.chatWindowStart, len(shell.chatWindowMessages), shell.chatHasOlder)
 	}
-	if err := tester.Click("Earlier messages"); err != nil {
+	if err := tester.Click("Earlier Messages"); err != nil {
 		t.Fatal(err)
 	}
 	tester.Frame()
 	if shell.chatWindowStart != 0 || len(shell.chatWindowMessages) != 150 || shell.chatHasOlder {
 		t.Fatalf("third window: start=%d messages=%d hasOlder=%v", shell.chatWindowStart, len(shell.chatWindowMessages), shell.chatHasOlder)
 	}
-	if !tester.HasText("message 0") || tester.HasText("Earlier messages") {
+	if !tester.HasText("message 0") || tester.HasText("Earlier Messages") {
 		t.Fatalf("the start of the session must show without an Earlier control; texts=%q", tester.Texts())
 	}
 }

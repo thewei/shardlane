@@ -37,7 +37,7 @@ func TestHistoryNoResultsCanClearFilters(t *testing.T) {
 	if !tester.HasText("No matching sessions") {
 		t.Fatalf("search result feedback missing: %q", tester.Texts())
 	}
-	if err := tester.Click("Clear filters"); err != nil {
+	if err := tester.Click("Clear Filters"); err != nil {
 		t.Fatal(err)
 	}
 	tester.Frame()

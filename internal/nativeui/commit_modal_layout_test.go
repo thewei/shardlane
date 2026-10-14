@@ -25,13 +25,13 @@ func TestCommitFileSelectionActionsAndDisabledSubmit(t *testing.T) {
 	if !tester.HasText("2 / 2") {
 		t.Fatal("Commit modal should show selected/total file count")
 	}
-	if err := tester.Click("Clear selection"); err != nil {
+	if err := tester.Click("Clear Selection"); err != nil {
 		t.Fatal(err)
 	}
 	if len(s.selectedCommitPaths()) != 0 || !tester.HasText("Commit 0 files") {
 		t.Fatal("Clear should remove files and make Commit unavailable")
 	}
-	if err := tester.Click("Select all"); err != nil {
+	if err := tester.Click("Select All"); err != nil {
 		t.Fatal(err)
 	}
 	if len(s.selectedCommitPaths()) != 2 || !tester.HasText("Commit 2 files") {

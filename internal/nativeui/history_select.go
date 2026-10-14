@@ -125,7 +125,7 @@ func (s *Shell) historySelectionBar(c *ui.Context, groups []sessionGroupView) {
 		ui.Row(c).FillWidth().Padding(sp.M, sp.XL).Gap(sp.M).AlignItems(ui.Center).Children(func() {
 			ui.Text(c, fmt.Sprintf("%d selected", len(selected))).FontSize(Typography().Body).FontWeight(WeightMedium)
 			if len(selected) < len(visible) {
-				if ui.Button(c, "Select all").Clicked() {
+				if ui.Button(c, "Select All").Clicked() {
 					s.setHistorySelected(visible, true)
 				}
 			}

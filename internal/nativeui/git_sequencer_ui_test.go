@@ -32,7 +32,7 @@ func TestGitConflictBannerAndInspectorFollowActiveRepo(t *testing.T) {
 		t.Fatal(err)
 	}
 	tester.Frame()
-	if err := tester.Click("Review conflict: src/main.go"); err != nil {
+	if err := tester.Click("Review Conflict: src/main.go"); err != nil {
 		t.Fatal(err)
 	}
 	if s.surface.diff.SelectedPath != "src/main.go" {

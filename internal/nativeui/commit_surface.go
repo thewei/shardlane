@@ -83,13 +83,13 @@ func (s *Shell) commitSurface(c *ui.Context) {
 						ui.Text(c, "Files to include").FontSize(Typography().Caption).FontWeight(WeightSemibold).Grow(1)
 						ui.Textf(c, "%d / %d", len(s.selectedCommitPaths()), len(snap.Files)).
 							FontSize(Typography().Micro).TextColor(t.TextMuted)
-						if compactButton(c, "Select all").Clicked() {
+						if compactButton(c, "Select All").Clicked() {
 							for _, file := range snap.Files {
 								s.surface.commit.Selected[file.Path] = true
 							}
 							s.cancelPiCommitSuggestion()
 						}
-						if compactButton(c, "Clear selection").Clicked() {
+						if compactButton(c, "Clear Selection").Clicked() {
 							for _, file := range snap.Files {
 								s.surface.commit.Selected[file.Path] = false
 							}

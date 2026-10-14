@@ -239,7 +239,7 @@ func (s *Shell) noMatchingSessions(c *ui.Context) {
 	ui.Column(c).Grow(1).Center().Gap(Spacing().M).Children(func() {
 		ui.Text(c, "No matching sessions").FontWeight(WeightSemibold)
 		ui.Text(c, "Try another search or agent.").FontSize(Typography().BodySmall).TextColor(t.TextMuted)
-		if ui.Button(c, "Clear filters").Clicked() {
+		if ui.Button(c, "Clear Filters").Clicked() {
 			s.clearHistoryFilters()
 		}
 	})

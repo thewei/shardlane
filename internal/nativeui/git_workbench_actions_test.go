@@ -70,7 +70,7 @@ func TestCommitAIPromptRequiresPreviewAndExplicitOptIn(t *testing.T) {
 		t.Fatal(err)
 	}
 	tester.Frame()
-	for _, want := range []string{"Commit message draft", "Include code excerpts", "Generate with Pi", "Review prompt"} {
+	for _, want := range []string{"Commit message draft", "Include code excerpts", "Generate with Pi", "Review Prompt"} {
 		if !tester.HasText(want) {
 			t.Fatalf("preview lacks %q: %q", want, tester.Texts())
 		}
@@ -78,7 +78,7 @@ func TestCommitAIPromptRequiresPreviewAndExplicitOptIn(t *testing.T) {
 	if s.commitPromptIncludeExcerpt || tester.HasText("Copy Prompt") {
 		t.Fatal("AI preview must default to metadata-only and hide raw prompt")
 	}
-	if err := tester.Click("Review prompt"); err != nil {
+	if err := tester.Click("Review Prompt"); err != nil {
 		t.Fatal(err)
 	}
 	tester.Frame()
@@ -91,7 +91,7 @@ func TestCommitAIPromptRequiresPreviewAndExplicitOptIn(t *testing.T) {
 	}
 	s.commitPromptIncludeExcerpt = true
 	tester.Frame()
-	if err := tester.Click("Paste suggestion…"); err != nil {
+	if err := tester.Click("Paste Suggestion…"); err != nil {
 		t.Fatal(err)
 	}
 	tester.Frame()

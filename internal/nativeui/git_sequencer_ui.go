@@ -93,7 +93,7 @@ func (s *Shell) gitSequencerBanner(c *ui.Context) {
 				ui.Text(c, "Files needing resolution").FontSize(Typography().Caption).FontWeight(WeightSemibold)
 				for _, path := range state.UnmergedPaths {
 					_, index := s.gdFileForPath(path)
-					link := compactButton(c, "Review conflict: "+path).MaxWidth(270).Tooltip(path)
+					link := compactButton(c, "Review Conflict: "+path).MaxWidth(270).Tooltip(path)
 					link.Disabled(index < 0)
 					if link.Clicked() && index >= 0 {
 						s.revealDiffFile(path)

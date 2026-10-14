@@ -24,7 +24,7 @@ func (s *Shell) bootstrapPage(c *ui.Context) {
 		if s.errText != "" {
 			ui.Text(c, s.errText).FontSize(Typography().Body).TextColor(t.TextMuted).MaxWidth(560)
 		}
-		if ui.PrimaryButton(c, "Retry connection").Clicked() {
+		if ui.PrimaryButton(c, "Retry Connection").Clicked() {
 			s.bootstrapPending = true
 			s.reloadInstances(true)
 		}

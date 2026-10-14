@@ -337,7 +337,7 @@ func (s *Shell) gitCommitDetails(c *ui.Context) {
 		ui.Text(c, "Commit: "+cm.Hash).Font(gdCodeFont()).FontSize(Typography().BodySmall).TextColor(t.TextMuted)
 		ui.Text(c, cm.Time.Format(time.RFC1123)).FontSize(Typography().BodySmall).TextColor(t.TextMuted)
 		ui.Row(c).Gap(8).Children(func() {
-			if ui.Button(c, "Copy hash").Clicked() {
+			if ui.Button(c, "Copy Hash").Clicked() {
 				s.copyToClipboard(cm.Hash)
 			}
 			if ui.Button(c, "Revert…").Clicked() {

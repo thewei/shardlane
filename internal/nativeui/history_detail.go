@@ -72,7 +72,7 @@ func (s *Shell) historyDetailNativeBody(c *ui.Context) {
 	ui.Scroll(c).Grow(1).Children(func() {
 		ui.Column(c).FillWidth().Padding(sp.M, sp.XL).Gap(sp.S).Children(func() {
 			if s.chatHasOlder {
-				if ui.Button(c, "Earlier messages").Clicked() {
+				if ui.Button(c, "Earlier Messages").Clicked() {
 					s.chatLoadOlder()
 				}
 			}

@@ -65,10 +65,10 @@ func TestGitFilterEmptyStateCanRecover(t *testing.T) {
 	s.rebuildDiffRows()
 	tester := ui.NewTester(s.View, 1200, 800)
 	tester.Frame()
-	if !tester.HasText("No matching files") || !tester.HasText("Clear file filter") {
+	if !tester.HasText("No matching files") || !tester.HasText("Clear File Filter") {
 		t.Fatalf("file filter has no recovery: %q", tester.Texts())
 	}
-	if err := tester.Click("Clear file filter"); err != nil {
+	if err := tester.Click("Clear File Filter"); err != nil {
 		t.Fatal(err)
 	}
 	tester.Frame()

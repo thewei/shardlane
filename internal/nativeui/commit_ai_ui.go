@@ -37,7 +37,7 @@ func (s *Shell) commitAISection(c *ui.Context, snap *gitworkbench.ChangesSnapsho
 		Border(1, designTokens(t.Dark).BorderSubtle).Radius(Radius().Control).Children(func() {
 		ui.Row(c).FillWidth().Gap(sp.S).AlignItems(ui.Center).Children(func() {
 			ui.Text(c, "Commit message draft").FontSize(Typography().Section).FontWeight(WeightSemibold).Grow(1)
-			if compactButton(c, "Hide draft").Clicked() {
+			if compactButton(c, "Hide Draft").Clicked() {
 				s.cancelPiCommitSuggestion()
 				s.commitPromptPreviewOpen = false
 			}
@@ -70,13 +70,13 @@ func (s *Shell) commitAISection(c *ui.Context, snap *gitworkbench.ChangesSnapsho
 					s.startPiCommitSuggestion()
 				}
 			}
-			review := ui.Button(c, "Review prompt")
+			review := ui.Button(c, "Review Prompt")
 			review.Disabled(preview.Text == "")
 			if review.Clicked() {
 				s.commitPromptTextVisible = !s.commitPromptTextVisible
 			}
 			if !s.commitAIManualEntryOpen && s.commitAIResponse == "" {
-				if ui.Button(c, "Paste suggestion…").Clicked() {
+				if ui.Button(c, "Paste Suggestion…").Clicked() {
 					s.commitAIManualEntryOpen = true
 				}
 			}

@@ -13,8 +13,8 @@ import (
 )
 
 /**
- * [INPUT]: 依赖 nativeui 包内非测试源码里 emptyState / workspaceEmptyBanner 的字面标题、菜单项（.Item("…")）的字面标签与 openConfirm 的标题实参、全部生产字符串字面量、菜单项/图标按钮/Tooltip 的动作名字面量
- * [OUTPUT]: 对外提供文案回归：空态标题句首大写（专有名词除外），菜单项 Title Case（短介词/冠词小写），确认框标题一律是问句，文案里没有 Please/successfully/Oops 这类填充词，同一动作在菜单项与图标按钮上只有一种拼写——同一类组件只有一种写法
+ * [INPUT]: 依赖 nativeui 包内非测试源码里 emptyState / workspaceEmptyBanner 的字面标题、菜单项（.Item("…")）的字面标签与 openConfirm 的标题实参、全部生产字符串字面量、菜单项/图标按钮/Tooltip/按钮的动作名字面量
+ * [OUTPUT]: 对外提供文案回归：空态标题句首大写（专有名词除外），菜单项与按钮 Title Case（短介词/冠词小写），确认框标题一律是问句，文案里没有 Please/successfully/Oops 这类填充词，同一动作在菜单项与图标按钮上只有一种拼写——同一类组件只有一种写法
  * [POS]: 2026-10-14 文案统一的守卫测试；新增空态/菜单项时由它拦下大小写漂移
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -58,14 +58,53 @@ func TestEmptyStateTitlesAreSentenceCase(t *testing.T) {
 // menuItemLabel matches the literal label of a context-menu or pull-down item.
 var menuItemLabel = regexp.MustCompile(`\.Item\("([^"]+)"`)
 
+// titleCaseSmallWords are the articles and short prepositions that stay
+// lowercase inside a Title Case label (HIG title style).
+var titleCaseSmallWords = map[string]bool{
+	"a": true, "an": true, "the": true, "and": true, "or": true, "in": true, "into": true,
+	"to": true, "of": true, "on": true, "as": true, "from": true, "with": true, "for": true, "at": true, "by": true,
+}
+
+// buttonLabel matches the literal label of a Button, PrimaryButton or their
+// compact forms; a label built with "+" is checked up to its literal part.
+var buttonLabel = regexp.MustCompile(`(?:ui\.(?:Primary)?Button|compactButton|compactPrimaryButton)\(c, "([^"]+)"`)
+
+// TestButtonLabelsAreTitleCase pins the other half of that voice: buttons read
+// "Select All", "Copy Hash", "Retry Connection" — the same Title Case as the
+// menu items beside them. (The Chat WebView is its own surface and keeps its
+// sentence-case voice; this scans native Go code only.)
+func TestButtonLabelsAreTitleCase(t *testing.T) {
+	files, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := 0
+	for _, name := range files {
+		if strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		src, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, match := range buttonLabel.FindAllStringSubmatch(string(src), -1) {
+			seen++
+			for _, word := range strings.Fields(match[1]) {
+				if first := word[0]; first >= 'a' && first <= 'z' && !titleCaseSmallWords[word] {
+					t.Errorf("%s: button %q starts %q with a lowercase letter; buttons are Title Case", name, match[1], word)
+				}
+			}
+		}
+	}
+	if seen < 60 {
+		t.Fatalf("matched only %d button labels; the pattern no longer finds the call sites", seen)
+	}
+}
+
 // TestMenuItemsAreTitleCase pins one voice for menu items: "Copy Branch Name",
 // never "Copy branch name". Articles and short prepositions stay lowercase
 // (HIG title style); tooltips and empty states are the sentence-case voices.
 func TestMenuItemsAreTitleCase(t *testing.T) {
-	small := map[string]bool{
-		"a": true, "an": true, "the": true, "and": true, "or": true, "in": true, "into": true,
-		"to": true, "of": true, "on": true, "as": true, "from": true, "with": true, "for": true, "at": true, "by": true,
-	}
 	files, err := filepath.Glob("*.go")
 	if err != nil {
 		t.Fatal(err)
@@ -82,7 +121,7 @@ func TestMenuItemsAreTitleCase(t *testing.T) {
 		for _, match := range menuItemLabel.FindAllStringSubmatch(string(src), -1) {
 			seen++
 			for _, word := range strings.Fields(match[1]) {
-				if first := word[0]; first >= 'a' && first <= 'z' && !small[word] {
+				if first := word[0]; first >= 'a' && first <= 'z' && !titleCaseSmallWords[word] {
 					t.Errorf("%s: menu item %q starts %q with a lowercase letter; menu items are Title Case", name, match[1], word)
 				}
 			}

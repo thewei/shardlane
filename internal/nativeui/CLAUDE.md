@@ -16,7 +16,7 @@ titlebar.go: 内容列标题栏（身份区：Terminal/Chat 为面包屑 + cwd �
 route_header.go: Terminal/Chat 以外各页的标题栏身份（routeHeader/routeHeaderSpec：Changes[Diff/Commit 表面，Actions=表面菜单]、Sessions、Session 详情[灰色父级 Sessions › 会话标题，可返回，同行事实，会话操作菜单]、Files[选中文件时 Copy Path/Reveal in Finder，根路径只在标题悬停提示]、Hosts[SSH 配置路径只在悬停提示；选中主机时 Actions=该主机菜单]、Settings[灰色 Settings › 分组，由 settingsSections 命名]、Inspector、遗留 /chat 整页）与 routeHeaderBlock（单行 Title 大字加粗标题，无 crumb 胶囊无第二行，每页同字号同位置）；headerDetailRow 只服务 Workspace 面包屑的第二行
 unified_header_test.go: 标题栏单一归属回归——内页标题只在标题栏且各路由（含 Changes 与遗留 /chat）落在同一位置、标题为 Title 大字单行（不复述根路径/配置路径成第二行）、内页/侧栏不自画页头或标题回声、每个内页至多一个 Refresh 且为图标、Sessions/Settings/Hosts 侧栏列表同一起点（x/y）、Session 详情标题栏可返回列表、各路由 routeHeader 身份
 toggle_face_test.go: 开关「开」态回归——Sessions 工具栏的文字开关（Select/Trash）与标题栏图标开关同为中性芯片，不再是蓝色选中色（像素采样，深浅两套外观）
-copy_style_test.go: 文案大小写回归——emptyState/workspaceEmptyBanner 的字面标题一律句首大写（专有名词除外）；菜单项（.Item("…") 字面量）一律 Title Case（冠词/短介词小写），拦下两个方向的大小写漂移；openConfirm 的标题（字面量/`+` 链/Sprintf，AST 扫描）一律以 ? 结尾
+copy_style_test.go: 文案大小写回归——emptyState/workspaceEmptyBanner 的字面标题一律句首大写（专有名词除外）；菜单项（.Item("…") 字面量）与按钮（ui.Button/PrimaryButton/compactButton/compactPrimaryButton 的字面量，含 `+` 链的字面部分）一律 Title Case（冠词/短介词小写），拦下两个方向的大小写漂移；openConfirm 的标题（字面量/`+` 链/Sprintf，AST 扫描）一律以 ? 结尾；生产字符串字面量不含 Please/successfully/Oops；同一动作名（菜单项/图标按钮/Tooltip）大小写只有一种拼写
 button_tier_test.go: 按钮字号回归——扫描 ui.Button/ui.PrimaryButton 调用链上的 .FontSize(…) 字面覆盖（只许 ds_components.go 的 compact 两档），拦下同排按钮两种高度
 main_test.go: 测试进程入口——桌面调用（剪贴板写入、Finder 定位）默认换成空实现：MyGo 的桌面 API 要等应用主循环，测试从不启动，真调用会挂住，也不该动开发者的真剪贴板；captureClipboard/captureReveal 供要看「复制/定位了什么」的用例捕获
 desktop_calls_test.go: 桌面动作回归——复制原样（含中文）进剪贴板、写失败进状态行、Finder 定位存在的路径、路径已不在时如实报告（F175）；扫描全部生产代码不得再 exec pbcopy 等剪贴板工具（pbcopy 子进程在 Finder 启动的 App 里没有 UTF-8 locale，中文会变乱码）
