@@ -19,6 +19,7 @@ import (
 	"syscall"
 	"time"
 	"unsafe"
+	"weak"
 
 	"github.com/egoist/mygo/internal/gpu"
 	"github.com/egoist/mygo/internal/gpu/d3d11/device"
@@ -241,6 +242,15 @@ type texture struct {
 	lastFrame uint64
 }
 
+// canvasTexture is the texture a canvas (scene.NewCanvas) is drawn into,
+// in the back buffer's format, and what drawing it keeps, for as long as
+// the canvas lives.
+type canvasTexture struct {
+	texture
+	b      gpu.Builder
+	canvas weak.Pointer[scene.Image]
+}
+
 // Renderer draws scenes into a window.
 type Renderer struct {
 	hwnd      uintptr
@@ -277,6 +287,10 @@ type Renderer struct {
 	mask, color texture
 	images      map[uint64]*texture
 	frame       uint64
+	// canvases are the textures canvases are drawn into, and drawing the
+	// render target drawn into now: the back buffer's, or a canvas's.
+	canvases map[uint64]*canvasTexture
+	drawing  uintptr
 
 	// The passes computing the backdrops of effects: their shaders and
 	// constants, grab, which holds the area of the frame read, and
@@ -587,6 +601,10 @@ func (r *Renderer) Release() {
 		free(&t.tex)
 	}
 	r.images = nil
+	for _, t := range r.canvases {
+		freeCanvas(t)
+	}
+	r.canvases = nil
 	for _, t := range []*texture{&r.mask, &r.color} {
 		free(&t.srv)
 		free(&t.tex)
@@ -654,6 +672,13 @@ func (r *Renderer) syncAtlas(t *texture, a *scene.Atlas, format uint32) error {
 // imageView returns the texture view of an image, uploading it when new or
 // changed.
 func (r *Renderer) imageView(img *scene.Image) uintptr {
+	if img.Scene != nil {
+		// A canvas, drawn before the scene showing it.
+		if c := r.canvases[img.ID()]; c != nil {
+			return c.srv
+		}
+		return 0
+	}
 	t := r.images[img.ID()]
 	if t == nil {
 		t = &texture{}
@@ -714,13 +739,66 @@ func (r *Renderer) draw(s *scene.Scene) error {
 	if err := r.syncAtlas(&r.color, s.ColorAtlas, formatR8G8B8A8Unorm); err != nil {
 		return err
 	}
-	s = r.b.Build(s, r.imageView)
-	if err := r.fitBackdrop(); err != nil {
+	if err := r.drawCanvases(s); err != nil {
+		return err
+	}
+	return r.drawScene(s, &r.b, r.rtv)
+}
+
+// drawCanvases draws the canvases s draws anew or shows into their
+// textures, unless they hold their versions already.
+func (r *Renderer) drawCanvases(s *scene.Scene) (err error) {
+	s.EachCanvas(func(c *scene.Image) {
+		if err == nil {
+			err = r.drawCanvas(c)
+		}
+	})
+	return err
+}
+
+func (r *Renderer) drawCanvas(c *scene.Image) error {
+	if r.canvases == nil {
+		r.canvases = map[uint64]*canvasTexture{}
+	}
+	t := r.canvases[c.ID()]
+	if t == nil {
+		t = &canvasTexture{canvas: weak.Make(c)}
+		r.canvases[c.ID()] = t
+	}
+	if t.tex != 0 && t.w == c.W && t.h == c.H && t.ver == c.Version() {
+		return nil
+	}
+	if t.tex == 0 || t.w != c.W || t.h != c.H {
+		if err := r.newTarget(&t.texture, c.W, c.H, true); err != nil {
+			return err
+		}
+	}
+	cs := c.Scene
+	cs.Width, cs.Height = c.W, c.H
+	if err := r.drawScene(cs, &t.b, t.rtv); err != nil {
+		return err
+	}
+	t.ver = c.Version()
+	return nil
+}
+
+func freeCanvas(t *canvasTexture) {
+	free(&t.rtv)
+	free(&t.srv)
+	free(&t.tex)
+	t.b.Release()
+}
+
+// drawScene draws s into the render target rtv with b.
+func (r *Renderer) drawScene(s *scene.Scene, b *gpu.Builder, rtv uintptr) error {
+	r.drawing = rtv
+	s = b.Build(s, r.imageView)
+	if err := r.fitBackdrop(b); err != nil {
 		return err
 	}
 
 	// Upload the instances, growing the buffer as needed.
-	if n := len(r.b.Instances); n > 0 {
+	if n := len(b.Instances); n > 0 {
 		if n > r.instCap {
 			free(&r.instBuf)
 			capacity := max(n*3/2, 1024)
@@ -736,33 +814,33 @@ func (r *Renderer) draw(s *scene.Scene) error {
 			return fmt.Errorf("d3d11: cannot map the instance buffer: %#x", uint32(hr))
 		}
 		dst := unsafe.Slice((*gpu.Instance)(ptr(m.Data)), n)
-		copy(dst, r.b.Instances)
+		copy(dst, b.Instances)
 		call(r.ctx, ctxUnmap, r.instBuf, 0)
 	}
 	globals := [4]float32{float32(s.Width), float32(s.Height), 0, 0}
 	call(r.ctx, ctxUpdateSubresource, r.cbuf, 0, 0, uintptr(unsafe.Pointer(&globals[0])), 0, 0)
 
 	ctx := r.ctx
-	call(ctx, ctxOMSetRenderTargets, 1, uintptr(unsafe.Pointer(&r.rtv)), 0)
+	call(ctx, ctxOMSetRenderTargets, 1, uintptr(unsafe.Pointer(&rtv)), 0)
 	clear := s.Clear.Premul(1)
-	call(ctx, ctxClearRenderTargetView, r.rtv, uintptr(unsafe.Pointer(&clear[0])))
+	call(ctx, ctxClearRenderTargetView, rtv, uintptr(unsafe.Pointer(&clear[0])))
 	call(ctx, ctxRSSetState, r.raster)
 	call(ctx, ctxIASetPrimitiveTopology, topologyTriangleStrip)
 	r.bindState(s, 0)
 	bound, ps, blend := uintptr(0), r.ps, r.blend
-	for _, b := range r.b.Batches {
-		if b.Count == 0 {
+	for _, bt := range b.Batches {
+		if bt.Count == 0 {
 			continue
 		}
 		want := r.ps
-		if b.Effect != nil {
-			if want = r.effectShader(b.Effect); want == 0 {
+		if bt.Effect != nil {
+			if want = r.effectShader(bt.Effect); want == 0 {
 				continue
 			}
 		}
-		if b.Backdrop != 0 {
+		if bt.Backdrop != 0 {
 			// The effect shows what is drawn so far.
-			r.readBackdrop(r.b.Backdrops[b.Backdrop-1])
+			r.readBackdrop(b.Backdrops[bt.Backdrop-1])
 			r.bindState(s, r.backdrop[0].srv)
 			bound, ps, blend = 0, r.ps, r.blend
 		}
@@ -771,22 +849,22 @@ func (r *Renderer) draw(s *scene.Scene) error {
 			call(ctx, ctxPSSetShader, ps, 0, 0)
 		}
 		wantBlend := r.blend
-		if b.Hole {
+		if bt.Hole {
 			wantBlend = r.holeBlend
 		}
 		if wantBlend != blend {
 			blend = wantBlend
 			call(ctx, ctxOMSetBlendState, blend, 0, 0xffffffff)
 		}
-		if b.Image != 0 && b.Image != bound {
-			bound = b.Image
+		if bt.Image != 0 && bt.Image != bound {
+			bound = bt.Image
 			call(ctx, ctxPSSetShaderResources, 2, 1, uintptr(unsafe.Pointer(&bound)))
 		}
-		mask := b.ClipMask
+		mask := bt.ClipMask
 		call(ctx, ctxPSSetShaderResources, 5, 1, uintptr(unsafe.Pointer(&mask)))
-		sc := b.Scissor // a D3D11_RECT
+		sc := bt.Scissor // a D3D11_RECT
 		call(ctx, ctxRSSetScissorRects, 1, uintptr(unsafe.Pointer(&sc)))
-		call(ctx, ctxDrawInstanced, 4, uintptr(b.Count), 0, uintptr(b.Start))
+		call(ctx, ctxDrawInstanced, 4, uintptr(bt.Count), 0, uintptr(bt.Start))
 	}
 	return nil
 }
@@ -832,7 +910,7 @@ func (r *Renderer) effectShader(e *scene.Effect) uintptr {
 // buffer, with the backdrop of an effect.
 func (r *Renderer) bindState(s *scene.Scene, backdrop uintptr) {
 	ctx := r.ctx
-	call(ctx, ctxOMSetRenderTargets, 1, uintptr(unsafe.Pointer(&r.rtv)), 0)
+	call(ctx, ctxOMSetRenderTargets, 1, uintptr(unsafe.Pointer(&r.drawing)), 0)
 	vp := viewport{W: float32(s.Width), H: float32(s.Height), MaxDepth: 1}
 	call(ctx, ctxRSSetViewports, 1, uintptr(unsafe.Pointer(&vp)))
 	call(ctx, ctxOMSetBlendState, r.blend, 0, 0xffffffff)
@@ -847,7 +925,7 @@ func (r *Renderer) bindState(s *scene.Scene, backdrop uintptr) {
 	call(ctx, ctxPSSetShaderResources, 0, 4, uintptr(unsafe.Pointer(&views[0])))
 }
 
-// readBackdrop computes the backdrop bk of what the back buffer holds,
+// readBackdrop computes the backdrop bk of what the target drawn holds,
 // into r.backdrop[0]: it copies the area into grab, averages its squares
 // and blurs them.
 func (r *Renderer) readBackdrop(bk scene.Backdrop) {
@@ -856,7 +934,7 @@ func (r *Renderer) readBackdrop(bk scene.Backdrop) {
 	var none [5]uintptr
 	call(ctx, ctxPSSetShaderResources, 0, 5, uintptr(unsafe.Pointer(&none[0])))
 	var back uintptr
-	call(r.rtv, viewGetResource, uintptr(unsafe.Pointer(&back)))
+	call(r.drawing, viewGetResource, uintptr(unsafe.Pointer(&back)))
 	from := box{Left: uint32(bk.Area.Min.X), Top: uint32(bk.Area.Min.Y), Right: uint32(bk.Area.Max.X), Bottom: uint32(bk.Area.Max.Y), Back: 1}
 	call(ctx, ctxCopySubresourceRegion, r.grab.tex, 0, 0, 0, 0, back, 0, uintptr(unsafe.Pointer(&from)))
 	free(&back)
@@ -890,10 +968,10 @@ func (r *Renderer) pass(ps, src uintptr, dst *texture, w, h int, p gpu.Pass) {
 
 // fitBackdrop makes the textures of backdrops as large as the scene built
 // needs, and the texture the area read is copied to.
-func (r *Renderer) fitBackdrop() error {
-	w, h := r.b.BackdropSize()
+func (r *Renderer) fitBackdrop(b *gpu.Builder) error {
+	w, h := b.BackdropSize()
 	aw, ah := 0, 0
-	for _, bk := range r.b.Backdrops {
+	for _, bk := range b.Backdrops {
 		aw, ah = max(aw, bk.Area.Dx()), max(ah, bk.Area.Dy())
 	}
 	// Somewhat larger, so that a pane growing does not make them again
@@ -947,13 +1025,20 @@ func (r *Renderer) present(sync uintptr) error {
 	if failed(hr) {
 		return fmt.Errorf("d3d11: present failed: %#x", uint32(hr))
 	}
-	// Forget the textures of images no frame drew for a while.
+	// Forget the textures of images no frame drew for a while, and those
+	// of canvases gone.
 	if r.frame%120 == 0 {
 		for id, t := range r.images {
 			if r.frame-t.lastFrame > 240 {
 				free(&t.srv)
 				free(&t.tex)
 				delete(r.images, id)
+			}
+		}
+		for id, t := range r.canvases {
+			if t.canvas.Value() == nil {
+				freeCanvas(t)
+				delete(r.canvases, id)
 			}
 		}
 	}

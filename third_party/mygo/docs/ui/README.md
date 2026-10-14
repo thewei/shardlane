@@ -152,6 +152,14 @@ UI as they read other apps (see [Accessibility](accessibility.md)).
 - [Find bar](find-bar.md): a bar for finding text, with the count of
   matches and the next and previous ones.
 
+## Code
+
+- [Code editor](code-editor.md): an editor of code as Zed's, with
+  highlighting, several carets, folding, completions and diagnostics, for
+  files of any size.
+- [Diff viewer](diff-viewer.md): the changes between two texts, side by
+  side or unified, with the new text editable and changes to review.
+
 ## Dates and colors
 
 - [Calendar](calendar.md): a month choosing a day.

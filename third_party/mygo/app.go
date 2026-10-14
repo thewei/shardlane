@@ -40,7 +40,9 @@ type Application struct {
 	menu      *Menu
 	menuSet   bool
 	paths     map[PathName]string
-	finished  sync.Once
+	// stateStore is the WindowStateStore, or nil for the file.
+	stateStore WindowStateStore
+	finished   sync.Once
 
 	// quitting is only touched on the main thread.
 	quitting    bool

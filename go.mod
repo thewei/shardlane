@@ -5,18 +5,19 @@ go 1.27.1
 tool github.com/egoist/mygo/cmd/mygo
 
 // LOCAL FRAMEWORK PATCH (F146/F147 + WIX-021, user-approved 2026-10-06):
-// the vendored fork under third_party/mygo is v0.3.7 plus two local deltas
+// the vendored fork under third_party/mygo is v0.4.8 plus three local deltas
 // — terminal Options.LocalDragSelect (scrollback panes select text and get
-// a right-click menu while the wheel keeps reporting) and field focus
+// a right-click menu while the wheel keeps reporting), field focus
 // delegation (AutoFocus on a SearchField/Combobox reaches its inner
-// input). Remove this replace, bump the pin, and delete third_party/mygo
-// once upstream ships both — Shardlane code needs no changes. See
+// input) and multi-display tray flyout anchoring on macOS. Remove this
+// replace, bump the pin, and delete third_party/mygo once upstream ships
+// all three — Shardlane code needs no changes. See
 // third_party/mygo/LOCAL-PATCH.md.
 replace github.com/egoist/mygo => ./third_party/mygo
 
 require (
 	github.com/alecthomas/chroma/v2 v2.27.0
-	github.com/egoist/mygo v0.4.5
+	github.com/egoist/mygo v0.4.8
 )
 
 require (

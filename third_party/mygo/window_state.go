@@ -4,6 +4,9 @@ package mygo
 
 import (
 	"encoding/json"
+	"errors"
+	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"time"
@@ -12,31 +15,22 @@ import (
 )
 
 // Window state is what WindowOptions.StateKey remembers of a window, kept
-// in window-state.json in PathUserData. It is captured shortly after the
-// window moves, resizes or changes state, when it settled (maximizing and
-// full screen transitions resize the window on the way), and when it
-// closes; it is written when a window closes and when the app quits.
+// by the WindowStateStore, in window-state.json in PathUserData unless the
+// app set its own. It is captured shortly after the window moves, resizes
+// or changes state, when it settled (maximizing and full screen
+// transitions resize the window on the way), and when it closes; it is
+// saved when a window closes and when the app quits.
 
 const windowStateFile = "window-state.json"
 
 // How long a window's state must stay unchanged to be captured.
 var windowStateDelay = 300 * time.Millisecond
 
-// savedWindow is the state of a window: its normal bounds, which it gets
-// back when it leaves the maximized or full screen state, and that state.
-type savedWindow struct {
-	X          int  `json:"x"`
-	Y          int  `json:"y"`
-	Width      int  `json:"width"`
-	Height     int  `json:"height"`
-	Maximized  bool `json:"maximized,omitempty"`
-	FullScreen bool `json:"fullScreen,omitempty"`
-}
-
-// windowStates is the state file, loaded on first use. Main thread only.
+// windowStates are the states of the store, loaded on first use. Main
+// thread only.
 var windowStates struct {
 	loaded bool
-	byKey  map[string]savedWindow
+	byKey  map[string]WindowState
 	dirty  bool
 }
 
@@ -45,38 +39,76 @@ func loadWindowStates() {
 		return
 	}
 	windowStates.loaded = true
-	windowStates.byKey = map[string]savedWindow{}
-	dir, err := App.Path(PathUserData)
-	if err != nil {
-		return
+	states, err := App.windowStateStore().LoadWindowStates()
+	if err != nil || states == nil { // without states, windows get their options
+		states = map[string]WindowState{}
 	}
-	if data, err := os.ReadFile(filepath.Join(dir, windowStateFile)); err == nil {
-		_ = json.Unmarshal(data, &windowStates.byKey) // a damaged file is ignored
-	}
+	windowStates.byKey = states
 }
 
-// saveWindowStates writes the state file if it changed.
+// saveWindowStates saves the states if they changed. A save that fails
+// keeps them for the next one, at the latest when the app quits.
 func saveWindowStates() {
 	if !windowStates.dirty {
 		return
 	}
+	windowStates.dirty = App.windowStateStore().SaveWindowStates(maps.Clone(windowStates.byKey)) != nil
+}
+
+// windowStateStore is the store of App.SetWindowStateStore, or the file.
+func (a *Application) windowStateStore() WindowStateStore {
+	a.mu.Lock()
+	s := a.stateStore
+	a.mu.Unlock()
+	if s == nil {
+		return stateFile{}
+	}
+	return s
+}
+
+// stateFile is the default WindowStateStore: window-state.json in
+// PathUserData.
+type stateFile struct{}
+
+func (stateFile) path() (string, error) {
 	dir, err := App.Path(PathUserData)
+	return filepath.Join(dir, windowStateFile), err
+}
+
+func (f stateFile) LoadWindowStates() (map[string]WindowState, error) {
+	path, err := f.path()
 	if err != nil {
-		return
+		return nil, err
 	}
-	data, err := json.MarshalIndent(windowStates.byKey, "", "  ")
+	data, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	} else if err != nil {
+		return nil, err
+	}
+	var states map[string]WindowState
+	if err := json.Unmarshal(data, &states); err != nil {
+		return nil, err // a damaged file is ignored, and replaced by the next save
+	}
+	return states, nil
+}
+
+func (f stateFile) SaveWindowStates(states map[string]WindowState) error {
+	path, err := f.path()
 	if err != nil {
-		return
+		return err
 	}
-	path := filepath.Join(dir, windowStateFile)
-	err = os.WriteFile(path+".tmp", data, 0o644)
-	if err == nil {
-		err = os.Rename(path+".tmp", path)
+	data, err := json.MarshalIndent(states, "", "  ")
+	if err != nil {
+		return err
 	}
 	// Windows cannot replace a file that another program has open, such as
-	// antivirus software scanning it: the next save tries again, at the
-	// latest when the app quits.
-	windowStates.dirty = err != nil
+	// antivirus software scanning it: the error keeps the states for the
+	// next save.
+	if err := os.WriteFile(path+".tmp", data, 0o644); err != nil {
+		return err
+	}
+	return os.Rename(path+".tmp", path)
 }
 
 // restoreWindowState applies the state saved under key to p, if the
@@ -124,7 +156,7 @@ func onDisplay(r Rectangle, displays []platform.Display) bool {
 // bounds yet, so they are the requested ones.
 func (w *Window) initState(p *platform.WindowOptions) {
 	if _, ok := windowStates.byKey[w.stateKey]; !ok && (p.Maximized || p.FullScreen) {
-		st := savedWindow{X: p.X, Y: p.Y, Width: p.Width, Height: p.Height, Maximized: p.Maximized, FullScreen: p.FullScreen}
+		st := WindowState{X: p.X, Y: p.Y, Width: p.Width, Height: p.Height, Maximized: p.Maximized, FullScreen: p.FullScreen}
 		if p.Center {
 			for _, d := range backend().Screen().Displays() {
 				if d.Primary {

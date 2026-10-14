@@ -148,11 +148,11 @@ type WindowOptions struct {
 
 	// StateKey remembers the window's position, size, and maximized and
 	// full screen state under this key, in window-state.json in
-	// PathUserData, which is written when the window closes and when the
-	// app quits. A window created with the same key, for example at the
-	// next launch, gets them back as long as it would show on a connected
-	// display: they override X, Y, Width, Height, UseContentSize,
-	// Maximized and FullScreen.
+	// PathUserData or the store of App.SetWindowStateStore, saved when
+	// the window closes and when the app quits. A window created with the
+	// same key, for example at the next launch, gets them back as long as
+	// it would show on a connected display: they override X, Y, Width,
+	// Height, UseContentSize, Maximized and FullScreen.
 	StateKey string
 
 	// Content makes the window show a user interface MyGo draws itself,
@@ -160,6 +160,44 @@ type WindowOptions struct {
 	// package ui. The window then has no page (Window.Page is nil): URL
 	// and Page are ignored.
 	Content Content
+}
+
+// WindowState is what WindowOptions.StateKey remembers of a window: its
+// bounds in the normal state, which it gets back when it leaves the
+// maximized or full screen state, and that state.
+type WindowState struct {
+	X          int  `json:"x"`
+	Y          int  `json:"y"`
+	Width      int  `json:"width"`
+	Height     int  `json:"height"`
+	Maximized  bool `json:"maximized,omitempty"`
+	FullScreen bool `json:"fullScreen,omitempty"`
+}
+
+// WindowStateStore keeps the states of the windows with a
+// WindowOptions.StateKey, by key, for App.SetWindowStateStore. MyGo calls
+// it on the main thread, so it should return quickly.
+type WindowStateStore interface {
+	// LoadWindowStates returns the saved states. It is called once, when
+	// the first window with a StateKey is created. Without states (nil, or
+	// an error) windows get their options.
+	LoadWindowStates() (map[string]WindowState, error)
+	// SaveWindowStates replaces the saved states with states, which the
+	// store may keep. It is called when a window with a StateKey closes
+	// and when the app quits, if a state changed. After an error the
+	// next call saves the states again.
+	SaveWindowStates(states map[string]WindowState) error
+}
+
+// SetWindowStateStore keeps the states of windows (WindowOptions.StateKey)
+// in s, such as the app's own database, instead of window-state.json in
+// PathUserData. nil restores the file. Call it before the first window
+// with a StateKey is created, usually before Run. Browsers keep no window
+// state, and never call s.
+func (a *Application) SetWindowStateStore(s WindowStateStore) {
+	a.mu.Lock()
+	a.stateStore = s
+	a.mu.Unlock()
 }
 
 // Window is a native window hosting a web page, or the Content of package

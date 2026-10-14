@@ -120,3 +120,107 @@ func TestLayoutCacheDoesNotRetainExcerptSource(t *testing.T) {
 	}
 	runtime.KeepAlive(s)
 }
+
+// documentRow is a paragraph of a long document, and document the
+// paragraphs whose layouts take a little more than the cache's budget,
+// however large the layouts of this engine are.
+func documentRow(i int) Params {
+	return Params{Text: fmt.Sprintf("paragraph %04d: %s", i, strings.Repeat("word ", 60))}
+}
+
+func document(s *System) []Params {
+	s.Layout(documentRow(0))
+	ps := make([]Params, maxLayoutBytes*9/8/s.layoutBytes+1)
+	for i := range ps {
+		ps[i] = documentRow(i)
+	}
+	return ps
+}
+
+// A window drawing a document a little over the budget must not evict
+// each paragraph just before its next frame lays it out again.
+func TestLayoutCacheKeepsDisplayedDocument(t *testing.T) {
+	s := newSystem()
+	s.eng = &stubEngine{}
+	ps := document(s)
+	for _, p := range ps {
+		s.Layout(p)
+	}
+	if s.layoutBytes <= maxLayoutBytes {
+		t.Fatalf("the document takes %d bytes, within the budget", s.layoutBytes)
+	}
+	s.EndFrame()
+	made := s.LayoutsMade()
+	for range 20 {
+		for _, p := range ps {
+			s.Layout(p)
+		}
+		s.EndFrame()
+	}
+	if n := s.LayoutsMade() - made; n != 0 {
+		t.Fatalf("made %d layouts for the unchanged document", n)
+	}
+}
+
+// Once no frame draws the document, the cache goes back to its budget,
+// whichever window's frames go by, and later forgets the rest.
+func TestLayoutCacheTrimsUnusedDocument(t *testing.T) {
+	s := newSystem()
+	s.eng = &stubEngine{}
+	for _, p := range document(s) {
+		s.Layout(p)
+	}
+	for range liveLayoutFrames - 1 {
+		s.EndFrame()
+		if s.layoutBytes <= maxLayoutBytes {
+			t.Fatal("the document was trimmed while still recent")
+		}
+	}
+	s.Layout(Params{Text: "another window"})
+	s.EndFrame()
+	if s.layoutBytes > maxLayoutBytes {
+		t.Fatalf("kept %d bytes of unused layouts", s.layoutBytes)
+	}
+	for range 241 {
+		s.EndFrame()
+	}
+	if len(s.layouts) != 0 || s.layoutBytes != 0 {
+		t.Fatal("old layouts survived expiry")
+	}
+}
+
+// Windows take turns: another window's frames between two of the
+// document's keep its layouts.
+func TestLayoutCacheKeepsDocumentAcrossWindows(t *testing.T) {
+	s := newSystem()
+	s.eng = &stubEngine{}
+	ps := document(s)
+	first := s.Layout(ps[0])
+	for _, p := range ps[1:] {
+		s.Layout(p)
+	}
+	s.EndFrame()
+	for range liveLayoutFrames - 2 {
+		s.Layout(Params{Text: "another window"})
+		s.EndFrame()
+	}
+	if s.Layout(ps[0]) != first {
+		t.Fatal("another window's frames evicted the document")
+	}
+}
+
+// Recent layouts still stay within a hard limit.
+func TestLayoutCacheCapsRecentBytes(t *testing.T) {
+	s := newSystem()
+	s.eng = &stubEngine{}
+	first := s.Layout(Params{Text: "first"})
+	for i := range 100 {
+		s.Layout(Params{Text: fmt.Sprintf("%d: %s", i, strings.Repeat("word ", 2000))})
+		if s.layoutBytes > maxLiveLayoutBytes {
+			t.Fatalf("kept %d bytes", s.layoutBytes)
+		}
+	}
+	if s.Layout(Params{Text: "first"}) == first {
+		t.Fatal("the hard limit did not evict the oldest layout")
+	}
+}

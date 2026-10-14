@@ -705,13 +705,17 @@ func (v *view) scroll(ev ui.InputEvent) bool {
 	if rows == 0 {
 		return true
 	}
+	// OnScroll runs unlocked: it may call the terminal's methods, as Feed.
+	if on := t.opts.OnScroll; on != nil && v.wheelScrollsBack(ev.Mods) && on(rows) {
+		return true
+	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if t.term == nil {
 		return false
 	}
 	switch {
-	case t.term.MouseTracking() && ev.Mods&ui.Shift == 0:
+	case v.wheelTracked(ev.Mods):
 		if v.mouse == nil {
 			m, err := vt.NewMouseEncoder()
 			if err != nil {
@@ -729,7 +733,7 @@ func (v *view) scroll(ev ui.InputEvent) bool {
 				t.in.push(append([]byte(nil), out...))
 			}
 		}
-	case t.term.AltScreen() && t.term.Mode(vt.ModeAltScroll):
+	case v.wheelArrows():
 		// Full-screen programs scroll with the arrows (mode 1007).
 		if v.keys == nil {
 			var err error
@@ -749,6 +753,27 @@ func (v *view) scroll(ev ui.InputEvent) bool {
 		t.term.ScrollBy(rows)
 	}
 	return true
+}
+
+// wheelTracked reports whether the program takes the wheel as the mouse:
+// Shift keeps it for the terminal. t.mu held.
+func (v *view) wheelTracked(mods ui.Modifiers) bool {
+	return v.t.term.MouseTracking() && mods&ui.Shift == 0
+}
+
+// wheelArrows reports whether a full-screen program takes the wheel as
+// arrow keys (alternate scroll, mode 1007). t.mu held.
+func (v *view) wheelArrows() bool {
+	return v.t.term.AltScreen() && v.t.term.Mode(vt.ModeAltScroll)
+}
+
+// wheelScrollsBack reports whether the wheel scrolls the scrollback, no
+// program taking it, as Options.OnScroll may then.
+func (v *view) wheelScrollsBack(mods ui.Modifiers) bool {
+	t := v.t
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.term != nil && !v.wheelTracked(mods) && !v.wheelArrows()
 }
 
 func abs(v int) int {

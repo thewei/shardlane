@@ -204,7 +204,7 @@ func (p *Painter) paintInline(e *node) {
 // keyboard and MyGo rings it.
 func (e *node) ringShown() bool {
 	rt := e.c.rt
-	return e.flags&(flagFocusable|flagOwnRing) == flagFocusable && rt.focused == e.id && rt.focusVisible && rt.windowFocused
+	return e.flags&(flagFocusable|flagOwnRing) == flagFocusable && rt.focused == e.id && rt.focusVisible && rt.windowFocus()
 }
 
 // accessInline describes the elements inside text e that are more than

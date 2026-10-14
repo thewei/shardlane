@@ -118,6 +118,12 @@ func (c *Config) mimeType(fa FileAssociation) (string, bool) {
 
 // MacOS configures macOS packaging.
 type MacOS struct {
+	// Icon is the app's icon on macOS as an asset catalog: an Assets.car
+	// compiled with actool, whose app icon is named AppIcon unless
+	// infoPlist's CFBundleIconName says otherwise, or an Icon Composer .icon,
+	// which builds compile on a Mac with Xcode 26 or later and skip
+	// elsewhere. The .icns from icon remains the fallback.
+	Icon string `json:"icon"`
 	// MinimumSystemVersion is the oldest macOS version supported (default
 	// "12.0").
 	MinimumSystemVersion string `json:"minimumSystemVersion"`
@@ -215,6 +221,9 @@ func (c *Config) validate() error {
 		if fa.Role != "" && fa.Role != "Editor" && fa.Role != "Viewer" {
 			return fmt.Errorf("fileAssociations[%d].role is Editor or Viewer", i)
 		}
+	}
+	if ext := strings.ToLower(filepath.Ext(c.MacOS.Icon)); c.MacOS.Icon != "" && ext != ".car" && ext != ".icon" {
+		return fmt.Errorf("macos.icon %s is an Assets.car or an Icon Composer .icon", c.MacOS.Icon)
 	}
 	for name, file := range c.MacOS.HelperEntitlements {
 		if name == "" || file == "" {

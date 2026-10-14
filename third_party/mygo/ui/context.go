@@ -246,6 +246,9 @@ func (c *context) rekey(e *node, k any) {
 	}
 	id := keyedID(parent, k)
 	rt := c.rt
+	if id != e.id {
+		rt.unlook(e.st)
+	}
 	st, built := rt.lookState(id)
 	if built && id != e.id {
 		// Another element of the pass has the key under the same parent.
@@ -461,6 +464,10 @@ type state struct {
 	seen      uint64
 	pass      int    // the pass of the frame that built it last
 	born      uint64 // the frame that first built the element
+	// lookedSeen and lookedPass are seen and pass before the last
+	// lookup (lookState), 0 for a state it created.
+	lookedSeen uint64
+	lookedPass int
 	// The element's box and its visible part in the last frame.
 	x, y, w, h     float32
 	vx, vy, vw, vh float32
@@ -609,11 +616,31 @@ func (rt *engine) lookState(id uint64) (s *state, built bool) {
 		built = s.seen == rt.frame && s.pass == rt.pass
 	}
 	s.rt = rt
+	s.lookedSeen, s.lookedPass = s.seen, s.pass
 	s.seen, s.pass = rt.frame, rt.pass
 	// What the element drags and takes, as this pass asks.
 	s.dragValue, s.dragFn, s.accepts = nil, nil, nil
 	s.dataSource, s.dataTarget = nil, nil
 	return s, built
+}
+
+// unlook undoes the lookup of s by an element that Key gave another
+// identity: creation looked up its place among its siblings, which is not
+// its own. A state the lookup created goes at once, so that keyed elements
+// keep none behind them, nor allocate one every frame. One that was there
+// before, as that of a popover that just closed in the place, is left as
+// the lookup found it: pruning retires it, giving the focus back for an
+// overlay, unless another element of the pass built it.
+func (rt *engine) unlook(s *state) {
+	if s.lookedSeen != 0 {
+		s.seen, s.pass = s.lookedSeen, s.lookedPass
+		return
+	}
+	delete(rt.states, s.id)
+	*s = state{}
+	if len(rt.free) < maxFree {
+		rt.free = append(rt.free, s)
+	}
 }
 
 // textSystem is the shared text system.

@@ -19,6 +19,7 @@ import (
 	"os"
 	"strings"
 	"unsafe"
+	"weak"
 
 	"github.com/egoist/mygo/internal/gpu"
 	"github.com/egoist/mygo/internal/scene"
@@ -97,6 +98,16 @@ type texture struct {
 	lastFrame uint64
 }
 
+// canvasTexture is the texture a canvas (scene.NewCanvas) is drawn into,
+// through its framebuffer, and what drawing it keeps, for as long as the
+// canvas lives. Its rows go up, as GL's: images showing it flip it.
+type canvasTexture struct {
+	texture
+	fb     uint32
+	b      gpu.Builder
+	canvas weak.Pointer[scene.Image]
+}
+
 // Renderer draws scenes into the framebuffer bound when Render is called,
 // with the GL context that was current when New was called. All its
 // methods must be called with that context current.
@@ -115,6 +126,10 @@ type Renderer struct {
 	empty    uint32 // a texture to bind where there is none
 	images   map[uint64]*texture
 	frame    uint64
+	// canvases are the textures canvases are drawn into, and canvasTex
+	// the names of those textures.
+	canvases  map[uint64]*canvasTexture
+	canvasTex map[uint32]bool
 
 	// The passes computing the backdrops of effects: down and blur are
 	// their programs, with their uniforms' locations, drawn with passVAO;
@@ -405,6 +420,13 @@ func (r *Renderer) imageTexture(img *scene.Image) uintptr {
 	if img.W > r.maxSize || img.H > r.maxSize {
 		return 0
 	}
+	if img.Scene != nil {
+		// A canvas, drawn before the scene showing it.
+		if c := r.canvases[img.ID()]; c != nil {
+			return uintptr(c.tex)
+		}
+		return 0
+	}
 	t := r.images[img.ID()]
 	if t == nil {
 		t = &texture{tex: newTexture(glRGBA8, glRGBA, img.W, img.H, img.Pix, img.W*4), w: img.W, h: img.H, ver: img.Version()}
@@ -457,8 +479,114 @@ func (r *Renderer) draw(s *scene.Scene) error {
 	if err := r.syncAtlas(&r.color, s.ColorAtlas, glRGBA8, glRGBA); err != nil {
 		return err
 	}
-	s = r.b.Build(s, r.imageTexture)
-	if err := r.fitBackdrop(); err != nil {
+	if err := r.drawCanvases(s); err != nil {
+		return err
+	}
+	if err := r.drawScene(s, &r.b); err != nil {
+		return err
+	}
+	if r.frame%120 == 0 {
+		for key, t := range r.images {
+			if r.frame-t.lastFrame > 240 {
+				glDeleteTextures(1, &t.tex)
+				delete(r.images, key)
+			}
+		}
+		for key, t := range r.canvases {
+			if t.canvas.Value() == nil {
+				r.deleteCanvas(t)
+				delete(r.canvases, key)
+			}
+		}
+	}
+	return nil
+}
+
+// drawCanvases draws the canvases s draws anew or shows into their
+// textures, unless they hold their versions already, leaving the
+// framebuffer bound as it was.
+func (r *Renderer) drawCanvases(s *scene.Scene) (err error) {
+	var outer int32
+	glGetIntegerv(glFramebufferBinding, &outer)
+	defer glBindFramebuffer(glFramebuffer, uint32(outer))
+	s.EachCanvas(func(c *scene.Image) {
+		if err == nil {
+			err = r.drawCanvas(c)
+		}
+	})
+	return err
+}
+
+func (r *Renderer) drawCanvas(c *scene.Image) error {
+	if c.W > r.maxSize || c.H > r.maxSize {
+		return nil
+	}
+	if r.canvases == nil {
+		r.canvases, r.canvasTex = map[uint64]*canvasTexture{}, map[uint32]bool{}
+	}
+	t := r.canvases[c.ID()]
+	if t == nil {
+		t = &canvasTexture{canvas: weak.Make(c)}
+		r.canvases[c.ID()] = t
+	}
+	if t.tex != 0 && t.w == c.W && t.h == c.H && t.ver == c.Version() {
+		return nil
+	}
+	if t.tex == 0 || t.w != c.W || t.h != c.H {
+		if t.tex != 0 {
+			delete(r.canvasTex, t.tex)
+			glDeleteTextures(1, &t.tex)
+		}
+		t.tex, t.w, t.h = newTexture(glRGBA8, glRGBA, c.W, c.H, nil, 0), c.W, c.H
+		r.canvasTex[t.tex] = true
+		if t.fb == 0 {
+			glGenFramebuffers(1, &t.fb)
+		}
+		glBindFramebuffer(glFramebuffer, t.fb)
+		glFramebufferTexture2D(glFramebuffer, glColorAttachment0, glTexture2D, t.tex, 0)
+		if glCheckFramebufferState(glFramebuffer) != glFramebufferDone {
+			return fmt.Errorf("gl: cannot draw into a %d×%d canvas", c.W, c.H)
+		}
+	}
+	glBindFramebuffer(glFramebuffer, t.fb)
+	cs := c.Scene
+	cs.Width, cs.Height = c.W, c.H
+	if err := r.drawScene(cs, &t.b); err != nil {
+		return err
+	}
+	t.ver = c.Version()
+	return nil
+}
+
+func (r *Renderer) deleteCanvas(t *canvasTexture) {
+	delete(r.canvasTex, t.tex)
+	if t.tex != 0 {
+		glDeleteTextures(1, &t.tex)
+	}
+	if t.fb != 0 {
+		glDeleteFramebuffers(1, &t.fb)
+	}
+	t.b.Release()
+}
+
+// drawScene draws s into the framebuffer bound, with b.
+func (r *Renderer) drawScene(s *scene.Scene, b *gpu.Builder) error {
+	s = b.Build(s, r.imageTexture)
+	// Canvases' rows go up, as GL's: images showing them sample them
+	// flipped, which their source rectangles may be (scene.OpImage).
+	if len(r.canvasTex) > 0 {
+		for _, bt := range b.Batches {
+			if bt.Image == 0 || !r.canvasTex[uint32(bt.Image)] {
+				continue
+			}
+			for i := bt.Start; i < bt.Start+bt.Count; i++ {
+				if in := &b.Instances[i]; in.Params[0] == 4 {
+					in.UV[1], in.UV[3] = 1-in.UV[1], 1-in.UV[3]
+				}
+			}
+		}
+	}
+	if err := r.fitBackdrop(b); err != nil {
 		return err
 	}
 	// The framebuffer drawn into, GTK's, which the passes computing
@@ -471,31 +599,31 @@ func (r *Renderer) draw(s *scene.Scene) error {
 	c := s.Clear.Premul(1)
 	glClearColor(c[0], c[1], c[2], c[3])
 	glClear(glColorBufferBit)
-	if len(r.b.Instances) == 0 {
+	if len(b.Instances) == 0 {
 		return nil
 	}
 	glBindBuffer(glArrayBuffer, r.buf)
-	glBufferData(glArrayBuffer, len(r.b.Instances)*gpu.InstanceSize, unsafe.Pointer(&r.b.Instances[0]), glStreamDraw)
+	glBufferData(glArrayBuffer, len(b.Instances)*gpu.InstanceSize, unsafe.Pointer(&b.Instances[0]), glStreamDraw)
 	r.bindState(s)
 	bound, program, hole := uintptr(r.empty), r.program, false
-	for _, b := range r.b.Batches {
-		sc := b.Scissor
+	for _, bt := range b.Batches {
+		sc := bt.Scissor
 		sc.Left, sc.Top = max(sc.Left, 0), max(sc.Top, 0)
 		sc.Right, sc.Bottom = min(sc.Right, int32(s.Width)), min(sc.Bottom, int32(s.Height))
-		if b.Count == 0 || sc.Empty() {
+		if bt.Count == 0 || sc.Empty() {
 			continue
 		}
 		want := r.program
-		if b.Effect != nil {
-			p := r.effectProgram(b.Effect)
+		if bt.Effect != nil {
+			p := r.effectProgram(bt.Effect)
 			if p.program == 0 {
 				continue
 			}
 			want = p.program
 		}
-		if b.Backdrop != 0 {
+		if bt.Backdrop != 0 {
 			// The effect shows what is drawn so far.
-			r.readBackdrop(uint32(fb), s.Height, r.b.Backdrops[b.Backdrop-1])
+			r.readBackdrop(uint32(fb), s.Height, b.Backdrops[bt.Backdrop-1])
 			glBindFramebuffer(glFramebuffer, uint32(fb))
 			glViewport(0, 0, int32(s.Width), int32(s.Height))
 			r.bindState(s)
@@ -504,33 +632,33 @@ func (r *Renderer) draw(s *scene.Scene) error {
 			glActiveTexture(glTexture0 + 2)
 			bound, program, hole = uintptr(r.empty), r.program, false
 		}
-		if b.Hole != hole {
-			hole = b.Hole
+		if bt.Hole != hole {
+			hole = bt.Hole
 			r.blendFunc(hole)
 		}
 		if want != program {
 			program = want
 			glUseProgram(program)
-			if b.Effect != nil {
-				glUniform2f(r.effects[b.Effect].uSize, float32(s.Width), float32(s.Height))
+			if bt.Effect != nil {
+				glUniform2f(r.effects[bt.Effect].uSize, float32(s.Width), float32(s.Height))
 			}
 		}
-		if b.Image != 0 && b.Image != bound {
-			bound = b.Image
+		if bt.Image != 0 && bt.Image != bound {
+			bound = bt.Image
 			glBindTexture(glTexture2D, uint32(bound)) // unit 2 is active
 		}
 		glActiveTexture(glTexture0 + 4)
-		glBindTexture(glTexture2D, or(uint32(b.ClipMask), r.empty))
+		glBindTexture(glTexture2D, or(uint32(bt.ClipMask), r.empty))
 		glActiveTexture(glTexture0 + 2)
 		// Instances draw from the batch's first: without base instances in
 		// OpenGL ES 3.0, the attributes start there.
-		offset := uintptr(b.Start * gpu.InstanceSize)
+		offset := uintptr(bt.Start * gpu.InstanceSize)
 		for i := range uint32(attributes) {
 			glVertexAttribPointer(i, 4, glFloat, false, int32(gpu.InstanceSize), offset+uintptr(i)*16)
 		}
 		// GL's scissor rectangles start at the bottom.
 		glScissor(sc.Left, int32(s.Height)-sc.Bottom, sc.Right-sc.Left, sc.Bottom-sc.Top)
-		glDrawArraysInstanced(glTriangleStrip, 0, 4, int32(b.Count))
+		glDrawArraysInstanced(glTriangleStrip, 0, 4, int32(bt.Count))
 	}
 	// Leave the state as GTK, which draws the area with the same context,
 	// expects it.
@@ -544,14 +672,6 @@ func (r *Renderer) draw(s *scene.Scene) error {
 	glBindBuffer(glArrayBuffer, 0)
 	glBindVertexArray(0)
 	glUseProgram(0)
-	if r.frame%120 == 0 {
-		for key, t := range r.images {
-			if r.frame-t.lastFrame > 240 {
-				glDeleteTextures(1, &t.tex)
-				delete(r.images, key)
-			}
-		}
-	}
 	return nil
 }
 
@@ -633,10 +753,10 @@ func (r *Renderer) pass(i, w, h int) {
 
 // fitBackdrop makes the textures of backdrops as large as the scene built
 // needs, and the texture the area read is copied to.
-func (r *Renderer) fitBackdrop() error {
-	w, h := r.b.BackdropSize()
+func (r *Renderer) fitBackdrop(b *gpu.Builder) error {
+	w, h := b.BackdropSize()
 	aw, ah := 0, 0
-	for _, bk := range r.b.Backdrops {
+	for _, bk := range b.Backdrops {
 		aw, ah = max(aw, bk.Area.Dx()), max(ah, bk.Area.Dy())
 	}
 	if aw > r.grab.w || ah > r.grab.h {
@@ -689,6 +809,11 @@ func (r *Renderer) forget() {
 	r.grab, r.backdrop, r.backdropFB = texture{}, [2]texture{}, [2]uint32{}
 	r.mask, r.color = texture{}, texture{}
 	clear(r.images)
+	for _, t := range r.canvases {
+		t.b.Release()
+	}
+	clear(r.canvases)
+	clear(r.canvasTex)
 }
 
 // Release deletes the renderer's objects when its context is current, and
@@ -701,6 +826,9 @@ func (r *Renderer) Release() {
 	}
 	for _, t := range r.images {
 		glDeleteTextures(1, &t.tex)
+	}
+	for _, t := range r.canvases {
+		r.deleteCanvas(t)
 	}
 	for _, tex := range []*uint32{&r.mask.tex, &r.color.tex, &r.empty, &r.grab.tex, &r.backdrop[0].tex, &r.backdrop[1].tex} {
 		if *tex != 0 {

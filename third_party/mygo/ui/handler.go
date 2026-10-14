@@ -119,7 +119,7 @@ func (rt *engine) deliver(s *state, ev InputEvent) bool {
 // focusHandler returns the state of the focused element when it handles
 // its input.
 func (rt *engine) focusHandler() *state {
-	if s := rt.states[rt.focused]; s != nil && s.input != nil && rt.windowFocused {
+	if s := rt.states[rt.focused]; s != nil && s.input != nil && rt.windowFocus() {
 		return s
 	}
 	return nil

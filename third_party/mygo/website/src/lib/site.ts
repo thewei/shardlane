@@ -1,8 +1,8 @@
 export const site = {
   name: "MyGo",
   url: "https://mygo.egoist.dev",
-  title: "MyGo — Desktop apps in Go, with a web frontend or native UI",
+  title: "MyGo — Desktop apps in Go, with native UI or a web frontend",
   description:
-    "Build desktop apps in Go. Windows show a web frontend in the system webview, calling Go through a TypeScript client generated from your code, or native UI written in Go that MyGo draws on the GPU. Pure Go with no cgo, and a few megabytes per app.",
+    "Build desktop apps in Go. Windows draw native UI that MyGo paints on the GPU, written in Go alone with package ui, or show a web frontend in the system webview that calls Go through a TypeScript client generated from your code. Pure Go with no cgo, and a few megabytes per app.",
   repo: "https://github.com/egoist/mygo",
 }

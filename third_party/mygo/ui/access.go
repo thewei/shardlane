@@ -238,7 +238,7 @@ func (rt *engine) accessTree() *platform.AccessTree {
 	default:
 		rt.accessElement(t, root, -1, false, &focused)
 	}
-	if rt.windowFocused && rt.focused != 0 {
+	if rt.windowFocus() && rt.focused != 0 {
 		focus := rt.focused
 		// A list choosing rows with the arrows has the focus for them:
 		// assistive technology follows the row chosen, as the arrows move
@@ -458,6 +458,9 @@ func (rt *engine) accessDetails(e *node, n *platform.AccessNode) {
 			n.Value = ed.buf.string()
 			n.SelStart, n.SelEnd = ed.selection()
 		}
+	}
+	if e.accFill != nil {
+		e.accFill(n)
 	}
 }
 

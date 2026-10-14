@@ -2,7 +2,7 @@
 <img width="800" height="360" alt="MyGo!!!!!" src="https://github.com/user-attachments/assets/c3eee9bc-5f22-4032-95b6-776e8381910a" />
 </p>
 
-**Desktop apps in Go, with a web frontend or a native UI.**
+**Desktop apps in Go, with native UI or a web frontend.**
 
 Each MyGo window shows one of two kinds of interface, and one app, or one
 window, can mix them:

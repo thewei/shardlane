@@ -218,18 +218,3 @@ func (m Affine) Pixels(scale float32) Affine {
 	}
 	return m
 }
-
-// HasTransforms reports whether the frame needs affine composition.
-func (s *Scene) HasTransforms() bool {
-	for i := range s.Ops {
-		if s.Ops[i].Transform.Set {
-			return true
-		}
-	}
-	for i := range s.Glyphs {
-		if s.Glyphs[i].Transform.Set {
-			return true
-		}
-	}
-	return false
-}

@@ -370,6 +370,7 @@ const (
 	tpmReturnCmd   = 0x0100
 	mncClose       = 1
 
+	monitorDefaultToNull    = 0
 	monitorDefaultToNearest = 2
 	monitorDefaultToPrimary = 1
 	monitorInfoPrimary      = 1

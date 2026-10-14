@@ -1,0 +1,4 @@
+# The vendored MyGo tree is upstream's bytes, not ours: its test fixtures hold
+# unified-diff literals whose context lines start "space, tab", which
+# `git diff --check` would flag on every upgrade.
+third_party/mygo/** -whitespace

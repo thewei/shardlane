@@ -88,6 +88,41 @@ as long as it would show on a connected display. They override `X`, `Y`,
 stay the defaults of the first launch. Give each kind of window its own key:
 `"main"`, `"preferences"`.
 
+An app that keeps its data elsewhere, such as in its own database, keeps
+the states there with a `WindowStateStore`, set before the first window
+with a `StateKey`, and no `window-state.json` is written:
+
+```go
+type windowStates struct{ db *sql.DB }
+
+func (s windowStates) LoadWindowStates() (map[string]mygo.WindowState, error) {
+	var data []byte
+	err := s.db.QueryRow(`SELECT value FROM settings WHERE key = 'windows'`).Scan(&data)
+	if err != nil {
+		return nil, err
+	}
+	var states map[string]mygo.WindowState
+	return states, json.Unmarshal(data, &states)
+}
+
+func (s windowStates) SaveWindowStates(states map[string]mygo.WindowState) error {
+	data, err := json.Marshal(states)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.Exec(`INSERT OR REPLACE INTO settings (key, value) VALUES ('windows', ?)`, data)
+	return err
+}
+
+mygo.App.SetWindowStateStore(windowStates{db})
+```
+
+MyGo loads the states once, when the first window with a `StateKey` is
+created, and saves them all when such a window closes and when the app
+quits, on the main thread. Windows open with their options when there are
+no states or loading them fails; a save that fails is tried again the next
+time.
+
 ## Size, position and state
 
 ```go

@@ -21,6 +21,7 @@ import (
 	"sync"
 	"time"
 	"unsafe"
+	"weak"
 
 	"github.com/ebitengine/purego"
 	"github.com/ebitengine/purego/objc"
@@ -301,6 +302,29 @@ type texture struct {
 	lastFrame uint64
 }
 
+// drawState is what drawing scenes into a target keeps from frame to
+// frame: a frame's, and each canvas's.
+type drawState struct {
+	b       gpu.Builder
+	instBuf id
+	instCap int
+}
+
+func (d *drawState) release() {
+	release(&d.instBuf)
+	d.instCap = 0
+	d.b.Release()
+}
+
+// canvasTexture is the texture a canvas (scene.NewCanvas) is drawn into,
+// and what drawing it keeps, for as long as the canvas lives: what it holds
+// is drawn once, not again when shown.
+type canvasTexture struct {
+	texture
+	drawState
+	canvas weak.Pointer[scene.Image]
+}
+
 // formatState is what a renderer draws into targets of a pixel format
 // with.
 type formatState struct {
@@ -345,13 +369,13 @@ type Renderer struct {
 	synced, holes, waited, behind bool
 	skippedAt                     time.Time
 
-	instBuf id
-	instCap int
 	mask    texture
 	color   texture
 	empty   id // a texture to bind where there is none
 	images  map[uint64]*texture
-	frame   uint64
+	// canvases are the textures canvases are drawn into.
+	canvases map[uint64]*canvasTexture
+	frame    uint64
 	// last is the command buffer of the last frame, which the next waits
 	// for before it changes what the GPU reads.
 	last    id
@@ -366,7 +390,8 @@ type Renderer struct {
 	trimHandle         uintptr
 	trimArmed, trimmed bool
 
-	b gpu.Builder
+	// drawState is the frames'.
+	drawState
 }
 
 // New creates a renderer drawing into a CAMetalLayer that it adds to
@@ -725,6 +750,13 @@ func (r *Renderer) syncAtlas(t *texture, a *scene.Atlas, format uint) error {
 // imageTexture returns the texture of an image, uploading it when new or
 // changed.
 func (r *Renderer) imageTexture(img *scene.Image) uintptr {
+	if img.Scene != nil {
+		// A canvas, drawn before the scene showing it.
+		if c := r.canvases[img.ID()]; c != nil {
+			return c.tex
+		}
+		return 0
+	}
 	t := r.images[img.ID()]
 	if t == nil {
 		tex := r.newTexture(img.W, img.H, pixelFormatRGBA8Unorm, usageShaderRead, img.Pix, img.W*4)
@@ -779,38 +811,97 @@ func (r *Renderer) encode(s *scene.Scene, target id) (id, error) {
 	if err := r.syncAtlas(&r.color, s.ColorAtlas, pixelFormatRGBA8Unorm); err != nil {
 		return 0, err
 	}
-	r.b.Wide = r.cur.format == pixelFormatRGBA16Float
-	s = r.b.Build(s, r.imageTexture)
-	if n := len(r.b.Instances); n > r.instCap {
-		release(&r.instBuf)
-		capacity := max(n*3/2, 1024)
-		r.instBuf = send(r.device, "newBufferWithLength:options:", uintptr(capacity*gpu.InstanceSize), 0) // shared storage
-		if r.instBuf == 0 {
-			r.instCap = 0
-			return 0, errors.New("metal: cannot create the instance buffer")
-		}
-		r.instCap = capacity
-	}
-	if n := len(r.b.Instances); n > 0 {
-		dst := unsafe.Slice((*gpu.Instance)(ptr(send(r.instBuf, "contents"))), n)
-		copy(dst, r.b.Instances)
-	}
-
-	if err := r.fitBackdrop(); err != nil {
-		return 0, err
-	}
 	cb := send(r.queue, "commandBuffer")
 	if !r.checked {
 		if err := need(cb, "command buffer", "renderCommandEncoderWithDescriptor:", "commit", "presentDrawable:", "waitUntilScheduled", "waitUntilCompleted", "status", "blitCommandEncoder"); err != nil {
 			return 0, err
 		}
 	}
-	enc, err := r.begin(cb, target, loadActionClear, s)
+	// Canvases first, into textures of their own, which the frame samples.
+	var err error
+	s.EachCanvas(func(c *scene.Image) {
+		if err == nil {
+			err = r.drawCanvas(cb, c)
+		}
+	})
 	if err != nil {
 		return 0, err
 	}
+	r.b.Wide = r.cur.format == pixelFormatRGBA16Float
+	if err := r.drawInto(cb, s, target, &r.drawState); err != nil {
+		return 0, err
+	}
+	return cb, nil
+}
+
+// drawCanvas draws a canvas into its texture, unless it holds its version
+// already.
+func (r *Renderer) drawCanvas(cb id, c *scene.Image) error {
+	if r.canvases == nil {
+		r.canvases = map[uint64]*canvasTexture{}
+	}
+	t := r.canvases[c.ID()]
+	if t == nil {
+		t = &canvasTexture{canvas: weak.Make(c)}
+		r.canvases[c.ID()] = t
+	}
+	t.lastFrame = r.frame
+	if t.tex != 0 && t.w == c.W && t.h == c.H && t.ver == c.Version() {
+		return nil
+	}
+	if t.tex == 0 || t.w != c.W || t.h != c.H {
+		release(&t.tex)
+		if t.tex = r.newTexture(c.W, c.H, pixelFormatBGRA8Unorm, usageRenderTarget|usageShaderRead, nil, 0); t.tex == 0 {
+			return errors.New("metal: cannot create a canvas's texture")
+		}
+		t.w, t.h = c.W, c.H
+	}
+	// In BGRA8, in sRGB, whatever the frame's format.
+	saved := r.cur
+	defer func() { r.cur = saved }()
+	r.cur = &r.formats[0]
+	if r.cur.pipeline == 0 {
+		if err := r.makePipelines(r.cur); err != nil {
+			return err
+		}
+	}
+	cs := c.Scene
+	cs.Width, cs.Height = c.W, c.H
+	t.b.Wide = false
+	if err := r.drawInto(cb, cs, t.tex, &t.drawState); err != nil {
+		return err
+	}
+	t.ver = c.Version()
+	return nil
+}
+
+// drawInto encodes drawing s into target with d, in the format r.cur is.
+func (r *Renderer) drawInto(cb id, s *scene.Scene, target id, d *drawState) error {
+	s = d.b.Build(s, r.imageTexture)
+	if n := len(d.b.Instances); n > d.instCap {
+		release(&d.instBuf)
+		capacity := max(n*3/2, 1024)
+		d.instBuf = send(r.device, "newBufferWithLength:options:", uintptr(capacity*gpu.InstanceSize), 0) // shared storage
+		if d.instBuf == 0 {
+			d.instCap = 0
+			return errors.New("metal: cannot create the instance buffer")
+		}
+		d.instCap = capacity
+	}
+	if n := len(d.b.Instances); n > 0 {
+		dst := unsafe.Slice((*gpu.Instance)(ptr(send(d.instBuf, "contents"))), n)
+		copy(dst, d.b.Instances)
+	}
+
+	if err := r.fitBackdrop(&d.b); err != nil {
+		return err
+	}
+	enc, err := r.begin(cb, target, loadActionClear, s, &d.b)
+	if err != nil {
+		return err
+	}
 	bound, pipe := r.empty, r.cur.pipeline
-	for _, b := range r.b.Batches {
+	for _, b := range d.b.Batches {
 		// Metal requires scissor rectangles within the target.
 		sc := b.Scissor
 		sc.Left, sc.Top = max(sc.Left, 0), max(sc.Top, 0)
@@ -830,9 +921,9 @@ func (r *Renderer) encode(s *scene.Scene, target id) (id, error) {
 		if b.Backdrop != 0 {
 			// The effect shows what is drawn so far.
 			send(enc, "endEncoding")
-			r.readBackdrop(cb, target, r.b.Backdrops[b.Backdrop-1])
-			if enc, err = r.begin(cb, target, loadActionLoad, s); err != nil {
-				return 0, err
+			r.readBackdrop(cb, target, d.b.Backdrops[b.Backdrop-1])
+			if enc, err = r.begin(cb, target, loadActionLoad, s, &d.b); err != nil {
+				return err
 			}
 			send(enc, "setFragmentTexture:atIndex:", r.cur.backdrop[0].tex, 3)
 			bound, pipe = r.empty, r.cur.pipeline
@@ -847,18 +938,18 @@ func (r *Renderer) encode(s *scene.Scene, target id) (id, error) {
 		}
 		send(enc, "setFragmentTexture:atIndex:", or(id(b.ClipMask), r.empty), 4)
 		offset := uintptr(b.Start * gpu.InstanceSize)
-		send(enc, "setVertexBuffer:offset:atIndex:", r.instBuf, offset, 0)
-		send(enc, "setFragmentBuffer:offset:atIndex:", r.instBuf, offset, 0)
+		send(enc, "setVertexBuffer:offset:atIndex:", d.instBuf, offset, 0)
+		send(enc, "setFragmentBuffer:offset:atIndex:", d.instBuf, offset, 0)
 		msgSetScissor(enc, sel("setScissorRect:"), mtlScissorRect{uint(sc.Left), uint(sc.Top), uint(sc.Right - sc.Left), uint(sc.Bottom - sc.Top)})
 		send(enc, "drawPrimitives:vertexStart:vertexCount:instanceCount:", primitiveTriStrip, 0, 4, uintptr(b.Count))
 	}
 	send(enc, "endEncoding")
-	return cb, nil
+	return nil
 }
 
 // begin starts encoding the drawing of s into target, which it clears or
 // keeps (load), with the state the instances draw with.
-func (r *Renderer) begin(cb, target id, load uintptr, s *scene.Scene) (id, error) {
+func (r *Renderer) begin(cb, target id, load uintptr, s *scene.Scene, b *gpu.Builder) (id, error) {
 	rpd := send(class("MTLRenderPassDescriptor"), "renderPassDescriptor")
 	ca := send(send(rpd, "colorAttachments"), "objectAtIndexedSubscript:", 0)
 	send(ca, "setTexture:", target)
@@ -882,7 +973,7 @@ func (r *Renderer) begin(cb, target id, load uintptr, s *scene.Scene) (id, error
 	// The frame's size, and whether its target keeps colors outside the
 	// sRGB gamut.
 	globals := [4]float32{float32(s.Width), float32(s.Height), 0, 0}
-	if r.b.Wide {
+	if b.Wide {
 		globals[2] = 1
 	}
 	send(enc, "setVertexBytes:length:atIndex:", uintptr(unsafe.Pointer(&globals[0])), unsafe.Sizeof(globals), 1)
@@ -930,9 +1021,9 @@ func (r *Renderer) pass(cb, pipe, src, dst id, w, h int, p *gpu.Pass) {
 
 // fitBackdrop makes the textures of backdrops as large as the scene built
 // needs.
-func (r *Renderer) fitBackdrop() error {
+func (r *Renderer) fitBackdrop(b *gpu.Builder) error {
 	f := r.cur
-	w, h := r.b.BackdropSize()
+	w, h := b.BackdropSize()
 	if w == 0 || f.backdrop[0].w >= w && f.backdrop[0].h >= h {
 		return nil
 	}
@@ -1051,12 +1142,20 @@ func (r *Renderer) render(s *scene.Scene) error {
 	r.last = send(cb, "retain")
 	r.lastRender = time.Now()
 	r.armTrim()
-	// Forget the textures of images no frame drew for a while.
+	// Forget the textures of images no frame drew for a while, and those
+	// of canvases gone.
 	if r.frame%120 == 0 {
 		for key, t := range r.images {
 			if r.frame-t.lastFrame > 240 {
 				release(&t.tex)
 				delete(r.images, key)
+			}
+		}
+		for key, t := range r.canvases {
+			if t.canvas.Value() == nil {
+				release(&t.tex)
+				t.drawState.release()
+				delete(r.canvases, key)
 			}
 		}
 	}
@@ -1090,6 +1189,11 @@ func (r *Renderer) releaseTextures() {
 	for key, t := range r.images {
 		release(&t.tex)
 		delete(r.images, key)
+	}
+	for key, t := range r.canvases {
+		release(&t.tex)
+		t.drawState.release()
+		delete(r.canvases, key)
 	}
 	release(&r.instBuf)
 	r.instCap = 0

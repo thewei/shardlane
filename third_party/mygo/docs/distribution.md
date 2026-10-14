@@ -77,6 +77,35 @@ The icon is `resources/icon.png`, or the `icon` of the configuration: a square P
 ideally 1024×1024. `mygo build` makes it the `.icns` of macOS, the icon
 resource of the Windows executable and the icon of the Linux desktop entry.
 
+On macOS, `macos.icon` adds an asset catalog, which macOS prefers to the
+`.icns`: an `Assets.car` compiled with `actool`, whose app icon is named
+`AppIcon` (or what `macos.infoPlist` sets as `CFBundleIconName`), or an
+Icon Composer `.icon`, the layered icon of macOS 26, which `mygo build`
+compiles with `actool` from Xcode 26 or later, with the `.icns` that
+`actool` renders from it in place of the PNG's. Building elsewhere, or when
+the compilation fails, skips the `.icon` with a message, and the app keeps
+the PNG's `.icns`. `mygo dev` shows the `.icns`.
+
+```ts
+export default defineConfig({
+  macos: { icon: "AppIcon.icon" }, // outside resources, which ship as they are
+});
+```
+
+For builds without Xcode, such as CI on Linux, commit the `Assets.car`
+that `actool` compiles from the `.icon` and make it `macos.icon`. The
+`.icon` has to be named `AppIcon.icon`: `actool` names the icon after the
+file, and compiles nothing when `--app-icon` differs.
+
+```sh
+mkdir -p icon
+xcrun actool AppIcon.icon --compile icon --platform macosx --target-device mac \
+  --minimum-deployment-target 12.0 --app-icon AppIcon \
+  --output-partial-info-plist icon/partial.plist
+```
+
+This writes `icon/Assets.car`, for `macos: { icon: "icon/Assets.car" }`.
+
 ## Resources
 
 Files the app reads at run time, such as a database seed, a helper binary

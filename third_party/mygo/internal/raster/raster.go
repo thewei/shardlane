@@ -78,6 +78,7 @@ type renderer struct {
 
 // Render draws s into dst, which must be s.Width×s.Height.
 func Render(dst *Image, s *scene.Scene) {
+	drawCanvases(s)
 	var r Renderer
 	r.d.draw(dst, s, image.Rect(0, 0, dst.W, dst.H), r.opBounds(s, nil))
 }
@@ -1307,7 +1308,7 @@ func mixMask(src, dst byte, coverage uint32) byte {
 
 func (r *renderer) image(op *scene.Op) {
 	img := op.Image
-	if img == nil || img.W == 0 || img.H == 0 || op.Rect.Empty() || op.Src.Empty() {
+	if img == nil || img.W == 0 || img.H == 0 || op.Rect.Empty() || unflipped(op.Src).Empty() {
 		return
 	}
 	opacity := op.Opacity
@@ -1336,15 +1337,58 @@ func (r *renderer) image(op *scene.Op) {
 			if cov <= 0 {
 				continue
 			}
-			c := sample(img, op.Src.X+(px-op.Rect.X)*sx, op.Src.Y+(py-op.Rect.Y)*sy, op.Src)
-			if op.Grayscale {
-				l := 0.2126*c[0] + 0.7152*c[1] + 0.0722*c[2]
-				c[0], c[1], c[2] = l, l, l
-			}
+			c := sampleOp(op, op.Src.X+(px-op.Rect.X)*sx, op.Src.Y+(py-op.Rect.Y)*sy, abs32(sx), abs32(sy))
 			blend(row[4*x:4*x+4], c, cov)
 		}
 	}
 }
+
+// sampleOp reads op's image at (u, v), where a pixel spans du by dv of
+// its pixels, as op samples, grays and tints it.
+func sampleOp(op *scene.Op, u, v, du, dv float32) [4]float32 {
+	if op.Pixelated {
+		u, v = pixelated(u, du), pixelated(v, dv)
+	}
+	c := sample(op.Image, u, v, unflipped(op.Src))
+	if op.Grayscale {
+		l := 0.2126*c[0] + 0.7152*c[1] + 0.0722*c[2]
+		c[0], c[1], c[2] = l, l, l
+	}
+	if t := op.Color; t != (scene.Color{}) {
+		a := float32(t.A) / 255
+		c[0] *= float32(t.R) / 255 * a
+		c[1] *= float32(t.G) / 255 * a
+		c[2] *= float32(t.B) / 255 * a
+		c[3] *= a
+	}
+	return c
+}
+
+// unflipped returns the rectangle a source rectangle covers, which has a
+// negative width or height along an axis it flips.
+func unflipped(r scene.Rect) scene.Rect {
+	if r.W < 0 {
+		r.X, r.W = r.X+r.W, -r.W
+	}
+	if r.H < 0 {
+		r.Y, r.H = r.Y+r.H, -r.H
+	}
+	return r
+}
+
+// pixelated moves t, a coordinate in an image's pixels, so that sampling
+// it bilinearly draws each pixel as a square of its color, blended with
+// the next only across the pixel of the frame, d of the image's pixels
+// wide, that their edge crosses, as the GPU renderers do (Ebitengine's
+// FilterPixelated).
+func pixelated(t, d float32) float32 {
+	c := t - 0.5
+	i := float32(math.Floor(float64(c)))
+	f := (c-i-0.5)/min(max(d, 1e-5), 1) + 0.5
+	return i + min(max(f, 0), 1) + 0.5
+}
+
+func abs32(v float32) float32 { return float32(math.Abs(float64(v))) }
 
 // sample reads a premultiplied pixel at (u, v) with bilinear filtering,
 // clamped to src.

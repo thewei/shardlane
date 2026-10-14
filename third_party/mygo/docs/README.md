@@ -76,7 +76,7 @@ that must start instantly.
 ## Guides
 
 - [Getting started](getting-started.md): install the tools, then create,
-  develop and build an app, with a web frontend or native UI.
+  develop and build an app, with native UI or a web frontend.
 - [Windows](windows.md): creating and arranging windows of both kinds,
   their events, and what windows showing web pages do with them:
   navigation, downloads, permissions, printing.
@@ -89,6 +89,8 @@ that must start instantly.
   shell, displays, dark mode, power and global shortcuts.
 - [Clipboard and drag data](data-transfer.md): multiple representations,
   file lists, custom formats, lazy providers, and clipboard persistence.
+- [Audio](audio.md): sound effects, streamed music and sound an app makes
+  itself, mixed in Go, with WAV, Ogg Vorbis and MP3.
 - [Building and distributing](distribution.md): packaged apps for macOS,
   Windows and Linux, signing, installers and disk images.
 - [Auto-updates](updates.md): signed updates from GitHub releases, an S3
@@ -128,6 +130,9 @@ components, from buttons to tables.
   the shell or any program with Ghostty's terminal emulator.
 - [Glass](plugins/glass.md): Liquid Glass for native UI, as macOS draws
   it, on every platform, with macOS's scroll edges and backdrop blurs.
+- [Game](plugins/game.md): what games need beyond what apps do, opt-in:
+  a game loop in fixed steps with its input, a camera, and gamepads in
+  one standard layout.
 
 ## Reference
 

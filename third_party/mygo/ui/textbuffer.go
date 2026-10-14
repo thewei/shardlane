@@ -10,6 +10,7 @@ import (
 	"unicode/utf16"
 	"unicode/utf8"
 
+	"github.com/egoist/mygo/internal/rope"
 	"github.com/egoist/mygo/internal/text"
 )
 
@@ -26,7 +27,7 @@ type buffer struct {
 	// version counts the edits.
 	version uint64
 	indexed bool
-	root    *textNode
+	root    *rope.Node
 }
 
 func (b *buffer) string() string {
@@ -37,13 +38,13 @@ func (b *buffer) string() string {
 }
 func (b *buffer) byteLen() int {
 	if b.indexed {
-		return textSum(b.root).bytes
+		return rope.Sum(b.root).Bytes
 	}
 	return len(b.s)
 }
 func (b *buffer) start(p int) int {
 	if b.indexed {
-		return textPrefix(b.root, textLineStart(b.root, p)).runes
+		return rope.Prefix(b.root, rope.LineStart(b.root, p)).Runes
 	}
 	return b.paras[p].rune
 }
@@ -184,8 +185,8 @@ func (b *buffer) para(i int) int {
 // the end of the text.
 func (b *buffer) next(p int) (rune, byte int) {
 	if b.indexed {
-		off := textLineStart(b.root, p+1)
-		return textPrefix(b.root, off).runes, off
+		off := rope.LineStart(b.root, p+1)
+		return rope.Prefix(b.root, off).Runes, off
 	}
 	if p+1 < len(b.paras) {
 		return b.paras[p+1].rune, b.paras[p+1].byte
@@ -205,7 +206,7 @@ func (b *buffer) end(p int) int {
 // byteOf returns the byte of the text rune i starts at.
 func (b *buffer) byteOf(i int) int {
 	if b.indexed {
-		return textByteAt(b.root, i)
+		return rope.ByteOfRune(b.root, i)
 	}
 	i = max(0, min(i, b.n))
 	p := b.para(i)
@@ -261,8 +262,9 @@ func (b *buffer) replace(a, z int, s string) (first int, old []paragraph, after 
 	if b.indexed {
 		pa, pz := b.para(a), b.para(z)
 		old = slices.Clone(b.paras[pa : pz+1])
-		b.root = textReplace(b.root, a, z, s)
-		b.n, b.units = textSum(b.root).runes, textSum(b.root).units
+		b.root = rope.Replace(b.root, a, z, s)
+		sum := rope.Sum(b.root)
+		b.n, b.units = sum.Runes, sum.Units
 		added := make([]paragraph, strings.Count(s, "\n"))
 		b.paras = slices.Replace(b.paras, pa+1, pz+1, added...)
 		b.paras[pa] = paragraph{}
@@ -411,20 +413,7 @@ func (b *buffer) wordAt(i int) (start, end int) {
 }
 
 func (b *buffer) runeAt(i int) rune {
-	n := b.root
-	off := textByteAt(n, i)
-	for n != nil && n.left != nil {
-		if off < n.left.sum.bytes {
-			n = n.left
-		} else {
-			off -= n.left.sum.bytes
-			n = n.right
-		}
-	}
-	if n == nil || off >= len(n.text) {
-		return 0
-	}
-	r, _ := utf8.DecodeRuneInString(n.text[off:])
+	r, _ := rope.TextOf(b.root).RuneAt(rope.ByteOfRune(b.root, i))
 	return r
 }
 

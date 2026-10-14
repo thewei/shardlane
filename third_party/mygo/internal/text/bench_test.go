@@ -37,3 +37,24 @@ func benchLayout(b *testing.B, p Params) {
 		s.mu.Unlock()
 	}
 }
+
+// BenchmarkLayoutDocument lays out the paragraphs of a document taking a
+// little more than the cache's budget, as each frame of a window showing
+// it does, with the cache.
+func BenchmarkLayoutDocument(b *testing.B) {
+	s := newSystem()
+	ps := document(s)
+	for _, p := range ps {
+		s.Layout(p)
+	}
+	s.EndFrame()
+	made := s.LayoutsMade()
+	b.ReportAllocs()
+	for b.Loop() {
+		for _, p := range ps {
+			s.Layout(p)
+		}
+		s.EndFrame()
+	}
+	b.ReportMetric(float64(s.LayoutsMade()-made)/float64(b.N), "layouts/op")
+}

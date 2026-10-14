@@ -157,6 +157,10 @@ app.list.Reorder = func(rows []int, to int) {
 }
 ```
 
+Rows that are buttons, which open what they show as they are clicked,
+reorder too: a press on a row's button drags the row once the pointer
+moves, and clicks the button if it does not.
+
 See [drag and drop](drag-and-drop.md).
 
 ## The focus

@@ -16,9 +16,9 @@ import (
 )
 
 // writeBundle assembles <dir>/<executable>.app around the executable bin,
-// which is moved into it, with the icon icns (or nil) and the resources res,
-// and returns the bundle path.
-func writeBundle(c *Config, dir, bin string, icns []byte, res []resource) (string, error) {
+// which is moved into it, with the icon icns (or nil), the asset catalog car
+// (or nil) and the resources res, and returns the bundle path.
+func writeBundle(c *Config, dir, bin string, icns []byte, car *assetCatalog, res []resource) (string, error) {
 	name := c.executableName()
 	app := filepath.Join(dir, name+".app")
 	if err := os.RemoveAll(app); err != nil {
@@ -40,10 +40,17 @@ func writeBundle(c *Config, dir, bin string, icns []byte, res []resource) (strin
 			return "", err
 		}
 	}
+	iconName := ""
+	if car != nil {
+		iconName = bundleIconName
+		if err := os.WriteFile(filepath.Join(contents, "Resources", bundleCatalog), car.data, 0o644); err != nil {
+			return "", err
+		}
+	}
 	if err := copyResources(res, filepath.Join(contents, "Resources")); err != nil {
 		return "", err
 	}
-	if err := os.WriteFile(filepath.Join(contents, "Info.plist"), infoPlist(c, name, iconFile), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(contents, "Info.plist"), infoPlist(c, name, iconFile, iconName), 0o644); err != nil {
 		return "", err
 	}
 	if err := os.WriteFile(filepath.Join(contents, "PkgInfo"), []byte("APPL????"), 0o644); err != nil {
@@ -74,7 +81,79 @@ func appIcon(c *Config) ([]byte, error) {
 	return icns, nil
 }
 
-func infoPlist(c *Config, executable, icon string) []byte {
+// assetCatalog is a compiled asset catalog, Assets.car, whose app icon is
+// named AppIcon, with the .icns that actool rendered from the same icon
+// (nil for an Assets.car of the configuration).
+type assetCatalog struct {
+	data, icns []byte
+}
+
+// appCatalog returns the asset catalog of macos.icon, or nil without one: an
+// Assets.car as it is, or an Icon Composer .icon compiled with actool. A
+// .icon that cannot be compiled, off macOS or without Xcode, leaves the app
+// with its .icns.
+func appCatalog(c *Config) (*assetCatalog, error) {
+	src := c.MacOS.Icon
+	if src == "" {
+		return nil, nil
+	}
+	if !strings.EqualFold(filepath.Ext(src), ".icon") {
+		data, err := os.ReadFile(c.path(src))
+		if err != nil {
+			return nil, err
+		}
+		return &assetCatalog{data: data}, nil
+	}
+	if info, err := os.Stat(c.path(src)); err != nil {
+		return nil, err
+	} else if !info.IsDir() {
+		return nil, fmt.Errorf("macos.icon %s is not an Icon Composer document, which is a directory", src)
+	}
+	if runtime.GOOS != "darwin" {
+		warnf("Skipping %s: compiling it needs macOS with Xcode 26 or later", src)
+		return nil, nil
+	}
+	t := con.start("Compiling " + filepath.Base(src))
+	car, err := compileIcon(c.path(src), c.MacOS.MinimumSystemVersion)
+	if err != nil {
+		t.stop()
+		warnf("Skipping %s: %v", src, err)
+		return nil, nil
+	}
+	t.done("Compiled " + filepath.Base(src))
+	return car, nil
+}
+
+// compileIcon compiles an Icon Composer .icon with actool, which needs Xcode
+// 26 or later.
+func compileIcon(src, minimumSystemVersion string) (*assetCatalog, error) {
+	dir, err := os.MkdirTemp("", "mygo-actool")
+	if err != nil {
+		return nil, err
+	}
+	defer os.RemoveAll(dir)
+	// actool names the app icon after the document, which is AppIcon.icon
+	// in the catalog of every app.
+	icon := filepath.Join(dir, bundleIconName+".icon")
+	if err := os.CopyFS(icon, os.DirFS(src)); err != nil {
+		return nil, err
+	}
+	out := filepath.Join(dir, "out")
+	if err := os.Mkdir(out, 0o755); err != nil {
+		return nil, err
+	}
+	msg, err := exec.Command("xcrun", "actool", icon, "--compile", out, "--output-format", "human-readable-text",
+		"--platform", "macosx", "--target-device", "mac", "--minimum-deployment-target", minimumSystemVersion,
+		"--app-icon", bundleIconName, "--output-partial-info-plist", filepath.Join(out, "partial.plist")).CombinedOutput()
+	car, carErr := os.ReadFile(filepath.Join(out, bundleCatalog))
+	icns, icnsErr := os.ReadFile(filepath.Join(out, bundleIconName+".icns"))
+	if err != nil || carErr != nil || icnsErr != nil {
+		return nil, fmt.Errorf("actool could not compile it (it needs Xcode 26 or later)\n%s", bytes.TrimSpace(msg))
+	}
+	return &assetCatalog{car, icns}, nil
+}
+
+func infoPlist(c *Config, executable, icon, iconName string) []byte {
 	d := map[string]any{
 		"CFBundleName":                         c.Name,
 		"CFBundleDisplayName":                  c.Name,
@@ -91,6 +170,9 @@ func infoPlist(c *Config, executable, icon string) []byte {
 	}
 	if icon != "" {
 		d["CFBundleIconFile"] = icon
+	}
+	if iconName != "" {
+		d["CFBundleIconName"] = iconName
 	}
 	if c.Copyright != "" {
 		d["NSHumanReadableCopyright"] = c.Copyright

@@ -1,6 +1,6 @@
 # Shardlane — native macOS workspace for coding agents (Go / MyGo Native UI)
 
-Current implementation: Go 1.27.1 + MyGo Native UI (pinned v0.4.1, patched fork vendored under `third_party/mygo`) + official MyGo Terminal/Ghostty; Herdr remains the runtime authority. The previous Rust/GPUI implementation lives only on `rewrite/mygo`/`main`.
+Current implementation: Go 1.27.1 + MyGo Native UI (pinned v0.4.8, patched fork vendored under `third_party/mygo`) + official MyGo Terminal/Ghostty; Herdr remains the runtime authority. The previous Rust/GPUI implementation lives only on `rewrite/mygo`/`main`.
 
 <directory>
 internal/ - Go application/domain packages (nativeui presentation, apphook in-app IPC engine, agenthooks Hook Doctor provisioning, herdr adapter, agent/history/gitworkbench domains, settings, applog, ...)
@@ -13,7 +13,7 @@ docs/ - architecture source of truth, MyGo migration contract/roadmap, interacti
 </directory>
 
 <config>
-go.mod + go.sum + mygo.config.ts - Go toolchain (1.27.1), MyGo pin (v0.4.1 + replace ./third_party/mygo), packaging policy, and the chat WebView frontend (N19)
+go.mod + go.sum + mygo.config.ts - Go toolchain (1.27.1), MyGo pin (v0.4.8 + replace ./third_party/mygo), packaging policy, and the chat WebView frontend (N19)
 AGENTS.md - repository engineering rules and required reading
 README.md - developer setup, run, checks, packaging, and product scope
 docs/client-product-architecture.md - unique architecture source of truth

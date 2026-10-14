@@ -60,7 +60,7 @@ func (e Element) FocusBind(field any, value any) Element {
 func FocusedValue[T comparable](c *Context, field *T) T {
 	var zero T
 	rt := c.runtime()
-	if rt == nil || !rt.windowFocused {
+	if rt == nil || !rt.windowFocus() {
 		return zero
 	}
 	f := rt.focusFields[field]

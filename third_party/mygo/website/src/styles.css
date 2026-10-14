@@ -333,6 +333,19 @@
   color: var(--preview-title);
 }
 
+/* Opens the frame's page in a tab of its own, at the right of the title
+   bar. */
+.ui-preview-open {
+  @apply absolute top-1/2 right-2 flex size-6 -translate-y-1/2 items-center justify-center rounded-md opacity-60 transition-opacity;
+  color: var(--preview-title);
+
+  &:hover,
+  &:focus-visible {
+    @apply opacity-100;
+    background: rgb(127 127 127 / 0.15);
+  }
+}
+
 .ui-preview-frame {
   @apply block w-full border-0;
   color-scheme: light;

@@ -766,6 +766,12 @@ enforced boundary is `filesPreview.Open`'s selection gate (path must equal
 the live selection) plus the strictly read-only method set; page-scoped
 service binding would tighten this and stays with upstream MyGo.
 
+## N21 — MyGo v0.4.8 refresh (2026-10-14)
+
+- Pin `github.com/egoist/mygo` v0.4.8 (the `go.mod` require had read v0.4.5 since the 2026-10-12 tray work while the docs still said v0.4.1), keep the single vendored `replace` and rebase the three documented deltas — F146/F147 `LocalDragSelect`, WIX-021 field focus delegation, multi-display tray flyout anchoring. The patch applied cleanly; none of the three is upstream (v0.4.6's `Options.OnScroll` is a different hook). The npm `mygo-runtime`/`mygo-cli` packages move to `^0.4.8` in lockstep; `mygo generate` leaves `frontend/src/mygo.ts` unchanged.
+- New upstream surface (v0.4.6–v0.4.8), unadopted until a task takes it: `ui/editor` (`editor.View` virtualized code editor, `editor.DiffView`, `ParsePatch`/`SetPatch`), `ui.Canvas`/game/audio packages (not relevant), terminal `Options.OnScroll`, WebView `SetBackgroundColor`, window-state store.
+- Gates run: repository Go tests (all packages), `go vet`, MyGo vet, `mygo build` (Shardlane.app 23.7 MB; Info.plist lint, codesign verify), `bun run typecheck`.
+
 # M7 — Remote / Mobile API v2
 
 Keep current wire compatibility; reuse Go app services.

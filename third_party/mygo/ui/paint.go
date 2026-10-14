@@ -799,10 +799,12 @@ func (p *Painter) drawBitmap(img *Bitmap, box Rect, fit Fit, radius [4]float32, 
 		return
 	}
 	// Far smaller than its pixels, a level of it, as smooth.
-	shown := img.smaller(min(frac.W*iw/(dst.W*p.scale), frac.H*ih/(dst.H*p.scale)))
+	shrink := min(frac.W*iw/(dst.W*p.scale), frac.H*ih/(dst.H*p.scale))
+	shown := img.smaller(shrink)
 	sw, sh := float32(shown.W), float32(shown.H)
 	src := scene.Rect{X: frac.X * sw, Y: frac.Y * sh, W: frac.W * sw, H: frac.H * sh}
-	p.add(scene.Op{Kind: scene.OpImage, Rect: p.snap(dst), Radii: p.radii(radius), Continuous: continuousCorners, Image: shown, Src: src, Opacity: p.opacity, Grayscale: gray})
+	p.add(scene.Op{Kind: scene.OpImage, Rect: p.snap(dst), Radii: p.radii(radius), Continuous: continuousCorners, Image: shown, Src: src, Opacity: p.opacity, Grayscale: gray,
+		Pixelated: img.pixelated && shrink <= 1})
 }
 
 // scrollbars draws the thumbs of a scroll container whose content
@@ -1018,6 +1020,57 @@ func (p *Painter) Image(src ImageSource, r Rect, fit Fit) {
 	}
 }
 
+// ImageOptions are how Painter.ImageRegion draws a part of a bitmap.
+type ImageOptions struct {
+	// FlipX mirrors the part left to right, FlipY top to bottom.
+	FlipX, FlipY bool
+	// Tint multiplies its colors and alpha, as a colored filter would;
+	// zero for none.
+	Tint Color
+}
+
+// ImageRegion draws the part src of bitmap b, in its pixels (empty for all
+// of it), stretched into dst, as Image draws a bitmap (pixelated if it
+// is), unless dst is outside what the painter shows. Nothing of the bitmap
+// around src shows, so that the parts of a bitmap holding many, as the
+// icons of a sheet or the frames of an animation, draw on their own. Under
+// a transform (Painter.Transform), dst is where it is, not snapped to
+// pixels, so that a part moving through a zoomed view glides:
+//
+//	p.ImageRegion(icons, ui.Rect{X: 32, W: 16, H: 16}, box, ui.ImageOptions{})
+func (p *Painter) ImageRegion(b *Bitmap, src, dst Rect, o ImageOptions) {
+	if b == nil || b.w == 0 || b.h == 0 || dst.W <= 0 || dst.H <= 0 || !p.visible(dst, 1) {
+		return
+	}
+	if src.W <= 0 || src.H <= 0 {
+		src = Rect{W: float32(b.w), H: float32(b.h)}
+	}
+	// Far smaller than its pixels, a level of the bitmap, as smooth.
+	shrink := min(src.W/(dst.W*p.scale), src.H/(dst.H*p.scale))
+	shown := b.smaller(shrink)
+	kx, ky := float32(shown.W)/float32(b.w), float32(shown.H)/float32(b.h)
+	sr := scene.Rect{X: src.X * kx, Y: src.Y * ky, W: src.W * kx, H: src.H * ky}
+	if o.FlipX {
+		sr.X, sr.W = sr.X+sr.W, -sr.W
+	}
+	if o.FlipY {
+		sr.Y, sr.H = sr.Y+sr.H, -sr.H
+	}
+	var tint scene.Color
+	if o.Tint != (Color{}) {
+		tint = o.Tint.scene()
+	}
+	// Snapped to the pixels of the screen, unless a transform places it:
+	// snapping before a zoom would move a part in steps of several
+	// pixels, where pixelated sampling glides.
+	rect := p.snap(dst)
+	if p.transform.Set {
+		rect = scene.Rect{X: dst.X * p.scale, Y: dst.Y * p.scale, W: dst.W * p.scale, H: dst.H * p.scale}
+	}
+	p.add(scene.Op{Kind: scene.OpImage, Rect: rect, Image: shown, Src: sr, Opacity: p.opacity, Color: tint,
+		Pixelated: b.pixelated && shrink <= 1})
+}
+
 // FocusRing draws the ring that shows the keyboard focus around r.
 func (p *Painter) FocusRing(r Rect, radius [4]float32) {
 	const w = 2
@@ -1035,4 +1088,29 @@ func (p *Painter) Clip(r Rect, radius float32, fn func()) {
 	fn()
 	p.popClip()
 	p.clip = saved
+}
+
+// Transform transforms what fn draws by t around the point (ox, oy), which
+// t leaves where it is, after the painter's own transforms: it nests. A
+// view that pans and zooms, as a map or a diagram, draws its content
+// through one, and a dial turns its needle around its center with another:
+//
+//	view := ui.Translation(-panX, -panY).Then(ui.Scaling(zoom, zoom))
+//	p.Transform(view, r.X, r.Y, func() {
+//		drawDiagram(p)
+//		p.Transform(ui.Rotation(angle), cx, cy, func() { p.Line(cx, cy, cx, cy-40, 2, red) })
+//	})
+//
+// Clips made in fn turn with what it draws, and what the transform moves
+// out of view is culled as usual. Input is not transformed: the pointer
+// comes in the element's coordinates, which the app maps to its content
+// itself.
+func (p *Painter) Transform(t Transform, ox, oy float32, fn func()) {
+	saved := p.transform
+	if t.set() {
+		m := Translation(-ox, -oy).Then(t).Then(Translation(ox, oy))
+		p.transform = saved.Mul(m.flat())
+	}
+	fn()
+	p.transform = saved
 }

@@ -4,6 +4,8 @@ package mygo
 
 import (
 	"encoding/json"
+	"errors"
+	"maps"
 	"os"
 	"path/filepath"
 	"testing"
@@ -29,9 +31,9 @@ func TestWindowState(t *testing.T) {
 		App.SetPath(PathUserData, "")
 		windowStateDelay = delay
 	})
-	saved := func() map[string]savedWindow {
+	saved := func() map[string]WindowState {
 		t.Helper()
-		var m map[string]savedWindow
+		var m map[string]WindowState
 		data, err := os.ReadFile(file)
 		if err != nil {
 			t.Fatal(err)
@@ -41,10 +43,10 @@ func TestWindowState(t *testing.T) {
 		}
 		return m
 	}
-	captured := func(key string, want savedWindow) {
+	captured := func(key string, want WindowState) {
 		t.Helper()
 		for deadline := time.Now().Add(2 * time.Second); ; time.Sleep(5 * time.Millisecond) {
-			got := onMainValue(func() savedWindow { return windowStates.byKey[key] })
+			got := onMainValue(func() WindowState { return windowStates.byKey[key] })
 			if got == want {
 				return
 			}
@@ -61,7 +63,7 @@ func TestWindowState(t *testing.T) {
 		t.Errorf("first window options = %+v", o)
 	}
 	onMain(func() { fw.SetBounds(platform.Rect{X: 200, Y: 150, Width: 800, Height: 600}) })
-	captured("main", savedWindow{X: 200, Y: 150, Width: 800, Height: 600})
+	captured("main", WindowState{X: 200, Y: 150, Width: 800, Height: 600})
 	if _, err := os.Stat(file); !os.IsNotExist(err) {
 		t.Errorf("states written before a window closed: %v", err)
 	}
@@ -71,7 +73,7 @@ func TestWindowState(t *testing.T) {
 		fw.SetBounds(platform.Rect{Y: 25, Width: 1440, Height: 875})
 	})
 	w.Destroy()
-	if got, want := saved()["main"], (savedWindow{X: 200, Y: 150, Width: 800, Height: 600, Maximized: true}); got != want {
+	if got, want := saved()["main"], (WindowState{X: 200, Y: 150, Width: 800, Height: 600, Maximized: true}); got != want {
 		t.Errorf("saved %+v, want %+v", got, want)
 	}
 
@@ -83,7 +85,7 @@ func TestWindowState(t *testing.T) {
 	}
 
 	// Off every display: centered, with its size as far as it fits.
-	onMain(func() { windowStates.byKey["gone"] = savedWindow{X: 5000, Y: 100, Width: 2000, Height: 700} })
+	onMain(func() { windowStates.byKey["gone"] = WindowState{X: 5000, Y: 100, Width: 2000, Height: 700} })
 	_, fw = testWindow(t, WindowOptions{StateKey: "gone"})
 	if o := fw.Opts; !o.Center || o.Width != 1440 || o.Height != 700 {
 		t.Errorf("off screen options = %+v", o)
@@ -91,7 +93,7 @@ func TestWindowState(t *testing.T) {
 
 	// Created maximized, the requested bounds are its normal ones.
 	testWindow(t, WindowOptions{StateKey: "max", Maximized: true, Width: 1000, Height: 700})
-	if got, want := onMainValue(func() savedWindow { return windowStates.byKey["max"] }), (savedWindow{X: 220, Y: 112, Width: 1000, Height: 700, Maximized: true}); got != want {
+	if got, want := onMainValue(func() WindowState { return windowStates.byKey["max"] }), (WindowState{X: 220, Y: 112, Width: 1000, Height: 700, Maximized: true}); got != want {
 		t.Errorf("maximized at creation: %+v, want %+v", got, want)
 	}
 
@@ -110,7 +112,7 @@ func TestWindowState(t *testing.T) {
 	if err := os.Mkdir(file+".tmp", 0o755); err != nil { // no temporary file can be written
 		t.Fatal(err)
 	}
-	want := savedWindow{X: 1, Y: 2, Width: 300, Height: 200}
+	want := WindowState{X: 1, Y: 2, Width: 300, Height: 200}
 	kept := onMainValue(func() bool {
 		windowStates.byKey["failed"] = want
 		windowStates.dirty = true
@@ -125,6 +127,88 @@ func TestWindowState(t *testing.T) {
 	}
 	onMain(saveWindowStates)
 	if got := saved()["failed"]; got != want {
+		t.Errorf("saved %+v after a failed save, want %+v", got, want)
+	}
+}
+
+// memoryStates is a WindowStateStore in memory, such as an app's database.
+// Main thread only.
+type memoryStates struct {
+	loads  int
+	states map[string]WindowState
+	err    error
+}
+
+func (m *memoryStates) LoadWindowStates() (map[string]WindowState, error) {
+	m.loads++
+	return maps.Clone(m.states), nil
+}
+
+func (m *memoryStates) SaveWindowStates(states map[string]WindowState) error {
+	if m.err != nil {
+		return m.err
+	}
+	m.states = states
+	return nil
+}
+
+func TestWindowStateStore(t *testing.T) {
+	dir := t.TempDir()
+	App.SetPath(PathUserData, dir)
+	forget := func() { windowStates.loaded, windowStates.byKey, windowStates.dirty = false, nil, false }
+	onMain(forget)
+	store := &memoryStates{states: map[string]WindowState{"main": {X: 30, Y: 40, Width: 640, Height: 480, Maximized: true}}}
+	App.SetWindowStateStore(store)
+	// Runs once the test's windows closed and saved their states.
+	t.Cleanup(func() {
+		onMain(forget)
+		App.SetWindowStateStore(nil)
+		App.SetPath(PathUserData, "")
+		if _, err := os.Stat(filepath.Join(dir, windowStateFile)); !os.IsNotExist(err) {
+			t.Errorf("%s written with a store: %v", windowStateFile, err)
+		}
+	})
+
+	// The store's states apply, loaded once.
+	_, fw := testWindow(t, WindowOptions{StateKey: "main", Width: 400, Height: 300})
+	if o := fw.Opts; o.X != 30 || o.Y != 40 || o.Width != 640 || o.Height != 480 || !o.Maximized || o.Center {
+		t.Errorf("restored options = %+v", o)
+	}
+	w, _ := testWindow(t, WindowOptions{StateKey: "other", X: 10, Y: 20, Width: 500, Height: 400})
+	if loads := onMainValue(func() int { return store.loads }); loads != 1 {
+		t.Errorf("states loaded %d times, want once", loads)
+	}
+
+	// A closing window saves all of them.
+	w.Destroy()
+	saved := onMainValue(func() map[string]WindowState { return store.states })
+	if got, want := saved["other"], (WindowState{X: 10, Y: 20, Width: 500, Height: 400}); got != want {
+		t.Errorf("saved %+v, want %+v", got, want)
+	}
+	if _, ok := saved["main"]; !ok {
+		t.Errorf("saved %v without main", saved)
+	}
+	// The store may keep them.
+	onMain(func() { windowStates.byKey["later"] = WindowState{Width: 1, Height: 1} })
+	if _, ok := saved["later"]; ok {
+		t.Error("the saved states change with the windows'")
+	}
+
+	// A save that fails keeps the states for the next one.
+	want := WindowState{X: 1, Y: 2, Width: 300, Height: 200}
+	kept := onMainValue(func() bool {
+		store.err = errors.New("database is locked")
+		windowStates.byKey["failed"] = want
+		windowStates.dirty = true
+		saveWindowStates()
+		store.err = nil
+		return windowStates.dirty
+	})
+	if !kept {
+		t.Error("a failed save drops the states")
+	}
+	onMain(saveWindowStates)
+	if got := onMainValue(func() WindowState { return store.states["failed"] }); got != want {
 		t.Errorf("saved %+v after a failed save, want %+v", got, want)
 	}
 }

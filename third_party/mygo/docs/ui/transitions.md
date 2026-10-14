@@ -112,12 +112,15 @@ popup := ui.ElementTransition{
 
 An element appears with its `Enter` only in a parent that was there in the
 frame before, so that a page or a dialog showing all at once does not
-animate every element in it. When an element is no longer built while its
-parent still is, a copy of it, as the last frame showed it, goes to its
-`Exit` under its siblings: it takes no room, so the siblings move into its
-place at once, smoothly if they have transitions, and it takes neither the
-pointer nor the focus. Built again before its exit ends, the element comes
-back from where its copy was.
+animate every element in it. While it comes in, the layout moving it, as
+rows landing above it, moves it at once where its transition does not
+animate (`Position`, `Size`), and resizing it resizes its `Collapse` in
+proportion: only its `Enter` plays. When an element is no longer built
+while its parent still is, a copy of it, as the last frame showed it, goes
+to its `Exit` under its siblings: it takes no room, so the siblings move
+into its place at once, smoothly if they have transitions, and it takes
+neither the pointer nor the focus. Built again before its exit ends, the
+element comes back from where its copy was.
 
 ## Shared elements
 

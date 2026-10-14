@@ -63,172 +63,122 @@ func TestAffineClipMaskCacheFollowsClipInsteadOfContent(t *testing.T) {
 	if mask.ID() != id || mask.W != 60 {
 		t.Fatal("resizing clip accumulated a new cached image")
 	}
+	clipped := s.Ops
 	s.Ops = s.Ops[1:2]
 	build()
-	if len(b.maskSlots) != 0 {
-		t.Fatal("removed clips retained masks")
+	if len(b.maskSlots) != 1 {
+		t.Fatal("a removed clip did not keep its mask")
+	}
+	version = mask.Version()
+	s.Ops = clipped
+	build()
+	if mask.ID() != id || mask.Version() != version {
+		t.Fatal("a clip coming back rasterized its mask again")
 	}
 }
 
-func TestMovingHardClipReusesStationaryAncestorMask(t *testing.T) {
-	m := scene.Translation(15, 15).Mul(scene.Rotation(10))
-	s := &scene.Scene{Width: 160, Height: 120, Ops: []scene.Op{
-		{Kind: scene.OpPushClip, Rect: scene.Rect{W: 150, H: 100}, Radii: [4]float32{10, 10, 10, 10}},
-		{Kind: scene.OpPushClip, Rect: scene.Rect{W: 60, H: 25}, Transform: m},
-		{Kind: scene.OpFill, Rect: scene.Rect{W: 90, H: 40}, Transform: m, Color: scene.Color{A: 255}},
-		{Kind: scene.OpPopClip}, {Kind: scene.OpPopClip},
+func TestTransformComingAndGoingKeepsMasks(t *testing.T) {
+	// A badge toggling between scaled and not, as in #255, beside a
+	// rounded card holding a transformed clip of its own while it is.
+	card := scene.Op{Kind: scene.OpPushClip, Rect: scene.Rect{X: 10, Y: 10, W: 200, H: 150}, Radii: [4]float32{12, 12, 12, 12}}
+	inner := scene.Op{Kind: scene.OpPushClip, Rect: scene.Rect{W: 80, H: 40}, Transform: scene.Translation(30, 30).Mul(scene.Rotation(5))}
+	fill := scene.Op{Kind: scene.OpFill, Rect: scene.Rect{W: 80, H: 40}, Color: scene.Color{A: 255}, Transform: inner.Transform}
+	other := scene.Op{Kind: scene.OpPushClip, Rect: scene.Rect{X: 220, Y: 10, W: 60, H: 60}, Radii: [4]float32{6, 6, 6, 6}}
+	pop := scene.Op{Kind: scene.OpPopClip}
+	shown := &scene.Scene{Width: 300, Height: 200, Ops: []scene.Op{card, inner, fill, pop, pop}}
+	elsewhere := &scene.Scene{Width: 300, Height: 200, Ops: []scene.Op{other, fill, pop}}
+	hidden := &scene.Scene{Width: 300, Height: 200, Ops: []scene.Op{card, pop}}
+	var b Builder
+	defer b.Release()
+	versions := map[uint64]uint64{}
+	rasterized := 0
+	build := func(s *scene.Scene) {
+		b.Build(s, func(m *scene.Image) uintptr {
+			if v, ok := versions[m.ID()]; !ok || v != m.Version() {
+				rasterized++
+				versions[m.ID()] = m.Version()
+			}
+			return uintptr(m.ID())
+		})
+	}
+	build(shown)
+	first := rasterized
+	for range 5 {
+		build(hidden)
+		build(elsewhere)
+		build(shown)
+	}
+	if first == 0 || rasterized != first+1 {
+		t.Fatalf("rasterized %d masks after the first frame's %d, want only the other clip's", rasterized-first, first)
+	}
+}
+
+func TestIdleMasksStayWithinBudget(t *testing.T) {
+	// Two masks of 24 MiB each in a frame, then none: one idle mask fits
+	// the budget, two don't.
+	clip := func(x float32) []scene.Op {
+		return []scene.Op{
+			{Kind: scene.OpPushClip, Rect: scene.Rect{X: x, W: 3000, H: 2100}, Transform: scene.Rotation(0.01)},
+			{Kind: scene.OpFill, Rect: scene.Rect{X: x, W: 10, H: 10}, Color: scene.Color{A: 255}},
+			{Kind: scene.OpPopClip},
+		}
+	}
+	var b Builder
+	defer b.Release()
+	build := func(s *scene.Scene) { b.Build(s, func(*scene.Image) uintptr { return 1 }) }
+	build(&scene.Scene{Width: 6200, Height: 2100, Ops: append(clip(0), clip(3100)...)})
+	if len(b.maskSlots) != 2 {
+		t.Fatalf("kept %d masks, want 2", len(b.maskSlots))
+	}
+	build(&scene.Scene{Width: 10, Height: 10})
+	if len(b.maskSlots) != 1 {
+		t.Fatalf("kept %d idle masks, want 1 within the budget", len(b.maskSlots))
+	}
+}
+
+func TestTransformOutsideAClipLeavesItUnmasked(t *testing.T) {
+	// A scaled badge beside a rounded card of clipped rows: nothing in the
+	// card is transformed, so its clips stay in the shader.
+	s := &scene.Scene{Width: 400, Height: 300, Ops: []scene.Op{
+		{Kind: scene.OpFill, Rect: scene.Rect{W: 40, H: 40}, Color: scene.Color{B: 255, A: 255}, Transform: scene.Scaling(1.2, 1.2)},
+		{Kind: scene.OpPushClip, Rect: scene.Rect{Y: 50, W: 400, H: 250}, Radii: [4]float32{11, 11, 11, 11}},
+		{Kind: scene.OpPushClip, Rect: scene.Rect{Y: 50, W: 200, H: 32}},
+		{Kind: scene.OpFill, Rect: scene.Rect{Y: 50, W: 300, H: 32}, Color: scene.Color{A: 255}},
+		{Kind: scene.OpPopClip},
+		{Kind: scene.OpPopClip},
 	}}
 	var b Builder
 	defer b.Release()
-	var image *scene.Image
-	build := func() { b.Build(s, func(m *scene.Image) uintptr { image = m; return 1 }) }
-	build()
-	version, id := image.Version(), image.ID()
-	for i := range 30 {
-		m = scene.Translation(float32(i), 15).Mul(scene.Rotation(float32(i)))
-		s.Ops[1].Transform, s.Ops[2].Transform = m, m
-		build()
-		if b.Instances[0].Transform1[3] != 2 || image.ID() != id || image.Version() != version {
-			t.Fatal("moving hard clip rasterized content instead of reusing its ancestor")
-		}
+	masks := 0
+	b.Build(s, func(*scene.Image) uintptr { masks++; return 1 })
+	if masks != 0 || len(b.maskSlots) != 0 {
+		t.Fatalf("rasterized %d clip masks for clips with no transform inside", masks)
+	}
+	if in := b.Instances[1]; in.Transform1[3] != 0 || in.Clip != [4]float32{0, 50, 200, 32} {
+		t.Fatalf("row clip %v, mask mode %v", in.Clip, in.Transform1[3])
 	}
 }
 
-func TestBuild(t *testing.T) {
-	red := scene.Color{R: 255, A: 255}
-	atlas := scene.NewAtlas(1, 64, 32)
-	img1 := scene.NewImageRGBA(2, 2, make([]byte, 16))
-	img2 := scene.NewImageRGBA(2, 2, make([]byte, 16))
-	s := &scene.Scene{Width: 200, Height: 100, MaskAtlas: atlas}
-	s.Glyphs = []scene.Glyph{{X: 10.4, Y: 20.6, W: 8, H: 9, U: 16, V: 8, UW: 8, VH: 9, Color: red}}
-	s.Ops = []scene.Op{
-		{Kind: scene.OpFill, Rect: scene.Rect{X: 1, Y: 2, W: 30, H: 20}, Radii: [4]float32{50, 50, 50, 50}, Color: red, Border: scene.Uniform(2), BorderColor: red},
-		{Kind: scene.OpShadow, Rect: scene.Rect{X: 5, Y: 5, W: 10, H: 10}, Color: red, Blur: 8},
-		{Kind: scene.OpPushClip, Rect: scene.Rect{X: 10.5, Y: 10, W: 100, H: 50}, Radii: [4]float32{6, 6, 6, 6}},
-		{Kind: scene.OpGlyphs, Start: 0, End: 1},
-		{Kind: scene.OpImage, Rect: scene.Rect{W: 4, H: 4}, Image: img1, Src: scene.Rect{W: 2, H: 2}},
-		{Kind: scene.OpImage, Rect: scene.Rect{W: 4, H: 4}, Image: img2, Src: scene.Rect{W: 1, H: 2}},
-		{Kind: scene.OpPushClip, Rect: scene.Rect{X: 500, Y: 500, W: 10, H: 10}},
-		{Kind: scene.OpFill, Rect: scene.Rect{X: 500, Y: 500, W: 5, H: 5}, Color: red},
+func TestRoundedClipMasksOnlyTheBranchWithATransform(t *testing.T) {
+	// A zoomed image beside a list in the same rounded card: the image's
+	// clip keeps the card's corners, the list's rows stay in the shader.
+	s := &scene.Scene{Width: 400, Height: 300, Ops: []scene.Op{
+		{Kind: scene.OpPushClip, Rect: scene.Rect{W: 400, H: 300}, Radii: [4]float32{11, 11, 11, 11}},
+		{Kind: scene.OpPushClip, Rect: scene.Rect{W: 200, H: 300}},
+		{Kind: scene.OpFill, Rect: scene.Rect{W: 200, H: 300}, Color: scene.Color{A: 255}, Transform: scene.Scaling(1.5, 1.5)},
+		{Kind: scene.OpPopClip},
+		{Kind: scene.OpPushClip, Rect: scene.Rect{X: 200, W: 200, H: 32}},
+		{Kind: scene.OpFill, Rect: scene.Rect{X: 200, W: 200, H: 32}, Color: scene.Color{A: 255}},
 		{Kind: scene.OpPopClip},
 		{Kind: scene.OpPopClip},
-		{Kind: scene.OpFill, Rect: scene.Rect{X: 0, Y: 0, W: 0, H: 5}, Color: red},
-		{Kind: scene.OpShadow, Rect: scene.Rect{X: 5, Y: 5, W: 10, H: 10}, Color: red, Blur: 0.5, Opacity: 0.5,
-			Cast: scene.Rect{X: 4, Y: 3, W: 10, H: 10}, CastRadii: [4]float32{20, 0, 0, 0}},
-	}
-	textures := map[*scene.Image]uintptr{img1: 1, img2: 2}
+	}}
 	var b Builder
-	b.Build(s, func(img *scene.Image) uintptr { return textures[img] })
-
-	if len(b.Instances) != 6 {
-		t.Fatalf("%d instances", len(b.Instances))
+	defer b.Release()
+	b.Build(s, func(*scene.Image) uintptr { return 1 })
+	if b.Instances[0].Transform1[3] != 1 {
+		t.Fatal("zoomed content lost its rounded ancestor's mask")
 	}
-	fill, shadow, glyph, im1, im2, hard := b.Instances[0], b.Instances[1], b.Instances[2], b.Instances[3], b.Instances[4], b.Instances[5]
-	if fill.Params != [4]float32{0, 0, 0, 1} || fill.UV != [4]float32{2, 2, 2, 2} || fill.Radii != [4]float32{10, 10, 10, 10} || fill.Inner != [4]float32{8, 8, 8, 8} {
-		t.Errorf("fill %+v", fill)
-	}
-	if fill.Clip[2] < 1e5 || fill.Color != [4]float32{1, 0, 0, 1} {
-		t.Errorf("fill without a clip: %+v", fill)
-	}
-	if shadow.Params != [4]float32{1, 0, 4, 1} || shadow.UV != [4]float32{} {
-		t.Errorf("shadow %+v", shadow)
-	}
-	if glyph.Rect != [4]float32{10, 21, 8, 9} || glyph.UV != [4]float32{0.25, 0.25, 0.375, 0.53125} || glyph.Params[0] != 2 {
-		t.Errorf("glyph %+v", glyph)
-	}
-	if glyph.Clip != [4]float32{10.5, 10, 100, 50} || glyph.ClipRadii != [4]float32{6, 6, 6, 6} {
-		t.Errorf("glyph clip %v %v", glyph.Clip, glyph.ClipRadii)
-	}
-	if im1.Params[0] != 4 || im2.UV != [4]float32{0, 0, 0.5, 1} {
-		t.Errorf("images %+v %+v", im1, im2)
-	}
-	if hard.Params != [4]float32{1, 0, 0, 0.5} {
-		t.Errorf("a shadow without blur has no sigma: %+v", hard.Params)
-	}
-	if hard.UV != [4]float32{4, 3, 10, 10} || hard.Inner != [4]float32{10, 0, 0, 0} {
-		t.Errorf("the box casting a shadow, its radii fitted: %v %v", hard.UV, hard.Inner)
-	}
-	want := []Batch{
-		{Start: 0, Count: 2, Scissor: Scissor{0, 0, 200, 100}},
-		{Start: 2, Count: 2, Scissor: Scissor{10, 10, 111, 60}, Image: 1},
-		{Start: 4, Count: 1, Scissor: Scissor{10, 10, 111, 60}, Image: 2},
-		{Start: 5, Count: 1, Scissor: Scissor{0, 0, 200, 100}},
-	}
-	if len(b.Batches) != len(want) {
-		t.Fatalf("batches %+v", b.Batches)
-	}
-	for i := range want {
-		if b.Batches[i] != want[i] {
-			t.Errorf("batch %d: %+v, want %+v", i, b.Batches[i], want[i])
-		}
-	}
-
-	// Building again reuses the memory and starts over.
-	b.Build(&scene.Scene{Width: 10, Height: 10}, nil)
-	if len(b.Instances) != 0 || len(b.Batches) != 0 {
-		t.Errorf("an empty scene left %d instances", len(b.Instances))
-	}
-}
-
-// TestBuildWide checks that the colors outside the sRGB gamut replace
-// those of ops and glyphs only for a target that keeps them.
-func TestBuildWide(t *testing.T) {
-	green, red := scene.Color{G: 255, A: 255}, scene.Color{R: 255, A: 255}
-	wg, wr := [4]float32{-0.2, 1.1, -0.1, 1}, [4]float32{1.1, -0.2, -0.1, 1}
-	s := &scene.Scene{Width: 100, Height: 100, MaskAtlas: scene.NewAtlas(1, 16, 16)}
-	s.Wide = []scene.WideColors{
-		{Color: wg, Border: wr, Set: scene.WideColor | scene.WideBorder},
-		{Color: wr, Set: scene.WideColor},
-		{Color: wg, Color2: wr, Set: scene.WideColor | scene.WideColor2},
-	}
-	s.Glyphs = []scene.Glyph{{W: 2, H: 2, UW: 2, VH: 2, Color: red, Wide: 2}, {W: 2, H: 2, UW: 2, VH: 2, Color: green}}
-	s.Ops = []scene.Op{
-		{Kind: scene.OpFill, Rect: scene.Rect{W: 10, H: 10}, Color: green, Color2: red, Border: scene.Uniform(1), BorderColor: red, Wide: 1},
-		{Kind: scene.OpShadow, Rect: scene.Rect{W: 10, H: 10}, Color: red, Wide: 2},
-		{Kind: scene.OpGlyphs, Start: 0, End: 2},
-		{Kind: scene.OpGlyphs, Start: 0, End: 2, Paint: scene.PaintOklab, Color: green, Color2: red, Wide: 3},
-	}
-	straight := func(c scene.Color) [4]float32 {
-		return [4]float32{float32(c.R) / 255, float32(c.G) / 255, float32(c.B) / 255, float32(c.A) / 255}
-	}
-	type colors struct{ color, color2, border [4]float32 }
-	build := func(wide bool) []colors {
-		b := Builder{Wide: wide}
-		b.Build(s, nil)
-		var out []colors
-		for _, in := range b.Instances {
-			out = append(out, colors{in.Color, in.Color2, in.Border})
-		}
-		return out
-	}
-	srgb := []colors{
-		{straight(green), straight(red), straight(red)},
-		{straight(red), [4]float32{}, [4]float32{}},
-		{straight(red), [4]float32{}, [4]float32{}},
-		{straight(green), [4]float32{}, [4]float32{}},
-		{straight(green), straight(red), [4]float32{}},
-		{straight(green), straight(red), [4]float32{}},
-	}
-	wide := []colors{
-		{wg, straight(red), wr},
-		{wr, [4]float32{}, [4]float32{}},
-		{wr, [4]float32{}, [4]float32{}},
-		{straight(green), [4]float32{}, [4]float32{}},
-		{wg, wr, [4]float32{}},
-		{wg, wr, [4]float32{}},
-	}
-	for _, c := range []struct {
-		wide bool
-		want []colors
-	}{{false, srgb}, {true, wide}} {
-		got := build(c.wide)
-		if len(got) != len(c.want) {
-			t.Fatalf("wide %v: %d instances", c.wide, len(got))
-		}
-		for i := range got {
-			if got[i] != c.want[i] {
-				t.Errorf("wide %v, instance %d: %v, want %v", c.wide, i, got[i], c.want[i])
-			}
-		}
+	if b.Instances[1].Transform1[3] != 0 || b.Batches[len(b.Batches)-1].ClipMask != 0 {
+		t.Fatal("untransformed row was masked")
 	}
 }

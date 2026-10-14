@@ -450,6 +450,32 @@ func TestRecycledStateIsFresh(t *testing.T) {
 	}
 }
 
+// TestKeyLeavesNoStateBehind checks that elements Key gives an identity
+// keep no state in their places among their siblings: a frame of keyed
+// rows makes no state, and keeps none, but theirs.
+func TestKeyLeavesNoStateBehind(t *testing.T) {
+	keys := make([]any, 400) // more than the engine keeps free
+	for i := range keys {
+		keys[i] = i
+	}
+	tt := coreNewTester(func(c *context) {
+		for _, k := range keys {
+			coreRow(c).Key(k).Size(10, 1)
+		}
+	}, 200, 200)
+	tt.Frame()
+	n := len(tt.rt.states)
+	if n > len(keys)+2 { // the rows, the root and the overlay at most
+		t.Errorf("%d states for %d keyed rows", n, len(keys))
+	}
+	if allocs := testing.AllocsPerRun(10, tt.Frame); allocs >= float64(len(keys)-maxFree) {
+		t.Errorf("a frame of %d keyed rows allocates %v times", len(keys), allocs)
+	}
+	if len(tt.rt.states) != n {
+		t.Errorf("%d states, then %d", n, len(tt.rt.states))
+	}
+}
+
 // TestHoverWhilePressed checks that the elements around the one pressed
 // stay hovered while the pointer is over them: a button that shows over a
 // row is still there to take its release. Others hover no more.

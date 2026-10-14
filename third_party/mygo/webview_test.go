@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/egoist/mygo/internal/fake"
+	"github.com/egoist/mygo/internal/platform"
 	"github.com/egoist/mygo/ui"
 )
 
@@ -150,6 +151,39 @@ func TestWebViewPage(t *testing.T) {
 	}
 	if got := v.Page().URL(); got != "https://example.com/" {
 		t.Errorf("URL %q", got)
+	}
+}
+
+// SetBackgroundColor fills the web view, not its window, and one in
+// light-dark follows the appearance.
+func TestWebViewSetBackgroundColor(t *testing.T) {
+	show := true
+	_, v, _, fv := webViewWindow(t, &show)
+	fw := fb.Windows()[len(fb.Windows())-1]
+	background := func() (web, win platform.Color) {
+		onMain(func() { web, win = fv.Background, fw.Background })
+		return
+	}
+	if err := v.SetBackgroundColor("#102030"); err != nil {
+		t.Fatal(err)
+	}
+	if web, win := background(); web != (platform.Color{R: 0x10, G: 0x20, B: 0x30, A: 0xff}) || win != (platform.Color{}) {
+		t.Errorf("background %v, window's %v", web, win)
+	}
+	if err := v.SetBackgroundColor("light-dark(#fff, #000)"); err != nil {
+		t.Fatal(err)
+	}
+	Theme.SetSource(ThemeDark)
+	defer Theme.SetSource(ThemeSystem)
+	if web, _ := background(); web != (platform.Color{A: 0xff}) {
+		t.Errorf("dark background %v", web)
+	}
+	if err := v.SetBackgroundColor("nope"); err == nil {
+		t.Error("SetBackgroundColor accepted an invalid color")
+	}
+	v.Destroy()
+	if err := v.SetBackgroundColor("#fff"); err != nil {
+		t.Errorf("SetBackgroundColor of a destroyed web view: %v", err)
 	}
 }
 

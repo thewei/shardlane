@@ -27,6 +27,12 @@ const resourcesDir = "resources"
 // bundleIcon is the file name of the icon in Contents/Resources.
 const bundleIcon = "AppIcon.icns"
 
+// bundleIconName is the name of the app icon in the asset catalog.
+const bundleIconName = "AppIcon"
+
+// bundleCatalog is the file name of the asset catalog in Contents/Resources.
+const bundleCatalog = "Assets.car"
+
 // Platform directories are named after a system MyGo builds apps for,
 // alone or with an architecture: darwin, linux-arm64, windows-amd64.
 var (
@@ -524,6 +530,9 @@ func sameContents(a, b string) (bool, error) {
 func reservedNames(c *Config, goos string) []string {
 	switch goos {
 	case "darwin":
+		if c.MacOS.Icon != "" {
+			return []string{bundleIcon, bundleCatalog}
+		}
 		return []string{bundleIcon}
 	case "windows":
 		return []string{c.executableName() + ".exe"}

@@ -69,7 +69,7 @@ func TestConfigDefaults(t *testing.T) {
 
 func TestInfoPlist(t *testing.T) {
 	c := &Config{Name: "A & B", Identifier: "com.example.ab", Version: "1.2.3", MacOS: MacOS{MinimumSystemVersion: "12.0"}, URLSchemes: []string{"ab"}}
-	plist := string(infoPlist(c, "A & B", "icon.icns"))
+	plist := string(infoPlist(c, "A & B", "icon.icns", ""))
 	for _, want := range []string{
 		"<string>A &amp; B</string>",
 		"<key>CFBundleIdentifier</key>\n\t<string>com.example.ab</string>",
@@ -538,7 +538,7 @@ func TestFileAssociations(t *testing.T) {
 			{Ext: []string{"md", "markdown"}, Name: "Markdown Document", MimeType: "text/markdown"},
 			{Ext: []string{"note"}, Name: "Note", Role: "Viewer"},
 		}}
-	plist := string(infoPlist(c, "Notes", ""))
+	plist := string(infoPlist(c, "Notes", "", ""))
 	for _, want := range []string{"<key>CFBundleDocumentTypes</key>", "<string>Markdown Document</string>", "<string>markdown</string>", "<string>Viewer</string>", "<string>text/markdown</string>"} {
 		if !strings.Contains(plist, want) {
 			t.Errorf("Info.plist lacks %q", want)
@@ -582,7 +582,7 @@ func TestInfoPlistExtraKeys(t *testing.T) {
 			"MyDict":                               map[string]any{"a": "b"},
 		},
 	}}
-	plist := infoPlist(c, "Cam", "")
+	plist := infoPlist(c, "Cam", "", "")
 	for _, want := range []string{
 		"<key>NSCameraUsageDescription</key>\n\t<string>Scan &lt;documents&gt; &amp; more.</string>",
 		"<key>LSUIElement</key>\n\t<true/>",
@@ -599,5 +599,68 @@ func TestInfoPlistExtraKeys(t *testing.T) {
 		if out, err := exec.Command("plutil", "-lint", path).CombinedOutput(); err != nil {
 			t.Errorf("plutil: %v\n%s", err, out)
 		}
+	}
+}
+
+// TestAssetCatalog puts macos.icon's Assets.car into the bundle, named in
+// Info.plist beside the .icns, and compiles a .icon with actool on a Mac.
+func TestAssetCatalog(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "Assets.car"), []byte("car"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c := &Config{Name: "Car", Identifier: "com.example.car", Version: "1.0.0", root: dir, MacOS: MacOS{Icon: "Assets.car"}}
+	c.applyDefaults()
+	bin := filepath.Join(dir, "exe")
+	if err := os.WriteFile(bin, nil, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	car, err := appCatalog(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	app, err := writeBundle(c, dir, bin, []byte("icns"), car, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if data, err := os.ReadFile(filepath.Join(app, "Contents", "Resources", "Assets.car")); string(data) != "car" {
+		t.Errorf("Assets.car = %q, %v", data, err)
+	}
+	plist, _ := os.ReadFile(filepath.Join(app, "Contents", "Info.plist"))
+	for _, want := range []string{"<key>CFBundleIconName</key>\n\t<string>AppIcon</string>", "<key>CFBundleIconFile</key>\n\t<string>AppIcon.icns</string>"} {
+		if !strings.Contains(string(plist), want) {
+			t.Errorf("Info.plist lacks %q", want)
+		}
+	}
+	if err := (&Config{MacOS: MacOS{Icon: "icon.png"}}).validate(); err == nil {
+		t.Error("macos.icon accepts a PNG")
+	}
+
+	// An Icon Composer document, a directory, which actool compiles where
+	// it can.
+	if err := os.WriteFile(filepath.Join(dir, "File.icon"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c.MacOS.Icon = "File.icon"
+	if _, err := appCatalog(c); err == nil {
+		t.Error("macos.icon accepts a file named .icon")
+	}
+	writeFiles(t, filepath.Join(dir, "Mark.icon"), map[string]string{
+		"Assets/mark.png": string(defaultIcon()),
+		"icon.json":       `{"groups":[{"layers":[{"image-name":"mark.png","name":"mark"}]}],"supported-platforms":{"squares":"shared"}}`,
+	})
+	c.MacOS.Icon = "Mark.icon"
+	car, err = appCatalog(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if exec.Command("xcrun", "--find", "actool").Run() != nil {
+		if car != nil {
+			t.Error("compiled a .icon without actool")
+		}
+		return
+	}
+	if car == nil || len(car.data) == 0 || !bytes.HasPrefix(car.icns, []byte("icns")) {
+		t.Errorf("catalog of Mark.icon = %+v", car)
 	}
 }

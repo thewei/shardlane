@@ -69,6 +69,7 @@ func (m *atlasMark) set(a *scene.Atlas) {
 // Render draws s, and returns the rectangles of Image it changed. s may
 // change once Render returns.
 func (r *Renderer) Render(s *scene.Scene) []image.Rectangle {
+	drawCanvases(s)
 	if r.whole(s) || r.Image.W != s.Width || r.Image.H != s.Height {
 		// A new size, or Image was released (Release).
 		r.resize(s.Width, s.Height)

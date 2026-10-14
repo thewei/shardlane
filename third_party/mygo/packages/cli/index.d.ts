@@ -164,6 +164,14 @@ export interface S3Config {
 
 /** macOS packaging. */
 export interface MacOSConfig {
+  /**
+   * The icon as an asset catalog: an `Assets.car` compiled with actool (its
+   * app icon named `AppIcon`, unless `infoPlist` sets `CFBundleIconName`), or
+   * an Icon Composer `.icon`, which builds compile on a Mac with Xcode 26 or
+   * later and skip elsewhere. The `.icns` made from `icon` remains the
+   * fallback.
+   */
+  icon?: string;
   /** The oldest macOS the app runs on (default: `12.0`). */
   minimumSystemVersion?: string;
   /** The identity that signs the app and its disk image, e.g. `Developer ID Application: Jane Doe (TEAMID)` (default: `-`, ad hoc). */

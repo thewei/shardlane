@@ -6,6 +6,8 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+
+	"github.com/egoist/mygo/internal/webview2"
 )
 
 func runDoctor(args []string) error {
@@ -41,11 +43,13 @@ func runDoctor(args []string) error {
 		libs := strings.TrimSpace(string(out))
 		check("webkit", libs != "", or(libs, "WebKitGTK not found: install libwebkit2gtk-4.1-0 (Debian/Ubuntu) or webkit2gtk4.1 (Fedora)"))
 	case "windows":
-		out, err := exec.Command("reg", "query", `HKLM\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}`, "/v", "pv").Output()
+		// The runtime a window showing a web page gets, not the install
+		// EdgeUpdate registers, which outlives its files.
+		dir, _, err := webview2.Find()
 		if err != nil {
-			out, err = exec.Command("reg", "query", `HKCU\Software\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}`, "/v", "pv").Output()
+			dir = err.Error()
 		}
-		check("webview2", err == nil, or(lastField(string(out)), "WebView2 runtime not found: https://go.microsoft.com/fwlink/p/?LinkId=2124703"))
+		check("webview2", err == nil, dir)
 	default:
 		check(runtime.GOOS, false, "no MyGo backend for this platform yet")
 	}
@@ -93,12 +97,4 @@ func or(s, fallback string) string {
 		return fallback
 	}
 	return s
-}
-
-func lastField(s string) string {
-	f := strings.Fields(s)
-	if len(f) == 0 {
-		return ""
-	}
-	return f[len(f)-1]
 }

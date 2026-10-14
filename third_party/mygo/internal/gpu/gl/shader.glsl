@@ -236,6 +236,29 @@ vec4 sampleLocal(sampler2D t, vec2 uv, vec4 src, float affine) {
 	return texture(t, uv);
 }
 
+// sampleImage samples an image held inside src, which is reversed along
+// an axis it flips, so that a part of a sheet shows none of its
+// neighbors; where pixelated is set, as pixel art draws, each texel a
+// square of its color whose edges blend with the next only across the
+// pixel they cross (Ebitengine's FilterPixelated): nearest where it shows
+// at whole multiples of its size, and texels of even widths with smooth
+// edges at any other. dtex is the fwidth of uv, taken where every
+// fragment of the quad takes it.
+vec4 sampleImage(sampler2D t, vec2 uv, vec4 src, float pixelated, vec2 dtex) {
+	vec2 size = vec2(textureSize(t, 0));
+	vec2 lo = min(src.xy, src.zw), hi = max(src.xy, src.zw);
+	if (pixelated > 0.5) {
+		vec2 tc = uv * size - 0.5;
+		vec2 i = floor(tc);
+		vec2 f = clamp((tc - i - 0.5) / clamp(dtex * size, 1e-5, 1.0) + 0.5, 0.0, 1.0);
+		uv = (i + f + 0.5) / size;
+	}
+	return texture(t, clamp(uv, lo + 0.5 / size, hi - 0.5 / size));
+}
+
+// tint multiplies premultiplied c by straight color t.
+vec4 tint(vec4 c, vec4 t) { return c * vec4(t.rgb * t.a, t.a); }
+
 vec4 premul(vec4 c) { return vec4(c.rgb * c.a, c.a); }
 
 vec3 unpremul(vec4 c) { return c.a > 0.0 ? c.rgb / c.a : vec3(0.0); }
@@ -404,6 +427,7 @@ void main() {
 	Frame fr = frameOf();
 	vec2 p = vPoint.xy;
 	vec2 tex = vPoint.zw;
+	vec2 dtex = fwidth(tex);
 	float kind = vParams.x;
 	vec4 res;
 	float glyphCov = vTransform0.w > 0.5 ? localCoverage(p, vRect, vec4(0.0), 1.0, fr) : 1.0;
@@ -448,11 +472,11 @@ void main() {
 	} else if (kind < 3.5) {
 		res = sampleLocal(uColor, tex, vWidths, vTransform0.w) * vColor.a * glyphCov;
 	} else if (kind < 4.5) {
-		res =
-			sampleLocal(uImage, tex, vWidths, vTransform0.w) * localCoverage(p, vRect, vRadii, vTransform0.w, fr);
+		res = sampleImage(uImage, tex, vWidths, vParams.z, dtex);
 		if (vParams.y > 0.5) {
 			res.rgb = vec3(dot(res.rgb, vec3(0.2126, 0.7152, 0.0722)));
 		}
+		res = tint(res, vColor) * localCoverage(p, vRect, vRadii, vTransform0.w, fr);
 	} else {
 		vec4 c = paint(p, vParams.z, vRect, vColor, vColor2, vGrad);
 		vec3 straight = unpremul(c);

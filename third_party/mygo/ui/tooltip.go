@@ -143,7 +143,7 @@ func (rt *engine) showTooltip(c *context) uint64 {
 		t.hover, t.hoverSince = hover, now
 	}
 	var focus uint64
-	if rt.focusVisible && rt.windowFocused && tipped(rt.focused) {
+	if rt.focusVisible && rt.windowFocus() && tipped(rt.focused) {
 		focus = rt.focused
 	}
 	if focus != t.focus {

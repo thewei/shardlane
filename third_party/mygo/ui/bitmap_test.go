@@ -57,6 +57,77 @@ func TestBitmapShowsSmallerSmoothly(t *testing.T) {
 	}
 }
 
+func TestBitmapPixelated(t *testing.T) {
+	// Stripes of one pixel, 8 times as large: a pixelated bitmap shows
+	// stripes of 8 pixels, black or white, a smooth one ramps between.
+	for _, pixelated := range []bool{false, true} {
+		bm := NewBitmap(stripedImage(4, 4, 1, 0))
+		if pixelated {
+			bm.Pixelated()
+		}
+		tt := coreNewTester(func(c *context) {
+			coreImage(c, bm).Size(32, 32).Fit(FillBox)
+		}, 40, 40)
+		img := tt.Image()
+		grays := 0
+		for x := range 32 {
+			if v := img.RGBAAt(x, 16).R; v > 10 && v < 245 {
+				grays++
+			}
+		}
+		if pixelated && grays != 0 {
+			t.Errorf("a pixelated bitmap shows %d grays between its pixels", grays)
+		}
+		if !pixelated && grays < 8 {
+			t.Errorf("a smooth bitmap shows %d grays between its pixels", grays)
+		}
+		if pixelated && (img.RGBAAt(4, 16).R != 0 || img.RGBAAt(12, 16).R != 255) {
+			t.Errorf("pixels %d and %d", img.RGBAAt(4, 16).R, img.RGBAAt(12, 16).R)
+		}
+	}
+}
+
+func TestImageRegion(t *testing.T) {
+	// A sheet of four 2×2 parts: red, green, blue and white.
+	sheet := image.NewRGBA(image.Rect(0, 0, 4, 4))
+	colors := [4]color.RGBA{{255, 0, 0, 255}, {0, 255, 0, 255}, {0, 0, 255, 255}, {255, 255, 255, 255}}
+	for y := range 4 {
+		for x := range 4 {
+			sheet.Set(x, y, colors[y/2*2+x/2])
+		}
+	}
+	// The left half of the green part red, to see it flip.
+	sheet.Set(2, 0, colors[0])
+	sheet.Set(2, 1, colors[0])
+	bm := NewBitmap(sheet).Pixelated()
+	green, white := Rect{X: 2, W: 2, H: 2}, Rect{X: 2, Y: 2, W: 2, H: 2}
+	tt := coreNewTester(func(c *context) {
+		coreBox(c).Size(80, 20).Draw(func(p *Painter, r Rect) {
+			p.ImageRegion(bm, green, Rect{X: r.X, Y: r.Y, W: 20, H: 20}, ImageOptions{})
+			p.ImageRegion(bm, green, Rect{X: r.X + 30, Y: r.Y, W: 20, H: 20}, ImageOptions{FlipX: true})
+			p.ImageRegion(bm, white, Rect{X: r.X + 60, Y: r.Y, W: 20, H: 20}, ImageOptions{Tint: RGB(255, 0, 0)})
+		})
+	}, 80, 20)
+	img := tt.Image()
+	px := func(x, y int) color.RGBA { return img.RGBAAt(x, y) }
+	for _, c := range []struct {
+		x    int
+		want color.RGBA
+	}{
+		{5, colors[0]}, {15, colors[1]}, // red then green
+		{35, colors[1]}, {45, colors[0]}, // flipped: green then red
+		{65, colors[0]}, {75, colors[0]}, // white tinted red
+	} {
+		if got := px(c.x, 10); got != c.want {
+			t.Errorf("pixel %d = %v, want %v", c.x, got, c.want)
+		}
+	}
+	// Nothing of the blue part below the green one shows at its edge.
+	if got := px(15, 19); got != colors[1] {
+		t.Errorf("the green part's bottom edge = %v", got)
+	}
+}
+
 func TestHalve(t *testing.T) {
 	// 3×3 of values 0, 40, 80 by column: an odd column counts twice.
 	img := image.NewRGBA(image.Rect(0, 0, 3, 3))

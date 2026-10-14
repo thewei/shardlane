@@ -292,9 +292,9 @@ func TestSignNestedCode(t *testing.T) {
 `
 	}
 	writeFiles(t, dir, map[string]string{
-		"A.app/Contents/Info.plist":                                          string(infoPlist(&Config{Name: "A", Identifier: "com.example.a"}, "A", "")),
-		"A.app/Contents/Resources/Helper.app/Contents/Info.plist":            string(infoPlist(&Config{Name: "Helper", Identifier: "com.example.helper"}, "Helper", "")),
-		"A.app/Contents/Resources/Docs.bundle/Contents/Info.plist":           string(infoPlist(&Config{Name: "Docs", Identifier: "com.example.docs"}, "Docs", "")),
+		"A.app/Contents/Info.plist":                                          string(infoPlist(&Config{Name: "A", Identifier: "com.example.a"}, "A", "", "")),
+		"A.app/Contents/Resources/Helper.app/Contents/Info.plist":            string(infoPlist(&Config{Name: "Helper", Identifier: "com.example.helper"}, "Helper", "", "")),
+		"A.app/Contents/Resources/Docs.bundle/Contents/Info.plist":           string(infoPlist(&Config{Name: "Docs", Identifier: "com.example.docs"}, "Docs", "", "")),
 		"A.app/Contents/Resources/Docs.bundle/Contents/Resources/index.html": "<h1>Docs</h1>",
 		"A.app/Contents/Resources/data.txt":                                  "data",
 		"jit.plist":                                                          plist("com.apple.security.cs.allow-jit"),
@@ -303,7 +303,7 @@ func TestSignNestedCode(t *testing.T) {
 	// A framework built without sealing it: its library is signed alone.
 	framework := filepath.Join(res, "Foo.framework")
 	writeFiles(t, framework, map[string]string{
-		"Versions/A/Resources/Info.plist": string(infoPlist(&Config{Name: "Foo", Identifier: "com.example.foo"}, "Foo", "")),
+		"Versions/A/Resources/Info.plist": string(infoPlist(&Config{Name: "Foo", Identifier: "com.example.foo"}, "Foo", "", "")),
 	})
 	library := filepath.Join(dir, "Foo")
 	if err := copyFile(exe, library, 0o755); err != nil {

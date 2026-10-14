@@ -99,6 +99,7 @@ Signed [auto-updates](updates.md). `publicKey` and one of `github` and
 
 | Field | Default | |
 |---|---|---|
+| `icon` | | the icon as an asset catalog, an `Assets.car` or an Icon Composer `.icon`, beside the `.icns` of `icon`. See [the icon](distribution.md#name-icon-and-version) |
 | `minimumSystemVersion` | `12.0` | the oldest macOS the app runs on |
 | `signingIdentity` | `-`, ad hoc | the identity that signs the app and its disk image, e.g. `Developer ID Application: Jane Doe (TEAMID)` |
 | `entitlements` | | a property list of entitlements to sign the app with |

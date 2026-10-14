@@ -125,6 +125,31 @@ func TestOverlayGivesTheFocusBack(t *testing.T) {
 	}
 }
 
+func TestPopoverRestoresFocusWithToastViewport(t *testing.T) {
+	open := false
+	tt := coreNewTester(func(c *context) {
+		anchor := coreButton(c, "Open")
+		if anchor.Clicked() {
+			open = true
+		}
+		corePopover(c, anchor, &open, func() {
+			coreButton(c, "Inside")
+		})
+		// The viewport comes after the popover, as it does when the
+		// engine builds the theme's toasts after the view.
+		coreToastViewportBase(c, func(*node, []Toast) {})
+	}, 400, 300)
+	tt.Click("Open")
+	tt.Key(0, KeyTab)
+	if !tt.Focused("Inside") {
+		t.Fatal("Tab did not move focus into the popover")
+	}
+	tt.Key(0, KeyEscape)
+	if open || !tt.Focused("Open") {
+		t.Errorf("closing the popover did not restore focus to its anchor (open %v)", open)
+	}
+}
+
 func TestShortcutsWaitBehindADialog(t *testing.T) {
 	d := &dialogView{size: "Small"}
 	tt := coreNewTester(d.view, 500, 400)

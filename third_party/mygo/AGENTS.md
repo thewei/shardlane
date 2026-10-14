@@ -53,6 +53,7 @@ go run ./cmd/mygo dev -web examples/counter-native   # native UI in the browser,
 go run ./cmd/mygo build examples/todo      # .app + .dmg in examples/todo/build
 go run ./cmd/mygo build -platform web examples/counter-native   # a static site in examples/counter-native/dist/web
 go run ./examples/gallery                  # the native UI toolkit's tour
+go run ./examples/code-editor              # the code editor and the diff viewer (ui/editor)
 go run ./examples/terminal                 # a terminal (downloads libghostty-vt once)
 go generate ./plugins/terminal             # build libghostty-vt for every platform (with Zig), write Ghostty's themes
 go generate ./internal/gpu/d3d11           # recompile the Direct3D shader (on Windows)
@@ -88,6 +89,9 @@ Windows GUI tests need Windows with the WebView2 Runtime (a GitHub Actions
   plugin is Go only too, an effect of the renderers (`scene.Effect`): its
   shader in Metal, HLSL and GLSL with a CPU twin that must draw the same
   pixels, compiled ahead of time by `go generate` on macOS and Windows.
+  The game plugin is Go only too, what games need beyond what apps do,
+  opt-in, kept out of core `ui`: a game loop and a camera for native UI,
+  and `plugins/game/gamepad`, which reads controllers.
 - The `dist/` of npm packages is not committed: run `bun run build` after
   `bun install` (CI and releases do). Commit `internal/bridge/bridge.js`
   whenever its sources change, and keep the generated clients of examples

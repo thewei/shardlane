@@ -792,6 +792,44 @@ func TestFramelessResizeEdges(t *testing.T) {
 	waitFor(t, w, "window.pressed === 1")
 }
 
+// A window without a caption that is maximized, minimized and restored
+// fills the work area of its display again, on every display. Windows sizes
+// its client area while it is still the minimized window, parked off
+// screen, whose nearest display is the primary one: on another display,
+// which CI lacks, the client area came back on the primary one, outside the
+// window, which showed nothing.
+func TestRestoreMaximizedCaptionless(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("MyGo fits the client area of maximized windows without a caption on Windows only")
+	}
+	for i, d := range mygo.Screen.Displays() {
+		w := newWindow(t, mygo.WindowOptions{TitleBarStyle: mygo.TitleBarHidden, Content: ui.View(func(c *ui.Context) {
+			ui.Text(c, "Maximized")
+		})})
+		w.SetBounds(mygo.Rectangle{X: d.WorkArea.X + 40, Y: d.WorkArea.Y + 40, Width: 600, Height: 400})
+		w.Maximize()
+		eventually(t, fmt.Sprintf("a window maximized on display %d", i), func() bool {
+			b := w.ContentBounds()
+			return w.IsMaximized() && b.X >= d.Bounds.X && b.Y >= d.Bounds.Y &&
+				b.X+b.Width <= d.Bounds.X+d.Bounds.Width && b.Y+b.Height <= d.Bounds.Y+d.Bounds.Height
+		})
+		want := w.ContentBounds()
+		w.Minimize()
+		eventually(t, "a minimized window", w.IsMinimized)
+		w.Restore()
+		eventually(t, "the maximized window back", func() bool { return !w.IsMinimized() && w.IsMaximized() })
+		var b mygo.Rectangle
+		for deadline := time.Now().Add(2 * time.Second); time.Now().Before(deadline); time.Sleep(20 * time.Millisecond) {
+			if b = w.ContentBounds(); b == want {
+				break
+			}
+		}
+		if b != want {
+			t.Errorf("display %d (primary %v): the client area came back at %+v, want %+v", i, d.Primary, b, want)
+		}
+	}
+}
+
 func TestDockedDevTools(t *testing.T) {
 	w := newWindow(t, mygo.WindowOptions{Title: "DevTools", Width: 800, Height: 600, Page: mygo.PageOptions{DevTools: mygo.DevToolsEnabled}})
 	w.Page().LoadHTML("<p>inspect me</p>", "")

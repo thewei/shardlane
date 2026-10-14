@@ -154,6 +154,14 @@ term, err := terminal.New(terminal.Options{
   runs with the next frame, it keeps its place among the keys typed after
   it, as does what it sends with `Send`. Keys that only type text may come
   as their text alone, as on Linux, and `OnKey` does not see those.
+- `OnScroll` sees the wheel scroll the view by whole rows (negative up)
+  on the main thread before the terminal scrolls its scrollback, and
+  takes it by returning true: the scrollback stays. It is not asked while
+  a program gets the wheel: as mouse reports when it takes the mouse
+  (unless Shift is held), or as arrow keys on a full-screen program's
+  screen (alternate scroll, which `\x1b[?1007l` turns off). A `Conn`
+  whose history lives at the other end, as a remote multiplexer streaming
+  only its screen, sends the wheel there this way.
 
 ## Fonts
 

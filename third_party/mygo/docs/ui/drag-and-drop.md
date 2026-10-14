@@ -28,6 +28,11 @@ if task, ok := ui.Drop[*Task](done); ok {
 - **Targets.** The innermost element under the pointer that takes the
   value's type gets it, so a target inside another that takes other types
   does not block it.
+- **Controls inside.** A press on a control that only takes clicks, as a
+  button, inside an element that drags drags that element once the pointer
+  moves, and is no click: a list's rows made of buttons reorder. A press
+  that does not move clicks the control. Controls that take the pointer's
+  moves, as text inputs and sliders, keep them.
 - **Canceling.** Escape gives up a drag.
 - **Scrolling.** Scroll containers scroll as a drag nears their top or
   bottom, faster nearer to the edge.

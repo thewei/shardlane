@@ -82,7 +82,7 @@ function Home() {
           <span className="block text-muted-foreground">Tiny, fast, fully typed.</span>
         </h1>
         <p className="mt-6 max-w-xl text-lg leading-8 text-muted-foreground">
-          One small binary for macOS, Windows and Linux. A web frontend or native UI in Go, with installers and auto-updates included.
+          One small binary for macOS, Windows and Linux. Native UI or a web frontend in Go, with installers and auto-updates included.
         </p>
         <div className="mt-10 flex flex-wrap items-center gap-3">
           <InstallCommand />

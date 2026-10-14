@@ -498,6 +498,9 @@ func (s *System) EndFrame() {
 		f.forgetFonts()
 		return
 	}
+	for s.oldest != nil && s.overLayoutBudget(0) {
+		s.removeLayout(s.oldest)
+	}
 	for s.oldest != nil && s.frame-s.oldest.used > 240 {
 		s.removeLayout(s.oldest)
 	}
@@ -524,7 +527,7 @@ func (s *System) Layout(p Params) *Layout {
 	// A large paragraph still lays out correctly; keeping it would evict
 	// all the ordinary labels and lines of other windows.
 	if c.bytes <= maxLayoutBytes {
-		for s.oldest != nil && (s.layoutBytes+c.bytes > maxLayoutBytes || len(s.layouts) >= maxLayouts) {
+		for s.oldest != nil && (s.overLayoutBudget(c.bytes) || len(s.layouts) >= maxLayouts) {
 			s.removeLayout(s.oldest)
 		}
 		s.layouts[p] = c
@@ -537,9 +540,21 @@ func (s *System) Layout(p Params) *Layout {
 // The memory estimate includes text, shaped glyphs and room for lazy caret
 // geometry. A count limit also bounds the map for many very short labels.
 const (
-	maxLayoutBytes = 8 << 20
-	maxLayouts     = 4096
+	liveLayoutFrames   = 8
+	maxLiveLayoutBytes = 64 << 20
+	maxLayoutBytes     = 8 << 20
+	maxLayouts         = 4096
 )
+
+// Above the ordinary budget, keep layouts used within a few global frames:
+// otherwise sequential reuse of a larger working set evicts each layout just
+// before its next use. The hard cap and entry limit still apply to live text.
+// EndFrame also trims excess once later frames stop using it; no timer runs
+// while all windows are idle.
+func (s *System) overLayoutBudget(n int) bool {
+	return s.layoutBytes+n > maxLiveLayoutBytes ||
+		s.layoutBytes+n > maxLayoutBytes && s.oldest != nil && s.frame-s.oldest.used >= liveLayoutFrames
+}
 
 func layoutBytes(c *cached) int {
 	l, p := &c.layout, c.layout.Params

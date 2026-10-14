@@ -226,3 +226,110 @@ func TestTransitionWithoutMotionFades(t *testing.T) {
 		t.Errorf("%d copies leaving", leaving)
 	}
 }
+
+// An element coming in moves with the layout at once where its Transition
+// does not animate: only the Enter's own motion plays.
+func TestTransitionEnterFollowsTheLayout(t *testing.T) {
+	shown, above := false, float32(20)
+	tt, now := clockTester(func(c *context) {
+		coreColumn(c).Size(300, 200).Children(func() {
+			coreBox(c).Size(20, above)
+			if shown {
+				keep("panel", coreBox(c).Key("panel")).Size(40, 20).Transition(ElementTransition{
+					Duration: 100 * time.Millisecond, Colors: true, Enter: &Motion{X: 8},
+				})
+			}
+		})
+	}, 300, 200)
+	shown = true
+	tt.Frame()
+	*now = now.Add(30 * time.Millisecond)
+	tt.Frame()
+	// The box above grows on the way in: the panel goes down at once.
+	above = 50
+	tt.Frame()
+	e := keyed(tt, "panel")
+	if e.y != 50 {
+		t.Errorf("on its way in, the panel is at y=%v, not at once under the box at 50", e.y)
+	}
+	if e.x <= 0 || e.x >= 8 {
+		t.Errorf("on its way in, the panel is at x=%v, not sliding in", e.x)
+	}
+	*now = now.Add(time.Second)
+	tt.Frame()
+	if e := keyed(tt, "panel"); e.x != 0 || e.y != 50 {
+		t.Errorf("in, the panel is at (%v, %v)", e.x, e.y)
+	}
+}
+
+// An element built again as its copy goes comes back from where the copy
+// was, even where its Transition does not animate, and not past its place
+// when the layout moved it meanwhile.
+func TestTransitionBackFollowsNoLayoutTwice(t *testing.T) {
+	shown, above := true, float32(20)
+	tt, now := clockTester(func(c *context) {
+		coreColumn(c).Size(300, 200).Children(func() {
+			coreBox(c).Size(20, above)
+			if shown {
+				keep("panel", coreBox(c).Key("panel")).Size(40, 20).Transition(ElementTransition{
+					Duration: 100 * time.Millisecond, Ease: Linear, Colors: true, Exit: &Motion{X: 8},
+				})
+			}
+		})
+	}, 300, 200)
+	shown = false
+	tt.Frame()
+	*now = now.Add(50 * time.Millisecond)
+	tt.Frame()
+	// Back, under a box that grew meanwhile.
+	shown, above = true, 50
+	tt.Frame()
+	if e := keyed(tt, "panel"); e.y != 20 {
+		t.Errorf("back, the panel starts at y=%v, not where its copy was at 20", e.y)
+	}
+	*now = now.Add(25 * time.Millisecond)
+	tt.Frame()
+	if e := keyed(tt, "panel"); e.y <= 20 || e.y >= 50 {
+		t.Errorf("on its way back, the panel is at y=%v, not between 20 and 50", e.y)
+	}
+	*now = now.Add(time.Second)
+	tt.Frame()
+	if e := keyed(tt, "panel"); e.x != 0 || e.y != 50 {
+		t.Errorf("back, the panel is at (%v, %v)", e.x, e.y)
+	}
+}
+
+// An element collapsed coming in keeps opening when the layout makes it
+// smaller on the way, where its Transition does not animate its size.
+func TestTransitionEnterCollapsedFollowsTheLayout(t *testing.T) {
+	shown, h := false, float32(40)
+	tt, now := clockTester(func(c *context) {
+		coreColumn(c).Size(300, 200).Children(func() {
+			if shown {
+				keep("row", coreBox(c).Key("row")).Size(40, h).Transition(ElementTransition{
+					Duration: 100 * time.Millisecond, Ease: Linear, Colors: true, Enter: &Motion{Opacity: 1, Collapse: true},
+				})
+			}
+		})
+	}, 300, 200)
+	shown = true
+	tt.Frame()
+	*now = now.Add(50 * time.Millisecond)
+	tt.Frame()
+	if e := keyed(tt, "row"); e.h != 20 {
+		t.Fatalf("halfway in, the row is %v high", e.h)
+	}
+	h = 10
+	for _, want := range [][2]float32{{0, 5}, {25, 7.5}} {
+		*now = now.Add(time.Duration(want[0]) * time.Millisecond)
+		tt.Frame()
+		if e := keyed(tt, "row"); e.h != want[1] {
+			t.Errorf("%v ms in, the row is %v high, not %v", 50+want[0], e.h, want[1])
+		}
+	}
+	*now = now.Add(time.Second)
+	tt.Frame()
+	if e := keyed(tt, "row"); e.h != 10 {
+		t.Errorf("in, the row is %v high", e.h)
+	}
+}

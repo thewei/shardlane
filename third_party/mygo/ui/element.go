@@ -4,6 +4,7 @@ import (
 	"math"
 	"strings"
 
+	"github.com/egoist/mygo/internal/platform"
 	"github.com/egoist/mygo/internal/scene"
 	"github.com/egoist/mygo/internal/text"
 )
@@ -337,6 +338,9 @@ type node struct {
 	accValue    string
 	accRange    [3]float64
 	hasRange    bool
+	// accFill describes the element to assistive technology further, as
+	// a code editor its text and selection.
+	accFill func(n *platform.AccessNode)
 	// accStep is how far the keys move the value of a range.
 	accStep float64
 
@@ -783,6 +787,19 @@ func (e *node) AttachTo(target *node, at, self Anchor) *node {
 	e.popover = target
 	return e
 }
+
+// KeepFocus leaves the keyboard focus where it is while the element, or
+// what is inside it, is pressed: the popups and bars of a control that
+// keeps typing while the user picks in them, as a combobox's options or a
+// code editor's completions and find buttons.
+func (e *node) KeepFocus() *node { e.flags |= flagKeepFocus; return e }
+
+// Access has fn describe the element further to assistive technology,
+// as it builds the element's node, only while assistive technology reads
+// the window: what costs too much to give every frame, as the text of a
+// large document. The node is a type internal to this module, so only
+// its packages describe elements so, as package ui/editor does.
+func (e *node) Access(fn func(n *platform.AccessNode)) *node { e.accFill = fn; return e }
 
 // AspectRatio makes the height the width divided by r.
 func (e *node) AspectRatio(r float32) *node { e.aspect = r; return e }

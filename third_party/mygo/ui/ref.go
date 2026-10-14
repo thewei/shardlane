@@ -144,7 +144,7 @@ func (c *Context) Resolve(ref Handle) Element {
 func (r Handle) Focused(c *Context) bool {
 	rt := c.runtime()
 	b := (&r).binding(rt, false)
-	return b != nil && !b.closed && b.id != 0 && rt.focused == b.id && rt.windowFocused
+	return b != nil && !b.closed && b.id != 0 && rt.focused == b.id && rt.windowFocus()
 }
 
 func (r Handle) FocusWithin(c *Context) bool {

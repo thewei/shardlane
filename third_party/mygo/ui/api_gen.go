@@ -3,6 +3,7 @@
 package ui
 
 import (
+	platform "github.com/egoist/mygo/internal/platform"
 	transfer "github.com/egoist/mygo/transfer"
 	image "image"
 	time "time"
@@ -2160,6 +2161,21 @@ func (_handle Element) Absolute() Element {
 	return wrapElement(_node.Absolute())
 }
 
+// Access has fn describe the element further to assistive technology,
+// as it builds the element's node, only while assistive technology reads
+// the window: what costs too much to give every frame, as the text of a
+// large document. The node is a type internal to this module, so only
+// its packages describe elements so, as package ui/editor does.
+func (_handle Element) Access(fn func(n *platform.AccessNode)) Element {
+	_node := _handle.node()
+	if _node == nil {
+		return Element{}
+	}
+	_ctx := _node.c
+	_ = _ctx
+	return wrapElement(_node.Access(fn))
+}
+
 // ActiveDescendant tells assistive technology that d has the keyboard
 // focus while the element does: the option the arrows are on in a list or
 // a menu that keeps the focus itself, as a combobox's input does. Call it
@@ -3606,6 +3622,20 @@ func (_handle Element) JustifySelf(a Align) Element {
 	_ctx := _node.c
 	_ = _ctx
 	return wrapElement(_node.JustifySelf(a))
+}
+
+// KeepFocus leaves the keyboard focus where it is while the element, or
+// what is inside it, is pressed: the popups and bars of a control that
+// keeps typing while the user picks in them, as a combobox's options or a
+// code editor's completions and find buttons.
+func (_handle Element) KeepFocus() Element {
+	_node := _handle.node()
+	if _node == nil {
+		return Element{}
+	}
+	_ctx := _node.c
+	_ = _ctx
+	return wrapElement(_node.KeepFocus())
 }
 
 // Keyframes plays a sequence, holding its last value when done. It starts

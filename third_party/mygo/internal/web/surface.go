@@ -19,7 +19,9 @@ import (
 // shown with a 2D context where the browser has no WebGL 2. A textarea out
 // of sight has the keyboard while the window has: input methods compose
 // in it, at the caret of the content, and its clipboard events carry the
-// clipboard.
+// clipboard. Its inputmode is "none" while nothing in the content takes
+// text, so that touch devices, which show their keyboard for a focused
+// textarea, show it only for a text input.
 type surface struct {
 	w             *window
 	canvas, input js.Value
@@ -59,7 +61,7 @@ func newSurface(w *window) (*surface, error) {
 	s.canvas = doc.Call("createElement", "canvas")
 	s.canvas.Set("tabIndex", -1)
 	s.input = doc.Call("createElement", "textarea")
-	for k, v := range map[string]string{"autocomplete": "off", "autocorrect": "off", "autocapitalize": "off", "spellcheck": "false", "tabindex": "-1"} {
+	for k, v := range map[string]string{"autocomplete": "off", "autocorrect": "off", "autocapitalize": "off", "spellcheck": "false", "tabindex": "-1", "inputmode": "none"} {
 		s.input.Call("setAttribute", k, v)
 	}
 	w.el.Call("appendChild", s.canvas)
@@ -613,8 +615,18 @@ func (s *surface) SetCursor(c platform.Cursor) {
 }
 
 // SetTextInput moves the textarea to the caret, where input methods show
-// their candidates.
+// their candidates, and lets touch devices show their keyboard while an
+// element takes text: browsers show it, or hide it, as the inputmode of
+// the focused textarea changes. Keys of a hardware keyboard come either
+// way.
 func (s *surface) SetTextInput(t platform.TextInputState) {
+	if t.Active != s.text.Active {
+		mode := "none"
+		if t.Active {
+			mode = "text"
+		}
+		s.input.Call("setAttribute", "inputmode", mode)
+	}
 	s.text = t
 	st := s.input.Get("style")
 	if !t.Active {

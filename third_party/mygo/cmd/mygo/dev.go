@@ -553,7 +553,7 @@ func (s *devSession) buildAndLaunch(ctx context.Context, t *task, running [32]by
 			iconFile = bundleIcon
 		}
 		h.Write(icns)
-		h.Write(infoPlist(dc, name, iconFile))
+		h.Write(infoPlist(dc, name, iconFile, ""))
 		if err := hashEntitlements(h, dc); err != nil {
 			return nil, sum, err
 		}
@@ -574,7 +574,7 @@ func (s *devSession) buildAndLaunch(ctx context.Context, t *task, running [32]by
 	exe := filepath.Join(dir, name)
 	if runtime.GOOS == "darwin" {
 		t.set("signing")
-		app, err := writeBundle(dc, stage, bin, icns, res)
+		app, err := writeBundle(dc, stage, bin, icns, nil, res)
 		if err != nil {
 			return nil, sum, err
 		}

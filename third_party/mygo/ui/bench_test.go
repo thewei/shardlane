@@ -196,13 +196,19 @@ func diffSceneTester(diff bool) (*Tester, *diffScene) {
 	d := newDiffScene(diff)
 	tt := coreNewTester(d.view, 1280, 800)
 	tt.SetScale(2)
-	tt.Move(150, 400)
+	tt.Move(sidebarX, sidebarY)
 	s := &sidebarScroller{tt: tt, d: d}
 	for range 600 {
 		s.step()
 	}
 	return tt, d
 }
+
+// The pointer scrolls the history over the rows' hashes, which have no
+// tooltip: resting on a subject or an age shows its tip after
+// tooltipDelay of the clock, so frames measured that slowly, as on a busy
+// runner, would show it.
+const sidebarX, sidebarY = 40, 400
 
 // sidebarScroller scrolls the history by 40 DIPs a frame, down to its end
 // and back up again, or within the rows of lo to hi. Over the whole list,
@@ -231,7 +237,7 @@ func (s *sidebarScroller) step() {
 	if s.down {
 		dy = 40
 	}
-	s.tt.Scroll(150, 400, 0, dy)
+	s.tt.Scroll(sidebarX, sidebarY, 0, dy)
 }
 
 // BenchmarkDiffSteady renders a frame of the diff scene where nothing

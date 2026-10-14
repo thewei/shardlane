@@ -139,7 +139,7 @@ func (rt *engine) textSelectionIncludes(id uint64) bool {
 }
 
 func (rt *engine) textSelectionVisible(s *state) bool {
-	if !rt.windowFocused || s.flags&flagDisabled != 0 {
+	if !rt.windowFocus() || s.flags&flagDisabled != 0 {
 		return false
 	}
 	if s.textScope == 0 {

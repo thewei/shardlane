@@ -224,3 +224,35 @@ func TestHeldWhileOccluded(t *testing.T) {
 		t.Error("shown again while nothing waited, it asked for a frame")
 	}
 }
+
+// TestFocusChangeFrames checks that the window gaining or losing the
+// keyboard focus draws a frame only when the last frame read it, as a
+// focused text input does for its caret.
+func TestFocusChangeFrames(t *testing.T) {
+	text, input := "", false
+	tt := newRepaintTester(func(c *context) {
+		coreText(c, "Hello")
+		if input {
+			coreTextInputBase(c, &text).Width(100).Label("name").AutoFocus()
+		}
+	})
+	for _, focused := range []bool{false, true} {
+		tt.h.requested.Store(false)
+		tt.rt.event(platform.SurfaceEvent{Kind: map[bool]platform.SurfaceEventKind{false: platform.SurfaceBlur, true: platform.SurfaceFocus}[focused]})
+		if tt.h.requested.Load() {
+			t.Errorf("focused %v, nothing reading it: asked for a frame", focused)
+		}
+	}
+	input = true
+	tt.rt.changed()
+	tt.frame(time.Millisecond)
+	tt.frame(time.Millisecond)
+	for _, focused := range []bool{false, true} {
+		tt.h.requested.Store(false)
+		tt.rt.event(platform.SurfaceEvent{Kind: map[bool]platform.SurfaceEventKind{false: platform.SurfaceBlur, true: platform.SurfaceFocus}[focused]})
+		if !tt.h.requested.Load() {
+			t.Errorf("focused %v, with a focused text input: asked for no frame", focused)
+		}
+		tt.frame(time.Millisecond)
+	}
+}

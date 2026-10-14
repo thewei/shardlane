@@ -478,7 +478,16 @@ func (w *window) captionless() bool { return w.frameless || w.hiddenTitleBar }
 func (w *window) frameCalcSize(wp, lp uintptr) uintptr {
 	params := (*ncCalcSizeParams)(native(lp))
 	if w.IsMaximized() {
-		params.Rgrc[0] = monitorWorkArea(w.monitor())
+		// The monitor of the proposed rectangle, not of the window: while a
+		// window is restored from minimized it is still the minimized one,
+		// parked off screen, whose nearest monitor is not the one it comes
+		// back to. Fitting the work area of the wrong monitor leaves the
+		// client area outside the window, and the content shows nothing.
+		// A rectangle on no monitor keeps the whole window as its client
+		// area, as winit and tao do.
+		if mon, _, _ := procMonitorFromRect.Call(uintptr(unsafe.Pointer(&params.Rgrc[0])), monitorDefaultToNull); mon != 0 {
+			params.Rgrc[0] = monitorWorkArea(mon)
+		}
 		return 0
 	}
 	if windowLong(w.hwnd, gwlStyle)&wsThickFrame != 0 {
@@ -845,10 +854,14 @@ func (w *window) Center() {
 
 func (w *window) SetBackgroundColor(c platform.Color) {
 	w.bg = &c
-	if w.bgBrush != 0 {
-		procDeleteObject.Call(w.bgBrush)
+	// A web view in native UI has no window of its own to paint: only
+	// WebView2 fills it, and a brush would outlive it.
+	if w.host == nil {
+		if w.bgBrush != 0 {
+			procDeleteObject.Call(w.bgBrush)
+		}
+		w.bgBrush, _, _ = procCreateSolidBrush.Call(uintptr(c.R) | uintptr(c.G)<<8 | uintptr(c.B)<<16)
 	}
-	w.bgBrush, _, _ = procCreateSolidBrush.Call(uintptr(c.R) | uintptr(c.G)<<8 | uintptr(c.B)<<16)
 	w.withWebView(w.applyWebViewBackground)
 	if w.hwnd != 0 {
 		procInvalidateRect(w.hwnd)

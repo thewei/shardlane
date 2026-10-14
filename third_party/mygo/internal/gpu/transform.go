@@ -1,17 +1,30 @@
 package gpu
 
 import (
-	"github.com/egoist/mygo/internal/raster"
-	"github.com/egoist/mygo/internal/scene"
+	"cmp"
 	"image"
 	"slices"
+
+	"github.com/egoist/mygo/internal/raster"
+	"github.com/egoist/mygo/internal/scene"
 )
 
+// clipMaskSlot is a retained clip mask. Masks outlive the frames that
+// don't use them, up to idleMaskBytes of them, so a transform that comes
+// and goes finds its masks again instead of rasterizing them.
 type clipMaskSlot struct {
 	shapes []scene.ClipShape
 	area   image.Rectangle
 	image  *scene.Image
+	// frame is the last frame that used the mask, and slot the clip's
+	// place among that frame's masked clips.
+	frame uint64
+	slot  int
 }
+
+// idleMaskBytes is how much memory the masks no clip of the frame uses
+// keep, the least recently used dropped first.
+const idleMaskBytes = 32 << 20
 
 func (b *Builder) prepare(in *Instance, m scene.Affine, c *clip) bool {
 	b.preparedMask = 0
@@ -61,16 +74,51 @@ func (b *Builder) clipTexture(c *clip, shapes []scene.ClipShape) uintptr {
 	if c.maskTexture != 0 {
 		return c.maskTexture
 	}
-	for len(b.maskSlots) <= c.maskSlot {
-		b.maskSlots = append(b.maskSlots, clipMaskSlot{})
-	}
-	slot := &b.maskSlots[c.maskSlot]
 	area := image.Rect(int(c.scissor.Left), int(c.scissor.Top), int(c.scissor.Right), int(c.scissor.Bottom))
-	if slot.image == nil || slot.area != area || !slices.Equal(slot.shapes, shapes) {
-		slot.image = raster.ClipMask(slot.image, shapes, area)
-		slot.area = area
-		slot.shapes = append(slot.shapes[:0], shapes...)
+	// The mask of the same clip, in this frame or an earlier one; else
+	// the one the clip in its place had last frame, which it most likely
+	// is, changed; else a new one.
+	found, reuse := -1, -1
+	for i := range b.maskSlots {
+		m := &b.maskSlots[i]
+		if m.area == area && slices.Equal(m.shapes, shapes) {
+			found = i
+			break
+		}
+		if reuse < 0 && m.frame == b.frame-1 && m.slot == c.maskSlot {
+			reuse = i
+		}
 	}
-	c.maskTexture = b.imageTexture(slot.image)
+	if found < 0 {
+		found = reuse
+		if found < 0 {
+			found = len(b.maskSlots)
+			b.maskSlots = append(b.maskSlots, clipMaskSlot{})
+		}
+		m := &b.maskSlots[found]
+		m.image = raster.ClipMask(m.image, shapes, area)
+		m.area = area
+		m.shapes = append(m.shapes[:0], shapes...)
+	}
+	m := &b.maskSlots[found]
+	m.frame, m.slot = b.frame, c.maskSlot
+	c.maskTexture = b.imageTexture(m.image)
 	return c.maskTexture
+}
+
+// dropIdleMasks drops the least recently used masks this frame didn't use
+// beyond idle bytes of them.
+func (b *Builder) dropIdleMasks(idle int) {
+	slices.SortFunc(b.maskSlots, func(x, y clipMaskSlot) int { return cmp.Compare(y.frame, x.frame) })
+	for i := range b.maskSlots {
+		m := &b.maskSlots[i]
+		if m.frame == b.frame {
+			continue
+		}
+		if idle -= len(m.image.Pix); idle < 0 {
+			clear(b.maskSlots[i:])
+			b.maskSlots = b.maskSlots[:i]
+			return
+		}
+	}
 }

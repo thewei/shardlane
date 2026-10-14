@@ -85,7 +85,7 @@ type textInputAdapter struct {
 }
 
 func (a *textInputAdapter) client() (TextInputClient, *state) {
-	if a.rt.textInputClosed || !a.rt.windowFocused || a.rt.focused != a.id {
+	if a.rt.textInputClosed || !a.rt.windowFocus() || a.rt.focused != a.id {
 		return nil, nil
 	}
 	s := a.rt.states[a.id]

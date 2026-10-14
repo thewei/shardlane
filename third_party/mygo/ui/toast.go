@@ -251,7 +251,7 @@ func toastViewport(c *context, keep bool, fn func(viewport *node, toasts []Toast
 		// there, and stop the toasts' time as if the pointer rested on
 		// them, until the pointer moved.
 		viewport = coreColumn(c).Key(toastViewportKey).Absolute().Left(0).Top(0).Right(0).Bottom(0).Justify(End).PassThrough()
-		rt.pauseToasts(viewport.Hovered() || viewport.FocusWithin() || !rt.windowFocused, now)
+		rt.pauseToasts(viewport.Hovered() || viewport.FocusWithin() || !rt.windowFocus(), now)
 		viewport.Children(func() { fn(viewport, list) })
 	})
 	// A frame closes the toast whose time is over next.

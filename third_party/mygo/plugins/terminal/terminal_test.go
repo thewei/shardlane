@@ -858,3 +858,67 @@ func TestOnKeyTakesAKey(t *testing.T) {
 		t.Errorf("OnKey saw %v", seen)
 	}
 }
+
+// TestOnScrollTakesTheWheel: Options.OnScroll sees the wheel's whole rows
+// before the scrollback moves, unless a program takes the wheel: as the
+// mouse, or as the arrows of a full-screen program.
+func TestOnScrollTakesTheWheel(t *testing.T) {
+	loadLib(t)
+	conn := newPipe()
+	var seen []int
+	term, err := New(Options{Conn: conn, OnScroll: func(rows int) bool {
+		seen = append(seen, rows)
+		return true
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer term.Close()
+	tt := ui.NewTester(func(c *ui.Context) { View(c, term).Fill().AutoFocus() }, 400, 200)
+	var b strings.Builder
+	for i := range 100 {
+		b.WriteString("line " + itoa(i) + "\r\n")
+	}
+	term.Feed([]byte(b.String()))
+	tt.Frame()
+	offset := func() uint64 {
+		term.mu.Lock()
+		defer term.mu.Unlock()
+		return term.term.Scrollbar().Offset
+	}
+	bottom := offset()
+	tt.Scroll(100, 100, 0, -40) // a notch up
+	tt.Scroll(100, 100, 0, 40)  // and down
+	if !slices.Equal(seen, []int{-3, 3}) {
+		t.Errorf("OnScroll saw %v, want [-3 3]", seen)
+	}
+	if got := offset(); got != bottom {
+		t.Errorf("a taken scroll moved the scrollback: offset = %d, want %d", got, bottom)
+	}
+	// The program takes the mouse: the wheel goes to it.
+	term.Feed([]byte("\x1b[?1002h\x1b[?1006h"))
+	tt.Frame()
+	tt.Scroll(100, 100, 0, -40)
+	if len(seen) != 2 {
+		t.Errorf("OnScroll saw %v while the program took the mouse", seen)
+	}
+	if got := conn.take(10); !strings.HasPrefix(got, "\x1b[<64;") {
+		t.Errorf("wheel sent %q, want a mouse report", got)
+	}
+	// A full-screen program gets it as arrows, unless it turns that off.
+	term.Feed([]byte("\x1b[?1002l\x1b[?1006l\x1b[?1049h"))
+	tt.Frame()
+	tt.Scroll(100, 100, 0, -40)
+	if len(seen) != 2 {
+		t.Errorf("OnScroll saw %v on a full-screen program's screen", seen)
+	}
+	if got := conn.take(9); strings.Count(got, "A") != 3 {
+		t.Errorf("wheel sent %q, want three arrows up", got)
+	}
+	term.Feed([]byte("\x1b[?1007l"))
+	tt.Frame()
+	tt.Scroll(100, 100, 0, -40)
+	if !slices.Equal(seen, []int{-3, 3, -3}) {
+		t.Errorf("OnScroll saw %v without alternate scroll", seen)
+	}
+}

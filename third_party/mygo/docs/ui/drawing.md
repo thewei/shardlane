@@ -33,7 +33,9 @@ ui.Box(c).Size(200, 40).Draw(func(p *ui.Painter, r ui.Rect) {
 ```
 
 Draw functions only paint: MyGo may call them more than once a frame.
-`Painter.Icon` and `Painter.Image` draw SVGs and bitmaps, and
+`Painter.Icon` and `Painter.Image` draw SVGs and bitmaps,
+`Painter.ImageRegion` parts of bitmaps (see [Parts of
+bitmaps](#parts-of-bitmaps)), and
 `Painter.FocusRing` the ring of the keyboard focus, for widgets that draw
 their own.
 
@@ -52,6 +54,87 @@ box.Draw(func(p *ui.Painter, r ui.Rect) {
 	p.StrokePath(check.Trim(0, drawn), 2, c.Theme().Accent)
 })
 ```
+
+## Parts of bitmaps
+
+A bitmap can hold many pictures: the icons of a sheet, the frames of an
+animation, the cells of a contact sheet. `Painter.ImageRegion` draws one
+part of it, `src` in the bitmap's pixels, into a rectangle; nothing of the
+bitmap around the part shows, smooth or pixelated. Its `ImageOptions`
+mirror the part (`FlipX`, `FlipY`) and tint it (`Tint` multiplies its
+colors and alpha):
+
+```go
+icons, _ := ui.DecodeBitmap(iconsPNG) // 16×16 icons in a row
+icon := func(i int) ui.Rect { return ui.Rect{X: float32(i * 16), W: 16, H: 16} }
+
+box.Draw(func(p *ui.Painter, r ui.Rect) {
+	p.ImageRegion(icons, icon(3), ui.Rect{X: r.X, Y: r.Y, W: 24, H: 24},
+		ui.ImageOptions{Tint: c.Theme().TextMuted})
+})
+```
+
+A part outside what the painter shows draws nothing, so a view of many
+can draw them all without culling them itself, as games draw their
+sprites and tiles.
+
+## Canvases
+
+A `ui.Canvas` is a bitmap a painter draws, on the GPU where the window
+draws there: render to texture, as Skia's `SkSurface` and LÖVE's
+`Canvas`. `Draw` draws it anew during a frame, with a painter in its
+pixels, and it keeps what it holds, showing anywhere a bitmap does through
+`Bitmap`:
+
+```go
+grid := ui.NewCanvas(800, 400)
+drawn := false
+
+box.Draw(func(p *ui.Painter, r ui.Rect) {
+	if !drawn { // once, then every frame for the price of an image
+		drawn = true
+		grid.Draw(p, func(cp *ui.Painter) { drawGrid(cp, 800, 400) })
+	}
+	p.Image(grid.Bitmap(), r, ui.FillBox)
+	drawSeries(p, r)
+})
+```
+
+A canvas drawn with a tint or an opacity fades or colors a whole layer at
+once. Canvases show other canvases, and text. A canvas's pixels are its
+units: draw it at the window's scale (`Painter.Scale`) for one as sharp as
+the window, or smaller and make its bitmap `Pixelated` to scale pixel art
+up crisp (the [game plugin](../plugins/game.md#pixel-perfect-scaling)
+shows one at whole multiples).
+
+## Transforms
+
+`Painter.Transform(t, ox, oy, fn)` transforms what `fn` draws by `t`, a
+`ui.Transform` such as `Translation`, `Scaling` or `Rotation`, around the
+point `(ox, oy)`, which stays where it is. Transforms nest, after the
+painter's own, so a view that pans and zooms, as a map or a diagram,
+draws its content through one, and turns a part of it inside:
+
+```go
+ui.Box(c).Fill().Draw(func(p *ui.Painter, r ui.Rect) {
+	view := ui.Translation(-doc.panX, -doc.panY).Then(ui.Scaling(doc.zoom, doc.zoom))
+	p.Transform(view, r.X, r.Y, func() {
+		for _, n := range doc.nodes {
+			p.Fill(n.box, n.color, 6) // culled where the view does not look
+		}
+		cx, cy := doc.dial.X, doc.dial.Y
+		p.Transform(ui.Rotation(doc.dial.angle), cx, cy, func() {
+			p.Line(cx, cy, cx, cy-40, 2, c.Theme().Accent)
+		})
+	})
+})
+```
+
+Clips made inside turn with what they clip. Input is not transformed: the
+pointer comes in the element's coordinates, which the app maps to its
+content with the inverse of its view. Under a transform, images and their
+parts are placed where they are rather than on whole pixels, so that one
+moving through a zoomed view glides.
 
 ## Shaping text
 
