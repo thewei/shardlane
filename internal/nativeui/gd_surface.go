@@ -424,7 +424,7 @@ func (s *Shell) gdFileHeader(c *ui.Context, pal *gdPalette, idx int, f *gdFile) 
 		// is always built, so that the elements after it keep their state.
 		// A narrow card leaves both buttons to the context menu.
 		if roomy {
-			cp := gdIconButton(c, iconCopy, "Copy path")
+			cp := gdIconButton(c, iconCopy, "Copy Path")
 			if !h.Hovered() && !cp.FocusVisible() {
 				cp.Opacity(0)
 			}

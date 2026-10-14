@@ -13,8 +13,8 @@ import (
 )
 
 /**
- * [INPUT]: 依赖 nativeui 包内非测试源码里 emptyState / workspaceEmptyBanner 的字面标题、菜单项（.Item("…")）的字面标签与 openConfirm 的标题实参、全部生产字符串字面量
- * [OUTPUT]: 对外提供文案回归：空态标题句首大写（专有名词除外），菜单项 Title Case（短介词/冠词小写），确认框标题一律是问句，文案里没有 Please/successfully/Oops 这类填充词——同一类组件只有一种写法
+ * [INPUT]: 依赖 nativeui 包内非测试源码里 emptyState / workspaceEmptyBanner 的字面标题、菜单项（.Item("…")）的字面标签与 openConfirm 的标题实参、全部生产字符串字面量、菜单项/图标按钮/Tooltip 的动作名字面量
+ * [OUTPUT]: 对外提供文案回归：空态标题句首大写（专有名词除外），菜单项 Title Case（短介词/冠词小写），确认框标题一律是问句，文案里没有 Please/successfully/Oops 这类填充词，同一动作在菜单项与图标按钮上只有一种拼写——同一类组件只有一种写法
  * [POS]: 2026-10-14 文案统一的守卫测试；新增空态/菜单项时由它拦下大小写漂移
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -202,5 +202,58 @@ func TestCopyHasNoFillerWords(t *testing.T) {
 	}
 	if seen < 1000 {
 		t.Fatalf("scanned only %d string literals; the scan no longer finds the source", seen)
+	}
+}
+
+// actionLabels matches the literal names a menu item or an icon button gives
+// an action: .Item("…"), the label and tooltip of gorexIconButton, the tip of
+// gdIconButton and plain .Tooltip("…").
+var actionLabels = []*regexp.Regexp{
+	regexp.MustCompile(`\.Item\("([^"]+)"`),
+	regexp.MustCompile(`gorexIconButton\([^"\n]*"([^"]+)",\s*"([^"]+)"`),
+	regexp.MustCompile(`gdIconButton\([^"\n]*"([^"]+)"`),
+	regexp.MustCompile(`\.Tooltip\("([^"]+)"`),
+}
+
+// TestSameActionIsSpelledOnce pins "one name per action": "Copy Path" in one
+// menu and "Copy path" on a toolbar button are the same command written two
+// ways, which reads as two commands. A trailing "…" is not a spelling: the
+// menu item that opens a dialog keeps it, the icon button does not.
+func TestSameActionIsSpelledOnce(t *testing.T) {
+	files, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	spellings := map[string]map[string][]string{} // lowercase -> spelling -> where
+	seen := 0
+	for _, name := range files {
+		if strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		src, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, pattern := range actionLabels {
+			for _, match := range pattern.FindAllStringSubmatch(string(src), -1) {
+				for _, label := range match[1:] {
+					seen++
+					label = strings.TrimRight(label, "… ")
+					key := strings.ToLower(label)
+					if spellings[key] == nil {
+						spellings[key] = map[string][]string{}
+					}
+					spellings[key][label] = append(spellings[key][label], name)
+				}
+			}
+		}
+	}
+	for key, variants := range spellings {
+		if len(variants) > 1 {
+			t.Errorf("%q is spelled %d ways: %v", key, len(variants), variants)
+		}
+	}
+	if seen < 100 {
+		t.Fatalf("matched only %d action labels; the patterns no longer find the call sites", seen)
 	}
 }

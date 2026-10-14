@@ -139,7 +139,7 @@ func TestGitToolbarIconButtonsStayTabStops(t *testing.T) {
 	s.showSurface(WorkspaceSurfaceDiff)
 	tt := ui.NewTester(s.View, 1280, 760)
 	tt.Frame()
-	for _, label := range []string{"Fetch", "Pull (fast-forward only)", "Push", "Git actions", "Copy path"} {
+	for _, label := range []string{"Fetch", "Pull (fast-forward only)", "Push", "Git actions", "Copy Path"} {
 		reached := false
 		for i := 0; i < 80 && !reached; i++ {
 			tt.Key(0, ui.KeyTab)

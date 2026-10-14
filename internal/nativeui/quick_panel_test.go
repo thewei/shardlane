@@ -250,7 +250,7 @@ func TestQuickPanelRowMenuHoldsTheOtherActions(t *testing.T) {
 		t.Fatalf("row menu %q lacks the review mark", menu)
 	}
 	tester.CloseMenu()
-	if err := tester.Click("Mark reviewed"); err != nil {
+	if err := tester.Click("Mark Reviewed"); err != nil {
 		t.Fatal(err)
 	}
 	for _, card := range shell.workbenchCards() {

@@ -44,7 +44,7 @@ func TestDiffHeaderKeepsItsFileNameWhenNarrow(t *testing.T) {
 	if dir, ok := tester.Find("internal/nativeui/"); !ok || dir.Y <= name.Y {
 		t.Errorf("a narrow header shows the folder below the name: dir=%v (found %v) name=%v", dir, ok, name)
 	}
-	for _, tool := range []string{"Copy path", "Open file in editor"} {
+	for _, tool := range []string{"Copy Path", "Open file in editor"} {
 		if _, ok := tester.Find(tool); ok {
 			t.Errorf("%q still takes room in a narrow header", tool)
 		}
