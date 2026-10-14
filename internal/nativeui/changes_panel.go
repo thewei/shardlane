@@ -93,7 +93,7 @@ func (s *Shell) renderChangesRow(c *ui.Context, pal *gdPalette, row gitworkbench
 	}
 	focused := state.FocusWithin(c)
 
-	r := ui.Row(c).Height(s.treeRowHeight()).Padding(0, treeRowPad, 0, treeRowPad).AlignItems(ui.Center).Radius(4).MinWidth(0)
+	r := ui.Row(c).Height(s.treeRowHeight()).Padding(0, treeRowPad, 0, treeRowPad).AlignItems(ui.Center).Radius(treeRowRadius).MinWidth(0)
 	textColor := t.Text
 	muted := t.TextMuted
 	switch {

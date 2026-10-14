@@ -314,7 +314,7 @@ func (s *Shell) commitsPane(c *ui.Context, pal *gdPalette) {
 		}
 		cm := entries[i]
 		current := s.gdReviewingCommit() && s.git.commitHash == cm.Hash
-		row := ui.Row(c).Gap(9).Padding(5, 9).Radius(5).AlignItems(ui.Center).MinWidth(0)
+		row := ui.Row(c).Gap(9).Padding(5, 9).Radius(treeRowRadius).AlignItems(ui.Center).MinWidth(0)
 		muted, ref := t.TextMuted, pal.ref
 		switch {
 		case current && focused:

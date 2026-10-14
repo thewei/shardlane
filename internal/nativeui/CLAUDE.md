@@ -101,7 +101,7 @@ runtime.go: 首次 Herdr 列举、异步 Projection、初次 terminal coordinati
 panel_motion.go: Git/Terminal 左栏统一宽度（默认 252 DIP，可拖拽 200–400）和折叠动画，不再依路由改变宽度
 repo_bar.go: 仅保留变更文件点击与 toggleMenu popover 辅助函数；仓库菜单见 git_sidebar_tree 与 sidebar_switchers
 branch_menu.go: 当前分支优先的搜索过滤与受保护的切换/创建入口，弹层由 sidebar_switchers 持有
-sidebar_tree.go: 侧栏层级唯一对齐网格（chevron 槽·图标·标题、首层对齐分区标题）、导向线、统一行构建器 sidebarTreeRow（Selected 选中脸、键盘光标同脸 SidebarSelect、Action 悬停行内图标）、可折叠分组头 sidebarSectionHeader 与行高令牌 treeRowHeight；两个构建器返回 (行, clicked)（clicked 兼收鼠标点击与键盘激活），经 Spec.Nav 注册进 listNav；Git 引用、Files 树与 Hosts 列表共用
+sidebar_tree.go: 侧栏层级唯一对齐网格（行圆角 treeRowRadius，chevron 槽·图标·标题、首层对齐分区标题）、导向线、统一行构建器 sidebarTreeRow（Selected 选中脸、键盘光标同脸 SidebarSelect、Action 悬停行内图标）、可折叠分组头 sidebarSectionHeader 与行高令牌 treeRowHeight；两个构建器返回 (行, clicked)（clicked 兼收鼠标点击与键盘激活），经 Spec.Nav 注册进 listNav；Git 引用、Files 树与 Hosts 列表共用
 list_nav.go: 侧栏列表/树与 Sessions 列表唯一的键盘模型 listNav——真焦点即光标（FocusGroup 单 Tab 停靠点，方向键由它认领故不回绕），j/k·↓/↑ 移动、h/l·←/→ 折叠展开或进出层级、o 打开、gg/G·Home/End 首尾、Ctrl-d/u 跳十行，Enter/Space 本就是行点击；进页聚焦开场行但光标不亮——键盘用过它才亮（Tab 进入自带亮；离开列表/重进页面复暗；点击不亮），会改东西的行键（Files 的 a/A/r/d/y，Sessions 的 d/u）等光标亮了才响应；Git 引用树不抢进页焦点（窗口级 j/k 归 Diff）；对话框关闭后 navTrackDialogs 把焦点还给光标行（MyGo 对 AutoFocus 对话框的焦点恢复缺口，应用侧补）；Hosts 光标移动即选中；Sessions 的项目卡头与会话行自行注册（行内预览当作该行的折叠），stay 让删除/放回后光标落到邻行（优先下一行，其次上一行，不落在项目头）；虚拟化 ui.List（Changes）不走这里
 list_nav_test.go: Files/Git 引用/Hosts 的真键盘回归（Sessions 见 history_nav_test.go）——移动与不回绕、gg/G/Ctrl-d/u、h/l/o 层级、单 Tab 停靠点与记忆、进页聚焦（含列表晚到）、对话框后焦点回到光标行、Files 行键 a/A/r/d/y、Hosts 选中跟随与机器行不属于末组、光标脸（键盘用过才亮、Tab 进入即亮、离开/重进复暗、点击不亮）
 sidebar_switchers.go: Git/Files 侧栏共用头部：项目名与分支名各自是可搜索的 pull-down 快速切换，外加刷新图标

@@ -32,6 +32,10 @@ const (
 	treeGlyphGap float32 = 4
 	treeGlyphW   float32 = 12
 	treeTitleGap float32 = 5
+
+	// treeRowRadius is the corner of every selectable sidebar row: tree rows,
+	// Changes rows and the commit list.
+	treeRowRadius float32 = 4
 )
 
 func treeChevronX(level int) float32 { return treeRowPad + float32(level)*TreeIndentWidth }
@@ -122,7 +126,7 @@ func (s *Shell) sidebarTreeRow(c *ui.Context, spec sidebarTreeSpec) (ui.Element,
 		label = spec.Title
 	}
 	row := ui.ButtonBase(c.Key(spec.Key)).FillWidth().MinWidth(0).Height(s.treeRowHeight()).
-		Padding(0, treeRowPad).Radius(4).FocusRing(false).AlignItems(ui.Center).
+		Padding(0, treeRowPad).Radius(treeRowRadius).FocusRing(false).AlignItems(ui.Center).
 		Label(label).Tooltip(spec.Tooltip)
 	glyph := t.TextMuted
 	switch {
@@ -197,7 +201,7 @@ func (s *Shell) sidebarSectionHeader(c *ui.Context, spec sidebarSectionSpec) (ui
 	t := c.Theme()
 	ui.Box(c).Height(4).Shrink(0)
 	row := ui.ButtonBase(c.Key(spec.Key)).FillWidth().Height(s.treeRowHeight()+2).
-		Padding(0, treeRowPad).Radius(4).FocusRing(false).AlignItems(ui.Center).
+		Padding(0, treeRowPad).Radius(treeRowRadius).FocusRing(false).AlignItems(ui.Center).
 		Label("Toggle " + spec.Title).Tooltip(spec.Tooltip)
 	switch {
 	case spec.Nav.showsCursor(row):

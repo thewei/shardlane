@@ -440,14 +440,14 @@ func (s *Shell) gdFileHeader(c *ui.Context, pal *gdPalette, idx int, f *gdFile) 
 			}
 		}
 		if adds, dels := f.sideCounts(); gdCountable(cf) && (adds > 0 || dels > 0) {
-			ui.Row(c).Gap(8).Padding(4, 9).Radius(14).Background(pal.pill).Shrink(0).
+			ui.Row(c).Gap(8).Padding(4, 9).Radius(Radius().Pill).Background(pal.pill).Shrink(0).
 				Tooltip(gdLines(adds, "added") + ", " + gdLines(dels, "removed")).Children(func() {
 				ui.Text(c, "+"+gdThousands(adds)).Font(gdCodeFont()).FontSize(Typography().Body).FontWeight(WeightSemibold).TextColor(pal.addText)
 				ui.Text(c, "-"+gdThousands(dels)).Font(gdCodeFont()).FontSize(Typography().Body).FontWeight(WeightSemibold).TextColor(pal.delText)
 			})
 		}
 		if cf.Generated {
-			ui.Text(c, "Generated").FontSize(Typography().BodySmall).FontWeight(WeightSemibold).Padding(4, 9).Radius(14).
+			ui.Text(c, "Generated").FontSize(Typography().BodySmall).FontWeight(WeightSemibold).Padding(4, 9).Radius(Radius().Pill).
 				Background(pal.ref.Alpha(0.15)).TextColor(pal.ref).Shrink(0)
 		}
 		s.gdViewedButton(c, pal, f, viewed, roomy)
@@ -463,7 +463,7 @@ func (s *Shell) gdViewedButton(c *ui.Context, pal *gdPalette, f *gdFile, viewed,
 	if !labeled {
 		padding = 7
 	}
-	b := ui.CheckboxBase(c, &on).Gap(7).Height(30).Padding(0, padding).Radius(14).Shrink(0).
+	b := ui.CheckboxBase(c, &on).Gap(7).Height(30).Padding(0, padding).Radius(Radius().Pill).Shrink(0).
 		Border(1, ui.RGBA(127, 127, 127, 0.22)).Label("Viewed")
 	if !labeled {
 		b.Tooltip("Mark as viewed")
@@ -574,7 +574,7 @@ func (s *Shell) gdGapRow(c *ui.Context, pal *gdPalette, f *gdFile, r *gdRow) {
 			}
 		}
 		if n > gdExpandStep {
-			b := ui.ButtonBase(c).Padding(3, 8).Radius(6).Disabled(!can).Children(func() {
+			b := ui.ButtonBase(c).Padding(3, 8).Radius(Radius().Control).Disabled(!can).Children(func() {
 				ui.Text(c, "Expand all").FontSize(Typography().Body).FontWeight(WeightSemibold).TextColor(pal.gapText)
 			})
 			if b.Hovered() {
@@ -899,7 +899,7 @@ func (s *Shell) gdThinking(c *ui.Context) {
 func (s *Shell) gdChangedPill(c *ui.Context, pal *gdPalette) {
 	t := c.Theme()
 	ui.Row(c).Justify(ui.Center).Padding(8, 12, 0).Children(func() {
-		ui.Row(c).Gap(6).Padding(4, 5, 4, 12).Radius(16).Background(pal.viewed.Alpha(0.1).Over(pal.codeBg)).
+		ui.Row(c).Gap(6).Padding(4, 5, 4, 12).Radius(Radius().Pill).Background(pal.viewed.Alpha(0.1).Over(pal.codeBg)).
 			Border(1, pal.viewed.Alpha(0.2)).Children(func() {
 			ui.Text(c, "Files changed on disk").FontSize(Typography().Section).FontWeight(WeightSemibold).TextColor(pal.viewed.Mix(t.Text, 0.6))
 			ui.Text(c, "Refresh to update.").FontSize(Typography().Body).TextColor(t.TextMuted)

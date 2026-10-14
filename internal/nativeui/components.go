@@ -36,7 +36,7 @@ func navButton(c *ui.Context, glyph *ui.SVG, label, shortcut string, selected bo
 		Height(Controls().RowHeight).
 		PaddingX(8).
 		Gap(7).
-		Radius(6).
+		Radius(Radius().Control).
 		Label(label)
 	if tint, ok := rowTint(tokens, selected, b.Hovered()); ok {
 		b.Background(tint)

@@ -89,7 +89,7 @@ func (s *Shell) QuickPanelView(c *ui.Context) {
 	if !c.Vibrancy() {
 		body = body.Background(tokens.Content)
 		if runtime.GOOS != "windows" {
-			body = body.Radius(10).Border(1, tokens.BorderSubtle)
+			body = body.Radius(Radius().Card).Border(1, tokens.BorderSubtle)
 		}
 	}
 	body.Children(func() {
