@@ -209,3 +209,38 @@ func TestNamingTheCurrentViewKeepsIt(t *testing.T) {
 		}
 	}
 }
+
+// TestWorkspaceMenuLandsTheTerminalFromAnySurface pins Go ▸ Workspace (⌘1):
+// from the Workspace's own Changes or Chat surface a bare route push was a
+// no-op (same route), so the item looked dead; it lands the Terminal like
+// Back does, and choosing it again keeps the Terminal.
+func TestWorkspaceMenuLandsTheTerminalFromAnySurface(t *testing.T) {
+	goTo := func(s *Shell) {
+		item := menuItemNamed(menuNamed(t, s.MenuBar(nil), "Go").Submenu, "Workspace")
+		if item == nil {
+			t.Fatal("no Workspace in the Go menu")
+		}
+		item.Click(item, nil)
+	}
+	starts := map[string]func(s *Shell){
+		"Changes": func(s *Shell) { s.showViewChanges() },
+		"Chat":    func(s *Shell) { s.surface.openChat(s.workspaceContext()) },
+		"Sessions with a Changes view left behind": func(s *Shell) {
+			s.showViewChanges()
+			s.router.Push(routeHistory)
+		},
+		"Files": func(s *Shell) { s.router.Push(routeFiles) },
+	}
+	for name, start := range starts {
+		s := gitSurfaceTestShell(t, t.TempDir())
+		start(s)
+		goTo(s)
+		if got := s.router.Path(); got != routeWorkspace || s.surface.current() != WorkspaceSurfaceTerminal {
+			t.Errorf("Workspace from %s landed on %s showing %q, want the Terminal at %s", name, got, s.surface.current(), routeWorkspace)
+		}
+		goTo(s)
+		if got := s.router.Path(); got != routeWorkspace || s.surface.current() != WorkspaceSurfaceTerminal {
+			t.Errorf("Workspace a second time (from %s) left the Terminal: %s showing %q", name, got, s.surface.current())
+		}
+	}
+}

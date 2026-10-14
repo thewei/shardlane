@@ -1,6 +1,6 @@
 package nativeui
 
-// [INPUT]: 依赖 shell.go 的菜单接缝（Navigate/ShowChangesFromMenu/ShowFilesFromMenu/OpenCommandCenterFromMenu）、window_actions.go 的 CloseTabFromMenu 与 MyGo 菜单 API
+// [INPUT]: 依赖 shell.go 的菜单接缝（Navigate/ShowWorkspaceFromMenu/ShowChangesFromMenu/ShowFilesFromMenu/OpenCommandCenterFromMenu）、window_actions.go 的 CloseTabFromMenu 与 MyGo 菜单 API
 // [OUTPUT]: 对外提供 MenuBar（macOS 菜单栏：应用菜单 + Go + Edit + Window）
 // [POS]: 菜单栏的单一来源（原内联在 main.go，现可测试）：页面入口与侧栏视图标签、⌘P 命令面板同名同序（TestLaunchersAgreeOnViewDestinations）
 // [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
@@ -12,9 +12,9 @@ import "github.com/egoist/mygo"
 //
 // The application menu is the stock one (About, Settings…, Hide, Quit); Go
 // carries the app's own destinations in the order of the sidebar's view
-// tabs, and accelerators only on idempotent route pushes (Router.Push
-// dedupes), never on a toggle, so a menu accelerator and an in-app shortcut
-// that fire together stay harmless.
+// tabs, and accelerators only on idempotent destinations (Router.Push
+// dedupes; the Terminal view keeps the Terminal), never on a toggle, so a
+// menu accelerator and an in-app shortcut that fire together stay harmless.
 func (s *Shell) MenuBar(checkForUpdates *mygo.MenuItem) *mygo.Menu {
 	nav := func(label, accelerator, path string) *mygo.MenuItem {
 		return &mygo.MenuItem{Label: label, Accelerator: accelerator, Click: func(*mygo.MenuItem, *mygo.Window) {
@@ -43,7 +43,7 @@ func (s *Shell) MenuBar(checkForUpdates *mygo.MenuItem) *mygo.Menu {
 	return mygo.NewMenu([]*mygo.MenuItem{
 		{Label: "Shardlane", Submenu: appMenu},
 		{Label: "Go", Submenu: []*mygo.MenuItem{
-			nav("Workspace", "CmdOrCtrl+1", routeWorkspace),
+			do("Workspace", "CmdOrCtrl+1", s.ShowWorkspaceFromMenu),
 			do("Changes", "", s.ShowChangesFromMenu),
 			nav("Sessions", "", routeHistory),
 			do("Files", "", s.ShowFilesFromMenu),
