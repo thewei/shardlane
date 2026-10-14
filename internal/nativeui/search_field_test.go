@@ -19,14 +19,18 @@ import (
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 
-// callRoot walks a method chain back to the ui.* constructor that started it:
-// ui.TextInput(c, &q).Height(28).Placeholder("x") → "TextInput". It returns ""
-// for a chain that does not start at a ui.* call.
+// callRoot walks a method chain back to the constructor or helper that started
+// it: ui.TextInput(c, &q).Height(28).Placeholder("x") → "TextInput",
+// gdIconButton(c, i, "x").Size(22, 22) → "gdIconButton". It returns "" for a
+// chain that starts anywhere else.
 func callRoot(e ast.Expr) string {
 	for {
 		call, ok := e.(*ast.CallExpr)
 		if !ok {
 			return ""
+		}
+		if fn, isIdent := call.Fun.(*ast.Ident); isIdent {
+			return fn.Name
 		}
 		sel, ok := call.Fun.(*ast.SelectorExpr)
 		if !ok {

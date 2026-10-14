@@ -20,7 +20,7 @@ copy_style_test.go: 文案大小写回归——emptyState/workspaceEmptyBanner �
 search_field_test.go: 搜索/筛选框只有官方 ui.SearchField 一种脸（AST 扫描：TextInput/TextInputBase 链上带 "Search…"/"Filter…" 提示、或手绘 "Clear" ButtonBase 即失败；ui.SearchField 调用数下限防扫描失效）；Git 面「Filter files」框收的是文字，输入时不同时触发 Alt+Z 等面上快捷键
 hairline_test.go: 分隔线只有一种粗细——AST 扫描 .Background(x)/.BorderColor(x) 的实参，控件描边色 theme.Border（不透明、比发丝线重数倍）不得当分隔线/面板边缘的颜色，一律 BorderSubtle；扫描数下限防失效
 segmented_face_test.go: 分段控件回归——segmentedTrack/segmentFace 搭的控件选中段像素与官方 ui.Segmented 一致（深浅两套）；Git 的 Split/Unified 是 SegmentedBase 分段（轨道标签 Diff layout），真实点击切换 splitLayout
-button_tier_test.go: 按钮字号回归——扫描 ui.Button/ui.PrimaryButton 调用链上的 .FontSize(…) 字面覆盖（只许 ds_components.go 的 compact 两档），拦下同排按钮两种高度
+button_tier_test.go: 按钮字号回归——扫描 ui.Button/ui.PrimaryButton 调用链上的 .FontSize(…) 字面覆盖（只许 ds_components.go 的 compact 两档），拦下同排按钮两种高度；另扫图标按钮构造（gdIconButton/gdPulldown/gorexIconButton/gorexPulldown/gorexIconTab）调用链尾的 .Size(…)——图标按钮尺寸只来自 gorexIconBtn/gorexPaneBtn 两档
 main_test.go: 测试进程入口——桌面调用（剪贴板写入、Finder 定位）默认换成空实现：MyGo 的桌面 API 要等应用主循环，测试从不启动，真调用会挂住，也不该动开发者的真剪贴板；captureClipboard/captureReveal 供要看「复制/定位了什么」的用例捕获
 desktop_calls_test.go: 桌面动作回归——复制原样（含中文）进剪贴板、写失败进状态行、Finder 定位存在的路径、路径已不在时如实报告（F175）；扫描全部生产代码不得再 exec pbcopy 等剪贴板工具（pbcopy 子进程在 Finder 启动的 App 里没有 UTF-8 locale，中文会变乱码）
 router.go: 单一 Router 的页面归属、精确 History 路径分类与窗口标题路由语义；遗留 /chat 整页与其他内页同走 gorexContentCard

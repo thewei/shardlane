@@ -899,11 +899,11 @@ func (s *Shell) gdThinking(c *ui.Context) {
 func (s *Shell) gdChangedPill(c *ui.Context, pal *gdPalette) {
 	t := c.Theme()
 	ui.Row(c).Justify(ui.Center).Padding(8, 12, 0).Children(func() {
-		ui.Row(c).Gap(6).Padding(5, 6, 5, 12).Radius(16).Background(pal.viewed.Alpha(0.1).Over(pal.codeBg)).
+		ui.Row(c).Gap(6).Padding(4, 5, 4, 12).Radius(16).Background(pal.viewed.Alpha(0.1).Over(pal.codeBg)).
 			Border(1, pal.viewed.Alpha(0.2)).Children(func() {
 			ui.Text(c, "Files changed on disk").FontSize(Typography().Section).FontWeight(WeightSemibold).TextColor(pal.viewed.Mix(t.Text, 0.6))
 			ui.Text(c, "Refresh to update.").FontSize(Typography().Body).TextColor(t.TextMuted)
-			if gdIconButton(c, iconClose, "Dismiss").Size(22, 22).Clicked() {
+			if gorexIconButton(c, gorexColorsOf(t.Dark), iconClose, "Dismiss", "Dismiss", false, gorexPaneBtn, gorexPaneGlyph).Focusable().Clicked() {
 				s.git.staleBanner = false
 			}
 		})

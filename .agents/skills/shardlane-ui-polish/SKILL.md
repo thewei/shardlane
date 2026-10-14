@@ -107,6 +107,7 @@ rg -n 'Padding\(14, 9, 9\)' --glob '!*_test.go' .                      # 侧栏�
 - 四个视图按钮（Changes/Sessions/Files/Hosts）从标题栏右上移到侧栏顶部等宽图标标签条（2026-10-14 第二轮）；标题栏工具区只剩 Agent 活动与置顶；侧栏页脚返回键统一叫 `Back`。
 - Refresh 收口为每个上下文一个图标；Hosts 页内 Refresh 与侧栏重复的已删。
 - 并排的同类图标按钮要同一种语法（第二轮审计）：Files 树工具条曾是裸 `+`（新建文件）配文件夹轮廓（新建文件夹）——动作符号配对象符号；改成成对的 `iconFilePlus`/`iconFolderPlus`（在 `iconFile`/`iconFolder` 路径上加 +，`icons.go`）。新增图标沿用 24 栅格 + `iconStroke` 一个描边，不另起一套。
+- 图标按钮尺寸只来自两档（第二轮审计）：`gdIconButton(...).Size(22, 22)` 这类链尾覆盖会长出第三档——Git 的「文件已变更」胶囊的 Dismiss 就是；改为按密集档（`gorexPaneBtn/Glyph`）构建，胶囊纵向内边距相应收到 4 保持胶囊高度。`button_tier_test.go` 的 `TestIconButtonSizeComesFromTheTiers` 扫描全包。
 - 一个角色一个控件（第二轮审计）：搜索/筛选列表的输入框只用官方 `ui.SearchField`（放大镜 + 边框 + 清除钮 + Esc 清空）。曾同时存在三种脸——官方的、Git 面手搓的无边框灰底版（连清除钮都自绘）、无放大镜的裸 `TextInput`——改后一律官方；`search_field_test.go` 用 AST 扫描拦下「`TextInput` 链上带 Search/Filter 提示」与「手绘 Clear 钮」。注意官方控件的占位字固定为 `Search`（`.Placeholder()` 对它无效），具体名字放 `.Label(…)`；先扫「同一角色有几种实现」再动手，别只看当前文件。
 - 分隔线只用发丝线 token（第二轮审计）：`theme.Border` 是控件描边（输入框、Segmented 轨道），不透明、比 `BorderSubtle` 重数倍，不能拿来画分隔线或面板边缘——Git 工作台四处曾这样做，与侧栏边线并排一粗一细。`hairline_test.go` 拦下 `.Background(t.Border)` / `.BorderColor(t.Border)`。
 - 窗格卡头：标签已写出目录或单卡时不再出 cwd（`paneCardCaption`/`titleSpellsOutDir`）。
@@ -129,7 +130,7 @@ rg -n 'Padding\(14, 9, 9\)' --glob '!*_test.go' .                      # 侧栏�
 ## 已知例外与待办（下一轮从这里接）
 
 - **终端窗格卡头保留**（N19 #7：Terminal⇄Chat 开关在卡头；去掉会改 PTY 尺寸）；只做信息去重，不做结构搬家。
-- 仍在自成一脸的小控件（同类不同脸，下一轮评估）：`gdPalette.hover/pill`（行脸）、`changes_panel.go` 行内 18×18 操作按钮、`page_history.go` 行内悬停的 22×22 更多入口、`gdChangedPill` 的 Dismiss（`gdIconButton(...).Size(22, 22)` 内联覆盖共享 28 档）。`gdLayoutControl` 与 `gdSearchInput` 已在第二轮审计并入共享脸（见上：分段控件一个 helper、搜索框一个官方控件）。
+- 仍在自成一脸的小控件（同类不同脸，下一轮评估）：`gdPalette.hover/pill`（行脸）、`changes_panel.go` 行内 18×18 操作按钮、`page_history.go` 行内悬停的 22×22 更多入口。`gdChangedPill` 的 Dismiss 已改为密集档 24/14（`TestIconButtonSizeComesFromTheTiers` 扫「共享图标按钮调用链上再 `.Size(…)`」，之前的 `.Size(22, 22)` 是第三档）。`gdLayoutControl` 与 `gdSearchInput` 已在第二轮审计并入共享脸（见上：分段控件一个 helper、搜索框一个官方控件）。
 - Commit 对话框页脚的主按钮取**默认档**而非 `compactPrimaryButton`：同排 Cancel Commit 与丢弃草稿提示（Keep Editing/Discard Draft）都是默认档，只降主按钮会比兄弟矮，整排降档则对话框里 30 高的输入框旁出现 22 高的主动作。要降档需整排一起。
 - `Refresh Runtime` 菜单项保留（命令级入口，不是页面按钮）。
 - **待产品决定：命名词表**（F196–F198，影响面大，不单点改）：`Remote Machine` vs `Herdr Machine`；`Session` 既指 Herdr 运行时会话（切换器）又指 Agent 对话历史（Sessions 页）；侧栏条目叫 `Workspace` 还是 `Project`（分区头/创建入口 6 处 vs 菜单/对话框/⌘P/切换器/Files 约 20 处）。
