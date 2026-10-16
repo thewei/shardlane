@@ -1,7 +1,7 @@
 // Package herdr is the Go-side adapter for the Herdr runtime.
 //
 // [INPUT]: Herdr CLI/session disk layout and local session sockets.
-// [OUTPUT]: runtime instance discovery, bootstrap, native-TUI launch commands, and the shared one-shot CLI runner (RunCLI).
+// [OUTPUT]: runtime instance discovery, bootstrap, native-TUI launch commands, the shared one-shot CLI runner (RunCLI), the typed old-protocol sentinel (ErrProtocolTooOld), the not-writable updater sentinel (ErrUpdateNotWritable + UpdateAsRootCommand), the live runtime probe (ProbeRuntime), and UpgradeRuntime (update → verify protocol → stop a stale server).
 // [POS]: migration-era runtime adapter; Herdr remains the sole runtime authority.
 package herdr
 
@@ -21,8 +21,11 @@ import (
 
 const (
 	defaultSession       = "default"
-	minSupportedProtocol = 22
+	MinSupportedProtocol = 22
 	herdrListTimeout     = 6 * time.Second
+	// HerdrUpdateTimeout bounds one `herdr update --handoff` run: the CLI
+	// downloads and verifies a full release, which is slow on poor networks.
+	HerdrUpdateTimeout = 10 * time.Minute
 )
 
 var nestedTUIEnvKeys = []string{
@@ -126,7 +129,13 @@ func (m *Manager) EnsureRunning(session string) error {
 	}
 	session = normalizeSession(session)
 	socket := SocketPath(session)
-	if _, err := ping(socket); err == nil {
+	if result, err := pingRPC(socket); err == nil {
+		// The socket answers, so a server is already running. It is either
+		// compatible (done) or too old — never spawn a second server on top
+		// of a live one; the bootstrap page offers Herdr's own updater.
+		if err := protocolError(result.Protocol); err != nil {
+			return err
+		}
 		return nil
 	}
 	cli, err := resolveCLI()
@@ -273,13 +282,87 @@ type serverCapabilities struct {
 	HealthCheck                bool    `json:"health_check"`
 }
 
-func ping(path string) (pingResult, error) {
+// ErrProtocolTooOld marks a reachable Herdr server whose socket protocol
+// predates the client's supported minimum. The fix is a Herdr upgrade
+// (UpgradeRuntime), never a retry and never a second server.
+var ErrProtocolTooOld = errors.New("incompatible Herdr protocol")
+
+// ErrUpdateNotWritable marks Herdr's own updater failing because its
+// install directory is not writable by the current user — a system-location
+// install (for example /usr/bin). Only the user can supply the missing
+// permissions; Shardlane never escalates from a GUI process.
+var ErrUpdateNotWritable = errors.New("herdr update cannot write the install directory")
+
+// UpdateAsRootCommand is the terminal command that supplies the missing
+// permissions for a system-location install; surfaces offer it for copying
+// when the in-place authorization did not happen.
+const UpdateAsRootCommand = "sudo herdr update --handoff"
+
+// RunAuthorizedUpdate runs the very same updater through the OS's own
+// authorization mechanism, so a system-location install is upgraded in
+// place after the user grants the permission in the platform's dialog
+// (polkit on Linux, administrator prompt on macOS). Shardlane never sees
+// or holds credentials. Platforms without a supported mechanism return an
+// error and the caller falls back to the manual command.
+func RunAuthorizedUpdate(ctx context.Context) error {
+	cli, err := resolveCLI()
+	if err != nil {
+		return err
+	}
+	if abs, absErr := filepath.Abs(cli); absErr == nil {
+		cli = abs
+	}
+	var label string
+	var argv []string
+	switch runtime.GOOS {
+	case "linux":
+		// --disable-internal-agent refuses fast when no session agent is
+		// registered instead of hanging on a textual prompt we can't feed.
+		label = "pkexec herdr update --handoff"
+		argv = []string{"pkexec", "--disable-internal-agent", cli, "update", "--handoff"}
+	case "darwin":
+		label = "authorized herdr update --handoff"
+		argv = []string{"osascript", "-e", fmt.Sprintf("do shell script %q with administrator privileges", cli+" update --handoff")}
+	default:
+		return fmt.Errorf("in-place authorization is not supported on %s", runtime.GOOS)
+	}
+	_, err = runCommand(ctx, label, argv, nil)
+	return err
+}
+
+// updateNotWritable recognizes Herdr's own "install directory not writable"
+// failure for system-location installs; the phrasing is the CLI's, matched
+// loosely across platforms.
+func updateNotWritable(err error) bool {
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "not writable") || strings.Contains(msg, "permission denied")
+}
+
+// protocolError gates a reported protocol against the supported minimum.
+func protocolError(got int) error {
+	if got >= MinSupportedProtocol {
+		return nil
+	}
+	return fmt.Errorf("%w: need %d+, got %d", ErrProtocolTooOld, MinSupportedProtocol, got)
+}
+
+// pingRPC performs one ping round-trip without the compatibility gate;
+// reachability and compatibility stay separately observable.
+func pingRPC(path string) (pingResult, error) {
 	var result pingResult
 	if err := callRPC(path, "ping", map[string]any{}, false, &result); err != nil {
 		return pingResult{}, err
 	}
-	if result.Protocol < minSupportedProtocol {
-		return pingResult{}, fmt.Errorf("incompatible Herdr protocol: need %d+, got %d", minSupportedProtocol, result.Protocol)
+	return result, nil
+}
+
+func ping(path string) (pingResult, error) {
+	result, err := pingRPC(path)
+	if err != nil {
+		return pingResult{}, err
+	}
+	if err := protocolError(result.Protocol); err != nil {
+		return pingResult{}, err
 	}
 	return result, nil
 }
@@ -310,21 +393,97 @@ var ErrCLINotFound = errors.New("herdr CLI not found; install Herdr before start
 // (minimal PATH) reaches the same `herdr` as the user's terminal. A failing
 // command reports the CLI's own stderr.
 func RunCLI(ctx context.Context, args []string) (string, error) {
+	return runCLIEnv(ctx, args, nil)
+}
+
+// runCLIEnv is RunCLI with an extra environment overlay; the session-scoped
+// `server stop` inside UpgradeRuntime is its only user today.
+func runCLIEnv(ctx context.Context, args []string, env []string) (string, error) {
 	cli, err := resolveCLI()
 	if err != nil {
 		return "", err
 	}
-	out, err := exec.CommandContext(ctx, cli, args...).Output()
+	return runCommand(ctx, "herdr "+strings.Join(args, " "), append([]string{cli}, args...), env)
+}
+
+// runCommand runs one argv and reports failures as `<label>: <stderr>`.
+func runCommand(ctx context.Context, label string, argv []string, env []string) (string, error) {
+	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
+	cmd.Env = append(os.Environ(), env...)
+	out, err := cmd.Output()
 	if err != nil {
 		var exit *exec.ExitError
 		if errors.As(err, &exit) {
 			if detail := strings.TrimSpace(string(exit.Stderr)); detail != "" {
-				return "", fmt.Errorf("herdr %s: %s", strings.Join(args, " "), detail)
+				return "", fmt.Errorf("%s: %s", label, detail)
 			}
 		}
-		return "", fmt.Errorf("herdr %s: %w", strings.Join(args, " "), err)
+		return "", fmt.Errorf("%s: %w", label, err)
 	}
 	return string(out), nil
+}
+
+// UpgradeRuntime installs the latest Herdr through the CLI's own updater and
+// returns only when the runtime can actually leave the old protocol behind.
+// `herdr update --handoff` hands the running server to the new build live
+// when it can; when an old server survives the handoff it is stopped through
+// Herdr's own `server stop`, so the next bootstrap start brings up the
+// upgraded binary instead of pinning the app on the bootstrap page. session
+// selects which local server gets verified ("" = default).
+func UpgradeRuntime(ctx context.Context, session string) error {
+	if _, err := RunCLI(ctx, []string{"update", "--handoff"}); err != nil {
+		if !updateNotWritable(err) {
+			return err
+		}
+		// A system-location install: the only missing ingredient is the
+		// user's authorization. Ask through the OS's own mechanism — the
+		// polkit dialog on Linux — and the granted permission finishes the
+		// very same updater in place. Only a dismissed or failed
+		// authorization falls back to the manual way out.
+		if authErr := RunAuthorizedUpdate(ctx); authErr != nil {
+			return fmt.Errorf("%w: %w", ErrUpdateNotWritable, authErr)
+		}
+	}
+	result, err := pingRPC(SocketPath(normalizeSession(session)))
+	if err == nil && result.Protocol < MinSupportedProtocol {
+		// A new binary is on disk but the old server kept the socket. Herdr's
+		// own stop command is the only supported way down; the next
+		// EnsureRunning then starts the upgraded server fresh.
+		if _, err := runCLIEnv(ctx, []string{"server", "stop"}, sessionEnv(session)); err != nil {
+			return fmt.Errorf("Herdr updated but the old server kept the socket and could not be stopped: %w", err)
+		}
+	}
+	// No server answering, or it already speaks a supported protocol.
+	return nil
+}
+
+// RuntimeProbe is one live ping result: the runtime identity without any
+// compatibility gate, for surfaces that present it in user language.
+type RuntimeProbe struct {
+	Version  string
+	Protocol int
+}
+
+// ProbeRuntime pings one local session's socket ("" = default) and reports
+// the live runtime identity. Unreachable servers surface as errors;
+// old-but-running ones still return their identity so the caller can offer
+// the update. Remote machines are not probeable from here — their runtime
+// lives behind the SSH bridge of an active instance.
+func ProbeRuntime(session string) (RuntimeProbe, error) {
+	result, err := pingRPC(SocketPath(normalizeSession(session)))
+	if err != nil {
+		return RuntimeProbe{}, err
+	}
+	return RuntimeProbe{Version: result.Version, Protocol: result.Protocol}, nil
+}
+
+// sessionEnv scopes the bare `herdr server` commands to one session the same
+// way EnsureRunning starts them: HERDR_SESSION for anything but the default.
+func sessionEnv(session string) []string {
+	if normalizeSession(session) == defaultSession {
+		return nil
+	}
+	return []string{"HERDR_SESSION=" + normalizeSession(session)}
 }
 
 func resolveCLI() (string, error) {

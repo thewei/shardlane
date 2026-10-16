@@ -41,6 +41,63 @@ func TestSettingsDiagnosticsSnapshotView(t *testing.T) {
 	}
 }
 
+// The runtime row keeps F173 (user language) while adding the live check
+// and the in-place update when the runtime predates the supported protocol.
+func TestSettingsRuntimeRowChecksAndUpdatesHerdr(t *testing.T) {
+	shell := NewShell()
+	shell.activeInstance = "default"
+	shell.projection = herdr.Projection{Version: "0.9.3", Protocol: 22}
+	shell.router.Replace("/settings/diagnostics")
+	tester := ui.NewTester(shell.View, 1200, 800)
+	tester.Frame()
+	if !tester.HasText("0.9.3") || !tester.HasText("Compatible") {
+		t.Fatalf("runtime row missing identity/pill: %q", tester.Texts())
+	}
+	if !tester.HasText("Check") {
+		t.Fatalf("runtime row missing the live check: %q", tester.Texts())
+	}
+	if tester.HasText("Update Herdr") {
+		t.Fatalf("compatible runtime must not offer the update: %q", tester.Texts())
+	}
+	if tester.HasText("protocol") {
+		t.Fatalf("runtime row leaks the wire protocol (F173): %q", tester.Texts())
+	}
+
+	shell.projection = herdr.Projection{Version: "0.8.2", Protocol: 20}
+	tester.Frame()
+	if !tester.HasText("Update available") || !tester.HasText("Update Herdr") {
+		t.Fatalf("outdated runtime missing update affordance: %q", tester.Texts())
+	}
+
+	shell.herdrUpdating = true
+	tester.Frame()
+	if !tester.HasText("Updating Herdr…") || tester.HasText("Update Herdr") || tester.HasText("Check") {
+		t.Fatalf("updating state must replace the actions: %q", tester.Texts())
+	}
+}
+
+// A failed update never returns the page to silence: a system-location
+// install shows the user-language way out with the exact terminal command
+// to copy; any other failure keeps its message on the panel.
+func TestSettingsRuntimeRowShowsUpdateWayOut(t *testing.T) {
+	shell := NewShell()
+	shell.activeInstance = "default"
+	shell.projection = herdr.Projection{Version: "0.8.2", Protocol: 20}
+	shell.router.Replace("/settings/diagnostics")
+	shell.herdrUpdateErr = "herdr update --handoff: update failed: install directory not writable: /usr/bin"
+	shell.herdrUpdateNotWrbl = true
+	tester := ui.NewTester(shell.View, 1200, 800)
+	tester.Frame()
+	for _, want := range []string{"administrator permission", "Copy Update Command", "Update Herdr"} {
+		if !tester.HasText(want) {
+			t.Fatalf("settings way-out missing %q: %q", want, tester.Texts())
+		}
+	}
+	if tester.HasText("/usr/bin") {
+		t.Fatalf("raw updater stderr must not leak onto the panel: %q", tester.Texts())
+	}
+}
+
 // TestSettingsDiagnosticsExportAction pins P17: export action creates
 // sanitized bundle without secrets and updates status message.
 func TestSettingsDiagnosticsExportAction(t *testing.T) {

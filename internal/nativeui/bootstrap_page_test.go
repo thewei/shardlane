@@ -1,8 +1,8 @@
 package nativeui
 
 /**
- * [INPUT]: Simulated startup/loading/failure flags and MyGo headless rendering
- * [OUTPUT]: Proof startup hides controls, centers the only loader and reveals the workspace
+ * [INPUT]: Simulated startup/loading/failure flags、herdrUpgradeable/Updating 更新状态与 MyGo headless rendering
+ * [OUTPUT]: Proof startup hides controls, centers the only loader, reveals the workspace, and offers the in-place Herdr update
  * [POS]: Bootstrap visual and interaction regression for first-launch Herdr readiness
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -59,5 +59,64 @@ func TestHerdrBootstrapErrorOffersRetryWithoutLeakingMenus(t *testing.T) {
 	}
 	if tt.HasText("Terminal view") || tt.HasText("Settings") {
 		t.Fatalf("error page mounted active workspace: %q", tt.Texts())
+	}
+}
+
+// An old-protocol local Herdr is the one failure the page fixes in place:
+// the error text stays, an explanation and "Update Herdr" appear beside the
+// retry path, and the in-flight state replaces both actions with progress.
+func TestHerdrBootstrapOffersInPlaceHerdrUpdate(t *testing.T) {
+	s := NewShell()
+	s.bootstrapPending = false
+	s.bootstrapFailed = true
+	s.loading = false
+	s.errText = "incompatible Herdr protocol: need 22+, got 20"
+	s.herdrUpgradeable = true
+	tt := ui.NewTester(s.View, 960, 640)
+	tt.Frame()
+	for _, label := range []string{"Unable to load workspaces", "Update Herdr", "Retry Connection", "incompatible Herdr protocol: need 22+, got 20"} {
+		if !tt.HasText(label) {
+			t.Fatalf("upgrade page missing %q: %q", label, tt.Texts())
+		}
+	}
+	s.herdrUpdating = true
+	tt.Frame()
+	for _, label := range []string{"Unable to load workspaces", "Updating Herdr…"} {
+		if !tt.HasText(label) {
+			t.Fatalf("updating state missing %q: %q", label, tt.Texts())
+		}
+	}
+	for _, label := range []string{"Update Herdr", "Retry Connection"} {
+		if tt.HasText(label) {
+			t.Fatalf("updating state must hide %q: %q", label, tt.Texts())
+		}
+	}
+}
+
+// A failed update never returns the page to silence — the 15:37 log showed
+// updates failing while the page silently reverted. A system-location
+// install shows the user-language way out with the exact terminal command;
+// any other failure keeps its message on the page.
+func TestHerdrBootstrapKeepsUpdateFailureVisible(t *testing.T) {
+	s := NewShell()
+	s.bootstrapPending = false
+	s.bootstrapFailed = true
+	s.loading = false
+	s.errText = "incompatible Herdr protocol: need 22+, got 20"
+	s.herdrUpgradeable = true
+	s.herdrUpdateErr = "herdr update --handoff: update failed: install directory not writable: /usr/bin"
+	s.herdrUpdateNotWrbl = true
+	tt := ui.NewTester(s.View, 960, 640)
+	tt.Frame()
+	for _, label := range []string{"administrator permission", "Copy Update Command", "Retry Connection"} {
+		if !tt.HasText(label) {
+			t.Fatalf("bootstrap way-out missing %q: %q", label, tt.Texts())
+		}
+	}
+
+	s.herdrUpdateNotWrbl = false
+	tt.Frame()
+	if !tt.HasText("install directory not writable") {
+		t.Fatalf("generic update failure must stay visible: %q", tt.Texts())
 	}
 }

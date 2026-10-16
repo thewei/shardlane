@@ -9,12 +9,13 @@ import (
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 	"github.com/wh-studio/herdr-client/internal/diagnostics"
+	"github.com/wh-studio/herdr-client/internal/herdr"
 	"github.com/wh-studio/herdr-client/internal/settings"
 )
 
 /**
  * [INPUT]: 依赖 github.com/egoist/mygo, github.com/egoist/mygo/ui, settings, diagnostics
- * [OUTPUT]: 对外提供 Shell.settingsLayout/settingsGeneral/settingsTerminal/settingsDiagnostics
+ * [OUTPUT]: 对外提供 Shell.settingsLayout/settingsGeneral/settingsTerminal/settingsDiagnostics 与 Herdr 运行时行 herdrRuntimeRow（版本检查/就地升级）
  * [POS]: nativeui 设置页面宿主与分组行容器（settingsGroup），呈现并持久化用户外观与运行时偏好
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -279,6 +280,62 @@ func (s *Shell) settingsTerminal(c *ui.Context) {
 		FontSize(Typography().Caption).TextColor(c.Theme().TextMuted).Padding(0, 0, 0, Spacing().XS)
 }
 
+// herdrRuntimeRow is the Settings runtime row: the connected Herdr identity
+// in user language, a live check, and the in-place update when the runtime
+// predates the supported protocol. F173 holds here too: the wire protocol
+// itself stays in the diagnostics export, never on the panel.
+func (s *Shell) herdrRuntimeRow(c *ui.Context, knownVersion string) {
+	t := c.Theme()
+	version, protocol := knownVersion, int(s.projection.Protocol)
+	if s.herdrProbe != nil {
+		version, protocol = s.herdrProbe.Version, s.herdrProbe.Protocol
+	}
+	ui.Row(c).Gap(Spacing().S).AlignItems(ui.Center).Children(func() {
+		ui.Text(c, fallbackText(version, "connected")).FontSize(Typography().Body).TextColor(t.TextMuted)
+		if protocol > 0 {
+			if protocol >= herdr.MinSupportedProtocol {
+				statusPill(c, "Compatible", ToneSuccess)
+			} else {
+				statusPill(c, "Update available", ToneWarning)
+			}
+		}
+		ui.Box(c).Grow(1)
+		switch {
+		case s.herdrUpdating:
+			ui.Spinner(c).Size(16, 16)
+			ui.Text(c, "Updating Herdr…").FontSize(Typography().Caption).TextColor(t.Text)
+		case s.herdrProbing:
+			ui.Spinner(c).Size(16, 16)
+		default:
+			if _, local := s.herdrUpgradeTarget(); local {
+				if ui.Button(c, "Check").Clicked() {
+					s.checkHerdrRuntime()
+				}
+			}
+			if protocol > 0 && protocol < herdr.MinSupportedProtocol {
+				if ui.PrimaryButton(c, "Update Herdr").Clicked() {
+					s.updateHerdrFromSettings()
+				}
+			}
+		}
+	})
+	if s.herdrProbeErr != "" {
+		ui.Text(c, s.herdrProbeErr).FontSize(Typography().Caption).TextColor(t.TextMuted)
+	}
+	if s.herdrUpdateErr != "" {
+		if s.herdrUpdateNotWrbl {
+			ui.Row(c).Gap(Spacing().S).AlignItems(ui.Center).Children(func() {
+				ui.Text(c, "Updating Herdr needs the administrator permission, and it wasn't granted. Update it from a terminal instead, then press Check.").FontSize(Typography().Caption).TextColor(t.TextMuted)
+				if ui.Button(c, "Copy Update Command").Clicked() {
+					s.copyToClipboard(herdr.UpdateAsRootCommand)
+				}
+			})
+		} else {
+			ui.Text(c, s.herdrUpdateErr).FontSize(Typography().Caption).TextColor(t.TextMuted)
+		}
+	}
+}
+
 // systemName is the platform's product name for GOOS.
 func systemName(goos string) string {
 	if goos == "darwin" {
@@ -304,9 +361,7 @@ func (s *Shell) settingsDiagnostics(c *ui.Context) {
 	settingsGroup(c, "About",
 		row("Shardlane", "", func() { valueText(c, snap.ShardlaneVersion) }),
 		row("System", "", func() { valueText(c, fmt.Sprintf("%s · %s", systemName(snap.OS), snap.Arch)) }),
-		row("Herdr", "", func() {
-			valueText(c, fallbackText(snap.HerdrVersion, "connected"))
-		}),
+		row("Herdr", "", func() { s.herdrRuntimeRow(c, snap.HerdrVersion) }),
 		row("Session", "", func() { valueText(c, fallbackText(snap.ActiveInstance, "none")) }),
 		row("Log file", compactSearchPath(snap.LogPath), func() {
 			if snap.LogPath != "" && ui.Button(c, "Reveal in Finder").Clicked() {

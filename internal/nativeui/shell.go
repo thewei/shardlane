@@ -86,6 +86,19 @@ type Shell struct {
 	// the empty-terminal branch, dropping 38 write sites' feedback).
 	statusShown string
 	errText     string
+	// herdrUpgradeable marks the bootstrap failure as a local Herdr whose
+	// server is too old for the supported protocol: the one failure the
+	// bootstrap page fixes in place through Herdr's own updater.
+	herdrUpgradeable     bool
+	herdrUpgradeInstance string
+	herdrUpdating        bool
+	herdrUpdateErr       string
+	herdrUpdateNotWrbl   bool
+	// herdrProbe is the Settings runtime row's live identity check, filled
+	// by an explicit Check and cleared whenever the instance refreshes.
+	herdrProbe    *herdr.RuntimeProbe
+	herdrProbing  bool
+	herdrProbeErr string
 
 	accumulatedResizeX float32
 	accumulatedResizeY float32

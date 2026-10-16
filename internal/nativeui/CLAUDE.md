@@ -77,7 +77,7 @@ sidebar.go: 唯一左栏宿主——Git/Files/Sessions 三个项目作用域页�
 sidebar_test.go: 内页侧栏导航与页脚 Back 的位置/文案、除 Settings 外全部路由（含 Diff）穿标准页脚、栏顶四个视图标签的位置/等宽/同位置/点击语义（Settings 不再渲染标签条）、Settings 导航、Pin 区块回归
 detail_fact.go: Agent 详情复用的只读字段样式，从退役 Inspector 解耦
 shell.go: 核心 Shell 宿主，协调 Router/Window/Titlebar；首次 Herdr 加载独占中心展示并淡入工作区，Git sidebar 与双模式分栏展示态仅本地持有；WithSessionTrash 挂 Sessions 回收站，pendingToastAction 在 View 里发带按钮（Undo）的提示条；原生窗口标题经 setWindowTitle 接缝（AttachWindow 绑到窗口、headless 换记录器）由 window_actions.go 每帧幂等同步，恢复到内页的启动也会带上路由名
-page_settings.go: 五个 Settings 分组页（General/Terminal/Agents/Git/Diagnostics）统一 settingsPage Scroll/最大内容宽度（无页内标题：标题栏按 settingsSections 表命名分组，侧栏列表也不再回声 "Settings"）；设置项只经 settingsGroup/formRow 分组行表达，支持外观主题/透明度/密度与终端配置；Diagnostics 兼容分组承载 Rich chat view 开关（实现细节，不放在 General）
+page_settings.go: 五个 Settings 分组页（General/Terminal/Agents/Git/Diagnostics）统一 settingsPage Scroll/最大内容宽度（无页内标题：标题栏按 settingsSections 表命名分组，侧栏列表也不再回声 "Settings"）；设置项只经 settingsGroup/formRow 分组行表达，支持外观主题/透明度/密度与终端配置；Diagnostics 兼容分组承载 Rich chat view 开关（实现细节，不放在 General）；herdrRuntimeRow 是 About 组的 Herdr 运行时行（版本 + Compatible/Update available 药丸 + Check 在线探针 + 过旧时 Update Herdr 就地升级；F173：wire protocol 永不出现在面板文案）
 page_providers.go: Agents 设置页——单一分组列表，每个 Agent 一行（品牌 tile + 状态胶囊 + 单一动作）；直连 Status hook 为主，Herdr integration 作为 attached 子行降级为 fallback（hook 健康时仅次要展示、不提供动作），跟随 settingsPage 滚动容器；Refresh 为工具条图标按钮（与全 App 刷新同一形态）
 page_hosts.go, hosts_nav.go, hosts_groups.go, hosts_form.go, hosts_editor.go: /hosts 内页（详情中心 + 侧栏 SSH Config/Herdr Machines 列表）；页面无自带页头，列表头的图标刷新是该页唯一的 Refresh；侧栏按配置自带分组（SSH Config Editor 式注释标记 + Include 文件，只读，`hostGroups`）可折叠，无可分组内容时平铺，行/分组头走共享 sidebarTreeRow/sidebarSectionHeader（悬停 Connect 图标、右键与标题栏 Actions 同一份 hostEntryMenu）；详情 = 一行标题（Heading + file:line）+ Connect + 铅笔图标 + 单个 settingsGroup 指令列表，结构化编辑就地发生（Cancel/Save 顶替、Return 保存），生效配置是折叠行；hostsMainFile 用索引解析后的主文件判断 include
 providers_ui.go: Providers 统一状态机（经 herdr.RunCLI 取 integration 状态；失败只显示人话——integrationErrorText，细节进日志；一次审计同时覆盖两面、进入/刷新/动作后审计、hook 主导 + fallback 修复动作门控、在途防重、一次性 toast、两面状态→语义色映射）
@@ -101,9 +101,9 @@ git_commit_graph.go: 历史提交真实父 SHA 的 merge lanes 纯渲染投影�
 git_commit_graph_test.go: 提交父节点拓扑及合并分支回归
 git_layout_render_test.go: 仅显式启用时输出 Local Changes/All Commits 实际 MyGo 渲染截图
 changes_panel.go: Changed File Tree 行落在共用侧栏网格（chevron 槽·图标·标题·悬停图标动作·+N -N·状态字母）、导向线、行高走密度令牌；目录每次直接点击均切换折叠，不依赖 List.Changed；文件行保留多选及 Diff 导航
-bootstrap_page.go: 启动时全屏居中 Loading 或可重试的错误页面，尚未初次完成 Herdr projection 时不挂载侧栏或顶部菜单
+bootstrap_page.go: 启动时全屏居中 Loading 或可重试的错误页面，尚未初次完成 Herdr projection 时不挂载侧栏或顶部菜单；本地 Herdr 协议过旧（herdrUpgradeable）时额外提供「Update Herdr」就地更新入口，更新中（herdrUpdating）用 spinner 替代两个动作；更新失败持久可见（herdrUpdateErr 不再随 updating 态消失），授权未发生（herdrUpdateNotWrbl，含拒绝与无授权代理）时给用户语言出路 + Copy Update Command
 bootstrap_page_test.go: 初次加载/故障时隐藏交互、中心位置与就绪后切换的 headless 回归
-runtime.go: 首次 Herdr 列举、异步 Projection、初次 terminal coordination 完成前的 bootstrap gate；移除第二次阻塞枚举
+runtime.go: 首次 Herdr 列举、异步 Projection、初次 terminal coordination 完成前的 bootstrap gate；移除第二次阻塞枚举；updateInstanceError 按实例分类失败（本地旧协议 → upgradeableFailure 置 herdrUpgradeable 并记 herdrUpgradeInstance，远程机器不可代更）；beginHerdrUpgrade 是 bootstrap 页与 Settings 运行时行共享的升级入口（herdrUpgradeTarget 会话定域，各自的 onSuccess 续接：bootstrap 回启动门、Settings 原地 reload，失败时记 ErrUpdateNotWritable 类别），checkHerdrRuntime 走 herdr.ProbeRuntime 在线探针并把 RPC 错误翻译成用户语言
 panel_motion.go: Git/Terminal 左栏统一宽度（默认 252 DIP，可拖拽 200–400）和折叠动画，不再依路由改变宽度
 repo_bar.go: 仅保留变更文件点击与 toggleMenu popover 辅助函数；仓库菜单见 git_sidebar_tree 与 sidebar_switchers
 branch_menu.go: 当前分支优先的搜索过滤与受保护的切换/创建入口，弹层由 sidebar_switchers 持有

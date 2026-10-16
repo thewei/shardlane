@@ -232,8 +232,8 @@ func (m *Manager) projectionReadyAt(socket string) (Projection, error) {
 	if result.Type != "session_snapshot" {
 		return Projection{}, fmt.Errorf("Herdr session.snapshot returned %q", result.Type)
 	}
-	if result.Snapshot.Protocol < minSupportedProtocol {
-		return Projection{}, fmt.Errorf("incompatible Herdr protocol: need %d+, got %d", minSupportedProtocol, result.Snapshot.Protocol)
+	if err := protocolError(int(result.Snapshot.Protocol)); err != nil {
+		return Projection{}, err
 	}
 	return projectSnapshot(result.Snapshot), nil
 }
