@@ -1,4 +1,4 @@
-# Local patch over mygo v0.4.8
+# Local patch over mygo v0.5.5
 
 Four deltas, re-applied by hand after every pin bump. They live outside
 Shardlane and stay as small as deletion allows.
@@ -79,18 +79,31 @@ dismissal cleanup in `internal/darwin/popover.go`; `trayAnchorWin` field in
 
 ## Upgrade path
 
-Rebased onto v0.4.8 on 2026-10-14 (the patch applied cleanly; the terminal
-option, field-focus delegation and multi-display tray anchoring are all still
-absent upstream — v0.4.6 only added `Options.OnScroll`, a different hook).
-When an upstream mygo release ships these fixes, delete the
-`replace github.com/egoist/mygo => ./third_party/mygo` directive in `go.mod`,
-bump the pin, and delete this checkout. Shardlane code already uses only the
-public option and needs no changes.
+Rebased onto v0.5.5 on 2026-10-16 (the patch applied cleanly; the terminal
+option, field-focus delegation, multi-display tray anchoring and OSC 7501 are
+all still absent upstream — v0.5.x added `Options` of its own such as
+`OnPasteStatus`, but none of these four). The four deltas keep their size:
+terminal.go grows by the same 33 lines, view.go by 6, `ui/` by 12 in three
+files, `internal/darwin/` by 84 in three files, and the OSC 7501 scanner
+files copy over unchanged. When an upstream mygo release ships these fixes,
+delete the `replace github.com/egoist/mygo => ./third_party/mygo` directive in
+`go.mod`, bump the pin, and delete this checkout. Shardlane code already uses
+only the public option and needs no changes.
 
-Delta vs v0.4.8: an `Options` field + a 4-line guard in `view.pointerEvent`;
+Delta vs v0.5.5: an `Options` field + a 4-line guard in `view.pointerEvent`;
 an unexported `node.focusTo` field, a delegation branch after the nil-safe
 `hasState` guard in `node.Focus`, and one line in `field`; multi-display tray
 anchoring in `internal/darwin/{menu,popover,window}.go`; the OSC 7501 scanner
 file, an `Options` field, the `events` fields and the feed/fire hooks in
 `plugins/terminal`. Preserve the upstream
 `TestOptionalElementInput/nil` behavior when rebasing this patch.
+
+## Linux
+
+MyGo is cross-platform: `internal/linux/` is a first-class backend and
+`go tool mygo build --platform linux/amd64` packages a binary, a `.deb`, a
+`.tar.gz` and an `install.sh` without macOS. The two
+`runtime.GOOS != "darwin"` branches in `cmd/mygo/bundle.go` only skip icon
+compilation and code signing (warning, not failing). Shardlane compiles and
+runs on Linux under this fork; `internal/nativeui/pty_other.go` supplies the
+no-attach-pty fallback for the non-darwin build.

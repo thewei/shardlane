@@ -4,7 +4,7 @@ Status: **Canonical / as-built + approved-next architecture**
 Baseline: 2026-08-25
 Runtime baseline: Herdr 0.8.x. Current transitional code still accepts socket protocol 19; the approved TUI-only cutover raises the minimum fully supported protocol to 20 because native shell → hosted TUI navigation uses protocol-20 focus operations. Known wrapper contracts remain version-checked rather than assuming unlimited forward compatibility.
 Current shipped UI baseline: GPUI 0.2.2, gpui-component 0.5.1 + gpui-component-assets 0.5.1
-Current migration UI baseline (pin advanced 2026-10-14): MyGo v0.4.8 Native UI with three documented local compatibility deltas re-applied (F146/F147 `LocalDragSelect`, WIX-021 field focus delegation, multi-display tray flyout anchoring — all still absent upstream), Go 1.27.1, and the official MyGo Terminal/Ghostty surface in this repository (the former `next/` module, now the repository root); this path gates on Herdr 0.9.3 / socket protocol 22 for the audited snapshot/direct-attach capabilities. Upstream v0.4.x additions are adopted only when a task takes them: the Flyout API backs the Header/tray quick panel, and the product decision of 2026-10-11 (below) adopts the official `ui.WebView` for Chat presentation with a bound-service bridge.
+Current migration UI baseline (pin advanced 2026-10-16): MyGo v0.5.5 Native UI with four documented local compatibility deltas re-applied (F146/F147 `LocalDragSelect`, WIX-021 field focus delegation, multi-display tray flyout anchoring, OSC 7501 `OnProgramStatus` — all still absent upstream), Go 1.27.1, and the official MyGo Terminal/Ghostty surface in this repository (the former `next/` module, now the repository root); this path gates on Herdr 0.9.3 / socket protocol 22 for the audited snapshot/direct-attach capabilities. Upstream v0.5.x additions are adopted only when a task takes them: the Flyout API backs the Header/tray quick panel, and the product decision of 2026-10-11 (below) adopts the official `ui.WebView` for Chat presentation with a bound-service bridge.
 
 This file is the single architectural source of truth for Shardlane. Other documents may define interaction details, execution order, progress evidence, or handoff context, but they must not redefine ownership.
 
@@ -161,7 +161,7 @@ MyGo Native UI
     is retired; `General.WebViewFilesPreview` (Settings → Compatibility)
     stays as the escape hatch and renders truthful states when off.
   - **Amended 2026-10-14 — code is native again, via the framework's own
-    editor.** MyGo v0.4.8 ships `ui/editor` (a virtualized, read-only-capable
+    editor.** MyGo v0.5.5 ships `ui/editor` (a virtualized, read-only-capable
     code view with syntax highlighting for 28 languages, find and folding),
     so a mature framework owner now exists for code display and the
     hand-built CodeMirror 6 viewer is retired. Text, code and Markdown
