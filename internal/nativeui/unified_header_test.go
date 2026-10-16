@@ -210,18 +210,19 @@ func TestEachRouteHasOneRefreshAndItIsAnIcon(t *testing.T) {
 }
 
 // TestInnerSidebarsShareOneInset pins the sidebar body's inset: entering
-// Settings or Hosts, the first line of the list starts at the same x and y
-// (the Hosts list once inset itself a second time: 14pt lower, 9pt in).
+// Hosts, the first line of the list starts where Settings' used to; Settings
+// dropped the view-tab strip (2026-10-15), so its list starts one strip
+// higher, at the same x.
 func TestInnerSidebarsShareOneInset(t *testing.T) {
 	routes := headerRoutes()
-	var wantX, wantY float32
+	var wantX, hostsY float32
 	for i, tc := range []struct {
 		name  string
 		setup func(t *testing.T) *Shell
 		first string // the first line of that page's sidebar list
 	}{
-		{"settings", routes[3].setup, "General"},
 		{"hosts", routes[0].setup, "SSH Config"},
+		{"settings", routes[3].setup, "General"},
 	} {
 		tester := ui.NewTester(tc.setup(t).View, 1200, 800)
 		settleFrames(tester, 3)
@@ -230,11 +231,17 @@ func TestInnerSidebarsShareOneInset(t *testing.T) {
 			t.Fatalf("%s: %q missing; texts=%q", tc.name, tc.first, tester.Texts())
 		}
 		if i == 0 {
-			wantX, wantY = rect.X, rect.Y
+			wantX, hostsY = rect.X, rect.Y
 			continue
 		}
-		if math.Abs(float64(rect.X-wantX)) > 0.25 || math.Abs(float64(rect.Y-wantY)) > 0.25 {
-			t.Errorf("%s: sidebar list starts at (%.1f, %.1f), the other inner pages at (%.1f, %.1f)", tc.name, rect.X, rect.Y, wantX, wantY)
+		if math.Abs(float64(rect.X-wantX)) > 0.25 {
+			t.Errorf("%s: sidebar list starts at x %.1f, the other inner pages at %.1f", tc.name, rect.X, wantX)
+		}
+		// The strip the Settings sidebar no longer renders: one icon tab row
+		// (padding puts all six points of spacing below it).
+		strip := gorexIconBtn + Spacing().S
+		if math.Abs(float64(rect.Y-(hostsY-strip))) > 0.25 {
+			t.Errorf("%s: sidebar list starts at y %.1f, want exactly one view-tab strip (%.0f) above the other inner pages' %.1f", tc.name, rect.Y, strip, hostsY)
 		}
 	}
 }

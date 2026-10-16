@@ -1,5 +1,29 @@
 # Local patch over mygo v0.4.8
 
+Four deltas, re-applied by hand after every pin bump. They live outside
+Shardlane and stay as small as deletion allows.
+
+## Delta 4: terminal OSC 7501 program status (2026-10-15)
+
+`plugins/terminal`: adds `Options.OnProgramStatus func(report []byte)` —
+the body bytes of one OSC 7501 report (Program Status Protocol, spec rev
+0.4), framed by a small scanner (`osc7501.go`) that rides the same output
+bytes libghostty-vt reads. The emulator core ignores the sequence as an
+unknown OSC; the scanner knows only the framing (OSC `7501;` through ST,
+4096-byte cap, chunk-safe). With the callback set the terminal answers the
+protocol's feature-detection query `OSC 7501 ; ? ST` with the full fixed
+state and kind lists; without it, support is never claimed. Pairs,
+records, lifetime and merge policy live in the embedding app
+(herdr-client `internal/agentstatus`), which owns the protocol semantics.
+
+Reason: Shardlane agent panes — Claude Code 2.1.295+ emits native status
+reports (working/blocked/done/idle/error) that must reach the pane header
+without hooks; agents without the protocol keep the hook fallback.
+
+Sites: `plugins/terminal/osc7501.go` (new scanner + tests), `Options`
+field and the doc comment in `plugins/terminal/terminal.go`, the `events`
+struct, the feed in `Terminal.write`, and the dispatch in `Terminal.fire`.
+
 ## Delta 1: terminal `Options.LocalDragSelect`
 
 `plugins/terminal`: adds `Options.LocalDragSelect` — with it set, the
@@ -66,5 +90,7 @@ public option and needs no changes.
 Delta vs v0.4.8: an `Options` field + a 4-line guard in `view.pointerEvent`;
 an unexported `node.focusTo` field, a delegation branch after the nil-safe
 `hasState` guard in `node.Focus`, and one line in `field`; multi-display tray
-anchoring in `internal/darwin/{menu,popover,window}.go`. Preserve the upstream
+anchoring in `internal/darwin/{menu,popover,window}.go`; the OSC 7501 scanner
+file, an `Options` field, the `events` fields and the feed/fire hooks in
+`plugins/terminal`. Preserve the upstream
 `TestOptionalElementInput/nil` behavior when rebasing this patch.

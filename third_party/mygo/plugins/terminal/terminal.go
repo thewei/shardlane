@@ -104,6 +104,14 @@ type Options struct {
 	OnBell   func()
 	OnNotify func(title, body string)
 
+	// OnProgramStatus sees one OSC 7501 Program Status Protocol report
+	// (spec rev 0.4): the bytes between "7501;" and the string
+	// terminator, pairs of key=value joined by colons. It runs on a
+	// goroutine of the terminal, like OnTitle. Setting it makes the
+	// terminal answer the protocol's feature-detection query, so programs
+	// that probe before reporting learn that reports are consumed.
+	OnProgramStatus func(report []byte)
+
 	// OpenLink takes what a Command+click (Control+click elsewhere)
 	// opens: a hyperlink (OSC 8), a URL printed as text, or, only with
 	// OpenLink set, a file path printed as text (absolute, ~/, ./ or ../,
@@ -160,6 +168,7 @@ type Terminal struct {
 	term    *vt.Terminal
 	size    gridSize
 	events  events
+	osc     osc7501Scanner
 	closed  bool
 	clipOut []string // what programs copied, for the view to write
 	// src is the program's pseudo-terminal, or Conn: nil until the
@@ -203,6 +212,10 @@ type events struct {
 	title  bool
 	bells  int
 	notify [][2]string
+	// osc7501 carries the bodies of complete Program Status Protocol
+	// sequences; osc7501Query saw the feature-detection query.
+	osc7501      [][]byte
+	osc7501Query bool
 }
 
 // New makes a terminal running opts.Command, or connected to opts.Conn.
@@ -419,6 +432,11 @@ func (t *Terminal) write(p []byte) {
 		if ev.title {
 			title = t.term.Title()
 		}
+		bodies, query := t.osc.feed(p)
+		if len(bodies) > 0 {
+			ev.osc7501 = append(ev.osc7501, bodies...)
+		}
+		ev.osc7501Query = query
 	}
 	t.mu.Unlock()
 	t.fire(ev, title)
@@ -438,6 +456,14 @@ func (t *Terminal) fire(ev events, title string) {
 	for _, n := range ev.notify {
 		if o.OnNotify != nil {
 			o.OnNotify(n[0], n[1])
+		}
+	}
+	if o.OnProgramStatus != nil {
+		if ev.osc7501Query {
+			t.Send([]byte(osc7501Reply))
+		}
+		for _, body := range ev.osc7501 {
+			o.OnProgramStatus(body)
 		}
 	}
 }

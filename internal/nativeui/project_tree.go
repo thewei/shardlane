@@ -27,16 +27,14 @@ func (s *Shell) projectItems(c *ui.Context) {
 		selectedProject := project.ID == s.selectedProjectID
 		tabs := tabsForProject(s.projection, project.ID)
 		expandedProject := s.projectExpanded(project.ID)
-		// The collapsed tally (2026-10-07): a folded project shows how
-		// many panes it hides, so the nesting depth never hides the load.
+		// The pane tally (2026-10-07, widened 2026-10-15 user request): the
+		// project row shows how many panes run beneath it whether it is
+		// folded or expanded, so the nesting depth never hides the load.
 		projectPaneCount := 0
 		for _, tab := range tabs {
 			projectPaneCount += len(panesForTab(s.projection, tab.ID))
 		}
-		projectCount := 0
-		if !expandedProject {
-			projectCount = projectPaneCount
-		}
+		projectCount := projectPaneCount
 		glyph := iconFolder
 		if expandedProject {
 			glyph = iconFolderOpen
@@ -57,10 +55,11 @@ func (s *Shell) projectItems(c *ui.Context) {
 			Drag:       s.treeDragFor(treeNodeDrag{s.activeInstance, "project", "", project.ID}),
 		})
 		if row.Clicked() {
-			s.router.Push(routeWorkspace)
 			if selectedProject {
 				s.setProjectExpanded(project.ID, !expandedProject)
 			} else {
+				// The selection lands as /workspace?project=… (one history
+				// entry); no bare page push beside it.
 				s.setProjectExpanded(project.ID, true)
 				s.selectProject(project.ID)
 			}
@@ -99,7 +98,6 @@ func (s *Shell) projectItems(c *ui.Context) {
 				Drag:       s.treeDragFor(treeNodeDrag{s.activeInstance, "tab", project.ID, tab.ID}),
 			})
 			if row.Clicked() {
-				s.router.Push(routeWorkspace)
 				if selectedTab && len(panes) > 1 {
 					s.setTabExpanded(tab.ID, !expandedTab)
 				} else if !selectedTab {
@@ -145,7 +143,6 @@ func (s *Shell) projectItems(c *ui.Context) {
 					Drag:              s.treeDragFor(treeNodeDrag{s.activeInstance, "pane", tab.ID, pane.ID}),
 				})
 				if row.Clicked() {
-					s.router.Push(routeWorkspace)
 					s.selectPane(pane.ID)
 				}
 				row.ContextMenu(func(m *ui.Menu) { s.paneOverflowItems(m, pane.ID, label) })

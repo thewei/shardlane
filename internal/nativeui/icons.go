@@ -43,6 +43,7 @@ var (
 	iconSplitDown   = icon(`<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 12h18"/>`)
 	iconZoom        = icon(`<path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5"/>`)
 	iconArrowLeft   = icon(`<path d="M19 12H5"/><path d="m12 19-7-7 7-7"/>`)
+	iconArrowRight  = icon(`<path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>`)
 	iconChevron     = icon(`<path d="m9 18 6-6-6-6"/>`)
 	iconChevronDown = icon(`<path d="m6 9 6 6 6-6"/>`)
 	iconBranch      = icon(`<circle cx="6" cy="6" r="3"/><path d="M6 9v3a3 3 0 0 0 3 3h6"/><circle cx="18" cy="18" r="3"/><path d="M18 15V9a3 3 0 0 0-3-3"/>`)

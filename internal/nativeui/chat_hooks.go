@@ -138,11 +138,23 @@ func (s *Shell) handleAppHookStatus(evt apphook.StatusEvent) {
 	}
 	slog.Debug("hook status event", "pane", evt.PaneID, "status", evt.Status, "agent", evt.Agent)
 
+	// The status lane is arbitrated per pane (OSC 7501 vs hooks); the
+	// session identity riding the same event is hook-only and always
+	// passes, even when the status is yielded to the protocol stream.
+	effective, applied := s.statusStore.ApplyHookStatus(evt.PaneID, evt.Status, time.Now())
+	if applied {
+		slog.Debug("hook status applied", "pane", evt.PaneID, "status", effective)
+	} else {
+		slog.Debug("hook status yielded to osc7501", "pane", evt.PaneID, "hook", evt.Status, "effective", effective)
+	}
+
 	// Direct update to the in-memory projection (locate-or-create in one
 	// place; see upsertProjectionAgent).
 	session := chatSessionIdentity(evt.Agent, evt.SessionID)
 	s.upsertProjectionAgent(evt.PaneID, func(agent *herdr.Agent) {
-		agent.Status = evt.Status
+		if applied {
+			agent.Status = effective
+		}
 		if agent.Kind == "" && evt.Agent != "" {
 			agent.Kind = evt.Agent
 		}
@@ -151,22 +163,11 @@ func (s *Shell) handleAppHookStatus(evt apphook.StatusEvent) {
 		}
 	})
 
-	for i := range s.projection.Panes {
-		if s.projection.Panes[i].ID == evt.PaneID {
-			s.projection.Panes[i].AgentStatus = evt.Status
-			break
-		}
-	}
-
-	// 2. Handle blocked interaction detection or cancellation
-	if evt.Status == "blocked" {
-		s.dispatch(func() { s.detectPaneInteraction(evt.PaneID) })
+	if !applied {
+		s.scheduleProjectionRefresh()
 		return
 	}
-
-	s.interactionBroker.CancelForPane(evt.PaneID)
-	s.scheduleProjectionRefresh()
-	s.publishChatBridge()
+	s.applyPaneStatus(evt.PaneID, effective)
 }
 
 // handleAppHookSession updates the agent session identity directly in the

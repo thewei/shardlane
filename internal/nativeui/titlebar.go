@@ -11,8 +11,8 @@ import (
 
 /**
  * [INPUT]: 依赖 mygo/ui 的 Context/TitleBar（窗口控件带几何）、gorex_style 的图标按钮与配色、router 路由态、runtime/time
- * [OUTPUT]: 对外提供 Shell.titlebar（窗口标题栏：红绿灯对齐、身份区——Terminal/Chat 为面包屑 + cwd 双行，Changes 与各内页为 route_header.go 的单行 Title 大字标题、工具区、Windows 控件）、titlebarHeight（灯带对齐的行高纯函数，所有路由同一 42 下限）、showViewTerminal/showViewChat/showViewChanges/showViewHistory（四个视图的唯一切换入口）、toggleWindowPinned（窗口置顶的唯一入口）
- * [POS]: nativeui 的窗口 chrome 所有者，被 shell.View 顶部消费；高度与 MyGo 红灯带对齐（F142），页面标题与页面动作的唯一归属（2026-10-14：内页只画内容），视图切换、Agent 活动浮层入口与窗口置顶在此收口
+ * [OUTPUT]: 对外提供 Shell.titlebar（窗口标题栏：红绿灯对齐、身份区——Terminal/Chat 为面包屑 + cwd 双行，Changes 与各内页为 route_header.go 的单行 Title 大字标题、工具区、Windows 控件）、titlebarHeight（灯带对齐的行高纯函数，所有路由同一 42 下限）、showViewTerminal/showViewChat/showViewChanges/showViewHistory（四个视图的唯一切换入口）、toggleWindowPinned（窗口置顶的唯一入口）、sidebarToggle（红绿灯右侧固定按钮簇：侧栏收起/展开 + Router Back/Forward 页面历史，Router 拥有行为与 ⌘[/⌘] 快捷键）、chromeHistoryButton（历史按钮的无历史灭活态）
+ * [POS]: nativeui 的窗口 chrome 所有者，被 shell.View 顶部消费；高度与 MyGo 红灯带对齐（F142），页面标题与页面动作的唯一归属（2026-10-14：内页只画内容），视图切换、Agent 活动浮层入口与窗口置顶在此收口；红绿灯右侧按钮簇（收起 + 页面历史 Back/Forward）是 Router 历史的可见入口，内容列让位宽度 sidebarToggleClearance 随簇加宽
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 
@@ -63,10 +63,20 @@ func (s *Shell) titlebar(c *ui.Context) {
 // sidebarToggleX is where the toggle sits: right after the traffic lights.
 func sidebarToggleX(bar ui.TitleBar) float32 { return max(bar.Left, 12) + 4 }
 
+// sidebarNavGap is the gap inside the floating chrome cluster: the sidebar
+// toggle with the router's Back/Forward beside it.
+const sidebarNavGap = 4
+
+// sidebarChromeStripWidth is the width of that cluster: three 28 DIP icon
+// buttons with two gaps between them.
+func sidebarChromeStripWidth() float32 {
+	return 3*gorexIconBtn + 2*sidebarNavGap
+}
+
 // sidebarToggleClearance is how far from the window's left edge the content
-// must start to leave the lights and the toggle uncovered.
+// must start to leave the lights and the whole cluster uncovered.
 func sidebarToggleClearance(bar ui.TitleBar) float32 {
-	return sidebarToggleX(bar) + gorexIconBtn + 8
+	return sidebarToggleX(bar) + sidebarChromeStripWidth() + 8
 }
 
 // sidebarBand is the sidebar's top inset: the strip beside the traffic
@@ -75,9 +85,14 @@ func (s *Shell) sidebarBand(c *ui.Context) {
 	ui.Box(c).FillWidth().Shrink(0).Height(max(c.TitleBar().Height, 38)).DragWindow()
 }
 
-// sidebarToggle is the one show/hide control of the sidebar. It floats at a
-// fixed spot after the traffic lights and never moves with the slide, so the
-// pointer always finds it where it was.
+// sidebarToggle is the one show/hide control of the sidebar, with the
+// router's Back/Forward beside it: page history is one fixed cluster after
+// the traffic lights that never moves with the slide, so the pointer always
+// finds it where it was. The Router stays the behavior owner (Back/
+// Forward/CanGo*; ⌘[ and ⌘] are its own shortcuts, the tooltips name them);
+// the buttons only dress the actions in the chrome's shared icon-button
+// face, because the official ui.BackButton's bordered toolbar face would
+// clash with the borderless chrome around the traffic lights.
 func (s *Shell) sidebarToggle(c *ui.Context) {
 	k := gorexColorsOf(c.Theme().Dark)
 	bar := c.TitleBar()
@@ -86,11 +101,30 @@ func (s *Shell) sidebarToggle(c *ui.Context) {
 		label = "Hide Sidebar"
 	}
 	y := (max(bar.Height, 38) - gorexIconBtn) / 2
-	ui.Box(c).Absolute().Left(sidebarToggleX(bar)).Top(y).Children(func() {
+	ui.Row(c).Absolute().Left(sidebarToggleX(bar)).Top(y).Gap(sidebarNavGap).
+		AlignItems(ui.Center).Children(func() {
 		if gorexIconButton(c, k, iconPanel, label, label+" (⌘B)", false, gorexIconBtn, gorexIconGlyph).Clicked() {
 			s.toggleSidebar()
 		}
+		s.chromeHistoryButton(c, k, iconArrowLeft, "Back", "⌘[", s.router.CanGoBack(), s.router.Back)
+		s.chromeHistoryButton(c, k, iconArrowRight, "Forward", "⌘]", s.router.CanGoForward(), s.router.Forward)
 	})
+}
+
+// chromeHistoryButton is one router-history action at the window's top-left:
+// the shared icon button while there is a page to reach, a muted glyph with
+// no hover face when the history ends there.
+func (s *Shell) chromeHistoryButton(c *ui.Context, k *gorexColors, glyph *ui.SVG, label, shortcut string, can bool, move func()) {
+	if !can {
+		ui.Box(c).Size(gorexIconBtn, gorexIconBtn).Center().Radius(gorexIconBtn / 2.6).
+			Role(ui.RoleButton).Label(label).Tooltip(label + " (" + shortcut + ")").Children(func() {
+			ui.Icon(c, glyph).Size(gorexIconGlyph, gorexIconGlyph).TextColor(k.iconMuted)
+		})
+		return
+	}
+	if gorexIconButton(c, k, glyph, label, label+" ("+shortcut+")", false, gorexIconBtn, gorexIconGlyph).Clicked() {
+		move()
+	}
 }
 
 // titlebarHeight keeps the bar at the window controls' own height: MyGo

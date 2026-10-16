@@ -18,6 +18,7 @@ import (
 	"github.com/egoist/mygo/ui"
 	"github.com/wh-studio/herdr-client/internal/agent"
 	"github.com/wh-studio/herdr-client/internal/agenthooks"
+	"github.com/wh-studio/herdr-client/internal/agentstatus"
 	"github.com/wh-studio/herdr-client/internal/app"
 	"github.com/wh-studio/herdr-client/internal/apphook"
 	"github.com/wh-studio/herdr-client/internal/commandcenter"
@@ -128,6 +129,10 @@ type Shell struct {
 	mergeStrategy              int // 0: FF-only, 1: create merge commit
 
 	terminals map[string]*terminalSurface
+	// statusStore arbitrates the pane status lane between the native
+	// OSC 7501 stream (terminal callbacks) and the hook stream (apphook):
+	// presentation only, one Store per shell, never persisted.
+	statusStore *agentstatus.Store
 	// terminalCanvasBounds is the canvas rect captured at render for
 	// file-drop hit testing.
 	terminalCanvasBounds ui.Rect
@@ -501,6 +506,7 @@ func NewShell(opts ...ShellOption) *Shell {
 		status:           "Loading Herdr workspaces…",
 		statusShown:      "Loading Herdr workspaces…",
 		terminals:        make(map[string]*terminalSurface),
+		statusStore:      agentstatus.NewStore(),
 
 		rightPanel: defaultRightPanelState(),
 	}
@@ -764,6 +770,9 @@ func (s *Shell) View(c *ui.Context) {
 			s.toggleSidebar()
 		}
 		s.syncRouteVisibility()
+		// History walks (chrome Back/Forward, ⌘[/⌘]) land on workspace
+		// locations that carry a selection query; the mirror applies it.
+		s.syncSelectionLocation()
 	}
 
 	// The window is one flat surface: the sidebar (a vibrancy material on

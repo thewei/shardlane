@@ -8,20 +8,25 @@ import (
 	"github.com/wh-studio/herdr-client/internal/herdr"
 )
 
-// TestOnlySettingsKeepsABackFoot pins the unified inner-page chrome: the
-// strip's Terminal tab is every page's way home, so Sessions, Files, Hosts,
-// the Git views and the legacy Chat page end without a foot, while Settings —
-// which is not a strip destination — keeps its one Back at the sidebar foot,
-// below its navigation and in place of the Workspace switch. Only the
-// workspace sidebar keeps the Workspace switch.
+// TestOnlySettingsKeepsABackFoot pins the unified inner-page chrome: every
+// page but Settings wears the standard foot — Session switch + Settings, on
+// the workspace sidebar, the strip pages (Sessions, Files, Hosts, the legacy
+// Chat page) and the Git views alike. Settings — not a strip destination, its
+// strip hidden — keeps its one Back at the sidebar foot, below its navigation
+// and in place of the Workspace switch.
 func TestOnlySettingsKeepsABackFoot(t *testing.T) {
 	const height = 800
 	s := NewShell()
 	s.loading = false
 	s.router.Replace(routeWorkspace)
 	tester := ui.NewTester(s.View, 1200, height)
-	if !tester.HasText("Choose Session") || tester.HasText("Back") {
-		t.Fatalf("workspace sidebar must keep its Workspace switch and no back control; texts=%q", tester.Texts())
+	if !tester.HasText("Choose Session") {
+		t.Fatalf("workspace sidebar must keep its Workspace switch; texts=%q", tester.Texts())
+	}
+	// The chrome history cluster (Back beside the sidebar toggle, top-left)
+	// exists on every route; a Back FOOT would sit at the sidebar's bottom.
+	if back, ok := tester.Find("Back"); ok && back.Y >= height-60 {
+		t.Fatalf("workspace sidebar has a Back foot at %+v", back)
 	}
 
 	for _, route := range headerRoutes() {
@@ -29,11 +34,19 @@ func TestOnlySettingsKeepsABackFoot(t *testing.T) {
 		settleFrames(tester, 3)
 		back, hasBack := tester.Find("Back")
 		if route.name != "settings" {
-			if hasBack {
+			// The chrome history button (top-left) is on every route; a Back
+			// FOOT would sit at the sidebar's bottom edge.
+			if hasBack && back.Y >= height-60 {
 				t.Errorf("%s: the sidebar still has a Back foot at %+v; the Terminal tab is the way out", route.name, back)
 			}
 			if _, ok := tester.Find("Terminal view"); !ok {
 				t.Errorf("%s: no Terminal tab to leave by; texts=%q", route.name, tester.Texts())
+			}
+			// The strip pages and the Git views carry the standard foot
+			// (Session switch + Settings) — the same bar on every route but
+			// Settings.
+			if _, hasSession := tester.Find("Choose Session"); !hasSession {
+				t.Errorf("%s: the page lost the standard foot; texts=%q", route.name, tester.Texts())
 			}
 			continue
 		}
@@ -46,31 +59,41 @@ func TestOnlySettingsKeepsABackFoot(t *testing.T) {
 		if tester.HasText("Choose Session") {
 			t.Fatalf("settings kept the Workspace switch; texts=%q", tester.Texts())
 		}
+		if _, ok := tester.Find("Terminal view"); ok {
+			t.Fatalf("settings kept the view-tab strip above its navigation; texts=%q", tester.Texts())
+		}
 	}
 
-	// A session detail and the by-project page are Sessions pages too.
+	// A session detail and the by-project page are Sessions pages too: they
+	// wear the standard foot, never a Back foot. (The chrome history Back at
+	// the window's top-left is on every route.)
 	for _, path := range []string{"/history-projects", "/history/codex:abc"} {
 		s := newMultiAgentHistoryShell(t)
 		s.router.Replace(path)
 		tester := ui.NewTester(s.View, 1200, height)
 		settleFrames(tester, 3)
-		if countTextExact(tester.Texts(), "Back") > 0 || tester.HasText("Choose Session") {
-			t.Errorf("%s: a Sessions page must end without a foot; texts=%q", path, tester.Texts())
+		if back, ok := tester.Find("Back"); ok && back.Y >= height-60 {
+			t.Errorf("%s: a Sessions page has a Back foot at %+v", path, back)
+		}
+		if !tester.HasText("Choose Session") {
+			t.Errorf("%s: a Sessions page lost the standard foot; texts=%q", path, tester.Texts())
 		}
 	}
 }
 
-// The Diff/Commit sidebar is a Git navigator, not the Workspace tree: like
-// every inner view it has no foot — the Terminal tab above returns.
-func TestDiffSidebarHasNoFootAndTheTerminalTabReturns(t *testing.T) {
+// TestDiffSidebarWearsTheStandardFootAndTheTerminalTabReturns pins the
+// Diff/Commit sidebar wearing the same standard foot as every other page
+// (2026-10-15 user request), and the Terminal tab still being the way back
+// to the workspace Terminal.
+func TestDiffSidebarWearsTheStandardFootAndTheTerminalTabReturns(t *testing.T) {
 	const height = 800
 	s := gitSurfaceTestShell(t, t.TempDir())
 	s.loading = false
 	s.showSurface(WorkspaceSurfaceDiff)
 	tester := ui.NewTester(s.View, 1200, height)
 	tester.Frame()
-	if countTextExact(tester.Texts(), "Back") > 0 || tester.HasText("Choose Session") {
-		t.Fatalf("Diff sidebar kept a foot; texts=%q", tester.Texts())
+	if !tester.HasText("Choose Session") {
+		t.Fatalf("Diff sidebar lost the standard foot; texts=%q", tester.Texts())
 	}
 	if err := tester.Click("Terminal view"); err != nil {
 		t.Fatal(err)
@@ -233,16 +256,23 @@ func TestProjectAndTabExpansionArePresentationState(t *testing.T) {
 var sidebarViewTabLabels = []string{"Terminal view", "Changes view", "History view", "Files view", "Hosts view"}
 
 // TestSidebarViewTabsSitAtTheTopInEqualShares pins the 2026-10-14 move of the
-// view buttons out of the title bar: on every route they are the first
-// row under the traffic-light band, equal in width, on one line, at the same
-// place whichever page is open — and they are no longer in the title bar.
+// view buttons out of the title bar: on every route that carries the strip
+// they are the first row under the traffic-light band, equal in width, on one
+// line, at the same place whichever page is open — and they are no longer in
+// the title bar. Settings dropped the strip (2026-10-15, its Back foot is the
+// way out); TestOnlySettingsKeepsABackFoot pins that absence.
 func TestSidebarViewTabsSitAtTheTopInEqualShares(t *testing.T) {
 	setups := []headerRoute{{"terminal", "", func(t *testing.T) *Shell {
 		s := NewShell()
 		s.loading = false
 		return s
 	}}}
-	setups = append(setups, headerRoutes()...)
+	for _, route := range headerRoutes() {
+		if route.name == "settings" {
+			continue
+		}
+		setups = append(setups, route)
+	}
 	var baseline map[string]ui.Rect
 	for _, route := range setups {
 		tester := ui.NewTester(route.setup(t).View, 1200, 800)

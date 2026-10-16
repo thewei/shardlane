@@ -1,7 +1,15 @@
 package nativeui
 
+/**
+ * [INPUT]: 依赖 Herdr 投影存在性判定（projectExists/tabByID/paneByID/layoutForTab）、runtime 的 pane.zoom mutation 与 Shell 的终端同步
+ * [OUTPUT]: 对外提供 Shell.selectProject/selectTab/selectPane（用户选择唯一收口：落地投影状态并把 /workspace?pane=… 位置 Push 进 Router 历史）、applyProjectSelection/applyTabSelection/applyPaneSelection（无历史推送的落地体）、syncSelectionLocation（Back/Forward/⌘[⌘] 走历史时把位置查询静默镜像回选择）、selectionLocation
+ * [POS]: 选中状态与页面历史之间的唯一翻译层：用户选择→位置入栈，Router 走历史→选择恢复；reconcile/adopt 永远不经过这里，运行时对账不产生历史
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
+
 import (
 	"log/slog"
+	"net/url"
 
 	"github.com/wh-studio/herdr-client/internal/herdr"
 )
@@ -45,6 +53,13 @@ func (s *Shell) clearLocalSelection() {
 }
 
 func (s *Shell) selectProject(projectID string) {
+	s.applyProjectSelection(projectID)
+	s.pushSelectionLocation()
+}
+
+// applyProjectSelection is selectProject without the history push: the quiet
+// side of syncSelectionLocation.
+func (s *Shell) applyProjectSelection(projectID string) {
 	defer s.syncWorkspaceForSelection()
 	if !projectExists(s.projection, projectID) {
 		return
@@ -57,6 +72,12 @@ func (s *Shell) selectProject(projectID string) {
 }
 
 func (s *Shell) selectTab(tabID string) {
+	s.applyTabSelection(tabID)
+	s.pushSelectionLocation()
+}
+
+// applyTabSelection is selectTab without the history push.
+func (s *Shell) applyTabSelection(tabID string) {
 	defer s.syncWorkspaceForSelection()
 	tab := tabByID(s.projection, tabID)
 	if tab == nil {
@@ -75,6 +96,12 @@ func (s *Shell) selectTab(tabID string) {
 }
 
 func (s *Shell) selectPane(paneID string) {
+	s.applyPaneSelection(paneID)
+	s.pushSelectionLocation()
+}
+
+// applyPaneSelection is selectPane without the history push.
+func (s *Shell) applyPaneSelection(paneID string) {
 	defer s.syncWorkspaceForSelection()
 	pane := paneByID(s.projection, paneID)
 	if pane == nil {
@@ -89,12 +116,97 @@ func (s *Shell) selectPane(paneID string) {
 	if target, mode, ok := navigationZoomMutation(s.projection, pane.TabID, pane.ID); ok {
 		s.runNavigationZoom(target, mode)
 	}
-	s.selectedProjectID = pane.ProjectID
+	// The pane's own project field is the first fact, but a pane without it
+	// (a thin fixture, a degraded snapshot) must not wipe the project
+	// selection: the Tab carries the parentage.
+	projectID := pane.ProjectID
+	if projectID == "" {
+		if tab := tabByID(s.projection, pane.TabID); tab != nil {
+			projectID = tab.ProjectID
+		}
+	}
+	s.selectedProjectID = projectID
 	s.selectedTabID = pane.TabID
 	s.selectedPaneID = pane.ID
 	s.setProjectExpanded(pane.ProjectID, true)
 	s.setTabExpanded(pane.TabID, true)
 	s.syncSelectionPresentation()
+}
+
+// selectionLocation renders the workspace location recording the current
+// selection: project, tab and pane ride in the query together, so pane
+// switches become history entries beside page changes and the chrome Back/
+// Forward (and ⌘[ / ⌘]) walk them like page changes.
+func (s *Shell) selectionLocation() string {
+	q := url.Values{}
+	if s.selectedProjectID != "" {
+		q.Set("project", s.selectedProjectID)
+	}
+	if s.selectedTabID != "" {
+		q.Set("tab", s.selectedTabID)
+	}
+	if s.selectedPaneID != "" {
+		q.Set("pane", s.selectedPaneID)
+	}
+	if len(q) == 0 {
+		return routeWorkspace
+	}
+	return routeWorkspace + "?" + q.Encode()
+}
+
+// pushSelectionLocation records the selection just applied as a history
+// entry. Only the workspace's own browsing history records pane switches:
+// the same select* calls made while another page owns the route (Files
+// re-rooting, Connect flows) are context for that page, not navigation —
+// pushing there would yank the user to /workspace. The Router no-ops a
+// repeat of the current location, so re-selecting the same node adds
+// nothing, and a push cuts the forward entries — the browser rule.
+func (s *Shell) pushSelectionLocation() {
+	if s.router.Path() != routeWorkspace {
+		return
+	}
+	s.router.Push(s.selectionLocation())
+}
+
+// syncSelectionLocation mirrors a workspace location's selection query into
+// the shell when the Router walks its history: the entry is the authority
+// for what was selected then, so Back and Forward restore pane switches
+// exactly as they were made. User selections flow the other way, through the
+// select* push. The most specific node of the query decides; when it is
+// already selected the mirror is done — never a per-frame re-apply. A node
+// the runtime no longer has falls back to its recorded parent, so Back into
+// a closed Pane still restores its Tab.
+func (s *Shell) syncSelectionLocation() {
+	if s.router.Path() != routeWorkspace {
+		return
+	}
+	pane, tab, project := s.router.Query("pane"), s.router.Query("tab"), s.router.Query("project")
+	if pane == "" && tab == "" && project == "" {
+		return
+	}
+	if pane != "" {
+		if pane == s.selectedPaneID {
+			return
+		}
+		if paneByID(s.projection, pane) != nil {
+			s.applyPaneSelection(pane)
+			return
+		}
+	}
+	if tab != "" {
+		if tab == s.selectedTabID {
+			return
+		}
+		if tabByID(s.projection, tab) != nil {
+			s.applyTabSelection(tab)
+			return
+		}
+	}
+	if project != "" && project != s.selectedProjectID {
+		if projectExists(s.projection, project) {
+			s.applyProjectSelection(project)
+		}
+	}
 }
 
 // navigationZoomMutation resolves the pane.zoom a navigation click owes.

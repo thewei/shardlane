@@ -268,7 +268,7 @@ func TestSidebarHeadSwitchesProjectsAndKeepsTheGitView(t *testing.T) {
 	other := t.TempDir()
 	shell.projection.Projects = append(shell.projection.Projects, herdr.Project{ID: "w2", Label: "elsewhere", CWD: other})
 	shell.projection.Tabs = append(shell.projection.Tabs, herdr.Tab{ID: "t2", Label: "main", ProjectID: "w2"})
-	shell.projection.Panes = append(shell.projection.Panes, herdr.Pane{ID: "p2", TerminalID: "term-2", Label: "editor", TabID: "t2", CWD: other})
+	shell.projection.Panes = append(shell.projection.Panes, herdr.Pane{ID: "p2", ProjectID: "w2", TerminalID: "term-2", Label: "editor", TabID: "t2", CWD: other})
 	shell.git.rootOf[other] = other
 	tester.Frame()
 
@@ -297,7 +297,7 @@ func TestSidebarHeadProjectSearchFiltersAndEnterPicksTheFirstMatch(t *testing.T)
 	other := t.TempDir()
 	shell.projection.Projects = append(shell.projection.Projects, herdr.Project{ID: "w2", Label: "elsewhere", CWD: other})
 	shell.projection.Tabs = append(shell.projection.Tabs, herdr.Tab{ID: "t2", Label: "main", ProjectID: "w2"})
-	shell.projection.Panes = append(shell.projection.Panes, herdr.Pane{ID: "p2", TerminalID: "term-2", Label: "editor", TabID: "t2", CWD: other})
+	shell.projection.Panes = append(shell.projection.Panes, herdr.Pane{ID: "p2", ProjectID: "w2", TerminalID: "term-2", Label: "editor", TabID: "t2", CWD: other})
 	shell.git.rootOf[other] = other
 	if err := tester.Click("Switch project"); err != nil {
 		t.Fatal(err)

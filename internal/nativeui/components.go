@@ -119,11 +119,12 @@ type treeRowSpec struct {
 	// trailing edge under the pointer (a project's "+"). Everything else
 	// lives in the row's right-click menu — no row of dots.
 	Action *treeRowAction
-	// Count is the number of panes beneath a collapsed nesting row
-	// (2026-10-07 user request): more than one shows as tiny muted digits
-	// at the trailing edge, yielding to the hover controls. Callers pass
-	// it only while the row is collapsed — an expanded row shows its
-	// children, not a tally. 0 and 1 render nothing.
+	// Count is the number of panes beneath a nesting row (2026-10-07 user
+	// request): more than one shows as tiny muted digits at the trailing
+	// edge, yielding to the hover controls. A project row passes it whether
+	// the row is folded or expanded (2026-10-15 user request); a tab row
+	// passes it only while collapsed — an expanded tab shows its children.
+	// 0 and 1 render nothing.
 	Count int
 	// Drag enables a reorder affordance only for the runtime tree.
 	Drag *treeRowDrag

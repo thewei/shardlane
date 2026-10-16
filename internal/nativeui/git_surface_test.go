@@ -48,8 +48,13 @@ func gitSurfaceTestShell(t testing.TB, root string) *Shell {
 // keeps the terminal map intact (retained attachments) and the surface
 // state machine lands on Terminal for sidebar navigation.
 func TestSurfaceSwitchRetainsTerminalState(t *testing.T) {
-	shell := gitSurfaceTestShell(t, t.TempDir())
+	root := t.TempDir()
+	shell := gitSurfaceTestShell(t, root)
 	shell.terminals["term-1"] = &terminalSurface{key: "term-1", paneID: "p1"}
+	// A second pane in the SAME tab, local to this test: the shared fixture
+	// stays single-Pane for every tree test.
+	shell.projection.Panes = append(shell.projection.Panes,
+		herdr.Pane{ID: "p2", ProjectID: "w1", TerminalID: "term-2", Label: "builder", TabID: "t1", CWD: root})
 
 	shell.showSurface(WorkspaceSurfaceDiff)
 	if shell.surface.current() != WorkspaceSurfaceDiff {
@@ -59,13 +64,20 @@ func TestSurfaceSwitchRetainsTerminalState(t *testing.T) {
 		t.Fatalf("terminals must be retained across surface switch, got %d", len(shell.terminals))
 	}
 
-	// Sidebar navigation lands back on Terminal.
-	shell.selectPane("p1")
-	if shell.surface.current() != WorkspaceSurfaceTerminal {
-		t.Fatalf("pane selection surface = %v", shell.surface.current())
+	// A pane-only switch keeps the surface: the context key is instance/
+	// project/tab/repo — no pane in it — so reviewing continues while the
+	// selection moves inside the same Tab (GWB-040/041 retention). The
+	// Terminal landing belongs to project/tab-level navigation, pinned by
+	// TestSidebarWayHomeDoesNotRestoreDiff.
+	shell.selectPane("p2")
+	if shell.surface.current() != WorkspaceSurfaceDiff {
+		t.Fatalf("pane-only selection surface = %v, want Diff kept", shell.surface.current())
 	}
 	if len(shell.terminals) != 1 {
-		t.Fatalf("terminals must survive round trip, got %d", len(shell.terminals))
+		t.Fatalf("terminals must survive the pane switch, got %d", len(shell.terminals))
+	}
+	if shell.selectedPaneID != "p2" {
+		t.Fatalf("pane selection = %q, want p2", shell.selectedPaneID)
 	}
 }
 

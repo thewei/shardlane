@@ -768,6 +768,7 @@ func (s *Shell) syncTerminals(projection herdr.Projection) error {
 	for key, surface := range s.terminals {
 		if _, ok := desired[key]; !ok {
 			slog.Debug("detach native terminal", "instance", s.activeInstance, "pane_id", surface.paneID, "terminal_id", key)
+			s.statusStore.PaneClosed(surface.paneID)
 			_ = surface.term.Close()
 			delete(s.terminals, key)
 			closed++
@@ -807,6 +808,11 @@ func (s *Shell) syncTerminals(projection herdr.Projection) error {
 		slog.Info("attach native terminal", "instance", s.activeInstance, "pane_id", geometry.pane.ID, "terminal_id", geometry.pane.TerminalID)
 		options := terminalOptionsFromSettings(s.settings.Terminal)
 		options.LocalDragSelect = localDragSelectFor(geometry)
+		// OSC 7501 reports ride the attach stream; the store arbitrates
+		// them against the hook stream per pane (program_status.go).
+		options.OnProgramStatus = func(body []byte) {
+			s.applyProgramStatus(geometry.pane.ID, body)
+		}
 		// The gorex palettes (2026-10-06): soft ink on the panes' paper.
 		applyGorexTerminalTheme(&options, s.settings.General.Appearance)
 		// Prefer the app-owned pty Conn: it carries the real-terminal mouse

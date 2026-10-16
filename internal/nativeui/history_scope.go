@@ -2,7 +2,7 @@ package nativeui
 
 /**
  * [INPUT]: 依赖选中 Tab 的仓库根/工作目录（git root，否则 cwd）、HistoryListView 的按项目计数与 sessiontrash 条目
- * [OUTPUT]: Sessions 的范围（This project 默认 / All sessions）：historyScopeRoot/historyProjectRoot、范围切换与随项目变化的重载、按范围的计数与 Trash 条目、侧栏的范围行（historyNav）
+ * [OUTPUT]: Sessions 的范围（This project 默认 / All sessions）：historyScopeRoot/historyProjectRoot、范围切换与随项目变化的重载、按范围的计数与 Trash 条目、侧栏的范围行（historyNav，纵向撑满让标准页脚钉底）
  * [POS]: Sessions 侧栏与列表之间的唯一范围真相；范围只收窄只读目录的视图，不改 Herdr Runtime 或会话文件
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -135,7 +135,10 @@ func (s *Shell) historyNav(c *ui.Context) {
 			ui.Text(c, itoa(n)).FontSize(Typography().Micro).TextColor(t.TextMuted).SingleLine().Shrink(0)
 		}
 	}
-	ui.Column(c).FillWidth().Padding(2, sidebarGutter).Gap(1).FocusGroup(ui.Vertical).Children(func() {
+	// Grow keeps the scope rows at the top while the standard sidebar foot
+	// pins to the column's bottom edge (2026-10-15: Sessions wears the same
+	// foot as the Workspace sidebar).
+	ui.Column(c).FillWidth().Grow(1).MinHeight(0).Padding(2, sidebarGutter).Gap(1).FocusGroup(ui.Vertical).Children(func() {
 		if root != "" {
 			if _, clicked := s.sidebarTreeRow(c, sidebarTreeSpec{
 				Key: "sessions-scope-project", Title: "This project", Tooltip: root, Glyph: iconFolder,

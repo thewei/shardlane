@@ -2,8 +2,8 @@ package nativeui
 
 /**
  * [INPUT]: 依赖 Shell 当前 Router/Workspace/Agent 投影、共享 agentCardRow 和 native Quick Panel
- * [OUTPUT]: 提供 Sidebar 的顶部视图标签条（Terminal/Changes/Sessions/Files/Hosts 五个等宽图标标签）、Workspace 树、Git 引用导航、Sessions（项目头 + 范围行）/Settings 导航、仅 Settings 保留的底部返回控件（取代 Workspace 切换页脚）与 Agent 行点击/右键动作
- * [POS]: 唯一左栏宿主，Git 引用树由 git_sidebar_tree 负责，Agent 详情复用 Quick Panel；视图切换与回 Terminal 都在栏顶标签条，其余内页与 Git 视图没有页脚
+ * [OUTPUT]: 提供 Sidebar 的顶部视图标签条（Terminal/Changes/Sessions/Files/Hosts 五个等宽图标标签，Settings 路由不渲染）、Workspace 树、Git 引用导航、Sessions（项目头 + 范围行）/Settings 导航、Settings 的底部 Back 与其余所有路由的底部标准页脚（Session 切换 + Settings 钮，Terminal/Sessions/Files/Hosts/Changes 共用）与 Agent 行点击/右键动作
+ * [POS]: 唯一左栏宿主，Git 引用树由 git_sidebar_tree 负责，Agent 详情复用 Quick Panel；视图切换在栏顶标签条（Settings 无），除 Settings 外全部路由共用页脚
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 
@@ -23,9 +23,13 @@ func (s *Shell) sidebar(c *ui.Context) {
 	// No fill of its own: the sidebar column (sidebarSlide) is the vibrancy
 	// material or its opaque fallback, one continuous surface with the band
 	// beside the traffic lights above this body. The strip at the top owns
-	// the view switch (2026-10-14).
+	// the view switch (2026-10-14) — except in Settings, where it is hidden
+	// (2026-10-15 user request): Settings is no strip destination, and its
+	// one way back is the Back foot at the bottom.
 	ui.Column(c).Width(s.sidebarW).Grow(1).MinHeight(0).Shrink(0).Children(func() {
-		s.sidebarViewTabs(c)
+		if !s.sidebarInSettings() {
+			s.sidebarViewTabs(c)
+		}
 		if s.sidebarInDiffMode() {
 			// Git references are full-height navigation, not compressed toolbar chips.
 			s.sidebarProjectHeader(c, s.git.root, "Refresh repository", s.refreshGitChanges)
@@ -79,25 +83,27 @@ func (s *Shell) sidebar(c *ui.Context) {
 
 		// The sidebar foot. On the workspace sidebar the Workspace is the
 		// bound Herdr instance, so switching belongs in the footer rather
-		// than nesting Projects under a Workspace tree. Settings is not one
-		// of the strip's destinations, so it keeps its one way back here; the
-		// other inner pages and the Git views (Diff/Commit) have no foot —
-		// the strip's Terminal tab, one row up, is their way out.
+		// than nesting Projects under a Workspace tree. Every other route —
+		// the strip pages (Sessions, Files, Hosts) and the Git views on the
+		// Changes tab — wears the same standard foot (2026-10-15 user
+		// requests). Settings keeps its one way back instead: it is not a
+		// strip destination and the strip is hidden above it.
 		foot := func(content func()) {
 			ui.Row(c).Height(42).Padding(5, 8).Gap(6).AlignItems(ui.Center).
 				BorderWidth(1, 0, 0, 0).BorderColor(tokens.BorderSubtle).Children(content)
 		}
-		switch {
-		case s.sidebarInSettings():
-			foot(func() { s.sidebarBackRow(c) })
-		case s.sidebarInnerPage() || s.sidebarInDiffMode():
-		default:
+		standardFoot := func() {
 			foot(func() {
 				s.sessionSelector(c)
 				if gorexIconButton(c, gorexColorsOf(t.Dark), iconSettings, "Settings", "Settings", false, gorexIconBtn, gorexIconGlyph).Clicked() {
 					s.router.Push(routeSettings)
 				}
 			})
+		}
+		if s.sidebarInSettings() {
+			foot(func() { s.sidebarBackRow(c) })
+		} else {
+			standardFoot()
 		}
 	})
 }
@@ -131,8 +137,9 @@ func (s *Shell) sidebarInSettings() bool {
 
 // sidebarViewTabs is the sidebar's first row: the five app-level views —
 // Terminal, Changes, Sessions, Files, Hosts — as equal-width icon tabs, on
-// every route (they were the title bar's trailing buttons until 2026-10-14).
-// The lit tab is the page on screen. The Terminal tab is the way home from
+// every route except Settings (2026-10-15 user request: Settings' way out
+// is the Back foot at the bottom, so it carries no destination strip). The
+// lit tab is the page on screen. The Terminal tab is the way home from
 // any page (and from the Chat face); pressing another lit tab again leaves
 // for the Terminal too (from a nested Sessions page, first back to the
 // list), so a view is always one click away and one click out. Accessible
@@ -562,7 +569,9 @@ func (s *Shell) handleSidebarSelection(selected string) {
 	if !ok || id == "" {
 		return
 	}
-	s.router.Push(routeWorkspace)
+	// No bare workspace push beside the selection: selectProject/selectTab/
+	// selectPane record the landing as /workspace?pane=… themselves, so a
+	// row click is one history entry, not two.
 	switch kind {
 	case "instance":
 		s.openInstance(id)
