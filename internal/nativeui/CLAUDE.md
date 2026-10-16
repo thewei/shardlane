@@ -83,7 +83,7 @@ page_hosts.go, hosts_nav.go, hosts_groups.go, hosts_form.go, hosts_editor.go: /h
 providers_ui.go: Providers 统一状态机（经 herdr.RunCLI 取 integration 状态；失败只显示人话——integrationErrorText，细节进日志；一次审计同时覆盖两面、进入/刷新/动作后审计、hook 主导 + fallback 修复动作门控、在途防重、一次性 toast、两面状态→语义色映射）
 workspace.go: Terminal/Chat/Diff/Commit 唯一主表面，Changes 主内容采用上下可调 Git Review，Chat 保持 Agent 身份门禁
 chat_ui.go: Chat Timeline/Composer 和身份消失时的安全空态，不得泄漏旧 transcript；bindChatWindow（Tail 窗口）供 Workspace 历史绑定与 Sessions 详情只读绑定共用，releaseHistoryChat 保证只读绑定不外泄给窗格/Inspector；整页 /chat 不画自有页头与底色（标题在标题栏，底色来自 gorexContentCard）
-gd_surface.go: 下方 Git Diff、无仓库/无变更/无匹配状态，clean 时直达 All Commits 或 Terminal；历史模式只读，工作树工具栏单一调用点；大 diff 为一行占位（Large diff · Show/Retry），点 Show 才按需读取；卡片头按 gdCardWidth（窗口−侧栏−已打开的文件导航−边距，与 gitFilePaneLimits/gitFilePaneOpen 同源）分档，窄卡让出复制/打开按钮与 Viewed 文案、文件夹退到第二行，保证文件名完整；gdIconButton/gdPulldown 是 gorexIconButton/gorexPulldown 的薄壳（同脸，只多一个 .Focusable() Tab 停靠点——文件头 Copy 按钮用 FocusVisible 显现）
+gd_surface.go: 下方 Git Diff、无仓库/无变更/无匹配状态，clean 时直达 All Commits 或 Terminal；历史模式只读，工作树工具栏单一调用点；大 diff 为一行占位（Large diff · Show/Retry），点 Show 才按需读取；卡片头按 gdCardWidth（窗口−侧栏−已打开的文件导航−边距，与 gitFilePaneLimits/gitFilePaneOpen 同源）分档，窄卡让出复制/打开按钮与 Viewed 文案、文件夹退到第二行，保证文件名完整；gdIconButton/gdPulldown 是 gorexIconButton/gorexPulldown 的薄壳（同脸，只多一个 .Focusable() Tab 停靠点——文件头 Copy 按钮用 FocusVisible 显现）；2026-10-14 密度对齐：gdCodeSize=Typography().Body（代码/行号/diff 全区与 sidebar 阅读字号同档），文件树行名 Body、±计数与 hunk 头 BodySmall，空态横幅动作走 compact 档（与 Chat 同一 banner 同脸）
 gd_header_test.go: 卡片头响应式回归——900 宽（用户打开导航、双栏全开）文件名不被压成省略桩、宽窗口保留全部控件、gdCardWidth 随侧栏/导航开合与拖拽变化
 gd_perf_test.go: Diff 大文件基线（行模型构建/帧耗时 benchmark）与惰性计算结构性回归——词级 diff 按需、度量只算一次、快照刷新保留缓存、就近优先加载
 gd_large_test.go: 大 diff 占位→Show→按需读取→渲染 端到端回归（真实仓库）；失败重试、过大无动作、刷新保留/失效语义、不预读颜色
@@ -97,8 +97,8 @@ git_file_tree_fold_test.go: Local Changes/All Commits 中重复点击相同文�
 git_directory_actions.go: Staged/Unstaged 独立目录子文件解析，路径边界准确，不以目录路径批量 Git add
 git_quick_ai.go: 底部 Pi 提交生成器；异步 root/snapshot/草稿门禁、仅安全元数据、只填 Subject，拒绝自动提交
 git_workbench_polish_test.go: Split/Unified 真实点击、目录选中与边界、唯一 Refresh、Git actions 菜单和异步草稿门禁回归；Git 图标按钮/下拉与 Commit options 悬停脸对照同尺寸共享按钮、工具栏 Tab 必达（Fetch/Pull/Push/Git actions/Copy path）
-git_commit_graph.go: 历史提交真实父 SHA 的 merge lanes 纯渲染投影；无运行时 Git IO
-git_commit_graph_test.go: 提交父节点拓扑及合并分支回归
+git_commit_graph.go: 历史提交真实父 SHA 的 merge lanes 纯渲染投影；无运行时 Git IO；车道颜色跟线不跟槽位（首父继承、压缩槽位保有 fork 色，仅新开车道领新色），gitGraphRowH 26 即 All Commits 行距——glyph 是行内最高子元素且行无纵向 padding、List 无 Gap，相邻行贴边令导线跨行连续
+git_commit_graph_test.go: 提交父节点拓扑及合并分支回归；车道颜色跟线回归（fork 异色、压缩换槽保色、首父链同色、无关主线不借用 fork 色）
 git_layout_render_test.go: 仅显式启用时输出 Local Changes/All Commits 实际 MyGo 渲染截图
 changes_panel.go: Changed File Tree 行落在共用侧栏网格（chevron 槽·图标·标题·悬停图标动作·+N -N·状态字母）、导向线、行高走密度令牌；目录每次直接点击均切换折叠，不依赖 List.Changed；文件行保留多选及 Diff 导航
 bootstrap_page.go: 启动时全屏居中 Loading 或可重试的错误页面，尚未初次完成 Herdr projection 时不挂载侧栏或顶部菜单；本地 Herdr 协议过旧（herdrUpgradeable）时额外提供「Update Herdr」就地更新入口，更新中（herdrUpdating）用 spinner 替代两个动作；更新失败持久可见（herdrUpdateErr 不再随 updating 态消失），授权未发生（herdrUpdateNotWrbl，含拒绝与无授权代理）时给用户语言出路 + Copy Update Command
@@ -116,8 +116,9 @@ sidebar_switchers.go: Git/Files/Sessions 侧栏共用头部：项目名与分支
 sidebar_tree_test.go: 网格对齐、导向线连续、分区无 "···"、悬停 "+"、创建对话框、项目/分支快速切换、Workspace 行无 "…" 与标题栏 Actions 回归；折叠头同一语法（TestSectionHeadersWearOneGrammar）与唯一 disclosure chevron（TestOneDisclosureChevron，禁止折叠头自行互换 chevron 图标）
 changes_tree_test.go: Changes 文件树共用网格（逐层缩进一格）与行内图标动作命名回归；一个文件的状态读作 "1 file"（列表头与 Commit 旁计数）而非 "1 files"
 layout_width_test.go: 宽窗口内容列居中封顶（Settings 760、Sessions 1040、提交表单 760）回归
-git_service_snapshot.go: 仓库绑定快照/提交历史及本地远程跟踪引用的分离异步获取与 generation root 隔离
-commit_surface.go: 原生 Commit Dialog 唯一草稿，滚动正文 + 固定底部 Commit/Cancel、Select all/Clear selection；页脚主按钮用默认档（与 Cancel Commit 同高，不内联字号）
+git_service_snapshot.go: 仓库绑定快照/提交历史及本地远程跟踪引用的分离异步获取与 generation root 隔离；窗口激活动态刷新 refreshGitOnActivation（AttachWindow 的 OnFocus 调用）：失效缓存强刷快照、自身签名变化经 expectDrift 保持陈旧横幅静默、focusRefreshGap 2s 去抖弹层还键与进行中刷新不重复触发（进行中时归还 expectDrift，不遮掩下一次真实漂移）；Refresh 按钮仍是显式兜底
+git_activation_refresh_test.go: 激活刷新的静默同步（外部改动可见、横幅不响）与去抖/进行中归还两条围栏回归
+commit_surface.go: 原生 Commit Dialog 唯一草稿，滚动正文 + 固定底部 Commit/Cancel、Select all/Clear selection；页脚整排走 compact 档（Cancel/Commit、Keep Editing/Discard Draft 同排同高——2026-10-14 用户要求整页密度向 sidebar 对齐，原「对话框保持默认档」的取舍由整排同降取代）
 commit_ai_ui.go: Commit 内折叠的 Pi 生成、敏感路径受限 Prompt 原文预览与复制、手动候选消息编辑；默认只展示必要选项
 commit_modal_layout_test.go: 960×640/1200×800 长文件与 Pi 展开后固定 CTA 几何、文件选择批量操作回归
 branch_menu_filter_test.go: 搜索过滤与当前分支优先

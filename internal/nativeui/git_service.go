@@ -119,6 +119,11 @@ type gitService struct {
 	// meta owns the sidebar's per-repository facts cache (branch/±/files).
 	meta *gitMetaService
 
+	// lastActivationRefresh debounces window-activation refreshes: flyouts
+	// and dialogs hand the key window back and forth, and each hand-back
+	// looks like an activation.
+	lastActivationRefresh time.Time
+
 	// selected file for Changes↔Diff sync with oscillation guard
 	revealPath string
 	revealAt   time.Time

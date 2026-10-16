@@ -102,6 +102,12 @@ rg -n 'Padding\(14, 9, 9\)' --glob '!*_test.go' .                      # 侧栏�
 7. **部署与复核**：`bash .agents/skills/shardlane-install/scripts/install.sh`（优雅重启，用户已长期授权）；复核只做被动 AX/截图，逐项对照 before。
 8. **回写**：规则与锚点更新到本文件「已落地」，结构变化更新 `internal/nativeui/CLAUDE.md`（L2）与新文件 L3 头。
 
+## 已落地（2026-10-14 第三轮：Git 页密度对齐 sidebar + 动态刷新）
+
+- **Git 页字体向 sidebar 阅读字号对齐**（用户：「diff、按钮等地方字体变大，希望跟 sidebar 匹配」）：`gdCodeSize` 从字面量 13 改为 `Typography().Body`（12）——代码、行号、行高全部随之；变更文件树行名/目录 Section 13→Body 12；文件行 ±计数、hunk `@@` 头、评审头短哈希 Body 12→BodySmall 11；Git 表面残留的默认档（13pt）文本按钮整面收进 compact 档：空态横幅（Open Terminal/View Commits/Clear…，**Chat 页同一 workspaceEmptyBanner 同步换档**保持同组件同脸）、冲突横幅 Continue/Abort/Show conflict files、评审头 Copy Hash/Revert…/Cherry-pick…、Commit 对话框页脚整排（见上）。
+- **All Commits 列表紧凑化 + commit graph 连线修复**（用户：「间距很大、连线断开」）：同行同因——glyph 硬编码 24 高而行距 34–38（行 padding 5 + List Gap 4），每行被切开约 14px。现在 `gitGraphRowH` 26 即行距：行无纵向 padding、List 无 Gap、glyph 是行内最高子元素，相邻行贴边导线跨行连续；车道颜色从「槽位指数」改为「车道身份」——首父继承车道色、压缩换槽保色、仅新开车道（merge 的额外父）领新色，旧行为会把一条首父链画成彩虹。回归：`TestGitHistoryGraphColorsFollowTheWire`（两个变异均 KILLED：换回槽位色、去掉首父继承）。
+- **窗口激活动态刷新**（用户：「点一下窗口激活就刷新，别让用户手动点刷新；按钮留着兜底」）：`AttachWindow` 挂 MyGo `Window.OnFocus` → `refreshGitOnActivation`：失效缓存强刷快照（后台 lane，不变更焦点行为）；自身签名变化经 `expectDrift` 保持陈旧横幅静默（新数据本身就是通知）；`focusRefreshGap` 2s 去抖弹层/对话框还键的假激活；进行中刷新时归还 expectDrift 不遮掩下次真实漂移。回归：`git_activation_refresh_test.go` 两条（真实仓库 + 去抖/归还围栏，变异均 KILLED）。
+
 ## 已落地（2026-10-14 一轮）
 
 - 标题栏接管所有内页标题/动作：`route_header.go`（Changes、Sessions、Session 详情、Files、Hosts、Settings、Inspector），统一为单行 Title 大字标题（先前是 crumb 胶囊 + 第二行上下文，太拘谨，2026-10-14 第二轮去掉）；`pageHeader` 退出生产页面；侧栏不再回声标题。
@@ -138,7 +144,7 @@ rg -n 'Padding\(14, 9, 9\)' --glob '!*_test.go' .                      # 侧栏�
 
 - **终端窗格卡头保留**（N19 #7：Terminal⇄Chat 开关在卡头；去掉会改 PTY 尺寸）；只做信息去重，不做结构搬家。
 - 仍在自成一脸的小控件（同类不同脸，下一轮评估）：`gdPalette.hover/pill`（行脸）。`gdChangedPill` 的 Dismiss 已改为密集档 24/14，Changes 行与 Sessions 行的悬停操作已并入行内档 20/12（见上：图标按钮三档）。`gdLayoutControl` 与 `gdSearchInput` 已在第二轮审计并入共享脸（见上：分段控件一个 helper、搜索框一个官方控件）。
-- Commit 对话框页脚的主按钮取**默认档**而非 `compactPrimaryButton`：同排 Cancel Commit 与丢弃草稿提示（Keep Editing/Discard Draft）都是默认档，只降主按钮会比兄弟矮，整排降档则对话框里 28 高的输入框旁出现 22 高的主动作。要降档需整排一起。
+- Commit 对话框页脚的主按钮已随 2026-10-14 第三轮密度对齐**整排降入 compact 档**（用户明确要求 Git 页字体/按钮向 sidebar 对齐；按本条「整排一起」执行：Cancel Commit + Commit 主按钮、Keep Editing/Discard Draft 同排同高，`TestCommitPrimaryButtonsTakeTheirSizeFromASharedTier` 继续钉同高）。此前的「保持默认档」取舍就此作废；新建对话框若要降档，同样必须整排一起。
 - `Refresh Runtime` 菜单项保留（命令级入口，不是页面按钮）。
 - **待产品决定：命名词表**（F196–F198，影响面大，不单点改）：`Remote Machine` vs `Herdr Machine`；`Session` 既指 Herdr 运行时会话（切换器）又指 Agent 对话历史（Sessions 页）；侧栏条目叫 `Workspace` 还是 `Project`（分区头/创建入口 6 处 vs 菜单/对话框/⌘P/切换器/Files 约 20 处）。
 - **待产品决定：没有菜单孪生的图标按钮 tooltip 大小写**（F192 ②）。现状两派：与菜单项同源的命令名是 Title Case（`Split Right`/`Close Pane`/`Show Sidebar`/`New File…`，`header_overflow.go` 的菜单项复用同一串）；Git 工具条与直写 `.Tooltip(…)` 是 sentence case（`Show file list`/`Commit options`/`Pane menu`）。同一动作的两种拼写已由 `TestSameActionIsSpelledOnce` 收口；剩下的是整类约定，在决定前不要单点改。

@@ -1,5 +1,10 @@
 package nativeui
 
+// [INPUT]: Agent 投影与会话卡、chat bridge 投影、共享 emptyState/banner 构件。
+// [OUTPUT]: Chat 表面的会话呈现与空态（workspaceEmptyBanner 动作走 compact 档）。
+// [POS]: Chat 视图专用呈现层；对话运行时与 Agent 语义归 internal/agent 与 bridge。
+// [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+
 import (
 	"context"
 	"errors"
@@ -139,7 +144,7 @@ func (s *Shell) workspaceChatSurface(c *ui.Context) {
 		if !hasCard {
 			workspaceEmptyBanner(c, iconChat, "No agent in this pane",
 				"This is a standard shell. Select an Agent pane in the sidebar to open its conversation.", func() {
-					if ui.PrimaryButton(c, "Open Terminal").Clicked() {
+					if compactPrimaryButton(c, "Open Terminal").Clicked() {
 						s.showSurface(WorkspaceSurfaceTerminal)
 					}
 				})
@@ -152,7 +157,7 @@ func (s *Shell) workspaceChatSurface(c *ui.Context) {
 		if s.chatConversationID == "" {
 			workspaceEmptyBanner(c, iconChat, "Waiting for agent session…",
 				fmt.Sprintf("Agent %q has not established a conversation yet.", card.Title), func() {
-					if ui.PrimaryButton(c, "Open Terminal").Clicked() {
+					if compactPrimaryButton(c, "Open Terminal").Clicked() {
 						s.showSurface(WorkspaceSurfaceTerminal)
 					}
 				})

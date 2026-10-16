@@ -666,6 +666,10 @@ func (s *Shell) AttachWindow(win *mygo.Window) {
 			slog.Debug("file drop rejected", "error", err)
 		}
 	})
+	// Window activation re-syncs Git: work done outside the app (editor,
+	// terminal, another tool) must reach the changes list without a manual
+	// refresh; the Refresh button stays as the explicit fallback.
+	win.OnFocus(func() { s.refreshGitOnActivation() })
 	s.reloadInstances(true)
 	s.startHistoryScan()
 	s.startServiceScan()

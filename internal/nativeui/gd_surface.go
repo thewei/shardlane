@@ -40,7 +40,7 @@ func (s *Shell) gdDiffSurface(c *ui.Context) {
 	if s.git == nil || s.git.root == "" {
 		cwd := s.selectedTabCWD()
 		s.gdEmptyPanel(c, pal, "No Git repository", gdAbbreviateHome(cwd), func() {
-			if ui.PrimaryButton(c, "Open Terminal").Clicked() {
+			if compactPrimaryButton(c, "Open Terminal").Clicked() {
 				s.showSurface(WorkspaceSurfaceTerminal)
 			}
 		})
@@ -92,10 +92,10 @@ func (s *Shell) gdDiffSurface(c *ui.Context) {
 			title, detail = "No changes in commit", s.git.commitHash
 		}
 		s.gdEmptyPanel(c, pal, title, detail, func() {
-			if !s.gdReviewingCommit() && ui.Button(c, "View Commits").Clicked() {
+			if !s.gdReviewingCommit() && compactButton(c, "View Commits").Clicked() {
 				s.showGitCommits()
 			}
-			if ui.PrimaryButton(c, "Open Terminal").Clicked() {
+			if compactPrimaryButton(c, "Open Terminal").Clicked() {
 				s.showSurface(WorkspaceSurfaceTerminal)
 			}
 		})
@@ -113,13 +113,13 @@ func (s *Shell) gdDiffSurface(c *ui.Context) {
 		}
 		s.gdEmptyPanel(c, pal, title, detail, func() {
 			if s.gdSearching() {
-				if ui.Button(c, "Clear Diff Search").Clicked() {
+				if compactButton(c, "Clear Diff Search").Clicked() {
 					s.git.gdFinding = false
 					s.git.gdQuery = ""
 					s.git.gdRowsDirty = true
 				}
 			} else if strings.TrimSpace(s.changes.filter) != "" {
-				if ui.Button(c, "Clear File Filter").Clicked() {
+				if compactButton(c, "Clear File Filter").Clicked() {
 					s.changes.filter = ""
 					s.git.gdRowsDirty = true
 				}
@@ -250,8 +250,10 @@ func (s *Shell) gdForceOpen(i int) bool {
 // gdCodeFont is the family of the code.
 func gdCodeFont() string { return "SF Mono, Menlo, monospace" }
 
-// gdCodeSize is the size of the code, in points.
-const gdCodeSize = 13
+// gdCodeSize is the size of the code, in points. It reads the shared
+// Body token: the review matches the sidebar's reading size instead of
+// floating above it (2026-10-14 密度统一).
+var gdCodeSize = Typography().Body
 
 // gdLineHeight is the height of a line of code: 20 at 13.
 func gdLineHeight() float32 {
@@ -391,7 +393,7 @@ func (s *Shell) gdFileHeader(c *ui.Context, pal *gdPalette, idx int, f *gdFile) 
 			ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Gap(1).Children(func() {
 				dir, name := gdDirName(cf.Path)
 				nameText := func() {
-					ui.Text(c, name).Font(gdCodeFont()).FontSize(Typography().Section).FontWeight(WeightSemibold).TextColor(pathColor).
+					ui.Text(c, name).Font(gdCodeFont()).FontSize(Typography().Body).FontWeight(WeightSemibold).TextColor(pathColor).
 						SingleLine().Ellipsis("…").Shrink(1).MinWidth(0)
 				}
 				renamed := cf.OldPath != "" && cf.OldPath != cf.Path
@@ -399,7 +401,7 @@ func (s *Shell) gdFileHeader(c *ui.Context, pal *gdPalette, idx int, f *gdFile) 
 					// The folder gives way first: a long path keeps the file name.
 					ui.Row(c).MinWidth(0).Children(func() {
 						if dir != "" {
-							ui.Text(c, dir).Font(gdCodeFont()).FontSize(Typography().Section).TextColor(t.TextMuted).
+							ui.Text(c, dir).Font(gdCodeFont()).FontSize(Typography().Body).TextColor(t.TextMuted).
 								SingleLine().Ellipsis("…").Shrink(4).MinWidth(0)
 						}
 						nameText()
@@ -439,8 +441,8 @@ func (s *Shell) gdFileHeader(c *ui.Context, pal *gdPalette, idx int, f *gdFile) 
 		if adds, dels := f.sideCounts(); gdCountable(cf) && (adds > 0 || dels > 0) {
 			ui.Row(c).Gap(8).Padding(4, 9).Radius(Radius().Pill).Background(pal.pill).Shrink(0).
 				Tooltip(gdLines(adds, "added") + ", " + gdLines(dels, "removed")).Children(func() {
-				ui.Text(c, "+"+gdThousands(adds)).Font(gdCodeFont()).FontSize(Typography().Body).FontWeight(WeightSemibold).TextColor(pal.addText)
-				ui.Text(c, "-"+gdThousands(dels)).Font(gdCodeFont()).FontSize(Typography().Body).FontWeight(WeightSemibold).TextColor(pal.delText)
+				ui.Text(c, "+"+gdThousands(adds)).Font(gdCodeFont()).FontSize(Typography().BodySmall).FontWeight(WeightSemibold).TextColor(pal.addText)
+				ui.Text(c, "-"+gdThousands(dels)).Font(gdCodeFont()).FontSize(Typography().BodySmall).FontWeight(WeightSemibold).TextColor(pal.delText)
 			})
 		}
 		if cf.Generated {
@@ -578,7 +580,7 @@ func (s *Shell) gdGapRow(c *ui.Context, pal *gdPalette, f *gdFile, r *gdRow) {
 			}
 		}
 		if h := int(r.gap); h < len(f.hunks()) && f.hunks()[h].Section != "" {
-			ui.Text(c, f.hunks()[h].Section).Font(gdCodeFont()).FontSize(Typography().Body).TextColor(pal.gapText).SingleLine().Grow(1).Shrink(1).MinWidth(0)
+			ui.Text(c, f.hunks()[h].Section).Font(gdCodeFont()).FontSize(Typography().BodySmall).TextColor(pal.gapText).SingleLine().Grow(1).Shrink(1).MinWidth(0)
 		}
 	})
 }
@@ -798,7 +800,7 @@ func (s *Shell) gdCommitCard(c *ui.Context, pal *gdPalette) {
 					ui.Textf(c, "%s committed %s", cm.Author, gdRelativeTime(cm.Time)).
 						FontSize(Typography().BodySmall).TextColor(t.TextMuted).Shrink(0)
 					ui.Spacer(c)
-					ui.Text(c, cm.Short).Font(gdCodeFont()).FontSize(Typography().Body).TextColor(pal.ref).Shrink(0)
+					ui.Text(c, cm.Short).Font(gdCodeFont()).FontSize(Typography().BodySmall).TextColor(pal.ref).Shrink(0)
 				})
 			})
 			if compactButton(c, "Back to Local Changes").Shrink(0).Clicked() {

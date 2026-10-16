@@ -143,10 +143,10 @@ func (s *Shell) commitActionFooter(c *ui.Context) {
 		if s.commitDiscardPrompt {
 			ui.Text(c, "Discard this commit message draft?").FontSize(Typography().Caption).FontWeight(WeightSemibold)
 			ui.Row(c).Gap(sp.S).Children(func() {
-				if ui.Button(c, "Keep Editing").Clicked() {
+				if compactButton(c, "Keep Editing").Clicked() {
 					s.commitDiscardPrompt = false
 				}
-				if ui.Button(c, "Discard Draft").Clicked() {
+				if compactButton(c, "Discard Draft").Clicked() {
 					s.cancelCommitSurface()
 				}
 			})
@@ -162,10 +162,10 @@ func (s *Shell) commitActionFooter(c *ui.Context) {
 				!s.surface.commit.InFlight && s.surface.commit.Captured && !s.piCommitRunning
 			ui.Textf(c, "%d selected", len(selected)).FontSize(Typography().Caption).TextColor(t.TextMuted)
 			ui.Box(c).Grow(1)
-			if ui.Button(c, "Cancel Commit").Clicked() {
+			if compactButton(c, "Cancel Commit").Clicked() {
 				s.requestCancelCommit()
 			}
-			button := ui.PrimaryButton(c, label)
+			button := compactPrimaryButton(c, label)
 			button.Disabled(!ready)
 			if button.Clicked() && ready {
 				s.submitCommitAmend(strings.TrimSpace(s.surface.commit.Subject),

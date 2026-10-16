@@ -1,11 +1,12 @@
 // [INPUT]: Root-scoped Git cache, Branch/RemoteBranch/Tag/Worktree/Stash/Commit readers.
-// [OUTPUT]: Background Git data refresh and generation-fenced UI projection.
+// [OUTPUT]: Background Git data refresh, generation-fenced UI projection, and the window-activation silent resync (refreshGitOnActivation).
 // [POS]: Shared data loader for Git tree and center review, never render-time Git IO.
 // [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 package nativeui
 
 import (
 	"context"
+	"time"
 
 	"github.com/wh-studio/herdr-client/internal/gitworkbench"
 )
@@ -103,6 +104,36 @@ func (s *Shell) refreshGitChanges() {
 	s.git.cache.Invalidate(s.git.root)
 	s.ensureGitSnapshot(true)
 	s.loadBranches()
+}
+
+// focusRefreshGap is the smallest gap between two activation refreshes.
+// Flyouts and dialogs hand the key window back and forth; each hand-back
+// fires OnFocus, and only a real absence of the app deserves a sync.
+const focusRefreshGap = 2 * time.Second
+
+// refreshGitOnActivation re-syncs the visible changes snapshot when the
+// window gains focus: work done outside the app must show without a
+// manual refresh, which stays as the explicit fallback. The signature
+// change this sync itself observes is not external drift, so the stale
+// banner stays silent — the fresh data is the notification.
+func (s *Shell) refreshGitOnActivation() {
+	if s.git == nil || s.git.root == "" {
+		return
+	}
+	now := timeNow()
+	if !s.git.lastActivationRefresh.IsZero() && now.Sub(s.git.lastActivationRefresh) < focusRefreshGap {
+		return
+	}
+	s.git.lastActivationRefresh = now
+	// An in-flight refresh keeps expectDrift set for no one: no new sync
+	// starts, so hand the flag back instead of masking the next real drift.
+	wasRefreshing := s.git.refreshing
+	s.git.cache.Invalidate(s.git.root)
+	s.git.expectDrift = true
+	s.ensureGitSnapshot(true)
+	if wasRefreshing {
+		s.git.expectDrift = false
+	}
 }
 
 // loadBranches refreshes the local branch list, the upstream tracking

@@ -324,7 +324,10 @@ func (s *Shell) commitsPane(c *ui.Context, pal *gdPalette) {
 		}
 		cm := entries[i]
 		current := s.gdReviewingCommit() && s.git.commitHash == cm.Hash
-		row := ui.Row(c).Gap(9).Padding(5, 9).Radius(treeRowRadius).AlignItems(ui.Center).MinWidth(0)
+		// Padding carries no vertical inset on purpose: the graph glyph is
+		// the row's pitch, and rows must tile edge to edge for the lane
+		// wires to run unbroken (the compact All Commits list, 2026-10-14).
+		row := ui.Row(c).Gap(8).Padding(0, 8).Radius(treeRowRadius).AlignItems(ui.Center).MinWidth(0)
 		muted, ref := t.TextMuted, pal.ref
 		switch {
 		case current && focused:
@@ -381,7 +384,7 @@ func (s *Shell) commitsPane(c *ui.Context, pal *gdPalette) {
 			ui.Text(c, cm.Short).Font(gdCodeFont()).FontSize(Typography().BodySmall).TextColor(ref).Width(64).SingleLine()
 			ui.Text(c, gdRelativeTime(cm.Time)).FontSize(Typography().BodySmall).TextColor(muted).Width(62).SingleLine()
 		})
-	}).Grow(1).MinHeight(0).Padding(4, 8).Gap(4)
+	}).Grow(1).MinHeight(0).Padding(4, 8)
 	s.commitsList.Key = func(i int) any {
 		if i >= 0 && i < len(entries) {
 			return entries[i].Hash

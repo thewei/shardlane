@@ -39,7 +39,7 @@ func (s *Shell) gitSequencerActions(c *ui.Context) {
 		ui.Text(c, "This Git operation must be resolved in Terminal.").
 			FontSize(Typography().Caption).TextColor(c.Theme().TextMuted)
 	} else {
-		continueButton := ui.Button(c, "Continue "+gitOperationLabel(state.Kind))
+		continueButton := compactButton(c, "Continue "+gitOperationLabel(state.Kind))
 		continueButton.Disabled(s.git.opBusy || state.Unmerged > 0)
 		if state.Unmerged > 0 {
 			continueButton.Tooltip("Resolve and stage every conflicted file first")
@@ -47,7 +47,7 @@ func (s *Shell) gitSequencerActions(c *ui.Context) {
 		if continueButton.Clicked() {
 			s.continueSequencer()
 		}
-		abortButton := ui.Button(c, "Abort "+gitOperationLabel(state.Kind))
+		abortButton := compactButton(c, "Abort "+gitOperationLabel(state.Kind))
 		abortButton.Disabled(s.git.opBusy)
 		if abortButton.Clicked() {
 			s.confirmAbortSequencer()
@@ -81,7 +81,7 @@ func (s *Shell) gitSequencerBanner(c *ui.Context) {
 				if s.gitConflictFilesExpanded {
 					label = "Hide conflict files"
 				}
-				if ui.Button(c, label).Clicked() {
+				if compactButton(c, label).Clicked() {
 					s.gitConflictFilesExpanded = !s.gitConflictFilesExpanded
 				}
 			}

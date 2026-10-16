@@ -267,7 +267,7 @@ func (s *Shell) gitCommitReview(c *ui.Context) {
 				msg = "This repository has no commits yet"
 			}
 			s.gdEmptyPanel(c, gdPaletteFor(t), "No commit selected", msg, func() {
-				if ui.PrimaryButton(c, "Open Terminal").Clicked() {
+				if compactPrimaryButton(c, "Open Terminal").Clicked() {
 					s.showSurface(WorkspaceSurfaceTerminal)
 				}
 			})
@@ -335,13 +335,13 @@ func (s *Shell) gitCommitDetails(c *ui.Context) {
 		ui.Text(c, "Commit: "+cm.Hash).Font(gdCodeFont()).FontSize(Typography().BodySmall).TextColor(t.TextMuted)
 		ui.Text(c, gdCommitTime(cm.Time)).FontSize(Typography().BodySmall).TextColor(t.TextMuted)
 		ui.Row(c).Gap(8).Children(func() {
-			if ui.Button(c, "Copy Hash").Clicked() {
+			if compactButton(c, "Copy Hash").Clicked() {
 				s.copyToClipboard(cm.Hash)
 			}
-			if ui.Button(c, "Revert…").Clicked() {
+			if compactButton(c, "Revert…").Clicked() {
 				s.confirmRevertCommit(cm.Hash, cm.Subject)
 			}
-			if ui.Button(c, "Cherry-pick…").Clicked() {
+			if compactButton(c, "Cherry-pick…").Clicked() {
 				s.confirmCherryPickCommit(cm.Hash, cm.Subject)
 			}
 		})
