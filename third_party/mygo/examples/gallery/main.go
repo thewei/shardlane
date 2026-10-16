@@ -2,8 +2,9 @@
 // GPU from Go, without a web page. It shows layout, the widgets, text
 // editing, a list of ten thousand rows with context menus, a chat of
 // messages of every height, charts, styling (grids, borders, gradients,
-// text decorations, motion), custom drawing, overlays, file drops and
-// updates from other goroutines. Its pages are paths of a router, with a history.
+// text decorations, motion), custom drawing, overlays, file drops,
+// updates from other goroutines, and languages: a menu of them, numbers
+// and dates formatted in each, and right-to-left layout. Its pages are paths of a router, with a history.
 //
 //	go run ./examples/gallery
 package main
@@ -23,14 +24,22 @@ import (
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/plugins/glass"
 	"github.com/egoist/mygo/ui"
+	"github.com/egoist/mygo/ui/richtext"
 )
 
 type gallery struct {
 	win *mygo.Window
+	md  markdownDemo
 	// router shows the pages: "/overview", "/list", and a row of the list,
 	// "/list/42".
 	router *ui.Router
 
+	// rtl lays the gallery out right to left, as an app in Arabic or
+	// Hebrew is (MYGO_DIRECTION=rtl does it for the whole window).
+	rtl bool
+	// language is the language chosen on the Languages page, "" for the
+	// system's.
+	language string
 	count    int
 	agree    bool
 	notify   bool
@@ -113,6 +122,8 @@ type gallery struct {
 	stars               int
 	battery, quality    float64
 	priceLow, priceHigh float64
+	// The note of the Rich Text page.
+	note *richtext.Document
 	// The grid of swatches, the one last chosen, those chosen, and their
 	// order; the tasks dragged between two columns.
 	swatches       ui.GridState
@@ -266,7 +277,7 @@ func makeMessage(id int) message {
 	return message{id: id, text: strings.Join(lines, " "), mine: r%3 == 0}
 }
 
-var pages = []string{"Overview", "Controls", "Text", "List", "Charts", "Styling", "Drawing", "Glass", "Overlays", "Motion"}
+var pages = []string{"Overview", "Controls", "Text", "Rich Text", "List", "Charts", "Markdown", "Styling", "Drawing", "Glass", "Overlays", "Motion", "Languages"}
 
 // icon parses the shapes of a 24×24 stroked icon, drawn in currentColor
 // as icon sets draw them.
@@ -277,16 +288,19 @@ func icon(shapes string) *ui.SVG {
 // The icons of the pages, and two for buttons.
 var (
 	pageIcons = map[string]*ui.SVG{
-		"Overview": icon(`<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>`),
-		"Controls": icon(`<path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/>`),
-		"Text":     icon(`<path d="M5 6V5h14v1M12 5v14M9 19h6"/>`),
-		"List":     icon(`<path d="M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01"/>`),
-		"Charts":   icon(`<path d="M3 3v18h18"/><path d="M8 17v-5M13 17V8M18 17v-8"/>`),
-		"Styling":  icon(`<path d="M12 21a9 9 0 1 1 9-9c0 2.5-2 3.5-3.5 3.5H16a2 2 0 0 0-1.5 3.3c.4.5.4 2.2-2.5 2.2z"/><circle cx="7.5" cy="11" r="1"/><circle cx="11" cy="7" r="1"/><circle cx="16" cy="8.5" r="1"/>`),
-		"Drawing":  icon(`<path d="M15 5l4 4M4 20l1-4.5L16.5 4a2.1 2.1 0 0 1 3 3L8 18.5z"/>`),
-		"Glass":    icon(`<rect x="3" y="6" width="18" height="12" rx="6"/><path d="M7 10.5a3 3 0 0 1 2.5-1.5"/>`),
-		"Overlays": icon(`<path d="M12 3 3 8l9 5 9-5z"/><path d="m3 13 9 5 9-5"/>`),
-		"Motion":   icon(`<path d="M3 12h4M5 7h6M5 17h6"/><circle cx="16" cy="12" r="5"/>`),
+		"Overview":  icon(`<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>`),
+		"Controls":  icon(`<path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/>`),
+		"Text":      icon(`<path d="M5 6V5h14v1M12 5v14M9 19h6"/>`),
+		"Rich Text": icon(`<path d="M6 4h6a4 4 0 0 1 0 8H6zM6 12h7a4 4 0 0 1 0 8H6z"/>`),
+		"List":      icon(`<path d="M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01"/>`),
+		"Charts":    icon(`<path d="M3 3v18h18"/><path d="M8 17v-5M13 17V8M18 17v-8"/>`),
+		"Markdown":  icon(`<rect x="2.5" y="5" width="19" height="14" rx="2"/><path d="M6 15V9l2.5 3L11 9v6M15.5 9v6M13.5 13l2 2 2-2"/>`),
+		"Styling":   icon(`<path d="M12 21a9 9 0 1 1 9-9c0 2.5-2 3.5-3.5 3.5H16a2 2 0 0 0-1.5 3.3c.4.5.4 2.2-2.5 2.2z"/><circle cx="7.5" cy="11" r="1"/><circle cx="11" cy="7" r="1"/><circle cx="16" cy="8.5" r="1"/>`),
+		"Drawing":   icon(`<path d="M15 5l4 4M4 20l1-4.5L16.5 4a2.1 2.1 0 0 1 3 3L8 18.5z"/>`),
+		"Glass":     icon(`<rect x="3" y="6" width="18" height="12" rx="6"/><path d="M7 10.5a3 3 0 0 1 2.5-1.5"/>`),
+		"Overlays":  icon(`<path d="M12 3 3 8l9 5 9-5z"/><path d="m3 13 9 5 9-5"/>`),
+		"Motion":    icon(`<path d="M3 12h4M5 7h6M5 17h6"/><circle cx="16" cy="12" r="5"/>`),
+		"Languages": icon(`<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/>`),
 	}
 	starIcon    = icon(`<path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1-5.4-2.9-5.4 2.9 1-6.1L3.2 9.5l6.1-.9z"/>`)
 	checkIcon   = icon(`<path d="M20 6 9 17l-5-5"/>`)
@@ -307,7 +321,7 @@ var (
 )
 
 // pagePath returns the path of a page, and pageOf the page of a path.
-func pagePath(page string) string { return "/" + strings.ToLower(page) }
+func pagePath(page string) string { return "/" + strings.ReplaceAll(strings.ToLower(page), " ", "-") }
 
 func pageOf(path string) string {
 	for _, p := range pages {
@@ -319,7 +333,12 @@ func pageOf(path string) string {
 }
 
 func (g *gallery) view(c *ui.Context) {
-	ui.Row(c).Fill().AlignItems(ui.Stretch).Children(func() {
+	root := ui.Row(c)
+	if g.rtl {
+		// Given first, so that what is built inside reads it.
+		root.Direction(ui.RightToLeft)
+	}
+	root.Fill().AlignItems(ui.Stretch).Children(func() {
 		g.sidebar(c)
 		ui.Column(c).Grow(1).MinWidth(0).Children(func() {
 			g.toolbar(c)
@@ -346,10 +365,14 @@ func (g *gallery) view(c *ui.Context) {
 						g.controls(c)
 					case "Text":
 						g.text(c)
+					case "Rich Text":
+						g.richText(c)
 					case "List":
 						g.list(c)
 					case "Charts":
 						g.charts(c)
+					case "Markdown":
+						g.markdownPage(c)
 					case "Styling":
 						g.styling(c)
 					case "Drawing":
@@ -360,6 +383,8 @@ func (g *gallery) view(c *ui.Context) {
 						g.overlays(c)
 					case "Motion":
 						g.motion(c)
+					case "Languages":
+						g.languages(c)
 					}
 				})
 			})
@@ -389,6 +414,8 @@ func (g *gallery) toolbar(c *ui.Context) {
 		if ui.Breadcrumbs(c, path, &chosen).Label("Path").Changed() {
 			g.router.Push(pagePath(page))
 		}
+		ui.Spacer(c)
+		ui.Toggle(c, &g.rtl, "Right to left").Tooltip("Lay the gallery out right to left")
 	}).Label("Navigation").Padding(8, 24, 0)
 }
 
@@ -444,7 +471,7 @@ func (g *gallery) sidebar(c *ui.Context) {
 			for k, section := range []struct {
 				title string
 				pages []string
-			}{{"Widgets", pages[:5]}, {"Look", pages[5:]}} {
+			}{{"Widgets", pages[:6]}, {"Look", pages[6:]}} {
 				ui.SidebarSection(c, section.title, &g.sectionsOpen[k], func() {
 					for _, p := range section.pages {
 						item := ui.SidebarItem(c, p, pageIcons[p], p)
@@ -1772,6 +1799,8 @@ func (g *gallery) overlays(c *ui.Context) {
 
 func main() {
 	g := &gallery{router: ui.NewRouter("/overview"), items: []motionItem{{1, "Item 1"}, {2, "Item 2"}, {3, "Item 3"}}, nextItem: 3, size: "Medium", fruit: "Apple", plan: "Pro", volume: 35, picked: -1, starred: map[int]bool{}, split: 160, copies: 1, tree: map[string]bool{"ui": true}, birthday: time.Date(1815, 12, 10, 0, 0, 0, 0, time.UTC), now: time.Now(), font: "Helvetica", tags: []string{"go", "native"}, sections: [3]bool{true}, sectionsOpen: [2]bool{true, true}, stars: 4, battery: 35, quality: 75, priceLow: 100, priceHigh: 350, meeting: time.Date(2026, 10, 15, 9, 30, 0, 0, time.Local), tint: ui.Hex("#2563eb"), lens: [2]float32{110, 190}, glassEdge: 1, notes: 12, notifyMail: true, pathDepth: 4, chart: newCharts()}
+	// The languages of the Languages page's menu.
+	mygo.App.SetLanguages(galleryLanguages...)
 	mygo.App.WhenReady(func() {
 		g.win = mygo.NewWindow(mygo.WindowOptions{
 			Title:    "MyGo UI Gallery",

@@ -3,10 +3,15 @@ package terminal
 import (
 	"math"
 	"runtime"
+	"slices"
+	"strconv"
+	"strings"
 	"time"
 	"unicode/utf8"
 
+	"github.com/egoist/mygo/internal/l10n"
 	"github.com/egoist/mygo/plugins/terminal/internal/vt"
+	"github.com/egoist/mygo/transfer"
 	"github.com/egoist/mygo/ui"
 )
 
@@ -15,16 +20,22 @@ import (
 // element, as with Fill or Grow; its size sets the terminal's, in cells of
 // the font. A terminal shows in one view at a time.
 //
-// Copy and paste are Command+C and Command+V on macOS, which the Edit
-// menu's roles also send, and Control+Shift+C and Control+Shift+V
-// elsewhere; Shift+Page Up and Shift+Page Down scroll a page of the
-// scrollback, as does the wheel, unless the program takes the mouse. Hold
+// A key goes, in order, to a shortcut of the window or an element around
+// the view (and on macOS to the menus' key equivalents), to
+// Options.OnKey, to the terminal's keybinds (Options.Keybinds, over
+// DefaultKeybinds: Command+C and Command+V copy and paste on macOS, as do
+// Control+Shift+C and Control+Shift+V elsewhere), and to the program.
+// Other Command keys on macOS never reach the program, and go to the
+// app's shortcuts. The Edit menu's roles copy, paste and select all too.
+// The wheel scrolls the scrollback unless the program takes the mouse,
+// and zooms with Control held (Command on macOS; Options.OnZoom). Hold
 // Shift to select while a program takes the mouse, and Command (Control
 // elsewhere) to open a link on click: a hyperlink (OSC 8), a URL printed as
 // text, or a file path with Options.OpenLink.
 func View(c *ui.Context, t *Terminal) ui.Element {
 	v := t.viewOf(c)
-	e := ui.Box(c).Focusable().FocusRing(false).Clip().Label("Terminal")
+	// A terminal's grid is left to right in a right-to-left interface too.
+	e := ui.Box(c).Direction(ui.LeftToRight).Focusable().FocusRing(false).Clip().Label("Terminal")
 	v.build(c, e)
 	cursor := ui.CursorText
 	if v.hoverLink {
@@ -59,6 +70,8 @@ func (t *Terminal) viewOf(c *ui.Context) *view {
 type view struct {
 	t        *Terminal
 	services ui.Services
+	// lang is the window's language, for the menu's items.
+	lang string
 
 	theme   *Theme
 	applied *Theme // the theme the emulator has
@@ -105,8 +118,21 @@ type view struct {
 	// does not open.
 	opening     string
 	openingPath bool
-	scrolled    float32 // scrolling not yet a whole row
-	ticking     bool    // an autoscroll tick is due
+	// copying is the selection a release ended with Options.CopyOnSelect,
+	// and rightClick what a secondary click does, done once t.mu is
+	// released, as opening is.
+	copying    string
+	rightClick RightClickAction
+	scrolled   float32 // scrolling not yet a whole row
+	zoomed     float32 // wheel with the zoom modifier not yet a notch
+	ticking    bool    // an autoscroll tick is due
+
+	// reads are the program's reads of the clipboard waiting to be
+	// answered; clipPrompt is the one the terminal's own prompt asks
+	// about while clipOpen, one at a time.
+	reads      []*clipboardRequest
+	clipPrompt *clipboardRequest
+	clipOpen   bool
 }
 
 type pendingKey struct {
@@ -122,6 +148,7 @@ type pendingKey struct {
 // build updates the view as a frame builds.
 func (v *view) build(c *ui.Context, e ui.Element) {
 	t := v.t
+	v.lang = c.Locale()
 	dark := c.Theme().Dark
 	focused := e.Focused()
 	t.mu.Lock()
@@ -134,6 +161,7 @@ func (v *view) build(c *ui.Context, e ui.Element) {
 	v.theme = theme
 	if t.term == nil {
 		v.release()
+		v.reads, v.clipPrompt, v.clipOpen = nil, nil, false
 	} else {
 		if v.applied != theme {
 			theme.apply(t.term)
@@ -157,9 +185,16 @@ func (v *view) build(c *ui.Context, e ui.Element) {
 	}
 	copied := t.clipOut
 	t.clipOut = nil
+	reads := t.clipReads
+	t.clipReads = nil
+	term := t.term
 	t.mu.Unlock()
 	for _, s := range copied {
 		c.WriteClipboard(s)
+	}
+	if term != nil {
+		v.reads = append(v.reads, reads...)
+		v.answerReads(c, term)
 	}
 	if focused != v.focused {
 		v.focused = focused
@@ -180,6 +215,156 @@ func (v *view) build(c *ui.Context, e ui.Element) {
 }
 
 const blinkPeriod = 600 * time.Millisecond
+
+// answerReads answers the program's reads of the clipboard as the frame
+// builds, in order, since an OSC 52 reply doesn't tell which read it
+// answers: reads allowed are served from the clipboard, which only the
+// main thread reads; a read the app is asked about, through
+// Options.OnClipboardRequest or the terminal's own prompt, holds back
+// those after it.
+func (v *view) answerReads(c *ui.Context, term *vt.Terminal) {
+	for len(v.reads) > 0 && v.answerRead(c, term, v.reads[0]) {
+		if v.clipPrompt == v.reads[0] {
+			v.clipPrompt, v.clipOpen = nil, false
+		}
+		v.reads = slices.Delete(v.reads, 0, 1)
+	}
+}
+
+// answerRead answers r if it can this frame, and reports whether it did.
+func (v *view) answerRead(c *ui.Context, term *vt.Terminal, r *clipboardRequest) bool {
+	t := v.t
+	if a := v.readAnswer(r); a != 0 {
+		v.finishRead(term, r, a == 1)
+		return true
+	}
+	if !r.ask {
+		v.finishRead(term, r, true)
+		return true
+	}
+	if on := t.opts.OnClipboardRequest; on != nil {
+		if !r.asked {
+			r.text, r.asked = v.services.ReadClipboard(), true
+			on(ClipboardRequest{
+				Mimes:   slices.Clone(r.mimes),
+				List:    r.list,
+				Primary: r.primary,
+				Text:    r.text,
+				req:     r,
+			})
+			if a := v.readAnswer(r); a != 0 {
+				v.finishRead(term, r, a == 1)
+				return true
+			}
+		}
+		return false
+	}
+	// The terminal's own prompt, modal across the frames until it is
+	// answered.
+	if v.clipPrompt != r {
+		r.text = v.services.ReadClipboard()
+		v.clipPrompt, v.clipOpen = r, true
+	}
+	tx := l10n.In(v.lang)
+	switch ui.AlertDialog(c, &v.clipOpen, tx.ClipboardRead(), v.readMessage(r), tx.ClipboardReadDeny(), tx.ClipboardReadAllow()) {
+	case -1:
+		return false
+	case 0, ui.AlertDismissed:
+		v.finishRead(term, r, false)
+	default:
+		v.finishRead(term, r, true)
+	}
+	return true
+}
+
+// readAnswer returns 1 when the app allowed the read, 2 when it denied
+// it, and 0 while the read waits; Allow and Deny may run on any
+// goroutine, so t.mu guards it.
+func (v *view) readAnswer(r *clipboardRequest) int8 {
+	v.t.mu.Lock()
+	defer v.t.mu.Unlock()
+	return r.answer
+}
+
+// finishRead answers a read with what the clipboard holds of what the
+// program asked for, read here on the main thread, or with its refusal.
+func (v *view) finishRead(term *vt.Terminal, r *clipboardRequest, allow bool) {
+	if term == nil {
+		return
+	}
+	if !allow {
+		v.answer(term, r, false, nil, nil)
+		return
+	}
+	formats := []transfer.Format{transfer.Text}
+	for _, mime := range r.mimes {
+		if f := transfer.Format(mime); !slices.Contains(formats, f) {
+			formats = append(formats, f)
+		}
+	}
+	d := v.services.ReadClipboardData(formats...)
+	contents := make(map[string][]byte, len(r.mimes)+1)
+	for _, mime := range r.mimes {
+		if b := readFormat(d, mime); len(b) > 0 {
+			contents[mime] = b
+		}
+	}
+	// The text too, whatever was asked for: an OSC 52 read asks for
+	// text/plain alone, and the binding serves the protocol it came by.
+	if b := readFormat(d, string(transfer.Text)); len(b) > 0 {
+		if _, ok := contents["text/plain"]; !ok {
+			contents["text/plain"] = b
+		}
+	}
+	var available []string
+	for _, f := range v.services.ClipboardFormats() {
+		if m := offerMIME(f); m != "" && !slices.Contains(available, m) {
+			available = append(available, m)
+		}
+	}
+	v.answer(term, r, true, contents, available)
+}
+
+// answer writes the answer of a read under t.mu, as the reader goroutine
+// writes what the program's output answers, so that the answer doesn't
+// come between a paste's reply and the flag that says it is one
+// (Terminal.replying). A terminal closed since says nothing.
+func (v *view) answer(term *vt.Terminal, r *clipboardRequest, allow bool, contents map[string][]byte, available []string) {
+	t := v.t
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.term == term && !t.closed {
+		term.AnswerClipboard(r.deferred, allow, contents, available)
+	}
+}
+
+// readMessage is what the terminal's prompt says a read asks for: the
+// text it would read as one line, the types it asked for when the
+// clipboard holds no text, or that the clipboard is empty.
+func (v *view) readMessage(r *clipboardRequest) string {
+	if r.text != "" {
+		return previewText(r.text)
+	}
+	if len(r.mimes) > 0 {
+		return strings.Join(r.mimes, " ")
+	}
+	return l10n.In(v.lang).ClipboardReadEmpty()
+}
+
+// previewText is text as one line of at most 200 runes.
+func previewText(text string) string {
+	one := strings.Map(func(r rune) rune {
+		switch r {
+		case '\n', '\r', '\t':
+			return ' '
+		}
+		return r
+	}, text)
+	if r := []rune(one); len(r) > 200 {
+		return string(r[:200]) + "…"
+	}
+	return one
+}
 
 // release frees what the view made of the library, once the terminal is
 // closed.
@@ -212,29 +397,35 @@ func (v *view) caret() ui.Rect {
 // menu is the terminal's context menu.
 func (v *view) menu(m *ui.Menu) {
 	t := v.t
-	cmd := ui.Cmd
-	if runtime.GOOS != "darwin" {
-		cmd |= ui.Shift
-	}
 	t.mu.Lock()
 	text, selected := "", false
 	if t.term != nil {
 		text, selected = t.term.SelectionText()
 	}
 	t.mu.Unlock()
-	if m.Item("Copy").Shortcut(cmd, ui.KeyC).Disabled(!selected || text == "").Chosen() {
+	tx := l10n.In(v.lang)
+	if v.menuItem(m, tx.Copy(), ActionCopy).Disabled(!selected || text == "").Chosen() {
 		v.services.WriteClipboard(text)
 	}
-	if m.Item("Paste").Shortcut(cmd, ui.KeyV).Chosen() {
+	if v.menuItem(m, tx.Paste(), ActionPaste).Chosen() {
 		v.paste()
 	}
-	if m.Item("Select All").Chosen() {
+	if v.menuItem(m, tx.SelectAll(), ActionSelectAll).Chosen() {
 		v.selectAll()
 	}
 	m.Separator()
-	if m.Item("Clear Scrollback").Chosen() {
+	if m.Item(tx.ClearScrollback()).Chosen() {
 		t.Feed([]byte("\x1b[3J"))
 	}
+}
+
+// menuItem adds an item of the menu, showing the key bound to its action.
+func (v *view) menuItem(m *ui.Menu, label string, a Action) *ui.MenuItem {
+	it := m.Item(label)
+	if b, ok := v.t.shortcut(a); ok {
+		it.Shortcut(b.Mods, b.Key)
+	}
+	return it
 }
 
 // input handles the input of the view as it comes.
@@ -253,7 +444,7 @@ func (v *view) input(ev ui.InputEvent) bool {
 	case ui.InputCommand:
 		switch ev.Text {
 		case "copy":
-			v.copy()
+			v.copy(false)
 		case "paste":
 			v.paste()
 		case "selectAll":
@@ -268,6 +459,27 @@ func (v *view) input(ev ui.InputEvent) bool {
 			v.opening = ""
 			if open := v.t.opts.OpenLink; (open == nil || !open(link)) && !v.openingPath {
 				v.services.OpenURL(link)
+			}
+		}
+		if text := v.copying; text != "" {
+			// Outside pointerEvent's lock, which the clipboard may hold
+			// up while another program has it.
+			v.copying = ""
+			v.services.WriteClipboard(text)
+		}
+		if a := v.rightClick; a != RightClickContextMenu {
+			// Outside pointerEvent's lock, which copying and pasting take.
+			v.rightClick = RightClickContextMenu
+			switch a {
+			case RightClickCopy:
+				v.copy(true)
+			case RightClickCopyOrPaste:
+				if !v.copy(true) {
+					v.paste()
+				}
+			case RightClickPaste:
+				v.clearSelection()
+				v.paste()
 			}
 		}
 		return took
@@ -286,20 +498,15 @@ func (v *view) keyDown(ev ui.InputEvent) bool {
 	}
 	mac := runtime.GOOS == "darwin"
 	mods, key := ev.Mods, ev.Key
-	copyMods := ui.Ctrl | ui.Shift
-	if mac {
-		copyMods = ui.Super
+	if b, ok := t.binding(mods, key); ok {
+		if v.perform(b.Action, b.Performable) || !b.Performable {
+			// Its text and release are the binding's too.
+			k, _ := vtKey(key)
+			v.pending = &pendingKey{key: k, taken: true}
+			return true
+		}
 	}
-	switch {
-	case mods == copyMods && key == ui.KeyC:
-		v.copy()
-		return true
-	case mods == copyMods && key == ui.KeyV:
-		v.paste()
-		return true
-	case mods == ui.Shift && (key == ui.KeyPageUp || key == ui.KeyPageDown) && v.scrollPage(key == ui.KeyPageUp):
-		return true
-	case mods&ui.Super != 0:
+	if mods&ui.Super != 0 {
 		return false // the app's shortcuts
 	}
 	k, unshifted := vtKey(key)
@@ -331,9 +538,48 @@ func (v *view) keyDown(ev ui.InputEvent) bool {
 	return true
 }
 
-// scrollPage scrolls the scrollback a page, but for full-screen programs,
-// which get the key, and reports whether it did.
-func (v *view) scrollPage(up bool) bool {
+// perform does what a key bound to an action does, and reports whether
+// it did something (Keybind.Performable). A performable copy lets go of
+// the selection, so that the key's next press reaches the program.
+func (v *view) perform(a Action, performable bool) bool {
+	switch a {
+	case ActionIgnore:
+		return true
+	case ActionCopy:
+		return v.copy(performable)
+	case ActionPaste:
+		return v.paste()
+	case ActionSelectAll:
+		v.selectAll()
+		return true
+	case ActionClearScreen:
+		return v.clearScreen()
+	case ActionIncreaseFontSize:
+		v.zoom(Zoom{Steps: 1})
+		return true
+	case ActionDecreaseFontSize:
+		v.zoom(Zoom{Steps: -1})
+		return true
+	case ActionResetFontSize:
+		v.zoom(Zoom{Reset: true})
+		return true
+	case ActionScrollPageUp, ActionScrollPageDown, ActionScrollToTop, ActionScrollToBottom:
+		return v.scrollBack(a)
+	}
+	return false
+}
+
+// zoom zooms, as OnZoom takes it or the terminal does.
+func (v *view) zoom(z Zoom) {
+	if on := v.t.opts.OnZoom; on != nil && on(z) {
+		return
+	}
+	v.t.zoom(z)
+}
+
+// scrollBack scrolls the scrollback as an action does, but for
+// full-screen programs, which have none, and reports whether it did.
+func (v *view) scrollBack(a Action) bool {
 	t := v.t
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -342,23 +588,59 @@ func (v *view) scrollPage(up bool) bool {
 	}
 	_, rows := t.term.Size()
 	page := max(rows-1, 1)
-	if up {
-		page = -page
+	switch a {
+	case ActionScrollPageUp:
+		t.term.ScrollBy(-page)
+	case ActionScrollPageDown:
+		t.term.ScrollBy(page)
+	case ActionScrollToTop:
+		t.term.ScrollToTop()
+	case ActionScrollToBottom:
+		t.term.ScrollToBottom()
 	}
-	t.term.ScrollBy(page)
+	v.services.Invalidate()
+	return true
+}
+
+// clearScreen clears the scrollback and the screen above the cursor's
+// line, which moves to the top, as Kitty's clear_terminal to_cursor: the
+// prompt the shell shows stays. A full-screen program's screen, which this
+// would break, is left alone, as in Ghostty; it reports whether it
+// cleared.
+func (v *view) clearScreen() bool {
+	t := v.t
+	t.mu.Lock()
+	if t.term == nil || t.term.AltScreen() {
+		t.mu.Unlock()
+		return false
+	}
+	t.term.SetSelection(nil)
+	t.term.ScrollToBottom()
+	x, y := t.term.Cursor()
+	t.mu.Unlock()
+	seq := "\x1b[3J"
+	if y > 0 {
+		// Delete the rows above the cursor's from the top, then put the
+		// cursor back on its line, now the first.
+		seq += "\x1b[H\x1b[" + strconv.Itoa(y) + "M\x1b[1;" + strconv.Itoa(x+1) + "H"
+	}
+	t.Feed([]byte(seq))
 	return true
 }
 
 func (v *view) keyUp(ev ui.InputEvent) bool {
 	k, unshifted := vtKey(ev.Key)
+	if p := v.pending; p != nil && p.taken && p.key == k {
+		// The release of a key OnKey or a keybind took, Command held or
+		// not.
+		v.pending = nil
+		return true
+	}
 	if k == vt.KeyUnidentified || ev.Mods&ui.Super != 0 {
 		return false
 	}
 	if p := v.pending; p != nil && p.key == k {
 		v.pending = nil
-		if p.taken {
-			return true
-		}
 		// No text came, as for Control, Alt and a letter on Windows,
 		// where they may type one: the key alone.
 		action := vt.KeyPress
@@ -464,38 +746,92 @@ func (v *view) sendText(text string) {
 	v.blinkStart = time.Now()
 }
 
-func (v *view) copy() {
+// copy copies the selection, letting go of it with clear, and reports
+// whether there was one.
+func (v *view) copy(clear bool) bool {
 	t := v.t
 	t.mu.Lock()
 	text, ok := "", false
 	if t.term != nil {
-		text, ok = t.term.SelectionText()
+		if text, ok = t.term.SelectionText(); ok && text != "" && clear {
+			t.term.SetSelection(nil)
+		}
 	}
 	t.mu.Unlock()
-	if ok && text != "" {
-		v.services.WriteClipboard(text)
+	if !ok || text == "" {
+		return false
 	}
+	v.services.WriteClipboard(text)
+	if clear {
+		v.services.Invalidate()
+	}
+	return true
 }
 
-func (v *view) paste() {
-	text := v.services.ReadClipboard()
-	if on := v.t.opts.OnPaste; on != nil && on(text) {
-		return
+// paste pastes the clipboard and reports whether it held anything. It
+// reads, on the main thread, as the paste starts, every format for
+// Options.OnPaste, those the program can read for one that reads the
+// clipboard itself (mode 5522), and else only the text, so that pasting
+// into a shell converts no image for nothing. The program's read comes
+// later, from the terminal's goroutine, where the clipboard cannot be
+// read: it reads what was read here.
+func (v *view) paste() bool {
+	t := v.t
+	held := v.services.ClipboardFormats()
+	if len(held) == 0 {
+		return false
 	}
-	if text != "" {
-		v.t.Paste(text)
+	var d transfer.Data
+	switch {
+	case t.opts.OnPaste != nil:
+		d = v.services.ReadClipboardData()
+		if t.opts.OnPaste(d) {
+			return true
+		}
+	case t.readsClipboard():
+		var formats []transfer.Format
+		for _, f := range held {
+			if offerMIME(f) != "" {
+				formats = append(formats, f)
+			}
+		}
+		d = v.services.ReadClipboardData(formats...)
+	default:
+		d = v.services.ReadClipboardData(transfer.Text)
 	}
+	t.pasteData(d, held)
+	return true
+}
+
+// clearSelection lets go of the selection.
+func (v *view) clearSelection() {
+	t := v.t
+	t.mu.Lock()
+	if t.term != nil {
+		t.term.SetSelection(nil)
+	}
+	t.mu.Unlock()
+	v.services.Invalidate()
 }
 
 func (v *view) selectAll() {
 	t := v.t
 	t.mu.Lock()
+	text := ""
 	if t.term != nil {
 		if s, ok := t.term.SelectAll(); ok {
 			t.term.SetSelection(&s)
+			if t.opts.CopyOnSelect == CopyOnSelectClipboard {
+				text, _ = t.term.SelectionText()
+			}
 		}
 	}
 	t.mu.Unlock()
+	if text != "" {
+		// Outside the lock, which the clipboard may hold up while
+		// another program has it.
+		v.services.WriteClipboard(text)
+	}
 	v.services.Invalidate()
 }
 
@@ -558,6 +894,11 @@ func (v *view) pointerEvent(ev ui.InputEvent) bool {
 	px, py := float64(ev.X*v.scale), float64(ev.Y*v.scale)
 	switch ev.Kind {
 	case ui.InputPointerDown:
+		if ev.Button == 1 && t.opts.RightClick != RightClickContextMenu {
+			// input does it once the lock is released.
+			v.rightClick = t.opts.RightClick
+			return true
+		}
 		if ev.Button != 0 {
 			return false // the context menu
 		}
@@ -595,6 +936,11 @@ func (v *view) pointerEvent(ev ui.InputEvent) bool {
 			v.gesture.Release(t.term, &ref)
 		} else {
 			v.gesture.Release(t.term, nil)
+		}
+		if t.opts.CopyOnSelect == CopyOnSelectClipboard {
+			if text, ok := t.term.SelectionText(); ok {
+				v.copying = text
+			}
 		}
 		return true
 	}
@@ -693,6 +1039,26 @@ func (v *view) scroll(ev ui.InputEvent) bool {
 	t := v.t
 	if v.cellH == 0 {
 		return false
+	}
+	if ev.Mods&ui.Cmd != 0 {
+		// Rolling up is a step up. DY is the scroll offset's change, so up
+		// comes negative; a wheel's event is a notch, a trackpad's many
+		// small moves, which add up to a step by 40.
+		if !ev.Precise {
+			switch {
+			case ev.DY < 0:
+				v.zoom(Zoom{Steps: 1})
+			case ev.DY > 0:
+				v.zoom(Zoom{Steps: -1})
+			}
+			return true
+		}
+		v.zoomed -= ev.DY
+		if steps := int(v.zoomed / 40); steps != 0 {
+			v.zoomed -= float32(steps) * 40
+			v.zoom(Zoom{Steps: steps})
+		}
+		return true
 	}
 	ch := float32(v.cellH) / v.scale
 	dy := ev.DY

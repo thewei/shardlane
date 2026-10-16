@@ -389,3 +389,8 @@
 .doc-card-description {
   @apply text-sm leading-6 font-normal text-muted-foreground;
 }
+
+/* The hero's gopher: the scene fades out at its edges. */
+.gopher-rocket {
+  mask-image: radial-gradient(closest-side, black 70%, transparent);
+}

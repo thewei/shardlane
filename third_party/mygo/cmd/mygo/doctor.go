@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/egoist/mygo/internal/nsis"
 	"github.com/egoist/mygo/internal/webview2"
 )
 
@@ -66,10 +67,10 @@ func runDoctor(args []string) error {
 		p, _ := exec.LookPath(name)
 		return p
 	}
-	if nsis := makensis(); nsis != "" || runtime.GOOS != "windows" {
-		optional("makensis", "the Windows installer, https://nsis.sourceforge.io", nsis != "", nsis)
+	if compiler := makensis(); compiler != "" || runtime.GOOS != "windows" {
+		optional("makensis", "the Windows installer, https://nsis.sourceforge.io", compiler != "", compiler)
 	} else {
-		fmt.Printf("- %-10s not found (mygo build downloads NSIS %s for the Windows installer)\n", "makensis", nsisRelease.version)
+		fmt.Printf("- %-10s not found (mygo build downloads NSIS %s for the Windows installer)\n", "makensis", nsis.Release.Version)
 	}
 	if runtime.GOOS == "windows" {
 		st := signtool()

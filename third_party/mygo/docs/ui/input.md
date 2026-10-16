@@ -220,11 +220,19 @@ The function reports whether it took the event; one it leaves goes on to
 shortcuts, Tab, context menus and scroll containers as usual, and keys that
 the window or an element around the focus handles with `Shortcut` go there
 first. `TextCaret` turns on the system's input methods for such an element
-while it has the focus, composing at the caret it gives. `c.ReadClipboard`,
+while it has the focus, composing at the caret it gives; `InputMethod(false)`
+turns them off again while keys still type text, as for Vim's normal mode,
+except in browsers, which cannot. `c.ReadClipboard`,
 `c.WriteClipboard` and `c.OpenURL` copy, paste and open links for them;
 `c.OpenURLThen` opens a link too, and its function gets what came of it a
 moment later, as the system opens it, with an error when no app could,
-and the view builds a frame anew:
+and the view builds a frame anew. `Services.ReadClipboardData` and
+`WriteClipboardData` read and write several formats at once, as a rich
+text editor copies its own, HTML and plain text, and
+`ClipboardFormats` lists the clipboard's without reading them, as a
+terminal decides what a paste reads. A text field of the app's
+own gets `InputSelect` when a screen reader moves its selection: the runes
+`Start` to `End` of the text its `Access` describes.
 
 ```go
 ui.Box(c).Fill().Focusable().HandleInput(func(ev ui.InputEvent) bool {

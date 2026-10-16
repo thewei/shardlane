@@ -62,7 +62,8 @@ type boxCell struct {
 func (v *view) layout(r ui.Rect, scale float32) {
 	t := v.t
 	t.mu.Lock()
-	fk := t.opts.Font.key(scale)
+	f := t.font()
+	fk := f.key(scale)
 	t.mu.Unlock()
 	if fk != v.font {
 		v.font, v.scale = fk, scale

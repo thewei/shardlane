@@ -5,6 +5,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/egoist/mygo/internal/l10n"
 	"github.com/egoist/mygo/internal/platform"
 	"github.com/egoist/mygo/ui"
 )
@@ -27,13 +28,16 @@ func View(c *ui.Context, st *State) ui.Element {
 
 // build builds the element of an editor for a frame.
 func (ed *editor) build(c *ui.Context, buf *Buffer, o options) ui.Element {
+	ed.texts = l10n.In(c.Locale())
 	ed.init(buf, o, c.Theme())
 	ed.services = c.Services()
 	buf.watch(ed.services)
 	ed.sync()
 	ed.syncGitDiff()
 	ed.frameNow = c.Now()
-	e := ui.Box(c).Focusable().FocusRing(false).Clip()
+	// Code reads left to right in a right-to-left interface too, as in
+	// editors: its gutter on the left, its lines from the left.
+	e := ui.Box(c).Direction(ui.LeftToRight).Focusable().FocusRing(false).Clip()
 	// Focused is false while the window has not the keyboard.
 	focused := e.Focused()
 	if focused != ed.focused {
@@ -49,12 +53,22 @@ func (ed *editor) build(c *ui.Context, buf *Buffer, o options) ui.Element {
 		e.Focus()
 	}
 	label := o.label
-	if label == "" {
-		label = "Code editor"
+	switch {
+	case label != "":
+	case o.diffSide == diffNewSide:
+		label = ed.texts.NewText()
+	case o.diffSide == diffOldSide:
+		label = ed.texts.OldText()
+	default:
+		label = ed.texts.CodeEditor()
 	}
 	e.Role(ui.RoleTextField).Label(label).Access(ed.accessibility)
 	if !o.readOnly {
-		e.HandleTextInput(ed)
+		e.HandleTextInput(ed).InputMethod(!o.noInputMethod)
+		if o.noInputMethod && ed.markedActive {
+			// Input methods turned off leave what they composed.
+			ed.UnmarkText()
+		}
 	}
 	e.HandleInput(ed.input)
 	switch ed.region {
@@ -185,55 +199,56 @@ func (ed *editor) accessibility(n *platform.AccessNode) {
 // menu is the editor's context menu: the editing commands, folding, and
 // the app's items.
 func (ed *editor) menu(m *ui.Menu) {
+	tx := ed.texts
 	has := slices.ContainsFunc(ed.sels, func(s sel) bool { return !s.empty() })
 	ro := ed.o.readOnly
 	if ed.o.onDefinition != nil {
-		if m.Item("Go to Definition").Shortcut(0, ui.KeyF12).Chosen() {
+		if m.Item(tx.GoToDefinition()).Shortcut(0, ui.KeyF12).Chosen() {
 			ed.run(GoToDefinition)
 		}
 		m.Separator()
 	}
-	if m.Item("Cut").Shortcut(ui.Cmd, ui.KeyX).Disabled(ro).Chosen() {
+	if m.Item(tx.Cut()).Shortcut(ui.Cmd, ui.KeyX).Disabled(ro).Chosen() {
 		ed.run(Cut)
 	}
-	if m.Item("Copy").Shortcut(ui.Cmd, ui.KeyC).Chosen() {
+	if m.Item(tx.Copy()).Shortcut(ui.Cmd, ui.KeyC).Chosen() {
 		ed.run(Copy)
 	}
-	if m.Item("Paste").Shortcut(ui.Cmd, ui.KeyV).Disabled(ro).Chosen() {
+	if m.Item(tx.Paste()).Shortcut(ui.Cmd, ui.KeyV).Disabled(ro).Chosen() {
 		ed.run(Paste)
 	}
 	m.Separator()
-	if m.Item("Select All").Shortcut(ui.Cmd, ui.KeyA).Chosen() {
+	if m.Item(tx.SelectAll()).Shortcut(ui.Cmd, ui.KeyA).Chosen() {
 		ed.run(SelectAll)
 	}
 	if !ro {
-		if m.Item("Toggle Comment").Shortcut(ui.Cmd, ui.KeySlash).Chosen() {
+		if m.Item(tx.ToggleComment()).Shortcut(ui.Cmd, ui.KeySlash).Chosen() {
 			ed.run(ToggleComment)
 		}
 	}
-	m.Submenu("Selection", func(m *ui.Menu) {
-		if m.Item("Select Next Occurrence").Shortcut(ui.Cmd, ui.KeyD).Chosen() {
+	m.Submenu(tx.Selection(), func(m *ui.Menu) {
+		if m.Item(tx.SelectNextOccurrence()).Shortcut(ui.Cmd, ui.KeyD).Chosen() {
 			ed.run(SelectNext)
 		}
-		if m.Item("Select All Occurrences").Shortcut(ui.Cmd|ui.Shift, ui.KeyL).Chosen() {
+		if m.Item(tx.SelectAllOccurrences()).Shortcut(ui.Cmd|ui.Shift, ui.KeyL).Chosen() {
 			ed.run(SelectAllMatches)
 		}
-		if m.Item("Expand Selection").Chosen() {
+		if m.Item(tx.ExpandSelection()).Chosen() {
 			ed.run(SelectLarger)
 		}
-		if m.Item("Split into Lines").Disabled(!has).Chosen() {
+		if m.Item(tx.SplitIntoLines()).Disabled(!has).Chosen() {
 			ed.run(SplitSelectionIntoLines)
 		}
 	})
 	if !ro {
-		m.Submenu("Transform", func(m *ui.Menu) {
+		m.Submenu(tx.Transform(), func(m *ui.Menu) {
 			for _, it := range []struct {
 				label string
 				cmd   Command
-			}{{"Upper Case", Uppercase}, {"Lower Case", Lowercase}, {"Title Case", TitleCase},
-				{"Snake Case", SnakeCase}, {"Kebab Case", KebabCase}, {"Camel Case", CamelCase}, {"Pascal Case", PascalCase},
-				{"", NoCommand}, {"Sort Lines", SortLines}, {"Reverse Lines", ReverseLines}, {"Unique Lines", UniqueLines},
-				{"Join Lines", JoinLines}, {"Trim Trailing Whitespace", TrimTrailingWhitespace}} {
+			}{{tx.UpperCase(), Uppercase}, {tx.LowerCase(), Lowercase}, {tx.TitleCase(), TitleCase},
+				{tx.SnakeCase(), SnakeCase}, {tx.KebabCase(), KebabCase}, {tx.CamelCase(), CamelCase}, {tx.PascalCase(), PascalCase},
+				{"", NoCommand}, {tx.SortLines(), SortLines}, {tx.ReverseLines(), ReverseLines}, {tx.UniqueLines(), UniqueLines},
+				{tx.JoinLines(), JoinLines}, {tx.TrimTrailingWhitespace(), TrimTrailingWhitespace}} {
 				if it.cmd == NoCommand {
 					m.Separator()
 					continue
@@ -245,17 +260,17 @@ func (ed *editor) menu(m *ui.Menu) {
 		})
 	}
 	if ed.o.folding {
-		m.Submenu("Folding", func(m *ui.Menu) {
-			if m.Item("Fold").Chosen() {
+		m.Submenu(tx.Folding(), func(m *ui.Menu) {
+			if m.Item(tx.Fold()).Chosen() {
 				ed.run(Fold)
 			}
-			if m.Item("Unfold").Chosen() {
+			if m.Item(tx.Unfold()).Chosen() {
 				ed.run(Unfold)
 			}
-			if m.Item("Fold All").Chosen() {
+			if m.Item(tx.FoldAll()).Chosen() {
 				ed.run(FoldAll)
 			}
-			if m.Item("Unfold All").Chosen() {
+			if m.Item(tx.UnfoldAll()).Chosen() {
 				ed.run(UnfoldAll)
 			}
 		})

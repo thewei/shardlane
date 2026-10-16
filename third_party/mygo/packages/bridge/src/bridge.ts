@@ -2,7 +2,7 @@
 // The Go side wraps the bundle in a function that defines __MYGO_CONFIG__.
 import { find, stopFind } from "./find";
 import { createRuntime } from "./runtime";
-import type { BridgeConfig } from "./types";
+import type { BridgeConfig, ThemePreferences } from "./types";
 
 declare const __MYGO_CONFIG__: BridgeConfig;
 
@@ -27,9 +27,21 @@ const INTERACTIVE =
   // A window with a hidden title bar tells its pages the room its window
   // controls take, from document start on: CSS variables on :root.
   runtime.on<TitleBar>("mygo:title-bar", (tb) =>
-    setRootStyle(
-      `:root{--mygo-titlebar-height:${tb.height}px;--mygo-titlebar-inset-left:${tb.left}px;--mygo-titlebar-inset-right:${tb.right}px}`,
-    ),
+    setRootVars({
+      "--mygo-titlebar-height": `${tb.height}px`,
+      "--mygo-titlebar-inset-left": `${tb.left}px`,
+      "--mygo-titlebar-inset-right": `${tb.right}px`,
+    }),
+  );
+
+  // The accent color and the size of text the desktop asks for, which the
+  // media queries do not tell a page. From document start on: CSS variables
+  // on :root, with the accent left unset where the desktop has none.
+  runtime.on<ThemePreferences>("mygo:preferences", (p) =>
+    setRootVars({
+      "--mygo-accent": p.accent,
+      "--mygo-text-scale": String(p.textScale),
+    }),
   );
 
   const notify = (t: "dom-ready" | "drag" | "dblclick" | "escape") => {
@@ -122,6 +134,21 @@ interface TitleBar {
   height: number;
   left: number;
   right: number;
+}
+
+/** The MyGo CSS variables of :root, kept from every source that sets one. */
+const rootVars: Record<string, string | null> = {};
+
+/** Sets MyGo's CSS variables of :root, keeping the ones already set. A null
+ * value removes a variable, so a page's `var(--mygo-accent, AccentColor)`
+ * fallback applies. */
+function setRootVars(vars: Record<string, string | null>): void {
+  Object.assign(rootVars, vars);
+  const decls = Object.entries(rootVars)
+    .filter(([, v]) => v !== null)
+    .map(([k, v]) => `${k}:${v}`)
+    .join(";");
+  setRootStyle(decls ? `:root{${decls}}` : "");
 }
 
 let rootSheet: CSSStyleSheet | null = null;

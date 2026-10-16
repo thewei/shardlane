@@ -13,9 +13,11 @@
 // alternate screen of full-screen programs, the keyboard as legacy
 // sequences or the Kitty keyboard protocol, mouse reporting, bracketed
 // paste, focus reports, synchronized output, hyperlinks (OSC 8), titles,
-// the working directory (OSC 7) and the clipboard (OSC 52). Selecting with
-// the pointer copies as Ghostty does: a drag selects cells, a double click
-// words and a triple click lines; Option (macOS) or Alt drags a rectangle.
+// the working directory (OSC 7) and the clipboard (OSC 52, OSC 5522),
+// which programs write through by default and read as Options.ClipboardRead
+// allows. Selecting with the pointer copies as Ghostty does: a drag selects
+// cells, a double click words and a triple click lines; Option (macOS) or
+// Alt drags a rectangle.
 //
 // libghostty-vt is a native library loaded at run time, with no cgo: `mygo
 // build` and `mygo dev` put the build this package binds into the app, and
@@ -38,6 +40,7 @@ import (
 
 	"github.com/egoist/mygo/plugins/terminal/internal/pty"
 	"github.com/egoist/mygo/plugins/terminal/internal/vt"
+	"github.com/egoist/mygo/transfer"
 	"github.com/egoist/mygo/ui"
 )
 
@@ -79,6 +82,34 @@ type Options struct {
 	// OptionAsAlt makes Option on macOS the Alt key of programs (Meta),
 	// rather than the key that types accented letters and symbols.
 	OptionAsAlt bool
+	// CopyOnSelect copies what the pointer selects as the selection
+	// ends, and what Select All selects: CopyOnSelectClipboard to the
+	// clipboard, as Ghostty's copy-on-select = clipboard. Ghostty's
+	// primary, the selection clipboard of Linux, is not there: ui has
+	// none. SetCopyOnSelect changes it.
+	CopyOnSelect CopyOnSelect
+	// Keybinds bind keys to actions over DefaultKeybinds, as Ghostty's
+	// keybind option: a binding replaces the defaults of its key and
+	// modifiers, and one to ActionNone unbinds them, so that the program
+	// gets the key. NoDefaultKeybinds starts from none, as Ghostty's
+	// keybind = clear. OnKey sees keys first; see View.
+	Keybinds          []Keybind
+	NoDefaultKeybinds bool
+	// RightClick is what a secondary click does, as Ghostty's
+	// right-click-action: show the context menu when zero. A program that
+	// takes the mouse gets the click instead, unless Shift is held.
+	RightClick RightClickAction
+	// NoClipboardWrite keeps programs from writing to the clipboard (OSC
+	// 52, OSC 5522), as Ghostty's clipboard-write = deny. Writes go
+	// through unless it is set; reads are governed by ClipboardRead.
+	NoClipboardWrite bool
+	// ClipboardRead is what programs get when they read the clipboard
+	// (OSC 52 with "?", OSC 5522): ClipboardDeny by default, so reads
+	// stay refused — refused with EPERM for OSC 5522 — until an app opts
+	// in, where Ghostty asks by default: a terminal that can ask needs a
+	// view, and one nobody shows leaves reads pending. What a paste
+	// offered a program is answered whatever the policy (see PasteData).
+	ClipboardRead ClipboardAccess
 	// Transparent leaves the terminal's background undrawn, so that what
 	// is under the view shows through, as the window's material or an
 	// element's translucent background, as Ghostty's background-opacity
@@ -111,6 +142,23 @@ type Options struct {
 	// terminal answer the protocol's feature-detection query, so programs
 	// that probe before reporting learn that reports are consumed.
 	OnProgramStatus func(report []byte)
+	// OnPasteStatus tells how a paste goes that a program reads itself
+	// (mode 5522, see PasteData), on a goroutine of the terminal: offered,
+	// then sending as the program reads, then sent; or not taken when the
+	// program has not read it 5 seconds after the offer was written, as a
+	// program that does not read pastes, or one far away over a slow link.
+	// A paste of no text to a program that reads neither the clipboard nor
+	// bracketed pastes, which pastes nothing, tells PasteNoText. An app
+	// shows a large image's progress, or why nothing pasted, this way.
+	OnPasteStatus func(p PasteProgress)
+	// OnClipboardRequest asks the app before a program reads the
+	// clipboard, when ClipboardRead is ClipboardAsk; without it the
+	// terminal draws its own prompt in the view. It runs on the main
+	// thread, with what the program asked for; Allow or Deny answers the
+	// request, in the hook or later and from any goroutine, and the first
+	// of them wins. A request the hook leaves unanswered stays pending,
+	// as does a read of a terminal no view shows.
+	OnClipboardRequest func(req ClipboardRequest)
 
 	// OpenLink takes what a Command+click (Control+click elsewhere)
 	// opens: a hyperlink (OSC 8), a URL printed as text, or, only with
@@ -122,20 +170,21 @@ type Options struct {
 	// opens with the system (Context.OpenURL), and a path it leaves does
 	// nothing.
 	OpenLink func(link string) bool
-	// OnPaste sees a paste (Command+V, Control+Shift+V elsewhere, or a
-	// Paste menu item) before the program gets it, on the main thread:
-	// text is the clipboard's text, empty when it holds none, as with an
-	// image. It reports whether it took the paste; a paste taken sends
-	// nothing, as when an app uploads the clipboard's files for a remote
-	// program and pastes their paths instead.
-	OnPaste func(text string) bool
-	// OnKey sees a key press before the terminal encodes it, on the main
-	// thread, and reports whether it took the key; a key taken sends
-	// nothing, neither the text it types nor its release. Unlike a
-	// shortcut of an element around the view, which runs with the next
-	// frame, it keeps its place among the keys typed after it, as does
-	// what it sends with Send. A key that only types text may come as its
-	// text alone, as on Linux, which OnKey does not see.
+	// OnPaste sees a paste of the clipboard (ActionPaste's keys, a Paste
+	// menu item, a secondary click with RightClickPaste) before the
+	// program gets it, on the main thread, with every format the
+	// clipboard holds, read as the paste starts. It reports whether it
+	// took the paste; a paste taken sends nothing, as when an app uploads
+	// the clipboard's files or image (d.Files, transfer.PNG) for a remote
+	// program, then pastes their paths with Paste.
+	OnPaste func(d transfer.Data) bool
+	// OnKey sees a key press before Keybinds and before the terminal
+	// encodes it, on the main thread, and reports whether it took the key;
+	// a key taken sends nothing, neither the text it types nor its
+	// release. Unlike a shortcut of an element around the view, which runs
+	// with the next frame, it keeps its place among the keys typed after
+	// it, as does what it sends with Send. A key that only types text may
+	// come as its text alone, as on Linux, which OnKey does not see.
 	OnKey func(mods ui.Modifiers, key ui.Key) bool
 	// OnScroll sees the wheel scroll the view by whole rows, negative up,
 	// before the terminal scrolls its scrollback, on the main thread, and
@@ -146,7 +195,32 @@ type Options struct {
 	// whose history lives at the other end, as a remote multiplexer
 	// streaming only its screen.
 	OnScroll func(rows int) bool
+	// OnZoom sees a zoom, on the main thread: the wheel with Control held
+	// (Command on macOS), before OnScroll and a program that takes the
+	// mouse, or a key bound to a font size action. It reports whether it
+	// took the zoom, as an app that sizes all its text at once does; a
+	// zoom it leaves, or every one without it, changes the terminal's font
+	// size, a DIP a step, as Ghostty's increase_font_size:1 does, and back
+	// to Font's size on a reset. Returning true from every zoom turns
+	// zooming off.
+	OnZoom func(z Zoom) bool
 }
+
+// ClipboardAccess is what programs get when they read the clipboard
+// (Options.ClipboardRead).
+type ClipboardAccess int
+
+const (
+	// ClipboardDeny refuses a read: an empty clipboard for OSC 52, an
+	// EPERM status for the Kitty protocol's OSC 5522. It is the zero
+	// value, so reads stay refused until an app opts in.
+	ClipboardDeny ClipboardAccess = iota
+	// ClipboardAllow answers a read with what the clipboard holds.
+	ClipboardAllow
+	// ClipboardAsk asks the app first: Options.OnClipboardRequest when
+	// set, else the terminal's own prompt in the view.
+	ClipboardAsk
+)
 
 // CursorStyle is the shape of the cursor.
 type CursorStyle int
@@ -156,6 +230,119 @@ const (
 	CursorBar
 	CursorUnderline
 )
+
+// CopyOnSelect is where a selection is copied as it ends
+// (Options.CopyOnSelect).
+type CopyOnSelect int
+
+const (
+	// CopyOnSelectNone copies nothing, as Ghostty's none.
+	CopyOnSelectNone CopyOnSelect = iota
+	// CopyOnSelectClipboard copies to the clipboard, as Ghostty's
+	// clipboard.
+	CopyOnSelectClipboard
+)
+
+// RightClickAction is what a secondary click does (Options.RightClick), as
+// Ghostty's right-click-action.
+type RightClickAction int
+
+const (
+	// RightClickContextMenu shows the context menu: Copy, Paste, Select
+	// All and Clear Scrollback.
+	RightClickContextMenu RightClickAction = iota
+	// RightClickPaste lets go of the selection and pastes.
+	RightClickPaste
+	// RightClickCopy copies the selection and lets go of it.
+	RightClickCopy
+	// RightClickCopyOrPaste copies the selection and lets go of it, or
+	// pastes when there is none, as Windows Terminal's secondary click.
+	RightClickCopyOrPaste
+	// RightClickIgnore does nothing.
+	RightClickIgnore
+)
+
+// Zoom is a change of the font's size the user asks for (Options.OnZoom).
+type Zoom struct {
+	// Steps is how many steps, larger positive: a notch of the wheel
+	// rolled up, or a press of a key bound to ActionIncreaseFontSize, is
+	// 1. A trackpad's moves add up to notches.
+	Steps int
+	// Reset asks for the size of Font back (ActionResetFontSize).
+	Reset bool
+}
+
+// PasteStatus is how a paste a program reads itself goes (OnPasteStatus).
+type PasteStatus int
+
+const (
+	// PasteOffered: the program was told what the paste holds.
+	PasteOffered PasteStatus = iota
+	// PasteSending: the program reads it, and Sent of Total went so far.
+	PasteSending
+	// PasteSent: all of it went.
+	PasteSent
+	// PasteNotTaken: the program has not read it 5 seconds after it was
+	// offered. It may still, as long as no other paste comes.
+	PasteNotTaken
+	// PasteNoText: the paste had no text, as only an image, and the
+	// program reads neither the clipboard nor bracketed pastes (mode
+	// 2004), so nothing was pasted. A program that takes bracketed
+	// pastes gets an empty one.
+	PasteNoText
+)
+
+// PasteProgress is how a paste a program reads itself goes
+// (OnPasteStatus).
+type PasteProgress struct {
+	Status PasteStatus
+	// Sent and Total count the bytes of the reply written to the program,
+	// encoded as the protocol sends them (base64 and its packets), for
+	// PasteSending and PasteSent: Total is known once the program reads.
+	Sent, Total int64
+}
+
+// ClipboardRequest is a program's read of the clipboard that the app is
+// asked about (Options.OnClipboardRequest).
+type ClipboardRequest struct {
+	// Mimes are the MIME types the program asked for, in order of
+	// preference; empty when it asked only for what is available.
+	Mimes []string
+	// List tells that it asked for the types available (the Kitty
+	// protocol's targets listing), which is answered without asking.
+	List bool
+	// Primary is the selection clipboard of X11 (OSC 52's "s"/"p").
+	Primary bool
+	// Text is what the clipboard held as text when the request was seen,
+	// for a prompt about it.
+	Text string
+
+	req *clipboardRequest
+}
+
+// Allow answers the request with what the clipboard holds.
+func (r *ClipboardRequest) Allow() { r.answer(1) }
+
+// Deny refuses the request.
+func (r *ClipboardRequest) Deny() { r.answer(2) }
+
+// answer records the first of Allow and Deny, from any goroutine, and
+// asks for the frame that answers the request.
+func (r *ClipboardRequest) answer(a int8) {
+	if r == nil || r.req == nil {
+		return
+	}
+	t := r.req.t
+	t.mu.Lock()
+	first := r.req.answer == 0
+	if first {
+		r.req.answer = a
+	}
+	t.mu.Unlock()
+	if first {
+		t.redraw()
+	}
+}
 
 // Terminal is a terminal emulator and the program it runs. Its methods are
 // safe from any goroutine.
@@ -168,9 +355,23 @@ type Terminal struct {
 	term    *vt.Terminal
 	size    gridSize
 	events  events
-	osc     osc7501Scanner
 	closed  bool
 	clipOut []string // what programs copied, for the view to write
+	// clipReads are reads of the clipboard waiting for the main thread to
+	// answer them: a frame takes them, reads the clipboard and writes the
+	// reply (see view.answerReads).
+	clipReads []*clipboardRequest
+	// offer is what the last paste offered a program that reads the
+	// clipboard itself (mode 5522), until it reads it; replying tells
+	// that what WritePTY gets next is the reply to its read, which it
+	// sends in pieces that report their progress. The answers of reads
+	// the main thread writes hold t.mu too (view.finishRead).
+	offer    *pasteOffer
+	replying bool
+	// binds are the keys bound to actions; fontSize is the size zooms
+	// set, 0 for the font's.
+	binds    []Keybind
+	fontSize float32
 	// src is the program's pseudo-terminal, or Conn: nil until the
 	// program starts, from launch, its options.
 	src    io.ReadWriteCloser
@@ -201,6 +402,10 @@ type Terminal struct {
 	// guards it. v is the view's state, on the main thread.
 	curTheme *Theme
 	v        *view
+
+	// osc reads the program's output for Program Status Protocol
+	// sequences, which the emulator ignores as unknown OSC.
+	osc osc7501Scanner
 }
 
 // gridSize is the size of the screen in cells and of a cell in pixels.
@@ -227,22 +432,32 @@ func New(opts Options) (*Terminal, error) {
 	}
 	opts.Font.Features = append([]string(nil), opts.Font.Features...)
 	t := &Terminal{opts: opts, done: make(chan struct{})}
+	t.binds = keybinds(&opts)
 	t.size = gridSize{80, 24, 8, 16}
 	var err error
 	t.term, err = vt.NewTerminal(80, 24, vt.Effects{
-		WritePTY:     func(p []byte) { t.in.push(append([]byte(nil), p...)) },
+		WritePTY: func(p []byte) {
+			if !t.replying {
+				t.in.push(append([]byte(nil), p...))
+				return
+			}
+			t.replying = false
+			t.sendReply(p)
+		},
 		Bell:         func() { t.events.bells++ },
 		TitleChanged: func() { t.events.title = true },
 		RenderHold:   t.renderHold,
 		Clipboard: func(text string, primary bool) bool {
-			if !primary {
-				t.clipOut = append(t.clipOut, text)
-				t.redraw()
+			if primary || t.opts.NoClipboardWrite {
+				return false
 			}
-			return !primary
+			t.clipOut = append(t.clipOut, text)
+			t.redraw()
+			return true
 		},
-		Size: func() (int, int, int, int) { return t.size.cols, t.size.rows, t.size.cellW, t.size.cellH },
-		Dark: func() bool { return t.curTheme == nil || t.curTheme.dark() },
+		ClipboardRead: t.clipboardRead,
+		Size:          func() (int, int, int, int) { return t.size.cols, t.size.rows, t.size.cellW, t.size.cellH },
+		Dark:          func() bool { return t.curTheme == nil || t.curTheme.dark() },
 		Notify: func(title, body string) {
 			t.events.notify = append(t.events.notify, [2]string{title, body})
 		},
@@ -535,14 +750,47 @@ func (t *Terminal) Dir() string {
 	return fileURLPath(pwd)
 }
 
-// SetFont changes the font, as Options.Font.
-// set them, as for zooming.
+// SetFont changes the font, as Options.Font, and the size a reset zooms
+// back to; the font takes its size, as zooming did not happen.
 func (t *Terminal) SetFont(f Font) {
 	f.Features = append([]string(nil), f.Features...)
 	t.mu.Lock()
-	t.opts.Font = f
+	t.opts.Font, t.fontSize = f, 0
 	t.mu.Unlock()
 	t.redraw()
+}
+
+// font returns the font, at the size zooms set; t.mu is held.
+func (t *Terminal) font() Font {
+	f := t.opts.Font
+	if t.fontSize > 0 {
+		f.Size = t.fontSize
+	}
+	return f
+}
+
+// zoom changes the font's size as z asks, a DIP a step, from 1 DIP, as
+// Ghostty does.
+func (t *Terminal) zoom(z Zoom) {
+	t.mu.Lock()
+	switch {
+	case z.Reset:
+		t.fontSize = 0
+	case z.Steps != 0:
+		f := t.font()
+		size := f.key(1).size
+		t.fontSize = max(size+float32(z.Steps), 1)
+	}
+	t.mu.Unlock()
+	t.redraw()
+}
+
+// SetCopyOnSelect changes where a selection is copied as it ends, as
+// Options.CopyOnSelect, as when the user changes a setting.
+func (t *Terminal) SetCopyOnSelect(c CopyOnSelect) {
+	t.mu.Lock()
+	t.opts.CopyOnSelect = c
+	t.mu.Unlock()
 }
 
 // SetTheme changes the colors, as Options.Theme and DarkTheme.
@@ -600,21 +848,6 @@ func (t *Terminal) Send(data []byte) {
 	}
 }
 
-// Paste pastes text, bracketed when the program asks (mode 2004), so that
-// it does not run as commands as it would typed.
-func (t *Terminal) Paste(text string) {
-	t.mu.Lock()
-	if t.term == nil {
-		t.mu.Unlock()
-		return
-	}
-	data := vt.EncodePaste(text, t.term.Mode(vt.ModeBracketedPaste))
-	t.term.ScrollToBottom()
-	t.mu.Unlock()
-	t.Send(data)
-	t.redraw()
-}
-
 // Feed shows data as if the program wrote it: text and escape sequences.
 func (t *Terminal) Feed(data []byte) { t.write(data) }
 
@@ -628,6 +861,8 @@ func (t *Terminal) Close() error {
 		return nil
 	}
 	t.closed = true
+	t.offer = nil
+	t.clipReads = nil
 	src, proc, waiting := t.src, t.proc, t.launch != nil
 	t.launch = nil
 	if t.timer != nil {
@@ -791,8 +1026,14 @@ func unhex(c byte) (byte, bool) {
 type inputQueue struct {
 	mu     sync.Mutex
 	cond   *sync.Cond
-	queue  [][]byte
+	queue  []queued
 	closed bool
+}
+
+// queued is input to write, and what to run once it is written.
+type queued struct {
+	p    []byte
+	done func()
 }
 
 func (q *inputQueue) init() {
@@ -801,11 +1042,15 @@ func (q *inputQueue) init() {
 	}
 }
 
-func (q *inputQueue) push(p []byte) {
+func (q *inputQueue) push(p []byte) { q.pushDone(p, nil) }
+
+// pushDone queues p, and done to run once it is written, on the queue's
+// goroutine.
+func (q *inputQueue) pushDone(p []byte, done func()) {
 	q.mu.Lock()
 	q.init()
 	if !q.closed {
-		q.queue = append(q.queue, p)
+		q.queue = append(q.queue, queued{p, done})
 		q.cond.Signal()
 	}
 	q.mu.Unlock()
@@ -831,12 +1076,17 @@ func (q *inputQueue) run(w io.Writer) {
 			q.mu.Unlock()
 			return
 		}
-		p := q.queue[0]
+		item := q.queue[0]
 		q.queue = q.queue[1:]
 		q.mu.Unlock()
-		if _, err := w.Write(p); err != nil {
+		if len(item.p) == 0 {
+			// Only something to run, in its place among the writes.
+		} else if _, err := w.Write(item.p); err != nil {
 			q.close()
 			return
+		}
+		if item.done != nil {
+			item.done()
 		}
 	}
 }

@@ -7,9 +7,11 @@ import "slices"
 type ScrollState struct {
 	Handle
 
-	// X and Y are how far the content is scrolled left and up, in DIPs.
-	// Set them to scroll: the container keeps them within its content, so
-	// that 0 shows the start and math.MaxFloat32 the end.
+	// X and Y are how far the content is scrolled left and up, in DIPs:
+	// right to left (Direction), X is how far it is scrolled right, from
+	// its start at the right. Set them to scroll: the container keeps them
+	// within its content, so that 0 shows the start and math.MaxFloat32
+	// the end.
 	X, Y float32
 	// MaxX and MaxY are as far as X and Y go, as the frame laid the content
 	// out: Y is MaxY at the end. The container sets them.
@@ -155,6 +157,27 @@ func (e *node) maxScroll() (x, y float64) {
 	return x, y
 }
 
+// scrollLeft returns how far the scroll container moves its content to
+// the left: its horizontal offset, which, right to left, counts from the
+// right, as Flutter's do (CSS's go negative instead).
+func (e *node) scrollLeft() float64 {
+	if e.flags&flagScrollX != 0 && e.rtl() {
+		mx, _ := e.maxScroll()
+		return mx - e.st.scrollX
+	}
+	return e.st.scrollX
+}
+
+// followShift returns how far what follows the scroll container sideways
+// (ScrollWith) moves to the left: right to left, both are laid out from
+// the right, which the offset counts from.
+func (e *node) followShift() float64 {
+	if e.rtl() {
+		return -e.st.scrollX
+	}
+	return e.st.scrollX
+}
+
 // scrollTo moves the content of a scroll container, and the ScrollState
 // tracking it.
 func (s *state) scrollTo(x, y float64) {
@@ -225,7 +248,16 @@ func reveal(e *node) {
 			// Where the box is in the content: a List placed its rows
 			// from scrollBase.
 			cx, cy := float64(x), float64(y)+p.scrollBase
-			sx := max(0, min(nearest(st.scrollX, cx, w, p.border[3], p.w-p.border[1]), mx))
+			rtl := p.flags&flagScrollX != 0 && p.rtl()
+			left := st.scrollX
+			if rtl {
+				left = mx - left
+			}
+			sx := max(0, min(nearest(left, cx, w, p.border[3], p.w-p.border[1]), mx))
+			if rtl {
+				// Right to left, offsets count from the right.
+				sx = mx - sx
+			}
 			sy := max(0, min(nearest(st.scrollY, cy, h, p.border[0], p.h-p.border[2]), my))
 			if sx != st.scrollX || sy != st.scrollY {
 				st.beginMove(frame)
@@ -239,7 +271,7 @@ func reveal(e *node) {
 					st.scrollTo(sx, sy)
 				}
 			}
-			x = float32(cx - st.scrollX)
+			x = float32(cx - p.scrollLeft())
 			y = float32(cy - st.scrollY)
 		}
 		x += p.x

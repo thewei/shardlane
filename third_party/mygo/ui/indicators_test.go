@@ -159,8 +159,7 @@ func TestStepper(t *testing.T) {
 	}
 	// Held, it keeps stepping.
 	tt.Press(float32(b.X+b.W/2), float32(b.Y+b.H*3/4))
-	time.Sleep(700 * time.Millisecond)
-	tt.Frame()
+	tt.Advance(700 * time.Millisecond)
 	tt.Release(float32(b.X+b.W/2), float32(b.Y+b.H*3/4))
 	if v > 8 {
 		t.Errorf("held 0.7 s, it went down to %v", v)

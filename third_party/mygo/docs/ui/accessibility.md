@@ -73,6 +73,16 @@ date := ui.ButtonBase(c).Role(ui.RolePopUpButton).Label("Due").Value(app.due.For
 message read with it; a [field](form.md) gives its control the texts below
 it.
 
+## Formats of text
+
+The [rich text editor](rich-text-editor.md) tells screen readers the formats
+of its runs as they read them: bold, italic, underlined, struck through,
+links, fonts, colors and headings. VoiceOver reads them through
+`AXAttributedStringForRange`, Orca through ATK's run attributes, and
+Narrator through UI Automation's Text pattern, which every text field has,
+by characters, formats, words and lines. Screen readers move the selection
+of text fields too.
+
 ## Lists and tables
 
 A [list](list.md)'s rows are list items, and a [table](table.md)'s rows,

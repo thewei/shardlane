@@ -186,12 +186,12 @@ func (DialogModule) Message(opts MessageOptions) (MessageResult, error) {
 	}
 	buttons := opts.Buttons
 	if len(buttons) == 0 {
-		buttons = []string{"OK"}
+		buttons = []string{menuMessages().Ok()}
 	}
 	cancel := opts.CancelButton
 	if cancel == 0 {
 		for i, b := range buttons {
-			if l := strings.ToLower(b); l == "cancel" || l == "no" {
+			if l := strings.ToLower(b); l == "cancel" || l == "no" || b == menuMessages().Cancel() {
 				cancel = i
 				break
 			}

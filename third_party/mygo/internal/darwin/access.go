@@ -711,6 +711,20 @@ func registerAccessClass() {
 				el.act(platform.AccessSetValue, stringOf(value))
 			}
 		}),
+		// Moving the selection of a text field, as VoiceOver does.
+		method("setAccessibilitySelectedTextRange:", func(self id, cmd objc.SEL, r nsRange) {
+			sendSuper(self, "MyGoAccessibilityElement", cmd, uintptr(r.Location), uintptr(r.Length))
+			el := b().accessElementOf(self)
+			if el == nil || !textual(el.node.Role) || el.s.updating {
+				return
+			}
+			u := utf16.Encode([]rune(el.node.Value))
+			lo := int(min(r.Location, uint(len(u))))
+			hi := int(min(uint(lo)+r.Length, uint(len(u))))
+			start := len(utf16.Decode(u[:lo]))
+			end := start + len(utf16.Decode(u[lo:hi]))
+			el.s.send(platform.SurfaceEvent{Kind: platform.AccessAction, ID: el.node.ID, Action: platform.AccessSelectText, From: start, To: end})
+		}),
 		// The text of text fields, for reading by characters and lines.
 		method("accessibilityStringForRange:", func(self id, _ objc.SEL, r nsRange) id {
 			el := b().accessElementOf(self)
@@ -721,6 +735,16 @@ func registerAccessClass() {
 			lo := int(min(r.Location, uint(len(u))))
 			hi := int(min(uint(lo)+r.Length, uint(len(u))))
 			return nsString(string(utf16.Decode(u[lo:hi])))
+		}),
+		// The formats of a rich text's runs, as NSTextView gives them, in
+		// accessibility's own keys: VoiceOver reads them as bold, italic,
+		// links.
+		method("accessibilityAttributedStringForRange:", func(self id, _ objc.SEL, r nsRange) id {
+			el := b().accessElementOf(self)
+			if el == nil {
+				return 0
+			}
+			return attributedAccessString(&el.node, r)
 		}),
 		method("accessibilityLineForIndex:", func(self id, _ objc.SEL, i int) int { return 0 }),
 		method("accessibilityRangeForLine:", func(self id, _ objc.SEL, line int) nsRange {

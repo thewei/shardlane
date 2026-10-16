@@ -80,7 +80,7 @@ func (f stateFile) LoadWindowStates() (map[string]WindowState, error) {
 	if err != nil {
 		return nil, err
 	}
-	data, err := os.ReadFile(path)
+	data, err := readAppFile(path)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, nil
 	} else if err != nil {
@@ -102,13 +102,12 @@ func (f stateFile) SaveWindowStates(states map[string]WindowState) error {
 	if err != nil {
 		return err
 	}
-	// Windows cannot replace a file that another program has open, such as
-	// antivirus software scanning it: the error keeps the states for the
-	// next save.
+	// An error, as Windows still reporting the file in use after rename's
+	// retries, keeps the states for the next save.
 	if err := os.WriteFile(path+".tmp", data, 0o644); err != nil {
 		return err
 	}
-	return os.Rename(path+".tmp", path)
+	return rename(path+".tmp", path)
 }
 
 // restoreWindowState applies the state saved under key to p, if the

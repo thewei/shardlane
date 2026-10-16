@@ -22,6 +22,9 @@ MyGo does not copy a whole document on each edit or choose formatting behavior.
 The existing `HandleInput`, `TextCaret`, `TextInput` and `TextArea` APIs remain
 available. `TextCaret` is useful for terminals and other widgets that need a
 candidate-window location but do not provide a text document.
+`InputMethod(false)` turns input methods off for either while keys still
+type text, which then reaches `ReplaceText` with no composition, as a
+modal editor's normal mode wants; browsers cannot turn them off.
 
 The built-in `TextInput` and `TextArea` also implement this client contract.
 Their `*string` bindings publish committed text when the widget builds;
@@ -150,6 +153,13 @@ Layout offsets are UTF-16 too. `Caret` and `IndexAt` snap to whole graphemes;
 of bidi selections. It supplies geometry without inventing a single-range
 selection model or choosing an editor's navigation policy. Size and geometry
 queries are safe from any goroutine; painting is part of a UI frame.
+
+`ShapeRichTextWith` lays spans out aligned (`TextShape.Align`), as the
+paragraphs of a rich text editor. A span with an `ObjectWidth` makes its
+object replacement characters (U+FFFC) inline objects: boxes of
+`ObjectWidth`×`ObjectHeight` standing on the baseline, which lines break
+around and which draw nothing; `TextLayout.Objects` gives their boxes,
+where an editor draws its images.
 
 For visual navigation, retain `TextCaretPosition`, including its `Affinity`.
 `TextDownstream` chooses the following logical text's edge; `TextUpstream`

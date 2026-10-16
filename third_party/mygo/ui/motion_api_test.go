@@ -527,3 +527,13 @@ func TestScrollToGlides(t *testing.T) {
 		t.Errorf("stopped, it went on from %v to %v", y, feed.Y)
 	}
 }
+
+func TestKeyframesHoldWhileDelayed(t *testing.T) {
+	// An easing need not start at zero, as one that jumps at once: a
+	// delayed sequence holds the value it starts from all the same.
+	jump := func(float32) float32 { return 1 }
+	s := sequence{frames: []Keyframe{{Value: 0}, {At: time.Second, Value: 100, Ease: jump}}, start: time.Unix(10, 0), from: 5}
+	if v, done := s.sample(time.Unix(9, 0)); v != 5 || done {
+		t.Fatalf("a delayed sequence showed %v, done %v; want 5, not done", v, done)
+	}
+}

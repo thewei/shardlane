@@ -25,6 +25,7 @@ export default defineConfig({
   urlSchemes: ["myapp"],
   fileAssociations: [{ ext: ["md"], name: "Markdown Document", mimeType: "text/markdown" }],
 
+  i18n: { dir: "locales", source: "en" },
   updates: { publicKey: "…", github: "you/my-app" },
   macos: { signingIdentity: "Developer ID Application: Jane Doe (TEAMID)" },
   windows: { certificate: "certs/code-signing.pfx" },
@@ -78,6 +79,16 @@ Each file association has:
 | `name` | what the files are: `"Markdown Document"` |
 | `mimeType` | their MIME type, by which Linux identifies files; without one the app defines `application/x-<app>-<ext>` |
 | `role` | `Editor` (the default) or `Viewer`, on macOS |
+
+## i18n
+
+The catalogs of the app's messages, a JSON file per language; see
+[Languages](i18n.md). Without `i18n`, the app ships English only.
+
+| Field | Default | |
+|---|---|---|
+| `dir` | `locales` | the directory of the catalogs, `<tag>.json` for each language the app ships (`de.json`, `zh-Hant.json`); a Go package of its own, where `mygo generate` writes the Go functions of the messages |
+| `source` | `en` | the language the app is written in, whose catalog has every message and which the others fall back to |
 
 ## updates
 

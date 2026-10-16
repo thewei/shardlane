@@ -3,6 +3,7 @@
 package ui
 
 import (
+	i18n "github.com/egoist/mygo/i18n"
 	platform "github.com/egoist/mygo/internal/platform"
 	transfer "github.com/egoist/mygo/transfer"
 	image "image"
@@ -99,7 +100,10 @@ func (_handle *Route) View(c *Context, fn func(r *Route)) Element {
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(_handle.coreView(_ctx, fn))
+	_ctx.rt.beginBuild()
+	_e := _handle.coreView(_ctx, fn)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // View builds the page shown with fn, in a column taking the room it is
@@ -110,7 +114,10 @@ func (_handle *Router) View(c *Context, fn func(r *Route)) Element {
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(_handle.coreView(_ctx, fn))
+	_ctx.rt.beginBuild()
+	_e := _handle.coreView(_ctx, fn)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // Panel builds fn in the panel of the collapsible while it is open, and as
@@ -124,7 +131,10 @@ func (_handle CollapsibleParts) Panel(fn func()) Element {
 	}
 	_ctx := _parts.c
 	_ = _ctx
-	return wrapElement(_parts.Panel(fn))
+	_ctx.rt.beginBuild()
+	_e := _parts.Panel(fn)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // Progress returns how far the collapsible is open, from 0 closed to 1
@@ -141,8 +151,8 @@ func (_handle CollapsibleParts) Progress() float32 {
 }
 
 // Chosen returns the option the user chose in this frame, by a click or
-// Enter: ask it after Popup. It applies pending input to the controls built
-// so far, so the choice can be handled in the same build pass.
+// Enter: ask it after Popup, which takes the input of the options it
+// built as it returns, so the choice can be handled in the same build pass.
 func (_handle ComboboxParts) Chosen() (string, bool) {
 	_parts := _handle.resolve()
 	if _parts == nil {
@@ -177,7 +187,10 @@ func (_handle ComboboxParts) Item(value string) Element {
 	}
 	_ctx := _parts.c
 	_ = _ctx
-	return wrapElement(_parts.Item(value))
+	_ctx.rt.beginBuild()
+	_e := _parts.Item(value)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // Open reports whether the popup shows.
@@ -201,7 +214,10 @@ func (_handle ComboboxParts) Popup(fn func(panel Element)) Element {
 	}
 	_ctx := _parts.c
 	_ = _ctx
-	return wrapElement(_parts.Popup(func(panel *node) { fn(wrapElement(panel)) }))
+	_ctx.rt.beginBuild()
+	_e := _parts.Popup(func(panel *node) { fn(wrapElement(panel)) })
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // SetOpen opens or closes the popup.
@@ -278,18 +294,47 @@ func (_handle *Context) CloseToast(id string) {
 	_ctx.CloseToast(id)
 }
 
+// Direction returns the direction of the elements built now: that of the
+// element they go in. Widgets of an app's own read it to draw what points
+// along the line, as an arrow forward:
+//
+//	forward := "M5 2 11 8 5 14"
+//	if c.Direction() == ui.RightToLeft {
+//		forward = "M11 2 5 8 11 14"
+//	}
+func (_handle *Context) Direction() Direction {
+	_ctx := _handle.build()
+	if _ctx == nil {
+		return *new(Direction)
+	}
+	return _ctx.Direction()
+}
+
 // DisableAnimations makes the values that animate in this frame
 // (AnimateTo, Animate, Spring), the element transitions and the pages of
 // routers go to their targets at once, as SwiftUI's disablesAnimations:
 // for a change that should not show as motion, as restoring a window's
 // state or jumping to a search result. Call it before building what
-// changes.
+// changes. Keyframes and timelines, which play on their own rather than
+// towards a target, go on as they were: Seek a Timeline to jump it.
 func (_handle *Context) DisableAnimations() {
 	_ctx := _handle.build()
 	if _ctx == nil {
 		return
 	}
 	_ctx.DisableAnimations()
+}
+
+// Locale returns the language the app shows (mygo.App.Locale), a BCP 47
+// tag such as "en" or "zh-Hans", for what the view says in it. Text is in
+// it unless an element says otherwise (Element.Lang). A frame follows its
+// changes, as App.SetLocale makes them.
+func (_handle *Context) Locale() string {
+	_ctx := _handle.build()
+	if _ctx == nil {
+		return ""
+	}
+	return _ctx.Locale()
 }
 
 // MeasureText returns the size spans of text take as Painter.RichText draws
@@ -372,6 +417,17 @@ func (_handle *Context) ReadClipboard() string {
 	return _ctx.ReadClipboard()
 }
 
+// Region returns the user's regional formats (mygo.App.Region): the
+// locale of the formats, the first day of the week and the hour cycle,
+// which dates and times follow. A frame follows their changes.
+func (_handle *Context) Region() i18n.Region {
+	_ctx := _handle.build()
+	if _ctx == nil {
+		return *new(i18n.Region)
+	}
+	return _ctx.Region()
+}
+
 // Root returns the element holding the window's content: a column the
 // size of the window.
 func (_handle *Context) Root() Element {
@@ -380,6 +436,18 @@ func (_handle *Context) Root() Element {
 		return Element{}
 	}
 	return wrapElement(_ctx.Root())
+}
+
+// isPath reports whether a link's target is a path within the app, as
+// "/notes/42", "edit" or "?tab=info", rather than a URL with a scheme.
+// Router returns the router whose page is being built, which a Link to a
+// path without a scheme goes through, or nil outside one.
+func (_handle *Context) Router() *Router {
+	_ctx := _handle.build()
+	if _ctx == nil {
+		return nil
+	}
+	return _ctx.Router()
 }
 
 // SetTheme makes the frame use t, for the window's root and the widgets
@@ -535,7 +603,10 @@ func Accordion(c *Context, fn func()) Element {
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(coreAccordion(_ctx, fn))
+	_ctx.rt.beginBuild()
+	_e := coreAccordion(_ctx, fn)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // AccordionItem creates a section of an Accordion: a header showing title,
@@ -546,7 +617,10 @@ func AccordionItem(c *Context, title string, open *bool, fn func()) Element {
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(coreAccordionItem(_ctx, title, open, fn))
+	_ctx.rt.beginBuild()
+	_e := coreAccordionItem(_ctx, title, open, fn)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // AlertDialog shows an alert over the window while *open is true, as
@@ -584,7 +658,10 @@ func Autocomplete(c *Context, value *string, suggestions []string) Element {
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(coreAutocomplete(_ctx, value, suggestions))
+	_ctx.rt.beginBuild()
+	_e := coreAutocomplete(_ctx, value, suggestions)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // Avatar creates a picture of a person or a thing named name: the image,
@@ -596,7 +673,10 @@ func Avatar(c *Context, name string, image *Bitmap) Element {
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(coreAvatar(_ctx, name, image))
+	_ctx.rt.beginBuild()
+	_e := coreAvatar(_ctx, name, image)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // BackButton creates a button going back in r's history, disabled at its
@@ -607,7 +687,10 @@ func BackButton(c *Context, r *Router) Element {
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(coreBackButton(_ctx, r))
+	_ctx.rt.beginBuild()
+	_e := coreBackButton(_ctx, r)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // Badge creates a short text in a pill, as a count of unread messages
@@ -617,7 +700,10 @@ func Badge(c *Context, text string) Element {
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(coreBadge(_ctx, text))
+	_ctx.rt.beginBuild()
+	_e := coreBadge(_ctx, text)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // Box creates a container that lays its children out in a column.
@@ -626,7 +712,10 @@ func Box(c *Context) Element {
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(coreBox(_ctx))
+	_ctx.rt.beginBuild()
+	_e := coreBox(_ctx)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // Breadcrumbs creates a path of items, as Finder's path bar and AppKit's
@@ -644,7 +733,10 @@ func Breadcrumbs(c *Context, items []string, chosen *int) Element {
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(coreBreadcrumbs(_ctx, items, chosen))
+	_ctx.rt.beginBuild()
+	_e := coreBreadcrumbs(_ctx, items, chosen)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // Button creates a button showing label. Ask Clicked whether it was
@@ -654,7 +746,10 @@ func Button(c *Context, label string) Element {
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(coreButton(_ctx, label))
+	_ctx.rt.beginBuild()
+	_e := coreButton(_ctx, label)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // ButtonBase creates a button without a look: a row centering its
@@ -666,11 +761,15 @@ func ButtonBase(c *Context) Element {
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(coreButtonBase(_ctx))
+	_ctx.rt.beginBuild()
+	_e := coreButtonBase(_ctx)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // Calendar creates a month's calendar choosing *date, as SwiftUI's
-// graphical date picker: a click chooses a day, as the arrows do while the
+// graphical date picker, in the window's language, its weeks starting on
+// the first day of the user's regional formats (Context.Region): a click chooses a day, as the arrows do while the
 // calendar has the focus, Page Up and Page Down or its buttons move by
 // months, and Home and End go to the first and the last day of the month.
 // Changed reports a new date, which keeps the time of day and location of
@@ -680,7 +779,10 @@ func Calendar(c *Context, date *time.Time) Element {
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(coreCalendar(_ctx, date))
+	_ctx.rt.beginBuild()
+	_e := coreCalendar(_ctx, date)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // Checkbox creates a check box toggling *checked, with a label.
@@ -689,7 +791,10 @@ func Checkbox(c *Context, checked *bool, label string) Element {
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(coreCheckbox(_ctx, checked, label))
+	_ctx.rt.beginBuild()
+	_e := coreCheckbox(_ctx, checked, label)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // CheckboxBase creates a check box without a look: a row that toggles
@@ -702,7 +807,10 @@ func CheckboxBase(c *Context, checked *bool) Element {
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(coreCheckboxBase(_ctx, checked))
+	_ctx.rt.beginBuild()
+	_e := coreCheckboxBase(_ctx, checked)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // CheckboxGroup creates a check box over the check boxes that fn builds,
@@ -721,7 +829,10 @@ func CheckboxGroup(c *Context, label string, fn func()) Element {
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(coreCheckboxGroup(_ctx, label, fn))
+	_ctx.rt.beginBuild()
+	_e := coreCheckboxGroup(_ctx, label, fn)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // Collapsible creates a disclosure, as SwiftUI's DisclosureGroup: label
@@ -737,7 +848,10 @@ func Collapsible(c *Context, label string, open *bool, fn func()) Element {
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(coreCollapsible(_ctx, label, open, fn))
+	_ctx.rt.beginBuild()
+	_e := coreCollapsible(_ctx, label, open, fn)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // CollapsibleBase creates a collapsible without a look, open while *open:
@@ -748,7 +862,10 @@ func CollapsibleBase(c *Context, open *bool) CollapsibleParts {
 	if _ctx == nil {
 		return CollapsibleParts{}
 	}
-	return wrapCollapsibleParts(coreCollapsibleBase(_ctx, open))
+	_ctx.rt.beginBuild()
+	_p := coreCollapsibleBase(_ctx, open)
+	_ctx.rt.endBuild()
+	return wrapCollapsibleParts(_p)
 }
 
 // ColorPicker creates a picker of *color, as AppKit's color panel: a
@@ -763,7 +880,10 @@ func ColorPicker(c *Context, color *Color) Element {
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(coreColorPicker(_ctx, color))
+	_ctx.rt.beginBuild()
+	_e := coreColorPicker(_ctx, color)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // ColorWell creates a swatch of *color that opens a ColorPicker below it,
@@ -776,7 +896,10 @@ func ColorWell(c *Context, color *Color) Element {
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(coreColorWell(_ctx, color))
+	_ctx.rt.beginBuild()
+	_e := coreColorWell(_ctx, color)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // Column creates a container that lays its children out from top to
@@ -786,7 +909,10 @@ func Column(c *Context) Element {
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(coreColumn(_ctx))
+	_ctx.rt.beginBuild()
+	_e := coreColumn(_ctx)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // Combobox creates a combobox choosing *selected among options: a field
@@ -803,7 +929,10 @@ func Combobox(c *Context, selected *string, options []string) Element {
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(coreCombobox(_ctx, selected, options))
+	_ctx.rt.beginBuild()
+	_e := coreCombobox(_ctx, selected, options)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // ComboboxBase creates a combobox without a look: a text input editing
@@ -835,7 +964,10 @@ func ComboboxBase(c *Context, text *string) ComboboxParts {
 	if _ctx == nil {
 		return ComboboxParts{}
 	}
-	return wrapComboboxParts(coreComboboxBase(_ctx, text))
+	_ctx.rt.beginBuild()
+	_p := coreComboboxBase(_ctx, text)
+	_ctx.rt.endBuild()
+	return wrapComboboxParts(_p)
 }
 
 // DataDragOver makes e a native destination, as DropData does, and returns
@@ -851,8 +983,8 @@ func DataDragOver(e Element, options transfer.DropOptions) (transfer.Offer, bool
 	return coreDataDragOver(e.nodeFor(_ctx.rt), options)
 }
 
-// DateInput creates a field showing *date as 2006-01-02, which a calendar
-// below it changes. A click, Enter or Space opens the calendar, where a
+// DateInput creates a field showing *date in the user's regional formats,
+// as 1/5/2026 in the United States, which a calendar below it changes. A click, Enter or Space opens the calendar, where a
 // click chooses a day, as do the arrows and Enter; Page Up and Page Down,
 // or its buttons, move by months, and Escape closes it. Changed reports a
 // new date, which keeps the time of day and location of *date.
@@ -861,7 +993,10 @@ func DateInput(c *Context, date *time.Time) Element {
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(coreDateInput(_ctx, date))
+	_ctx.rt.beginBuild()
+	_e := coreDateInput(_ctx, date)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // DialogBase shows a dialog without a look over the window while *open is
@@ -875,7 +1010,10 @@ func DialogBase(c *Context, open *bool, fn func(backdrop Element, panel Element)
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(coreDialogBase(_ctx, open, func(backdrop *node, panel *node) { fn(wrapElement(backdrop), wrapElement(panel)) }))
+	_ctx.rt.beginBuild()
+	_e := coreDialogBase(_ctx, open, func(backdrop *node, panel *node) { fn(wrapElement(backdrop), wrapElement(panel)) })
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // Divider creates a thin line across its row or column.
@@ -884,7 +1022,10 @@ func Divider(c *Context) Element {
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(coreDivider(_ctx))
+	_ctx.rt.beginBuild()
+	_e := coreDivider(_ctx)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // DragOver makes e take values of type T dragged within the window, as
@@ -951,7 +1092,10 @@ func EditableText(c *Context, value *string) Element {
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(coreEditableText(_ctx, value))
+	_ctx.rt.beginBuild()
+	_e := coreEditableText(_ctx, value)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // Field creates a field: label, above the control that fn builds, or
@@ -972,7 +1116,10 @@ func Field(c *Context, label string, fn func()) Element {
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(coreField(_ctx, label, fn))
+	_ctx.rt.beginBuild()
+	_e := coreField(_ctx, label, fn)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // Fieldset creates a group of the fields that fn builds, under legend,
@@ -987,7 +1134,10 @@ func Fieldset(c *Context, legend string, fn func()) Element {
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(coreFieldset(_ctx, legend, fn))
+	_ctx.rt.beginBuild()
+	_e := coreFieldset(_ctx, legend, fn)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // FindBar creates a bar for finding text while *open is true, as Safari's
@@ -1005,7 +1155,10 @@ func FindBar(c *Context, open *bool, query *string, matches int, current *int) E
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(coreFindBar(_ctx, open, query, matches, current))
+	_ctx.rt.beginBuild()
+	_e := coreFindBar(_ctx, open, query, matches, current)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // Form creates a column of the fields that fn builds (Field, Fieldset),
@@ -1022,7 +1175,10 @@ func Form(c *Context, fn func()) Element {
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(coreForm(_ctx, fn))
+	_ctx.rt.beginBuild()
+	_e := coreForm(_ctx, fn)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // ForwardButton creates a button going forward in r's history, as
@@ -1032,7 +1188,10 @@ func ForwardButton(c *Context, r *Router) Element {
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(coreForwardButton(_ctx, r))
+	_ctx.rt.beginBuild()
+	_e := coreForwardButton(_ctx, r)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // Grid creates a grid: its children fill its cells row by row, or go where
@@ -1050,7 +1209,10 @@ func Grid(c *Context) Element {
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(coreGrid(_ctx))
+	_ctx.rt.beginBuild()
+	_e := coreGrid(_ctx)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // GridView creates a scroll container of n items in a grid, as Photos'
@@ -1073,7 +1235,10 @@ func GridView(c *Context, s *GridState, n int, minWidth float32, height float32,
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(coreGridView(_ctx, s, n, minWidth, height, item))
+	_ctx.rt.beginBuild()
+	_e := coreGridView(_ctx, s, n, minWidth, height, item)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // Icon creates an element showing an SVG as an icon: its shapes in the
@@ -1092,7 +1257,10 @@ func Icon(c *Context, s *SVG) Element {
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(coreIcon(_ctx, s))
+	_ctx.rt.beginBuild()
+	_e := coreIcon(_ctx, s)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // Image creates an element showing a bitmap, or an SVG in its own colors
@@ -1103,7 +1271,10 @@ func Image(c *Context, src ImageSource) Element {
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(coreImage(_ctx, src))
+	_ctx.rt.beginBuild()
+	_e := coreImage(_ctx, src)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // Link creates a text that opens url in the browser when clicked, or
@@ -1116,7 +1287,10 @@ func Link(c *Context, label string, url string) Element {
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(coreLink(_ctx, label, url))
+	_ctx.rt.beginBuild()
+	_e := coreLink(_ctx, label, url)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // Local returns state of type T that element e keeps from frame to frame,
@@ -1148,7 +1322,10 @@ func MenuButton(c *Context, label string, build func(m *Menu)) Element {
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(coreMenuButton(_ctx, label, build))
+	_ctx.rt.beginBuild()
+	_e := coreMenuButton(_ctx, label, build)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // Meter creates a bar showing value between lo and hi, as AppKit's level
@@ -1162,7 +1339,10 @@ func Meter(c *Context, value float64, lo float64, hi float64, levels *MeterLevel
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(coreMeter(_ctx, value, lo, hi, levels))
+	_ctx.rt.beginBuild()
+	_e := coreMeter(_ctx, value, lo, hi, levels)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // Modal shows a dialog built by fn over a dimmed window while *open is
@@ -1173,7 +1353,10 @@ func Modal(c *Context, open *bool, fn func()) Element {
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(coreModal(_ctx, open, fn))
+	_ctx.rt.beginBuild()
+	_e := coreModal(_ctx, open, fn)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // NewTester starts testing view in a window of width×height DIPs. Two
@@ -1195,7 +1378,10 @@ func NumberInput(c *Context, value *float64, lo float64, hi float64, step float6
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(coreNumberInput(_ctx, value, lo, hi, step))
+	_ctx.rt.beginBuild()
+	_e := coreNumberInput(_ctx, value, lo, hi, step)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // Outline creates a list of items in a tree, as AppKit's outline view and
@@ -1223,7 +1409,10 @@ func Outline[K comparable](c *Context, s *OutlineState[K], roots []K, children f
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(coreOutline[K](_ctx, s, roots, children, row))
+	_ctx.rt.beginBuild()
+	_e := coreOutline[K](_ctx, s, roots, children, row)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // OutlineTable creates an outline whose rows are a Table's, as AppKit's
@@ -1244,7 +1433,10 @@ func OutlineTable[K comparable](c *Context, s *OutlineState[K], columns []TableC
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(coreOutlineTable[K](_ctx, s, columns, roots, children, cell))
+	_ctx.rt.beginBuild()
+	_e := coreOutlineTable[K](_ctx, s, columns, roots, children, cell)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // Overlay builds fn's elements above the rest of the window. Place them
@@ -1267,19 +1459,23 @@ func Popover(c *Context, anchor Element, open *bool, fn func()) Element {
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(corePopover(_ctx, anchor.nodeFor(_ctx.rt), open, fn))
+	_ctx.rt.beginBuild()
+	_e := corePopover(_ctx, anchor.nodeFor(_ctx.rt), open, fn)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // PopoverBase shows a panel without a look below anchor while *open is
 // true: fn styles the panel and builds its content. Pressing outside the
 // panel and the anchor, or Escape, sets *open to false, which Dismissed
 // reports; the press goes on to what is under the pointer, as with the
-// web's popovers. Where there is
+// web's popovers. It starts at the anchor's start: its left, or its right
+// right to left (Direction). Where there is
 // no room below the anchor, the panel shows above it; a top margin keeps
 // it apart from the anchor on either side. fn may place it elsewhere with
-// AttachTo, as to the right of the anchor:
+// AttachTo, as after the anchor:
 //
-//	panel.AttachTo(anchor, ui.AnchorRight, ui.AnchorLeft).Margin(0, 0, 0, 6)
+//	panel.AttachTo(anchor, ui.AnchorEnd, ui.AnchorStart).MarginStart(6)
 //
 // It returns the panel, or nil while closed; Popover is PopoverBase with
 // the theme's look.
@@ -1288,7 +1484,10 @@ func PopoverBase(c *Context, anchor Element, open *bool, fn func(panel Element))
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(corePopoverBase(_ctx, anchor.nodeFor(_ctx.rt), open, func(panel *node) { fn(wrapElement(panel)) }))
+	_ctx.rt.beginBuild()
+	_e := corePopoverBase(_ctx, anchor.nodeFor(_ctx.rt), open, func(panel *node) { fn(wrapElement(panel)) })
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // PrimaryButton creates a button in the accent color, for the main action.
@@ -1297,18 +1496,25 @@ func PrimaryButton(c *Context, label string) Element {
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(corePrimaryButton(_ctx, label))
+	_ctx.rt.beginBuild()
+	_e := corePrimaryButton(_ctx, label)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // Progress creates a progress bar filled to value between 0 and 1; a
-// negative value shows activity of unknown length. Reverse fills it from
-// the right, for interfaces laid out from right to left.
+// negative value shows activity of unknown length. It fills from its
+// start: the right right to left (Direction). Reverse fills it from the
+// other side.
 func Progress(c *Context, value float64) Element {
 	_ctx := c.build()
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(coreProgress(_ctx, value))
+	_ctx.rt.beginBuild()
+	_e := coreProgress(_ctx, value)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // Radio creates a radio button that selects value into *selected, with a
@@ -1318,7 +1524,10 @@ func Radio[T comparable](c *Context, selected *T, value T, label string) Element
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(coreRadio[T](_ctx, selected, value, label))
+	_ctx.rt.beginBuild()
+	_e := coreRadio[T](_ctx, selected, value, label)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // RadioBase creates a radio button without a look: a row that selects
@@ -1331,7 +1540,10 @@ func RadioBase[T comparable](c *Context, selected *T, value T) Element {
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(coreRadioBase[T](_ctx, selected, value))
+	_ctx.rt.beginBuild()
+	_e := coreRadioBase[T](_ctx, selected, value)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // RadioGroup creates a column of the radio buttons that fn builds (Radio,
@@ -1349,7 +1561,10 @@ func RadioGroup(c *Context, fn func()) Element {
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(coreRadioGroup(_ctx, fn))
+	_ctx.rt.beginBuild()
+	_e := coreRadioGroup(_ctx, fn)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // RangeSlider creates a slider of two knobs setting *low and *high between
@@ -1364,7 +1579,10 @@ func RangeSlider(c *Context, low *float64, high *float64, lo float64, hi float64
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(coreRangeSlider(_ctx, low, high, lo, hi, step))
+	_ctx.rt.beginBuild()
+	_e := coreRangeSlider(_ctx, low, high, lo, hi, step)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // Rating creates a row of max stars, as AppKit's rating level indicator,
@@ -1377,7 +1595,10 @@ func Rating(c *Context, value *int, max int) Element {
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(coreRating(_ctx, value, max))
+	_ctx.rt.beginBuild()
+	_e := coreRating(_ctx, value, max)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // Render draws a frame of view in a window of width×height DIPs at scale
@@ -1417,7 +1638,10 @@ func RichText(c *Context, spans ...Span) Element {
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(coreRichText(_ctx, spans...))
+	_ctx.rt.beginBuild()
+	_e := coreRichText(_ctx, spans...)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // Row creates a container that lays its children out from left to right,
@@ -1427,7 +1651,10 @@ func Row(c *Context) Element {
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(coreRow(_ctx))
+	_ctx.rt.beginBuild()
+	_e := coreRow(_ctx)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // Scroll creates a container that scrolls its children vertically. Give
@@ -1437,7 +1664,10 @@ func Scroll(c *Context) Element {
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(coreScroll(_ctx))
+	_ctx.rt.beginBuild()
+	_e := coreScroll(_ctx)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // ScrollBoth creates a container that scrolls its children both ways, as
@@ -1448,7 +1678,10 @@ func ScrollBoth(c *Context) Element {
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(coreScrollBoth(_ctx))
+	_ctx.rt.beginBuild()
+	_e := coreScrollBoth(_ctx)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // ScrollHorizontal creates a row that scrolls its children horizontally.
@@ -1457,7 +1690,10 @@ func ScrollHorizontal(c *Context) Element {
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(coreScrollHorizontal(_ctx))
+	_ctx.rt.beginBuild()
+	_e := coreScrollHorizontal(_ctx)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // SearchField creates a field for searching, editing *query: a magnifying
@@ -1474,7 +1710,10 @@ func SearchField(c *Context, query *string) Element {
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(coreSearchField(_ctx, query))
+	_ctx.rt.beginBuild()
+	_e := coreSearchField(_ctx, query)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // Segmented creates a segmented control showing labels, of which
@@ -1489,7 +1728,10 @@ func Segmented(c *Context, selected *int, labels ...string) Element {
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(coreSegmented(_ctx, selected, labels...))
+	_ctx.rt.beginBuild()
+	_e := coreSegmented(_ctx, selected, labels...)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // SegmentedBase creates a segmented control of n segments without a look,
@@ -1502,7 +1744,10 @@ func SegmentedBase(c *Context, selected *int, n int) SegmentedParts {
 	if _ctx == nil {
 		return SegmentedParts{}
 	}
-	return wrapSegmentedParts(coreSegmentedBase(_ctx, selected, n))
+	_ctx.rt.beginBuild()
+	_p := coreSegmentedBase(_ctx, selected, n)
+	_ctx.rt.endBuild()
+	return wrapSegmentedParts(_p)
 }
 
 // Select creates a drop-down choosing one of options into *selected.
@@ -1511,7 +1756,10 @@ func Select(c *Context, selected *string, options []string) Element {
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(coreSelect(_ctx, selected, options))
+	_ctx.rt.beginBuild()
+	_e := coreSelect(_ctx, selected, options)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // SelectBase creates a select without a look: a trigger that opens a
@@ -1542,7 +1790,10 @@ func SelectBase[T comparable](c *Context, selected *T) SelectParts[T] {
 	if _ctx == nil {
 		return SelectParts[T]{}
 	}
-	return wrapSelectParts[T](coreSelectBase[T](_ctx, selected))
+	_ctx.rt.beginBuild()
+	_p := coreSelectBase[T](_ctx, selected)
+	_ctx.rt.endBuild()
+	return wrapSelectParts[T](_p)
 }
 
 // Sidebar creates a sidebar of the sections and the items that fn builds
@@ -1567,7 +1818,10 @@ func Sidebar(c *Context, selected *string, fn func()) Element {
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(coreSidebar(_ctx, selected, fn))
+	_ctx.rt.beginBuild()
+	_e := coreSidebar(_ctx, selected, fn)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // SidebarItem creates an item of a Sidebar choosing id, showing label
@@ -1577,7 +1831,10 @@ func SidebarItem(c *Context, id string, icon *SVG, label string) Element {
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(coreSidebarItem(_ctx, id, icon, label))
+	_ctx.rt.beginBuild()
+	_e := coreSidebarItem(_ctx, id, icon, label)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // SidebarSection creates a section of a Sidebar under title, holding the
@@ -1589,7 +1846,10 @@ func SidebarSection(c *Context, title string, open *bool, fn func()) Element {
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(coreSidebarSection(_ctx, title, open, fn))
+	_ctx.rt.beginBuild()
+	_e := coreSidebarSection(_ctx, title, open, fn)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // Slider creates a slider setting *value between lo and hi.
@@ -1598,7 +1858,10 @@ func Slider(c *Context, value *float64, lo float64, hi float64) Element {
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(coreSlider(_ctx, value, lo, hi))
+	_ctx.rt.beginBuild()
+	_e := coreSlider(_ctx, value, lo, hi)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // SliderBase creates a slider without a look: dragging across its
@@ -1607,7 +1870,9 @@ func Slider(c *Context, value *float64, lo float64, hi float64) Element {
 // range unless Step says otherwise; Changed reports a new value, and
 // assistive technology sees a slider of that range. Draw its track and
 // thumb where (*value-lo)/(hi-lo) puts them, and pad it by half the
-// thumb's width to keep the thumb inside it:
+// thumb's width to keep the thumb inside it. Right to left
+// (Context.Direction), lo is at the right of the content box, as the
+// arrows go: draw it mirrored.
 //
 //	s := ui.SliderBase(c, &app.volume, 0, 100).Height(24).PaddingX(12)
 //	s.Draw(func(p *ui.Painter, r ui.Rect) {
@@ -1623,7 +1888,10 @@ func SliderBase(c *Context, value *float64, lo float64, hi float64) Element {
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(coreSliderBase(_ctx, value, lo, hi))
+	_ctx.rt.beginBuild()
+	_e := coreSliderBase(_ctx, value, lo, hi)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // Spacer creates an empty element that takes the free space of its row or
@@ -1633,7 +1901,10 @@ func Spacer(c *Context) Element {
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(coreSpacer(_ctx))
+	_ctx.rt.beginBuild()
+	_e := coreSpacer(_ctx)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // Spinner creates an indicator of work of unknown length, as AppKit's
@@ -1646,13 +1917,18 @@ func Spinner(c *Context) Element {
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(coreSpinner(_ctx))
+	_ctx.rt.beginBuild()
+	_e := coreSpinner(_ctx)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // Split lays out first and second side by side, with a divider between
 // them that the user drags to resize them, or moves with the arrows once
 // it has the keyboard focus: *size is the width of first, which the
-// divider keeps 40 DIPs from either edge. Changed reports a move.
+// divider keeps 40 DIPs from either edge. With less room than that, first
+// gives way, keeping *size for when there is room again. Changed reports a
+// move. Right to left (Direction), first is on the right.
 //
 //	ui.Split(c, &app.sidebar, app.files, app.editor).Fill()
 func Split(c *Context, size *float32, first func(), second func()) Element {
@@ -1660,7 +1936,26 @@ func Split(c *Context, size *float32, first func(), second func()) Element {
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(coreSplit(_ctx, size, first, second))
+	_ctx.rt.beginBuild()
+	_e := coreSplit(_ctx, size, first, second)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
+}
+
+// SplitPercent is Split with *p the percentage of the room first takes,
+// from 0 to 100, so that both panes grow and shrink with the room, in
+// proportion.
+//
+//	ui.SplitPercent(c, &app.sidebarPercent, app.files, app.editor).Fill()
+func SplitPercent(c *Context, p *float32, first func(), second func()) Element {
+	_ctx := c.build()
+	if _ctx == nil {
+		return Element{}
+	}
+	_ctx.rt.beginBuild()
+	_e := coreSplitPercent(_ctx, p, first, second)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // SplitVertical is Split with first above second, *size its height.
@@ -1669,7 +1964,22 @@ func SplitVertical(c *Context, size *float32, first func(), second func()) Eleme
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(coreSplitVertical(_ctx, size, first, second))
+	_ctx.rt.beginBuild()
+	_e := coreSplitVertical(_ctx, size, first, second)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
+}
+
+// SplitVerticalPercent is SplitPercent with first above second.
+func SplitVerticalPercent(c *Context, p *float32, first func(), second func()) Element {
+	_ctx := c.build()
+	if _ctx == nil {
+		return Element{}
+	}
+	_ctx.rt.beginBuild()
+	_e := coreSplitVerticalPercent(_ctx, p, first, second)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // StepSlider creates a slider setting *value to lo or a multiple of step
@@ -1680,7 +1990,10 @@ func StepSlider(c *Context, value *float64, lo float64, hi float64, step float64
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(coreStepSlider(_ctx, value, lo, hi, step))
+	_ctx.rt.beginBuild()
+	_e := coreStepSlider(_ctx, value, lo, hi, step)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // Stepper creates a pair of arrows changing *value by step between lo and
@@ -1693,7 +2006,10 @@ func Stepper(c *Context, value *float64, lo float64, hi float64, step float64) E
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(coreStepper(_ctx, value, lo, hi, step))
+	_ctx.rt.beginBuild()
+	_e := coreStepper(_ctx, value, lo, hi, step)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // Switch creates a switch toggling *on.
@@ -1702,7 +2018,10 @@ func Switch(c *Context, on *bool) Element {
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(coreSwitch(_ctx, on))
+	_ctx.rt.beginBuild()
+	_e := coreSwitch(_ctx, on)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // SwitchBase creates a switch without a look: CheckboxBase, which
@@ -1713,7 +2032,10 @@ func SwitchBase(c *Context, on *bool) Element {
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(coreSwitchBase(_ctx, on))
+	_ctx.rt.beginBuild()
+	_e := coreSwitchBase(_ctx, on)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // Table creates a table of n rows under a header of columns, whose rows
@@ -1732,7 +2054,9 @@ func SwitchBase(c *Context, on *bool) Element {
 // The user resizes columns by dragging the edges of their headers, and
 // moves them by dragging the headers, which s.Columns keeps; columns wider
 // than the table scroll sideways, the header with them. With s.Sort, a
-// click on the header of a Sortable column sorts the rows by it.
+// click on the header of a Sortable column sorts the rows by it; with
+// s.SortBy, a Cmd-click or a Shift-click sorts by it after the others;
+// with s.HeaderMenu, the header has a context menu.
 //
 //	cols := []ui.TableColumn{{Title: "Name", Sortable: true}, {Title: "Size", Width: 90, Align: ui.End, Sortable: true}}
 //	app.files.Selected, app.files.Sort = &app.file, &app.sort
@@ -1752,7 +2076,10 @@ func Table(c *Context, s *ListState, columns []TableColumn, n int, cell func(row
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(coreTable(_ctx, s, columns, n, cell))
+	_ctx.rt.beginBuild()
+	_e := coreTable(_ctx, s, columns, n, cell)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // Tabs creates a row of tabs showing labels, of which *selected is the
@@ -1772,7 +2099,10 @@ func Tabs(c *Context, selected *int, labels ...string) Element {
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(coreTabs(_ctx, selected, labels...))
+	_ctx.rt.beginBuild()
+	_e := coreTabs(_ctx, selected, labels...)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // TabsBase creates a list of n tabs without a look, of which *selected is
@@ -1798,7 +2128,10 @@ func TabsBase(c *Context, selected *int, n int) TabsParts {
 	if _ctx == nil {
 		return TabsParts{}
 	}
-	return wrapTabsParts(coreTabsBase(_ctx, selected, n))
+	_ctx.rt.beginBuild()
+	_p := coreTabsBase(_ctx, selected, n)
+	_ctx.rt.endBuild()
+	return wrapTabsParts(_p)
 }
 
 // Text creates a text, which wraps at the width it gets.
@@ -1807,7 +2140,10 @@ func Text(c *Context, s string) Element {
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(coreText(_ctx, s))
+	_ctx.rt.beginBuild()
+	_e := coreText(_ctx, s)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // TextArea creates a multi-line text input editing *value.
@@ -1816,7 +2152,10 @@ func TextArea(c *Context, value *string) Element {
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(coreTextArea(_ctx, value))
+	_ctx.rt.beginBuild()
+	_e := coreTextArea(_ctx, value)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // TextAreaBase creates a multi-line text input without a look, editing
@@ -1826,7 +2165,10 @@ func TextAreaBase(c *Context, value *string) Element {
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(coreTextAreaBase(_ctx, value))
+	_ctx.rt.beginBuild()
+	_e := coreTextAreaBase(_ctx, value)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // TextAreaBuffer creates a multiline control editing indexed storage.
@@ -1837,7 +2179,10 @@ func TextAreaBuffer(c *Context, value *TextBuffer) Element {
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(coreTextAreaBuffer(_ctx, value))
+	_ctx.rt.beginBuild()
+	_e := coreTextAreaBuffer(_ctx, value)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 func TextAreaBufferBase(c *Context, value *TextBuffer) Element {
@@ -1845,7 +2190,10 @@ func TextAreaBufferBase(c *Context, value *TextBuffer) Element {
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(coreTextAreaBufferBase(_ctx, value))
+	_ctx.rt.beginBuild()
+	_e := coreTextAreaBufferBase(_ctx, value)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // TextInput creates a single-line text input editing *value.
@@ -1854,7 +2202,10 @@ func TextInput(c *Context, value *string) Element {
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(coreTextInput(_ctx, value))
+	_ctx.rt.beginBuild()
+	_e := coreTextInput(_ctx, value)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // TextInputBase creates a single-line text input without a look, editing
@@ -1865,7 +2216,10 @@ func TextInputBase(c *Context, value *string) Element {
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(coreTextInputBase(_ctx, value))
+	_ctx.rt.beginBuild()
+	_e := coreTextInputBase(_ctx, value)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // TextInputBuffer creates a single-line control editing indexed storage.
@@ -1875,7 +2229,10 @@ func TextInputBuffer(c *Context, value *TextBuffer) Element {
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(coreTextInputBuffer(_ctx, value))
+	_ctx.rt.beginBuild()
+	_e := coreTextInputBuffer(_ctx, value)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // TextInputBufferBase and TextAreaBufferBase are the unstyled buffer controls.
@@ -1884,7 +2241,10 @@ func TextInputBufferBase(c *Context, value *TextBuffer) Element {
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(coreTextInputBufferBase(_ctx, value))
+	_ctx.rt.beginBuild()
+	_e := coreTextInputBufferBase(_ctx, value)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // Textf creates a text formatted with fmt.Sprintf.
@@ -1893,16 +2253,25 @@ func Textf(c *Context, format string, args ...any) Element {
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(coreTextf(_ctx, format, args...))
+	_ctx.rt.beginBuild()
+	_e := coreTextf(_ctx, format, args...)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
-// TimeInput creates a field of the time of day of *tm, as 15:04, whose
-// hours and minutes each take the focus, as the segments of AppKit's date
-// picker: Up and Down step the one with the focus round the clock, digits
-// typed set it, going on to the minutes once the hours are typed, and Left
-// and Right move between them. Changed reports a new time, which keeps the
-// date and the location of *tm. Assistive technology sees two spin
-// buttons, named after the field's Label and "hours" and "minutes".
+// TimeInput creates a field of the time of day of *tm, in the hour cycle
+// of the user's regional formats (Context.Region): 15:04, or 3:04 PM with
+// the window's language's names of the halves of the day, before the
+// hours where the language writes them so (下午3:04). Its hours, minutes
+// and half of the day each take the focus, as the segments of AppKit's
+// date picker: Up and Down step the one with the focus round the clock,
+// digits typed set it, going on to the minutes once the hours are typed,
+// the first letter of a half of the day chooses it, and Left and Right
+// move between them. Changed reports a new time, which keeps the date and
+// the location of *tm. Assistive technology sees spin buttons, named
+// after the field's Label and "hours", "minutes" and "AM/PM". It reads
+// left to right in an interface laid out right to left too, as times are
+// written there.
 //
 //	ui.TimeInput(c, &app.alarm).Label("Alarm")
 func TimeInput(c *Context, tm *time.Time) Element {
@@ -1910,7 +2279,10 @@ func TimeInput(c *Context, tm *time.Time) Element {
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(coreTimeInput(_ctx, tm))
+	_ctx.rt.beginBuild()
+	_e := coreTimeInput(_ctx, tm)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // ToastBase creates the toast t without a look, in the viewport of
@@ -1920,7 +2292,10 @@ func ToastBase(c *Context, t Toast) ToastParts {
 	if _ctx == nil {
 		return ToastParts{}
 	}
-	return wrapToastParts(coreToastBase(_ctx, t))
+	_ctx.rt.beginBuild()
+	_p := coreToastBase(_ctx, t)
+	_ctx.rt.endBuild()
+	return wrapToastParts(_p)
 }
 
 // ToastViewportBase builds the window's toasts without a look, in place of
@@ -1951,7 +2326,10 @@ func ToastViewportBase(c *Context, fn func(viewport Element, toasts []Toast)) El
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(coreToastViewportBase(_ctx, func(viewport *node, toasts []Toast) { fn(wrapElement(viewport), toasts) }))
+	_ctx.rt.beginBuild()
+	_e := coreToastViewportBase(_ctx, func(viewport *node, toasts []Toast) { fn(wrapElement(viewport), toasts) })
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // Toggle creates a button that stays pressed while *on, as Bold in an
@@ -1966,7 +2344,10 @@ func Toggle(c *Context, on *bool, label string) Element {
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(coreToggle(_ctx, on, label))
+	_ctx.rt.beginBuild()
+	_e := coreToggle(_ctx, on, label)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // ToggleBase creates a toggle button without a look: a row that turns *on
@@ -1978,7 +2359,10 @@ func ToggleBase(c *Context, on *bool) Element {
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(coreToggleBase(_ctx, on))
+	_ctx.rt.beginBuild()
+	_e := coreToggleBase(_ctx, on)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // ToggleGroup creates a row of the toggles and buttons that fn builds,
@@ -1995,7 +2379,10 @@ func ToggleGroup(c *Context, fn func()) Element {
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(coreToggleGroup(_ctx, fn))
+	_ctx.rt.beginBuild()
+	_e := coreToggleGroup(_ctx, fn)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // TokenField creates a field of tokens, as of tags or the recipients of a
@@ -2012,7 +2399,10 @@ func TokenField(c *Context, tokens *[]string, suggestions []string) Element {
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(coreTokenField(_ctx, tokens, suggestions))
+	_ctx.rt.beginBuild()
+	_e := coreTokenField(_ctx, tokens, suggestions)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // Toolbar creates a row of the controls that fn builds, as along the top
@@ -2039,7 +2429,10 @@ func Toolbar(c *Context, fn func()) Element {
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(coreToolbar(_ctx, fn))
+	_ctx.rt.beginBuild()
+	_e := coreToolbar(_ctx, fn)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // TooltipBase shows a tip without a look by anchor: fn styles the tip and
@@ -2052,10 +2445,10 @@ func Toolbar(c *Context, fn func()) Element {
 // shows; one shows at a time.
 //
 // The tip goes above anchor, centered, or below it where there is no room
-// above; fn may place it elsewhere with AttachTo, as to the right:
+// above; fn may place it elsewhere with AttachTo, as after it:
 //
 //	ui.TooltipBase(c, b, func(tip ui.Element) {
-//		tip.AttachTo(b, ui.AnchorRight, ui.AnchorLeft).Margin(0, 0, 0, 6)
+//		tip.AttachTo(b, ui.AnchorEnd, ui.AnchorStart).MarginStart(6)
 //		tip.Padding(4, 8).Radius(6).Background(dark).TextColor(light)
 //		tip.Children(func() { ui.Text(c, "Share") })
 //	})
@@ -2069,7 +2462,10 @@ func TooltipBase(c *Context, anchor Element, fn func(tip Element)) Element {
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(coreTooltipBase(_ctx, anchor.nodeFor(_ctx.rt), func(tip *node) { fn(wrapElement(tip)) }))
+	_ctx.rt.beginBuild()
+	_e := coreTooltipBase(_ctx, anchor.nodeFor(_ctx.rt), func(tip *node) { fn(wrapElement(tip)) })
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // Tree creates a tree, whose items TreeItem builds in fn. While an item
@@ -2088,7 +2484,10 @@ func Tree(c *Context, fn func()) Element {
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(coreTree(_ctx, fn))
+	_ctx.rt.beginBuild()
+	_e := coreTree(_ctx, fn)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // TreeItem creates an item of a Tree showing label, inside the item it is
@@ -2101,7 +2500,10 @@ func TreeItem(c *Context, label string, open *bool, children func()) Element {
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(coreTreeItem(_ctx, label, open, children))
+	_ctx.rt.beginBuild()
+	_e := coreTreeItem(_ctx, label, open, children)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // View returns the content of a window whose user interface view builds,
@@ -2143,7 +2545,10 @@ func WebView(c *Context, v NativeWebView) Element {
 	if _ctx == nil {
 		return Element{}
 	}
-	return wrapElement(coreWebView(_ctx, v))
+	_ctx.rt.beginBuild()
+	_e := coreWebView(_ctx, v)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // Absolute takes the element out of its parent's layout and places it with
@@ -2438,6 +2843,22 @@ func (_handle Element) BasisPercent(p float32) Element {
 	return wrapElement(_node.BasisPercent(p))
 }
 
+// Blur blurs the element, with its children, by sigma DIPs, the standard
+// deviation of a Gaussian, as CSS's filter: blur() does: what it draws
+// spreads that far around, transparent beyond, on the GPU. It renders
+// into a bitmap first, as Effect does, about 3 sigma larger each way, and
+// an element with an Effect draws through it instead. Hit testing, focus
+// and accessibility do not change: only what shows.
+func (_handle Element) Blur(sigma float32) Element {
+	_node := _handle.node()
+	if _node == nil {
+		return Element{}
+	}
+	_ctx := _node.c
+	_ = _ctx
+	return wrapElement(_node.Blur(sigma))
+}
+
 // Bold sets a bold font weight.
 func (_handle Element) Bold() Element {
 	_node := _handle.node()
@@ -2471,6 +2892,56 @@ func (_handle Element) BorderColor(c Color) Element {
 	_ctx := _node.c
 	_ = _ctx
 	return wrapElement(_node.BorderColor(c))
+}
+
+// BorderConicGradient paints the element's border (Border, BorderWidth)
+// with a conic gradient around the element, in place of its color: a ring
+// of colors, as SwiftUI's strokeBorder with an AngularGradient draws.
+//
+//	ui.Box(c).Size(120, 80).Radius(16).Border(4, ui.Color{}).BorderConicGradient(ui.ConicGradient{Stops: rainbow})
+func (_handle Element) BorderConicGradient(g ConicGradient) Element {
+	_node := _handle.node()
+	if _node == nil {
+		return Element{}
+	}
+	_ctx := _node.c
+	_ = _ctx
+	return wrapElement(_node.BorderConicGradient(g))
+}
+
+func (_handle Element) BorderEndWidth(v float32) Element {
+	_node := _handle.node()
+	if _node == nil {
+		return Element{}
+	}
+	_ctx := _node.c
+	_ = _ctx
+	return wrapElement(_node.BorderEndWidth(v))
+}
+
+// BorderLinearGradient paints the element's border (Border, BorderWidth)
+// with a linear gradient across the element, in place of its color.
+func (_handle Element) BorderLinearGradient(g LinearGradient) Element {
+	_node := _handle.node()
+	if _node == nil {
+		return Element{}
+	}
+	_ctx := _node.c
+	_ = _ctx
+	return wrapElement(_node.BorderLinearGradient(g))
+}
+
+// BorderStartWidth and BorderEndWidth set the width of the border on the
+// side lines start and on the other, as PaddingStart does: a line
+// between a sidebar and the content is BorderEndWidth(1) on the sidebar.
+func (_handle Element) BorderStartWidth(v float32) Element {
+	_node := _handle.node()
+	if _node == nil {
+		return Element{}
+	}
+	_ctx := _node.c
+	_ = _ctx
+	return wrapElement(_node.BorderStartWidth(v))
 }
 
 // BorderStyle sets whether the border is solid, as by default, or dashed.
@@ -2543,9 +3014,8 @@ func (_handle Element) Center() Element {
 	return wrapElement(_node.Center())
 }
 
-// Changed applies pending input to the controls built so far and reports
-// whether this widget's value changed in this build pass. Configure controls
-// before querying their response; the bound value is updated before returning.
+// Changed reports whether this widget's value changed in this build pass,
+// by the input it took as its constructor returned.
 func (_handle Element) Changed() bool {
 	_node := _handle.node()
 	if _node == nil {
@@ -2714,6 +3184,22 @@ func (_handle Element) Composing() bool {
 	return _node.Composing()
 }
 
+// ConicGradient fills the element with a conic gradient, its colors
+// turning around a point (CSS's conic-gradient()):
+//
+//	ui.Box(c).Size(80, 80).Radius(40).ConicGradient(ui.ConicGradient{
+//		Stops: []ui.GradientStop{{red, 0}, {yellow, 1.0 / 3}, {blue, 2.0 / 3}, {red, 1}},
+//	})
+func (_handle Element) ConicGradient(g ConicGradient) Element {
+	_node := _handle.node()
+	if _node == nil {
+		return Element{}
+	}
+	_ctx := _node.c
+	_ = _ctx
+	return wrapElement(_node.ConicGradient(g))
+}
+
 // ContentTransition animates the element's content as it changes, as t
 // says: the text of a Text, the icon of an Icon, the picture of an Image.
 // Changes animate from frame to frame while the element is painted, in
@@ -2769,6 +3255,21 @@ func (_handle Element) ContextMenu(build func(m *Menu)) Element {
 	_ctx := _node.c
 	_ = _ctx
 	return wrapElement(_node.ContextMenu(build))
+}
+
+// CopyData sets what Copy, its shortcut and the context menu's put on
+// the clipboard for the selection of a Selectable container: fn gets its
+// parts, as SelectedTexts returns them, and returns the data, as a
+// document copies its paragraphs with blank lines between them as text
+// (transfer.TextData), and as HTML too to keep their formatting.
+func (_handle Element) CopyData(fn func(parts []SelectedText) transfer.Data) Element {
+	_node := _handle.node()
+	if _node == nil {
+		return Element{}
+	}
+	_ctx := _node.c
+	_ = _ctx
+	return wrapElement(_node.CopyData(fn))
 }
 
 // Cursor sets the pointer's shape over the element.
@@ -2829,6 +3330,27 @@ func (_handle Element) Description(s string) Element {
 	_ctx := _node.c
 	_ = _ctx
 	return wrapElement(_node.Description(s))
+}
+
+// Direction lays the element and what is inside it out in d, whatever the
+// direction around it: Direction(ui.LeftToRight) keeps a code sample, a
+// phone number or a media player's controls left to right in a
+// right-to-left window, as Flutter's Directionality and SwiftUI's
+// layoutDirection environment do. The elements built inside it inherit it,
+// as do the popups attached to it.
+//
+// Give it right after creating the element, before its children, logical
+// edges and the parts that read it, as widgets do as they are built:
+// elements already inside take it, and logical edges move to the other
+// side, but what read the old direction keeps it.
+func (_handle Element) Direction(d Direction) Element {
+	_node := _handle.node()
+	if _node == nil {
+		return Element{}
+	}
+	_ctx := _node.c
+	_ = _ctx
+	return wrapElement(_node.Direction(d))
 }
 
 // Disabled disables the element and those inside it when d is true: they
@@ -3078,6 +3600,31 @@ func (_handle Element) DroppedFiles() []string {
 	return _node.DroppedFiles()
 }
 
+// Effect draws the element, with its children, through fx, an effect of
+// package ui/shader, in place of drawing it as it is; nil draws it as it
+// is:
+//
+//	ui.Text(c, "Wavy").Effect(wave.Effect(shader.Options{
+//		Uniforms:        map[string]any{"Time": t},
+//		MaxSampleOffset: ui.Point{Y: 8},
+//	}))
+//
+// What the element renders, with its children, shadows and what its Draw
+// callbacks paint, renders into a bitmap of the GPU, the size of its box
+// and the effect's margin (Effect.EffectMargin) around it, every frame
+// the element paints, which the effect then draws over the box and the
+// margin, transformed, clipped and faded as the element would be. Web views
+// inside the element do not show through an effect.
+func (_handle Element) Effect(fx Effect) Element {
+	_node := _handle.node()
+	if _node == nil {
+		return Element{}
+	}
+	_ctx := _node.c
+	_ = _ctx
+	return wrapElement(_node.Effect(fx))
+}
+
 // Ellipsis sets what ends text that MaxLines or SingleLine cuts, "…" by
 // default.
 func (_handle Element) Ellipsis(s string) Element {
@@ -3088,6 +3635,26 @@ func (_handle Element) Ellipsis(s string) Element {
 	_ctx := _node.c
 	_ = _ctx
 	return wrapElement(_node.Ellipsis(s))
+}
+
+func (_handle Element) End(v float32) Element {
+	_node := _handle.node()
+	if _node == nil {
+		return Element{}
+	}
+	_ctx := _node.c
+	_ = _ctx
+	return wrapElement(_node.End(v))
+}
+
+func (_handle Element) EndPercent(p float32) Element {
+	_node := _handle.node()
+	if _node == nil {
+		return Element{}
+	}
+	_ctx := _node.c
+	_ = _ctx
+	return wrapElement(_node.EndPercent(p))
 }
 
 // Error marks the element's value as not valid, for msg, which assistive
@@ -3524,6 +4091,24 @@ func (_handle Element) InView() bool {
 	return _node.InView()
 }
 
+// InputMethod sets whether the system's input methods compose text for the
+// element while it has the keyboard focus, as they do by default for one
+// that takes text (HandleTextInput, TextCaret). Turned off, keys type the
+// characters of the keyboard's layout, which come as InputText, and
+// nothing is composed: a mode that reads letters as commands, as Vim's
+// normal mode, gets j as j with a Chinese input method on, as Neovide and
+// winit's set_ime_allowed(false) have it. Browsers cannot turn input
+// methods off, and compose still.
+func (_handle Element) InputMethod(on bool) Element {
+	_node := _handle.node()
+	if _node == nil {
+		return Element{}
+	}
+	_ctx := _node.c
+	_ = _ctx
+	return wrapElement(_node.InputMethod(on))
+}
+
 // InsetShadow adds an inner box shadow, as CSS's box-shadow: inset: offset
 // by x and y, blurred by blur and grown inward by spread DIPs. It shows
 // only inside the box's padding edge, within its border and rounded
@@ -3665,6 +4250,27 @@ func (_handle Element) Label(s string) Element {
 	return wrapElement(_node.Label(s))
 }
 
+// Lang sets the language of the element's text, and of the text of the
+// elements inside it, as a BCP 47 tag, as HTML's lang attribute does: the
+// system's text stack draws the glyphs of that language, as the Han
+// characters Chinese and Japanese draw apart, and falls back to its
+// fonts. Text is in the language the app shows (mygo.App.Locale) unless
+// told otherwise: a Japanese quote in a Chinese app,
+//
+//	ui.Text(c, "直").Lang("ja")
+//
+// "" takes the language of the elements around it. Browsers draw text in
+// the page's language whatever the element's.
+func (_handle Element) Lang(tag string) Element {
+	_node := _handle.node()
+	if _node == nil {
+		return Element{}
+	}
+	_ctx := _node.c
+	_ = _ctx
+	return wrapElement(_node.Lang(tag))
+}
+
 // LayoutBounds returns the previous frame's border box before transforms,
 // in the layout's window coordinates. Draw callbacks use these coordinates.
 func (_handle Element) LayoutBounds() Rect {
@@ -3796,6 +4402,29 @@ func (_handle Element) Margin(v ...float32) Element {
 	_ctx := _node.c
 	_ = _ctx
 	return wrapElement(_node.Margin(v...))
+}
+
+func (_handle Element) MarginEnd(v float32) Element {
+	_node := _handle.node()
+	if _node == nil {
+		return Element{}
+	}
+	_ctx := _node.c
+	_ = _ctx
+	return wrapElement(_node.MarginEnd(v))
+}
+
+// MarginStart and MarginEnd set the margin on the side lines start and
+// on the other, as PaddingStart does: Auto takes the free space there, so
+// that a Row's child with MarginStart(ui.Auto) goes to its end.
+func (_handle Element) MarginStart(v float32) Element {
+	_node := _handle.node()
+	if _node == nil {
+		return Element{}
+	}
+	_ctx := _node.c
+	_ = _ctx
+	return wrapElement(_node.MarginStart(v))
 }
 
 // MarginX sets the left and right margins.
@@ -3996,6 +4625,48 @@ func (_handle Element) OnPaste(fn func(text string) bool) Element {
 	return wrapElement(_node.OnPaste(fn))
 }
 
+// OnTextKey has fn see a key pressed in the text input before the input
+// takes it, on the main thread as the key comes, with the text typed
+// before it in place, as AppKit's doCommandBySelector and a web page's
+// keydown on a text field: Enter that sends a message, Up that edits the
+// last one, Tab that accepts a completion, Escape that cancels, Cmd+Enter.
+// fn reports whether it took the key; one taken changes nothing but what
+// fn sets: a text area inserts no newline, a single-line input does not
+// submit, Tab does not move the focus. One left goes on as it would
+// without fn.
+//
+// fn sees the keys that type no text: those with Cmd or Ctrl, and Enter,
+// Tab, Escape, Backspace, Delete, the arrows and the other keys that move
+// the caret, as pressed (macOS's Control keys that move the caret too).
+// While an input method composes, its keys are its own. Keys that the
+// window or an element around the focus handles as a Shortcut go to the
+// shortcut first, as with HandleInput, unless the input edits with them,
+// as with Enter and the arrows. Like ReadOnly, OnTextKey holds for the
+// input that comes until the next frame.
+//
+// fn runs between frames, where an Element kept from the view is no longer
+// valid: it reads and replaces the text through k instead, as a chat
+// composer sends with Enter, clears what it sent, and breaks the line with
+// Shift+Enter:
+//
+//	ui.TextArea(c, &app.draft).OnTextKey(func(k ui.TextKey) bool {
+//		if k.Key != ui.KeyEnter || k.Mods != 0 {
+//			return false // Shift+Enter breaks the line
+//		}
+//		app.send(k.Text())
+//		k.SetText("")
+//		return true
+//	})
+func (_handle Element) OnTextKey(fn func(k TextKey) bool) Element {
+	_node := _handle.node()
+	if _node == nil {
+		return Element{}
+	}
+	_ctx := _node.c
+	_ = _ctx
+	return wrapElement(_node.OnTextKey(fn))
+}
+
 // Opacity makes the element and its children translucent.
 func (_handle Element) Opacity(o float32) Element {
 	_node := _handle.node()
@@ -4037,6 +4708,29 @@ func (_handle Element) Padding(v ...float32) Element {
 	_ctx := _node.c
 	_ = _ctx
 	return wrapElement(_node.Padding(v...))
+}
+
+func (_handle Element) PaddingEnd(v float32) Element {
+	_node := _handle.node()
+	if _node == nil {
+		return Element{}
+	}
+	_ctx := _node.c
+	_ = _ctx
+	return wrapElement(_node.PaddingEnd(v))
+}
+
+// PaddingStart sets the padding on the side lines start: the left, or
+// the right of an element laid out right to left, as CSS's
+// padding-inline-start does. PaddingEnd sets the other side's.
+func (_handle Element) PaddingStart(v float32) Element {
+	_node := _handle.node()
+	if _node == nil {
+		return Element{}
+	}
+	_ctx := _node.c
+	_ = _ctx
+	return wrapElement(_node.PaddingStart(v))
 }
 
 // PaddingX sets the left and right padding.
@@ -4464,6 +5158,20 @@ func (_handle Element) Selected(on bool) Element {
 	return wrapElement(_node.Selected(on))
 }
 
+// SelectedTexts returns the parts of the paragraphs that the selection of
+// a Selectable container holds, in the order they were built, or none,
+// as of the last frame: to copy them otherwise, as a context menu's item
+// does.
+func (_handle Element) SelectedTexts() []SelectedText {
+	_node := _handle.node()
+	if _node == nil {
+		return nil
+	}
+	_ctx := _node.c
+	_ = _ctx
+	return _node.SelectedTexts()
+}
+
 // SelectionColor sets the highlight of selected text in the element and
 // the text inside it, as text on a colored bubble needs one that shows
 // on it; the theme's Selection is the highlight elsewhere.
@@ -4475,6 +5183,19 @@ func (_handle Element) SelectionColor(c Color) Element {
 	_ctx := _node.c
 	_ = _ctx
 	return wrapElement(_node.SelectionColor(c))
+}
+
+// SetChanged reports the element's value as changed in this build pass,
+// as a widget of your own whose input changed what it edits: Changed
+// returns true for it, as for the widgets' own.
+func (_handle Element) SetChanged() Element {
+	_node := _handle.node()
+	if _node == nil {
+		return Element{}
+	}
+	_ctx := _node.c
+	_ = _ctx
+	return wrapElement(_node.SetChanged())
 }
 
 // SetTextSelection selects the runes of a text input from start to end, or
@@ -4589,6 +5310,33 @@ func (_handle Element) Spring(key any, target float32, options ...SpringOptions)
 	return _node.Spring(key, target, options...)
 }
 
+// Start and End place an Absolute element from the side lines start and
+// from the other, as Left and Right do, as CSS's inset-inline-start and
+// inset-inline-end: from the left and the right, or the right and the
+// left right to left. On an element in its parent's layout, they move it
+// as relative positioning does.
+func (_handle Element) Start(v float32) Element {
+	_node := _handle.node()
+	if _node == nil {
+		return Element{}
+	}
+	_ctx := _node.c
+	_ = _ctx
+	return wrapElement(_node.Start(v))
+}
+
+// StartPercent and EndPercent place the element as Start and End do, by
+// a percentage of the parent's width.
+func (_handle Element) StartPercent(p float32) Element {
+	_node := _handle.node()
+	if _node == nil {
+		return Element{}
+	}
+	_ctx := _node.c
+	_ = _ctx
+	return wrapElement(_node.StartPercent(p))
+}
+
 // Step makes the values of a slider lo and the multiples of step from it,
 // which the arrows move between, as a StepSlider's. Of a range of your own
 // (Range), it tells assistive technology how far the keys move the value.
@@ -4627,9 +5375,8 @@ func (_handle Element) Stripes(c Color, width float32, gap float32, angle float3
 	return wrapElement(_node.Stripes(c, width, gap, angle))
 }
 
-// Submitted applies pending input to the controls built so far and reports
-// whether Enter was pressed in a single-line text input. Configure controls
-// before querying their response; the bound value is updated before returning.
+// Submitted reports whether Enter was pressed in a single-line text input
+// in this build pass.
 func (_handle Element) Submitted() bool {
 	_node := _handle.node()
 	if _node == nil {
@@ -4649,6 +5396,19 @@ func (_handle Element) TextAlign(a Align) Element {
 	_ctx := _node.c
 	_ = _ctx
 	return wrapElement(_node.TextAlign(a))
+}
+
+// TextAnchorCaret returns the selection of a text input as offsets in runes
+// into its text, from where it was started to its caret: the anchor is after
+// the caret when the selection was made backwards.
+func (_handle Element) TextAnchorCaret() (int, int) {
+	_node := _handle.node()
+	if _node == nil {
+		return 0, 0
+	}
+	_ctx := _node.c
+	_ = _ctx
+	return _node.TextAnchorCaret()
 }
 
 // TextBackground fills the lines of text behind it with c, as a
@@ -4689,10 +5449,12 @@ func (_handle Element) TextColor(c Color) Element {
 }
 
 // TextRanges styles runs of a text input's text, in the frames that call
-// it, with ranges that do not overlap. They follow the text as it is: an
-// app that finds them in the text finds them again as it changes. A
-// password shows none; an input method's composition shows unstyled
-// between them.
+// it. Ranges may overlap and nest, as the attributes of an attributed
+// string do: where they do, each of Color and Weight is that of the last
+// range given that sets it, across the calls of the frame. They follow the
+// text as it is: an app that finds them in the text finds them again as it
+// changes. A password shows none; an input method's composition shows
+// unstyled between them.
 func (_handle Element) TextRanges(ranges ...TextRange) Element {
 	_node := _handle.node()
 	if _node == nil {
@@ -4714,6 +5476,35 @@ func (_handle Element) TextSelection() (int, int) {
 	_ctx := _node.c
 	_ = _ctx
 	return _node.TextSelection()
+}
+
+// Timeline returns the timeline the element keeps under key, playing it
+// as o says. Every tween added to it shares one playhead, and returns the
+// value it shows in this frame.
+//
+//	card := ui.Column(c)
+//	tl := card.Timeline("intro", ui.TimelineOptions{Run: app.opened})
+//	x := tl.Tween(ui.Tween{From: -200, To: 0, Duration: 400 * time.Millisecond})
+//	card.Translate(x, 0)
+//
+// Key tells apart the timelines of the element, as it does its Keyframes,
+// and an element asks for each of its timelines once per build. Play the
+// timeline again, or a changed one, by changing o.Run. The *Timeline is
+// valid while the view builds this frame.
+//
+// While the desktop asks for less motion (Preferences.ReduceMotion), a
+// timeline that would play is at once where it would come to rest, but
+// Seek, Progress and Paused still put and hold its playhead, as a drag
+// still moves a Draggable element. DisableAnimations does not change a
+// timeline, which plays on its own, as Keyframes do: jump it with Seek.
+func (_handle Element) Timeline(key any, o TimelineOptions) *Timeline {
+	_node := _handle.node()
+	if _node == nil {
+		return nil
+	}
+	_ctx := _node.c
+	_ = _ctx
+	return _node.Timeline(key, o)
 }
 
 // Tooltip shows s by the element when the pointer rests on it, or the
@@ -5005,7 +5796,10 @@ func (_handle SegmentedParts) Segment(i int) Element {
 	}
 	_ctx := _parts.c
 	_ = _ctx
-	return wrapElement(_parts.Segment(i))
+	_ctx.rt.beginBuild()
+	_e := _parts.Segment(i)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // Highlight moves the highlight to the option of value while the popup
@@ -5032,7 +5826,10 @@ func (_handle SelectParts[T]) Item(value T) Element {
 	}
 	_ctx := _parts.c
 	_ = _ctx
-	return wrapElement(_parts.Item(value))
+	_ctx.rt.beginBuild()
+	_e := _parts.Item(value)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // Open reports whether the popup shows.
@@ -5057,7 +5854,10 @@ func (_handle SelectParts[T]) Popup(fn func(panel Element)) Element {
 	}
 	_ctx := _parts.c
 	_ = _ctx
-	return wrapElement(_parts.Popup(func(panel *node) { fn(wrapElement(panel)) }))
+	_ctx.rt.beginBuild()
+	_e := _parts.Popup(func(panel *node) { fn(wrapElement(panel)) })
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // Tab creates tab i of the list: a row that takes the focus and chooses
@@ -5069,7 +5869,10 @@ func (_handle TabsParts) Tab(i int) Element {
 	}
 	_ctx := _parts.c
 	_ = _ctx
-	return wrapElement(_parts.Tab(i))
+	_ctx.rt.beginBuild()
+	_e := _parts.Tab(i)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // ActionButton creates a button without a look, as ButtonBase does, that
@@ -5082,7 +5885,10 @@ func (_handle ToastParts) ActionButton() Element {
 	}
 	_ctx := _parts.c
 	_ = _ctx
-	return wrapElement(_parts.ActionButton())
+	_ctx.rt.beginBuild()
+	_e := _parts.ActionButton()
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // CloseButton creates a button without a look, as ButtonBase does, that
@@ -5094,7 +5900,10 @@ func (_handle ToastParts) CloseButton() Element {
 	}
 	_ctx := _parts.c
 	_ = _ctx
-	return wrapElement(_parts.CloseButton())
+	_ctx.rt.beginBuild()
+	_e := _parts.CloseButton()
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
 }
 
 // Left returns how long the toast shows still, to count down, or 0 for one

@@ -73,34 +73,47 @@ Web pages suit rich documents, existing web code and what only a browser
 does; native UI suits tools, settings, inspectors and utilities, and apps
 that must start instantly.
 
-## Guides
+## Getting started
 
 - [Getting started](getting-started.md): install the tools, then create,
   develop and build an app, with native UI or a web frontend.
+
+## Building the app
+
+What every app has, whether its windows show native UI or web pages.
+
 - [Windows](windows.md): creating and arranging windows of both kinds,
   their events, and what windows showing web pages do with them:
   navigation, downloads, permissions, printing.
 - [The application](app.md): the lifecycle, quitting, a single instance,
-  deep links, file associations, starting at login and well-known
-  directories.
+  deep links, file associations, recent documents, starting at login,
+  well-known directories, the jump list, browsing data and cookies.
 - [Menus and the tray](menus.md): application, context and Dock menus,
   keyboard shortcuts and tray icons.
+- [Documents](documents.md): document-based apps, a window per file, with
+  the File menu, autosave, recovery after a crash, asking to save before
+  closing and quitting, and files changed by other apps.
+- [Languages](i18n.md): the app's messages in the languages it ships,
+  with catalogs of ICU messages, typed Go and TypeScript functions, plural
+  forms, MyGo's own strings, and pseudo locales to test layouts.
 - [Desktop APIs](native.md): dialogs, notifications, the clipboard, the
-  shell, displays, dark mode, power and global shortcuts.
+  shell, displays, dark mode, power, the network status, secrets, watching
+  files and global shortcuts.
 - [Clipboard and drag data](data-transfer.md): multiple representations,
   file lists, custom formats, lazy providers, and clipboard persistence.
 - [Audio](audio.md): sound effects, streamed music and sound an app makes
   itself, mixed in Go, with WAV, Ogg Vorbis and MP3.
-- [Building and distributing](distribution.md): packaged apps for macOS,
-  Windows and Linux, signing, installers and disk images.
-- [Auto-updates](updates.md): signed updates from GitHub releases, an S3
-  bucket or your own server, delta updates, and an update window in the
-  manner of Sparkle.
-- [GitHub Actions](github-actions.md): a workflow that builds, signs and
-  notarizes the apps of every platform, and publishes them with their
-  updates, when you push a tag.
+- [Launchers](launchers.md): apps in the manner of Spotlight and Raycast,
+  summoned by a shortcut over every app, which find and open the apps
+  installed.
 
-## Web frontends
+## Native UI
+
+[Native UI](ui/README.md) has documentation of its own: guides to views,
+layout, input, navigation and accessibility, and a page for each of its
+components, from buttons to tables.
+
+## Web pages
 
 - [The frontend](frontend.md): how pages load during development and in
   builds, the `mygo-runtime` package, custom protocols, custom title bars
@@ -110,11 +123,16 @@ that must start instantly.
 - [Plugins](plugins.md): features that come in a Go package and an npm
   package, such as the official plugins, and writing your own.
 
-## Native UI
+## Shipping
 
-[Native UI](ui/README.md) has documentation of its own: guides to views,
-layout, input, navigation and accessibility, and a page for each of its
-components, from buttons to tables.
+- [Building and distributing](distribution.md): packaged apps for macOS,
+  Windows and Linux, signing, installers and disk images.
+- [Auto-updates](updates.md): signed updates from GitHub releases, an S3
+  bucket or your own server, delta updates, and an update window in the
+  manner of Sparkle.
+- [GitHub Actions](github-actions.md): a workflow that builds, signs and
+  notarizes the apps of every platform, and publishes them with their
+  updates, when you push a tag.
 
 ## Official plugins
 
@@ -124,6 +142,8 @@ components, from buttons to tables.
   makes, with headers on the handshake.
 - [SQLite](plugins/sqlite.md): local databases with parameterized queries
   and atomic transactions, without cgo.
+- [Watch](plugins/watch.md): changes to files, in the directories the app
+  lets pages watch.
 - [Updater](plugins/updater.md): an update window in the manner of
   Sparkle, which checks for updates and offers to install them.
 - [Terminal](plugins/terminal.md): a terminal for native UI, which runs
@@ -161,5 +181,9 @@ Apps run on:
 
 An app whose windows all show native UI needs neither WebKitGTK nor the
 WebView2 Runtime. Tray icons on Linux also need `libayatana-appindicator3`.
+
+An app that shows web pages can ask whether the machine has a webview with
+`mygo.WebViewAvailable()`, also before `App.Run`, and open a window of native UI where it has
+none, as the table's last column describes.
 
 `mygo doctor` checks a development machine.

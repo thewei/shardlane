@@ -6,8 +6,9 @@ type CallMsg = Extract<Outgoing, { t: "call" }>;
 
 function setup() {
   const sent: Outgoing[] = [];
-  const rt = createRuntime({ platform: "darwin", windowId: 7, version: "0.0.0-test", secret: "s" }, (m) =>
-    sent.push(JSON.parse(m)),
+  const rt = createRuntime(
+    { platform: "darwin", windowId: 7, version: "0.0.0-test", secret: "s", locale: "en", dir: "ltr" },
+    (m) => sent.push(JSON.parse(m)),
   );
   return { sent, ...rt };
 }
@@ -206,4 +207,51 @@ test("runtime object is frozen", () => {
   expect(runtime.windowId).toBe(7);
   expect(Object.isFrozen(runtime)).toBe(true);
   expect(Object.isFrozen(runtime.window)).toBe(true);
+});
+
+test("preferences are the latest Go told, before listeners hear them", () => {
+  const { runtime, internal } = setup();
+  expect(runtime.preferences).toEqual({
+    accent: null,
+    reduceMotion: false,
+    reduceTransparency: false,
+    highContrast: false,
+    textScale: 1,
+  });
+  const p = { accent: "#ff8000", reduceMotion: true, reduceTransparency: true, highContrast: false, textScale: 1.5 };
+  let seen: unknown;
+  runtime.on("mygo:preferences", () => (seen = runtime.preferences));
+  internal.receive({ t: "event", n: "mygo:preferences", p });
+  expect(runtime.preferences).toEqual(p);
+  expect(seen).toEqual(p);
+});
+
+describe("locale", () => {
+  test("comes from the configuration, then from the event", () => {
+    const { runtime, internal } = setup();
+    expect(runtime.locale).toBe("en");
+    expect(runtime.dir).toBe("ltr");
+    const seen: unknown[] = [];
+    runtime.on("mygo:locale", (p) => seen.push(p));
+    internal.receive({ t: "event", n: "mygo:locale", p: { locale: "ar", dir: "rtl" } });
+    expect(seen).toEqual([{ locale: "ar", dir: "rtl" }]);
+    expect(runtime.locale).toBe("ar");
+    expect(runtime.dir).toBe("rtl");
+    // A payload that is no language changes nothing.
+    internal.receive({ t: "event", n: "mygo:locale", p: 7 });
+    expect(runtime.locale).toBe("ar");
+    expect(seen.length).toBe(1);
+  });
+
+  test("the language the page has tells no listener", () => {
+    const { runtime, internal } = setup();
+    const seen: string[] = [];
+    runtime.on<{ locale: string }>("mygo:locale", (p) => seen.push(p.locale));
+    // As the page loads, Go tells it the language its configuration has.
+    internal.receive({ t: "event", n: "mygo:locale", p: { locale: "en", dir: "ltr" } });
+    expect(seen).toEqual([]);
+    internal.receive({ t: "event", n: "mygo:locale", p: { locale: "ja", dir: "ltr" } });
+    internal.receive({ t: "event", n: "mygo:locale", p: { locale: "ja", dir: "ltr" } });
+    expect(seen).toEqual(["ja"]);
+  });
 });

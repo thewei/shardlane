@@ -142,8 +142,8 @@ func (p *comboboxParts) choose(v string) {
 }
 
 // Chosen returns the option the user chose in this frame, by a click or
-// Enter: ask it after Popup. It applies pending input to the controls built
-// so far, so the choice can be handled in the same build pass.
+// Enter: ask it after Popup, which takes the input of the options it
+// built as it returns, so the choice can be handled in the same build pass.
 func (p *comboboxParts) Chosen() (string, bool) {
 	p.c.rt.applyInputs()
 	return p.chosen, p.isChosen
@@ -178,7 +178,7 @@ func (p *comboboxParts) Popup(fn func(panel *node)) *node {
 	b := p.anchor.Bounds()
 	var panel *node
 	coreOverlay(c, func() {
-		panel = coreBox(c).MinWidth(b.W).Role(RoleList).AttachTo(p.anchor, AnchorBottomLeft, AnchorTopLeft)
+		panel = coreBox(c).MinWidth(b.W).Role(RoleList).AttachTo(p.anchor, AnchorBottomStart, AnchorTopStart)
 		// Pressing an option keeps the focus in the input.
 		panel.flags |= flagClickable | flagKeepFocus
 		panel.choosesItems = true
@@ -418,10 +418,10 @@ func coreSearchField(c *context, query *string) *node {
 	t := c.theme
 	f, in := field(c, func() *node {
 		magnifier(c)
-		in := coreTextInputBase(c, query).Grow(1).MinWidth(t.Space(15)).Placeholder("Search")
+		in := coreTextInputBase(c, query).Grow(1).MinWidth(t.Space(15)).Placeholder(c.texts().Search())
 		in.search = true
 		if *query != "" {
-			clear := coreButtonBase(c).Size(t.Space(4), t.Space(4)).Radius(t.Space(2)).Background(t.TextMuted.Alpha(0.5)).Label("Clear")
+			clear := coreButtonBase(c).Size(t.Space(4), t.Space(4)).Radius(t.Space(2)).Background(t.TextMuted.Alpha(0.5)).Label(c.texts().Clear())
 			clear.flags &^= flagFocusable // as AppKit's: no stop of Tab
 			clear.flags |= flagKeepFocus
 			clear.role = RoleButton
@@ -491,11 +491,11 @@ func coreTokenField(c *context, tokens *[]string, suggestions []string) *node {
 	f, in := field(c, func() *node {
 		for i := 0; i < len(*tokens); i++ {
 			tok := (*tokens)[i]
-			chip := coreRow(c).Key(tok).AlignItems(Center).Gap(t.Space(1)).Padding(t.Space(0.25), t.Space(1), t.Space(0.25), t.Space(2)).
+			chip := coreRow(c).Key(tok).AlignItems(Center).Gap(t.Space(1)).Padding(t.Space(0.25), 0).PaddingStart(t.Space(2)).PaddingEnd(t.Space(1)).
 				Radius(t.Radius).Background(t.SurfacePressed).Shrink(0)
 			chip.Children(func() {
 				coreText(c, tok).SingleLine()
-				x := coreButtonBase(c).Size(t.Space(3.5), t.Space(3.5)).Radius(t.Space(1)).Label("Remove " + tok)
+				x := coreButtonBase(c).Size(t.Space(3.5), t.Space(3.5)).Radius(t.Space(1)).Label(c.texts().RemoveToken(tok))
 				x.flags &^= flagFocusable
 				x.flags |= flagKeepFocus
 				x.role = RoleButton

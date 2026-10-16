@@ -48,14 +48,23 @@ apart; `Padding` and `Margin` take one, two or four values, as in CSS, and
 `PaddingX`, `PaddingY`, `MarginX` and `MarginY` two sides. A margin of
 `ui.Auto` takes the free space on its side, as in CSS: `Margin(0, ui.Auto)`
 centers an element in a column, and `Margin(0, 0, 0, ui.Auto)` sends a
-row's child, and those after it, to the end.
+row's child, and those after it, to the right.
+
+`PaddingStart` and `PaddingEnd`, `MarginStart` and `MarginEnd`, and
+`BorderStartWidth` and `BorderEndWidth` set the side lines start on and
+the other one: the left and the right, or the right and the left of an
+element laid out [right to left](right-to-left.md), as CSS's logical
+properties do. `MarginStart(ui.Auto)` sends a row's child to its end in
+either direction.
 
 ## Alignment
 
 `Justify` places the children along the direction (`Start`, `Center`,
 `End`, `SpaceBetween`, `SpaceAround`, `SpaceEvenly`), `AlignItems` across
 it (`Start`, `Center`, `End`, `Stretch`), `AlignSelf` one child; `Center`
-centers them both ways. `Wrap` wraps a row onto more lines, which
+centers them both ways. `Start` is the left of a row and the top of a
+column, and the right of an element laid out
+[right to left](right-to-left.md), which lays a row out from there. `Wrap` wraps a row onto more lines, which
 `WrapReverse` stacks upward, and `AlignContent` places those lines (as
 `Justify` places children, or `Stretch`).
 
@@ -66,7 +75,10 @@ centers them both ways. `Wrap` wraps a row onto more lines, which
 like; automatic margins center it between the sides it is placed from. As
 in CSS, they are measured from just inside the parent's border, whatever
 its padding: in a box with a border 1 DIP wide, `Top(0)` is 1 DIP below
-the box's top edge. On an element in the flow, `Top` and the others move
+the box's top edge. `Start` and `End` (and `StartPercent`, `EndPercent`)
+place it from the side lines start on and from the other, which are the
+right and the left [right to left](right-to-left.md). On an element in the
+flow, `Top` and the others move
 it from where the layout put it, without moving its siblings, as CSS's
 relative positioning does: a badge raised a little above its text.
 
@@ -79,7 +91,9 @@ ui.Box(c).Size(40, 40).Children(func() {
 
 `Attach(at, self)` takes an element out of the flow too, and puts a point
 of it (`self`) on a point of its parent's box (`at`): a corner, the middle
-of a side or the center, as `ui.AnchorTopRight` or `ui.AnchorCenter`. The
+of a side or the center, as `ui.AnchorTopRight` or `ui.AnchorCenter`, or
+one on the side lines start or end on, as `ui.AnchorTopEnd`, which is on
+the left right to left. The
 element keeps its own size, and `Top`, `Right`, `Bottom` and `Left` move
 it from there:
 

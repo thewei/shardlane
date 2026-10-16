@@ -30,10 +30,10 @@ starts. It may also read what needs no running app, such as `App.Path`,
 `App.Locale` or `Power.IsOnBattery`, and register the app with the system
 (`App.SetOpenAtLogin`, `App.RegisterURLScheme`). Everything else needs the
 running app: when `main` calls the clipboard, displays, dialogs,
-notifications, global shortcuts, trays, Dock badges, `Theme.IsDark` and the
-like before `Run`, they panic with a message naming the call, on every
-platform. Use them from `WhenReady` on; other goroutines may call them
-earlier, and wait for the app to start.
+notifications, global shortcuts, trays, Dock badges, `Theme.IsDark`,
+`Theme.Preferences` and the like before `Run`, they panic with a message
+naming the call, on every platform. Use them from `WhenReady` on; other
+goroutines may call them earlier, and wait for the app to start.
 
 ## Threads
 
@@ -176,6 +176,37 @@ It also gets files dropped on the app's Dock icon (macOS) and files passed
 on the command line. As with deep links, the single instance lock makes the
 first instance get the files of later ones on Windows and Linux.
 
+Apps whose windows each show a file get this and the rest of what
+document-based apps do from [documents](documents.md).
+
+## Recent documents
+
+Record the documents the user opens, so that the app and the system offer
+them again:
+
+```go
+if err := mygo.App.AddRecentDocument(path); err != nil {
+	log.Println(err)
+}
+```
+
+`App.RecentDocuments()` returns them, newest first, ten at most, also
+those of earlier runs, without the files that no longer exist; the Open
+Recent menu (`RoleOpenRecent`, see [menus](menus.md)) lists them. macOS
+lists them in the app's Dock menu too, Linux in the user's recently used
+files (`~/.local/share/recently-used.xbel`, the Recent of file choosers and
+file managers), and Windows in the Recent category of the app's
+[jump list](#jump-lists), for the file types the app is registered to open
+(see [file associations](#file-associations)). Choosing one of them, in the
+Open Recent menu, the Dock menu or the jump list, opens the file with the
+app, which gets it through `OnOpenFile`. [Documents](documents.md) record
+the files they open and save, and open those chosen themselves; other
+apps, such as those that open folders, record what they open.
+
+`ClearRecentDocuments` removes them all, for example when the user asks to
+clear the app's history, as the Open Recent menu's Clear Menu does. On
+Linux the user's other recent files stay.
+
 ## Start at login
 
 ```go
@@ -230,8 +261,12 @@ again.
 `mygo.IsDev()` reports whether the app is a development build: `go run`,
 `go build` and `mygo dev` builds are, `mygo build` builds are not, and
 `MYGO_ENV=production` makes any build behave like one. `App.IsPackaged()`
-reports whether it runs from an app bundle, and `App.Locale()` returns the
-user's language, such as `"en-US"`.
+reports whether it runs from an app bundle. `App.Locale()` returns the
+language the app shows, such as `"zh-Hans"`, of those it is written in,
+and `App.PreferredLanguages()` the languages the user reads, as the system
+lists them; see [the language the app shows](i18n.md#the-language-the-app-shows).
+Before 0.5, `App.Locale()` returned the user's first preferred language
+whatever the app is written in.
 
 ## The Dock and the taskbar
 
@@ -248,9 +283,111 @@ user's language, such as `"en-US"`.
   `App.Show` hide and show all its windows, and `App.ShowAboutPanel` shows
   the standard about panel.
 
+### Jump lists
+
+On Windows, right-clicking the app's taskbar button shows its jump list:
+the documents the user opened recently (see
+[recent documents](#recent-documents)) and tasks, programs to run with
+arguments, often the app itself, such as a text editor's "New note".
+`App.JumpList.SetTasks` sets the tasks; Windows keeps them after the app
+quits, so setting them once at startup is enough:
+
+```go
+mygo.App.OnOpenURL(func(rawURL string) {
+	if rawURL == "myapp://new-note" {
+		newNote()
+	}
+})
+// ... once the app is ready:
+if err := mygo.App.JumpList.SetTasks([]mygo.JumpListTask{
+	{Title: "New note", Description: "Write a new note", Args: []string{"myapp://new-note"}},
+	{Title: "Notepad", Path: `C:\Windows\notepad.exe`},
+}); err != nil {
+	log.Println(err)
+}
+```
+
+A task that runs the app starts it again with `Args`: when the app is not
+running, the new instance gets them; when it is, with
+[a single instance](#a-single-instance) the running one does. A URL of
+one of the app's [schemes](#deep-links) reaches `OnOpenURL` either way,
+and a file of its types `OnOpenFile`, so tasks are best made of them.
+Other arguments go to the new instance's `os.Args`, and to the running
+one's `OnSecondInstance`: handle them in both places. Each argument is
+passed as it is, and MyGo quotes them for the command line.
+
+`Path` is the app's own executable unless set, `WorkingDir` the
+directory it runs in, `Description` the tooltip, and the icon is the
+program's own unless `IconPath` (with `IconIndex`) names another. No
+tasks removes them. Windows replaces the whole jump list whenever the app
+changes a part of it, so `App.JumpList` keeps the parts and commits them
+together. Its methods do nothing on macOS and Linux.
+
 ## Browsing data
 
 `App.ClearBrowsingData()` deletes what the app's pages stored: cookies,
 local and session storage, IndexedDB, service workers and caches, for
 example when the user signs out. Open pages keep what they hold in memory
 until they reload.
+
+### Cookies
+
+`mygo.Cookies` reads and changes the cookies of the app's pages, `HttpOnly`
+ones included: the default cookie store, which all windows share and
+which the system webview keeps from one run to the next. Set one, for
+example, to sign the pages in with a token the backend got, before the
+first page loads, or read the session a page's sign-in set:
+
+```go
+err := mygo.Cookies.Set(mygo.Cookie{
+	Name:     "session",
+	Value:    token,
+	Domain:   "example.com",
+	Secure:   true,
+	HTTPOnly: true,
+	Expires:  time.Now().Add(30 * 24 * time.Hour),
+})
+
+// The cookies a request to the URL sends.
+sent, err := mygo.Cookies.List(mygo.CookieFilter{URL: "https://example.com/account"})
+// Those named session of example.com and its subdomains.
+sessions, err := mygo.Cookies.List(mygo.CookieFilter{Name: "session", Domain: "example.com"})
+// Every cookie, sorted by domain, path and name.
+all, err := mygo.Cookies.List(mygo.CookieFilter{})
+
+err = mygo.Cookies.Delete(mygo.Cookie{Name: "session", Domain: "example.com"})
+err = mygo.Cookies.Clear() // every cookie, but not the pages' storage
+```
+
+A cookie's name, domain and path identify it: `Set` replaces the cookie of
+the same name, domain and path, and `Delete` deletes it, whatever its other
+fields, so it deletes a cookie `List` returned. A domain without a leading
+dot is a host's, sent to that host only; with one, `.example.com`, the
+cookie goes to its subdomains too. Domains are ASCII (punycode for others)
+and an empty path is `/`. An empty `SameSite` is `Lax`, and `None` needs
+`Secure`. Names and values take what browsers take: anything but control
+characters, `;`, and spaces at either end, and names no `=`. A zero
+`Expires` makes a cookie that lasts until the app quits, and one in the
+past deletes the cookie.
+
+A filter's fields narrow the list: `URL`, an http or https URL, keeps the
+cookies a request to it sends, matched by the engine where it can (by
+domain, path and `Secure` as RFC 6265 says on macOS); `Name` keeps those
+of a name; `Domain` those of a domain and its subdomains, with or without
+a leading dot; `Path` those of exactly a path.
+
+The methods are safe from any goroutine once the app is running, and on
+the main thread the app keeps handling events while they wait. Cookies
+may carry the user's credentials: rather than binding the module to the
+pages, bind a backend method that does what the page needs.
+
+On Windows, WebView2 gives cookies only through a web view: before a
+window shows a page, the methods, and `App.ClearBrowsingData`, make a
+hidden one, which also makes the WebView2 browser process start, and a
+window's first page waits for the calls under way when its web view is
+made. WebView2 applies changes after its calls return, so the methods
+wait until the change shows, and fail when it does not within two
+seconds, as when the engine refuses a cookie. On Linux they need
+WebKitGTK 2.42 or newer, and `Set` libsoup 2.70 or newer; WebKitGTK keeps
+the cookies in `cookies.sqlite` of the app's user data directory
+(`~/.config/<Name>`).

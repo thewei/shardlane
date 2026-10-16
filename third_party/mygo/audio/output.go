@@ -97,10 +97,13 @@ const nullFrames = sampleRate / 100
 type nullDevice struct {
 	next  time.Time
 	retry time.Time
+	// now and sleep are its clock, which tests replace.
+	now   func() time.Time
+	sleep func(time.Duration)
 }
 
 func newNullDevice(retry bool) *nullDevice {
-	d := &nullDevice{next: time.Now()}
+	d := &nullDevice{next: time.Now(), now: time.Now, sleep: time.Sleep}
 	if retry {
 		d.retry = d.next.Add(2 * time.Second)
 	}
@@ -110,7 +113,7 @@ func newNullDevice(retry bool) *nullDevice {
 var errRetry = errors.New("audio: try the device again")
 
 func (d *nullDevice) write(samples []float32) error {
-	now := time.Now()
+	now := d.now()
 	if !d.retry.IsZero() && now.After(d.retry) {
 		return errRetry
 	}
@@ -119,7 +122,7 @@ func (d *nullDevice) write(samples []float32) error {
 		d.next = now
 	}
 	d.next = d.next.Add(frames(int64(len(samples)/channels), sampleRate))
-	time.Sleep(time.Until(d.next))
+	d.sleep(d.next.Sub(d.now()))
 	return nil
 }
 

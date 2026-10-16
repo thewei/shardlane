@@ -7,6 +7,7 @@ import (
 
 	"github.com/egoist/mygo/internal/platform"
 	"github.com/egoist/mygo/internal/scene"
+	"github.com/egoist/mygo/internal/wait"
 )
 
 var wideGreen = Oklch(0.85, 0.3, 145)
@@ -58,7 +59,7 @@ func TestOklchOddInput(t *testing.T) {
 		if !c.wide.ok() {
 			t.Errorf("infinite chroma = %+v, want a wide color", c)
 		}
-	case <-time.After(5 * time.Second):
+	case <-time.After(wait.Guard):
 		t.Fatal("Oklch with an infinite chroma does not return")
 	}
 	if c := Oklch(0.5, 0.2, inf); c.A != 255 {

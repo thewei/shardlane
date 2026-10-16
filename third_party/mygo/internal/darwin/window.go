@@ -31,6 +31,7 @@ const (
 	nsNormalWindowLevel      = 0
 	nsViewWidthHeightSizable = 2 | 16
 
+	collectionCanJoinAllSpaces    = 1 << 0
 	collectionTransient           = 1 << 3
 	collectionIgnoresCycle        = 1 << 6
 	collectionFullScreenPrimary   = 1 << 7
@@ -75,6 +76,9 @@ type window struct {
 	downloads     map[id][2]string // WKDownload: URL and path
 	attention     int              // the request of FlashFrame
 	maximized     bool
+	// auxiliary tells that SetVisibleOnAllWorkspaces made a window that
+	// cannot go full screen an auxiliary of full-screen Spaces, to undo.
+	auxiliary     bool
 	programmatic  bool
 	closed        bool
 	sheet         bool
@@ -131,7 +135,15 @@ func (w *window) create() {
 		content = msgRectForRect(class("NSWindow"), sel("contentRectForFrameRect:styleMask:"), size, style)
 		content.Origin = NSPoint{}
 	}
-	w.win = msgInitWindow(send(class("MyGoWindow"), "alloc"), sel("initWithContentRect:styleMask:backing:defer:"),
+	cls := "MyGoWindow"
+	if o.Panel {
+		// The nonactivating style must be there from the start: the window
+		// server only learns that the window never activates its app from
+		// the style it is created with.
+		cls = "MyGoPanel"
+		style |= styleNonactivatingPanel
+	}
+	w.win = msgInitWindow(send(class(cls), "alloc"), sel("initWithContentRect:styleMask:backing:defer:"),
 		content, style, nsBackingStoreBuffered, false)
 	send(w.win, "setReleasedWhenClosed:", 0)
 	w.delegate = alloc("MyGoWindowDelegate")
@@ -161,9 +173,19 @@ func (w *window) create() {
 		w.SetMaximumSize(o.MaxSize)
 	}
 	send(w.win, "setMovable:", boolArg(o.Movable))
+	if !o.Maximizable {
+		w.SetMaximizable(false)
+	}
 	behavior := uint(collectionFullScreenPrimary)
 	if !o.Fullscreenable {
 		behavior = collectionFullScreenNone
+	}
+	if o.Panel {
+		// On the Space the user is on, full-screen ones included, as they
+		// switch, and out of Mission Control and the window cycle.
+		behavior = collectionCanJoinAllSpaces | collectionFullScreenAuxiliary | collectionIgnoresCycle | collectionTransient
+		// A panel stays as the app is deactivated: the app hides it.
+		send(w.win, "setHidesOnDeactivate:", 0)
 	}
 	send(w.win, "setCollectionBehavior:", uintptr(behavior))
 	if o.AlwaysOnTop {
@@ -329,23 +351,7 @@ func (w *window) createWebView(content NSRect) {
 	// the bridge configuration never leak between windows.
 	w.ucc = alloc("WKUserContentController")
 	send(w.ucc, "addScriptMessageHandler:name:", uintptr(w.delegate), uintptr(nsString("mygo")))
-	for _, s := range o.UserScripts {
-		injection := uintptr(0) // WKUserScriptInjectionTimeAtDocumentStart
-		if s.AtDocumentEnd {
-			injection = 1
-		}
-		script := send(send(class("WKUserScript"), "alloc"), "initWithSource:injectionTime:forMainFrameOnly:",
-			uintptr(nsString(s.Source)), injection, boolArg(!s.AllFrames))
-		send(w.ucc, "addUserScript:", uintptr(script))
-		release(script)
-	}
-	if w.hiddenTitleBar() {
-		// After the bridge, which it tells: the room of the traffic lights.
-		script := send(send(class("WKUserScript"), "alloc"), "initWithSource:injectionTime:forMainFrameOnly:",
-			uintptr(nsString(bridge.TitleBarScript(w.TitleBar(), o.Zoom))), 0, 1)
-		send(w.ucc, "addUserScript:", uintptr(script))
-		release(script)
-	}
+	w.addUserScripts(o.Zoom)
 	send(cfg, "setUserContentController:", uintptr(w.ucc))
 
 	w.web = msgInitRectID(send(class("MyGoWebView"), "alloc"), sel("initWithFrame:configuration:"), NSRect{Size: content.Size}, cfg)
@@ -433,6 +439,27 @@ func (w *window) WebViewHandle() uintptr { return uintptr(w.web) }
 
 func (w *window) SetTitle(title string) {
 	withPool(func() { send(w.win, "setTitle:", uintptr(nsString(title))) })
+	w.layoutTrafficLights()
+}
+
+// SetRepresentedFile shows the file's proxy icon in the title bar, which
+// the user drags, and whose ⌘-click menu lists its folders.
+func (w *window) SetRepresentedFile(path string) {
+	withPool(func() {
+		var url id
+		if path != "" {
+			url = fileURL(path)
+		}
+		send(w.win, "setRepresentedURL:", uintptr(url))
+	})
+	// AppKit lays the title bar's buttons out again.
+	w.layoutTrafficLights()
+}
+
+// SetDocumentEdited shows the dot in the close button, and dims the proxy
+// icon.
+func (w *window) SetDocumentEdited(edited bool) {
+	send(w.win, "setDocumentEdited:", boolArg(edited))
 	w.layoutTrafficLights()
 }
 
@@ -530,7 +557,9 @@ func (w *window) Show() {
 	if w.parent != nil && !w.parent.closed {
 		send(w.parent.win, "addChildWindow:ordered:", uintptr(w.win), 1)
 	}
-	send(w.b.app, "activateIgnoringOtherApps:", 1)
+	if !w.opts.Panel {
+		send(w.b.app, "activateIgnoringOtherApps:", 1)
+	}
 }
 
 // showFlyout shows a flyout above its parent, as its child window, and
@@ -724,7 +753,9 @@ func (w *window) Focus() {
 		return
 	}
 	send(w.win, "makeKeyAndOrderFront:", 0)
-	send(w.b.app, "activateIgnoringOtherApps:", 1)
+	if !w.opts.Panel {
+		send(w.b.app, "activateIgnoringOtherApps:", 1)
+	}
 }
 
 func (w *window) Blur() { send(w.win, "orderBack:", 0) }
@@ -800,8 +831,20 @@ func (w *window) SetVisibleOnAllWorkspaces(v bool) {
 	behavior := uint(sendInt(w.win, "collectionBehavior"))
 	if v {
 		behavior |= canJoinAllSpaces
+		// FullScreenNone (DisableFullScreen) also keeps a window out of
+		// other apps' full-screen Spaces. As an auxiliary, the window shows
+		// there too (an accessory app's: macOS shows no regular app's
+		// windows there), and still cannot go full screen itself.
+		if behavior&collectionFullScreenNone != 0 {
+			behavior = behavior&^collectionFullScreenNone | collectionFullScreenAuxiliary
+			w.auxiliary = true
+		}
 	} else {
 		behavior &^= canJoinAllSpaces
+		if w.auxiliary {
+			behavior = behavior&^collectionFullScreenAuxiliary | collectionFullScreenNone
+			w.auxiliary = false
+		}
 	}
 	send(w.win, "setCollectionBehavior:", uintptr(behavior))
 }
@@ -1018,6 +1061,41 @@ func (w *window) URL() string {
 	var s string
 	withPool(func() { s = goString(send(send(w.web, "URL"), "absoluteString")) })
 	return s
+}
+
+// addUserScripts adds the user scripts of the options to the content
+// controller, and the title bar's after them. Pool required.
+func (w *window) addUserScripts(zoom float64) {
+	add := func(src string, injection uintptr, mainFrameOnly bool) {
+		script := send(send(class("WKUserScript"), "alloc"), "initWithSource:injectionTime:forMainFrameOnly:",
+			uintptr(nsString(src)), injection, boolArg(mainFrameOnly))
+		send(w.ucc, "addUserScript:", uintptr(script))
+		release(script)
+	}
+	for _, s := range w.opts.UserScripts {
+		injection := uintptr(0) // WKUserScriptInjectionTimeAtDocumentStart
+		if s.AtDocumentEnd {
+			injection = 1
+		}
+		add(s.Source, injection, !s.AllFrames)
+	}
+	if w.hiddenTitleBar() {
+		// After the bridge, which it tells: the room of the traffic lights.
+		add(bridge.TitleBarScript(w.TitleBar(), zoom), 0, true)
+	}
+}
+
+// SetUserScripts replaces the user scripts: a content controller can only
+// remove all of its scripts, so they are all added again.
+func (w *window) SetUserScripts(scripts []platform.UserScript) {
+	if w.ucc == 0 || w.closed {
+		return
+	}
+	w.opts.UserScripts = scripts
+	withPool(func() {
+		send(w.ucc, "removeAllUserScripts")
+		w.addUserScripts(w.Zoom())
+	})
 }
 
 func (w *window) Eval(js string) {
@@ -1307,6 +1385,19 @@ func registerWindowClasses() {
 		method("canBecomeMainWindow", func(self id, _ objc.SEL) bool { return true }),
 		method("selectKeyViewFollowingView:", selectKeyView("MyGoWindow", false)),
 		method("selectKeyViewPrecedingView:", selectKeyView("MyGoWindow", true)),
+	})
+
+	// A panel (WindowOptions.Panel) takes the keyboard, without
+	// activating the app, and is never the main window.
+	classDef("MyGoPanel", "NSPanel", nil, []objc.MethodDef{
+		method("canBecomeKeyWindow", func(self id, _ objc.SEL) bool { return true }),
+		method("canBecomeMainWindow", func(self id, _ objc.SEL) bool { return false }),
+		// NSPanel closes on an Escape its content leaves (cancelOperation:),
+		// past windowShouldClose: MyGo closes it then, as the user closing
+		// it, which OnClose listeners may prevent.
+		method("cancelOperation:", func(self id, _ objc.SEL, sender id) {}),
+		method("selectKeyViewFollowingView:", selectKeyView("MyGoPanel", false)),
+		method("selectKeyViewPrecedingView:", selectKeyView("MyGoPanel", true)),
 	})
 
 	// A flyout's panel becomes the key window only when it takes the

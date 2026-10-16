@@ -38,10 +38,14 @@ var (
 	glUseProgram            func(program uint32)
 	glDeleteProgram         func(program uint32)
 	glGetUniformLocation    func(program uint32, name string) int32
+	glGetUniformBlockIndex  func(program uint32, name string) uint32
+	glUniformBlockBinding   func(program, index, binding uint32)
+	glBindBufferBase        func(target, index, buffer uint32)
 	glUniform1i             func(location, v int32)
 	glUniform2f             func(location int32, x, y float32)
 	glUniform1f             func(location int32, v float32)
 	glUniform2i             func(location, x, y int32)
+	glUniform4i             func(location, x, y, z, w int32)
 	glCopyTexSubImage2D     func(target uint32, level, xoff, yoff, x, y, w, h int32)
 	glGenVertexArrays       func(n int32, out *uint32)
 	glBindVertexArray       func(array uint32)
@@ -125,10 +129,14 @@ func load() error {
 		gl(&glUseProgram, "glUseProgram")
 		gl(&glDeleteProgram, "glDeleteProgram")
 		gl(&glGetUniformLocation, "glGetUniformLocation")
+		gl(&glGetUniformBlockIndex, "glGetUniformBlockIndex")
+		gl(&glUniformBlockBinding, "glUniformBlockBinding")
+		gl(&glBindBufferBase, "glBindBufferBase")
 		gl(&glUniform1i, "glUniform1i")
 		gl(&glUniform2f, "glUniform2f")
 		gl(&glUniform1f, "glUniform1f")
 		gl(&glUniform2i, "glUniform2i")
+		gl(&glUniform4i, "glUniform4i")
 		gl(&glCopyTexSubImage2D, "glCopyTexSubImage2D")
 		gl(&glGenVertexArrays, "glGenVertexArrays")
 		gl(&glBindVertexArray, "glBindVertexArray")
@@ -207,6 +215,9 @@ func hasExtension(name string) bool { return epoxyHasExtension(name) }
 
 // versionString describes the current context's version, for errors.
 func versionString() string { return goString(glGetString(glVersion)) }
+
+// rendererString names the current context's renderer.
+func rendererString() string { return goString(glGetString(glRenderer)) }
 
 // setShaderSource sets the source of a shader.
 func setShaderSource(s uint32, src string) {

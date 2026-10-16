@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"runtime"
 	"runtime/debug"
 	"strconv"
 	"strings"
@@ -158,7 +159,61 @@ func serveScheme(win *Window, h http.Handler, req *platform.SchemeRequest) {
 	if cl := r.Header.Get("Content-Length"); cl != "" {
 		r.ContentLength, _ = strconv.ParseInt(cl, 10, 64)
 	}
+	if allowCORS(win, rw.header, r) {
+		rw.WriteHeader(http.StatusNoContent) // a preflight, answered here
+		return
+	}
 	h.ServeHTTP(rw, r)
+}
+
+// allowCORS lets the app's own pages read responses of custom schemes,
+// which are other origins than theirs: the frontend, another scheme, or
+// the dev server fetching thumbs://localhost/ for example. It sets the
+// CORS headers for those origins, which handlers may still override, and
+// reports whether the request is a preflight it answered. Pages of other
+// sites get no CORS headers, unless the window trusts them
+// (PageOptions.TrustedOrigins).
+func allowCORS(win *Window, header http.Header, r *http.Request) (preflight bool) {
+	origin := r.Header.Get("Origin")
+	if origin == "" || origin == "null" || !win.isTrusted(appOrigin(origin)) {
+		return false
+	}
+	header.Set("Access-Control-Allow-Origin", origin)
+	header.Set("Access-Control-Expose-Headers", "*")
+	header.Add("Vary", "Origin")
+	method := r.Header.Get("Access-Control-Request-Method")
+	if r.Method != http.MethodOptions || method == "" {
+		return false
+	}
+	header.Set("Access-Control-Allow-Methods", method)
+	if h := r.Header.Get("Access-Control-Request-Headers"); h != "" {
+		header.Set("Access-Control-Allow-Headers", h)
+	}
+	header.Set("Access-Control-Max-Age", "600")
+	return true
+}
+
+// schemeHosts is set where the webview serves custom schemes at
+// http://<scheme>.localhost (WebView2). Elsewhere, such an origin is a
+// server on the loopback interface, not the app's.
+var schemeHosts = runtime.GOOS == "windows"
+
+// appOrigin maps the origin WebView2 gives pages of a custom scheme,
+// http://<scheme>.localhost, back to <scheme>://localhost, as the rest of
+// MyGo names it.
+func appOrigin(origin string) string {
+	if !schemeHosts {
+		return origin
+	}
+	u, err := url.Parse(origin)
+	if err != nil || u.Scheme != "http" || u.Port() != "" {
+		return origin
+	}
+	scheme, ok := strings.CutSuffix(strings.ToLower(u.Hostname()), ".localhost")
+	if !ok || !(scheme == frontendScheme || Protocol.IsHandled(scheme)) {
+		return origin
+	}
+	return scheme + "://localhost"
 }
 
 // schemeWriter is the http.ResponseWriter for custom scheme requests. Body

@@ -99,8 +99,9 @@ Develops the app with live reload. It writes the TypeScript client, runs
 place of its built frontend, and starts it. Without `devUrl` the app serves
 `frontendDist` from disk.
 
-Changes to the Go code, the configuration, the icon or the resources rebuild
-the app, regenerate the TypeScript client and restart the app: the running
+Changes to the Go code, the configuration, the icon, the resources or the
+[catalogs](i18n.md) rebuild the app, regenerate the TypeScript client and
+the functions of the catalogs, and restart the app: the running
 build quits, then the new one starts, so the two never hold the same files,
 locks or web view profile at once. A build that fails to compile keeps the
 running one. Frontend changes are the dev server's to handle. Quitting the app, or
@@ -136,6 +137,7 @@ compiles. `o` opens the page again.
 | `-web` | develops the app in browsers |
 | `-port` | with `-web`, the port to serve the app at, or the next free one (default: 5174) |
 | `-open` | with `-web`, opens the app in the browser (default: true) |
+| `-lang` | runs the app in a language, such as `de` or `zh-Hant`, or a pseudo locale, `en-XA` or `ar-XB`, without changing the language it keeps; see [trying a language](i18n.md#trying-a-language) |
 
 ## mygo build
 
@@ -176,6 +178,22 @@ configuration unless `-o` names another file. `mygo dev` and `mygo build` run
 it for you; apps without a frontend get no client. See
 [the generated client](bindings.md#the-generated-client).
 
+With `i18n` in the configuration, it first checks the app's
+[catalogs](i18n.md) and writes their functions: `catalog_gen.go` in the
+catalogs' directory, and a TypeScript module next to the client, named
+after the directory (`src/locales.ts`). Errors in the catalogs stop it.
+
+## mygo i18n check
+
+```
+mygo i18n check [dir]
+```
+
+Checks the app's [catalogs](i18n.md#checking-the-catalogs): it lists their
+errors, such as messages that do not parse or arguments a translation adds,
+and their warnings, such as missing translations, and exits with status 1
+when there are errors.
+
 ## mygo keygen
 
 ```
@@ -213,6 +231,7 @@ Prints the version of the CLI.
 | `MYGO_WINDOWS_CERTIFICATE_PASSWORD` | the password of `windows.certificate`, for `mygo build` |
 | `MYGO_CLI_BINARY` | a build of the CLI for the `mygo-cli` package to run |
 | `MYGO_ENV` | `production` makes an app behave like a production build, e.g. without the web inspector |
+| `MYGO_LOCALE` | the language the app runs in, over the one it keeps, which `mygo dev -lang` sets |
 
 For an app with dependencies that need cgo:
 

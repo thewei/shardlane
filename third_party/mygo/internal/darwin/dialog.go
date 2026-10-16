@@ -194,7 +194,7 @@ func (d dialogs) ShowMessageBox(parent platform.Window, o *platform.MessageBoxOp
 func jsAlert(w *window, message string, handler uintptr) {
 	handler = blockCopy(handler)
 	withPool(func() {
-		alert := newAlert("info", message, "", []string{"OK"}, 0, 0)
+		alert := newAlert("info", message, "", []string{platform.CurrentTexts().OK}, 0, 0)
 		runPanel(alert, w, "beginSheetModalForWindow:completionHandler:", func(int) {
 			callBlock(handler)
 			blockRelease(handler)
@@ -205,7 +205,8 @@ func jsAlert(w *window, message string, handler uintptr) {
 func jsConfirm(w *window, message string, handler uintptr) {
 	handler = blockCopy(handler)
 	withPool(func() {
-		alert := newAlert("info", message, "", []string{"OK", "Cancel"}, 0, 1)
+		tx := platform.CurrentTexts()
+		alert := newAlert("info", message, "", []string{tx.OK, tx.Cancel}, 0, 1)
 		runPanel(alert, w, "beginSheetModalForWindow:completionHandler:", func(resp int) {
 			callBlock(handler, boolArg(resp == nsAlertFirstButtonReturn))
 			blockRelease(handler)
@@ -216,7 +217,8 @@ func jsConfirm(w *window, message string, handler uintptr) {
 func jsPrompt(w *window, prompt, defaultText string, handler uintptr) {
 	handler = blockCopy(handler)
 	withPool(func() {
-		alert := newAlert("info", prompt, "", []string{"OK", "Cancel"}, 0, 1)
+		tx := platform.CurrentTexts()
+		alert := newAlert("info", prompt, "", []string{tx.OK, tx.Cancel}, 0, 1)
 		field := autorelease(msgInitRect(send(class("NSTextField"), "alloc"), sel("initWithFrame:"), NSRect{Size: NSSize{280, 24}}))
 		send(field, "setStringValue:", uintptr(nsString(defaultText)))
 		send(alert, "setAccessoryView:", uintptr(field))

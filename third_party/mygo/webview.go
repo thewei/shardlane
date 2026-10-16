@@ -275,6 +275,9 @@ func (n *webViewNative) CanGoForward() bool                  { return n.web.CanG
 func (n *webViewNative) URL() string                         { return n.web.URL() }
 func (n *webViewNative) IsLoading() bool                     { return n.web.IsLoading() }
 func (n *webViewNative) Eval(js string)                      { n.web.Eval(js) }
+func (n *webViewNative) SetUserScripts(scripts []platform.UserScript) {
+	n.web.SetUserScripts(scripts)
+}
 func (n *webViewNative) CallAsyncFunction(body string, cb func(string, error)) {
 	n.web.CallAsyncFunction(body, cb)
 }

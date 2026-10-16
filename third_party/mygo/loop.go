@@ -54,6 +54,13 @@ func (l *mainLoop) drain() {
 	}
 }
 
+// stopped reports whether the loop has shut down.
+func (l *mainLoop) stopped() bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.closed
+}
+
 // shutdown runs whatever is still queued and rejects later posts. The
 // queue is closed in the same critical section that finds it empty, so no
 // post is accepted without running.

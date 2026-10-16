@@ -436,6 +436,44 @@ them. The Debian package suits people who want the system's package manager to
 update the app; `install.sh` suits the others, and is the Linux install
 that updates itself.
 
+## Languages
+
+An app with [catalogs](i18n.md) declares their languages to each system,
+its source language first, which the system falls back to:
+
+- macOS: `CFBundleDevelopmentRegion`, `CFBundleLocalizations` and a
+  localization folder per language in `Contents/Resources`, named as Xcode
+  names them (`de.lproj`, `zh-Hans.lproj`, `zh-HK.lproj` for `zh-Hant-HK`),
+  so that AppKit says its own texts (the Services menu, the panels) in the
+  language the app shows, and System Settings lists the app's languages.
+- Linux: `Name[xx]` and `Comment[xx]` in the desktop entry, by POSIX
+  locale (`de`, `zh_CN`, `zh_TW`, `sr@latin`).
+- Windows: the installer is in each of the languages, and picks the
+  system's; NSIS 3 has files of some 60 languages, and a language it has
+  none of stops the build, saying which it has. The file properties have a
+  table of strings per language.
+
+The app's name and description in a language are its catalog's
+`mygo.appName` and `mygo.appDescription`; the configuration's `name` and
+`linux.comment` are those of the source language. An app without catalogs
+declares no languages.
+
+On macOS, the other strings of `Info.plist`, such as the reasons the
+system shows as it asks for the microphone or the system's audio
+(`NSMicrophoneUsageDescription`, `NSAudioCaptureUsageDescription`), are
+translated as Xcode's projects translate them: by an `InfoPlist.strings`
+of the language among the app's [resources](#platform-resources), which
+the build keeps, adding the app's name where the file has none.
+
+```
+resources/darwin/
+├── ja.lproj/InfoPlist.strings        "NSMicrophoneUsageDescription" = "音声メモを録音します。";
+└── zh-Hans.lproj/InfoPlist.strings   "NSMicrophoneUsageDescription" = "用麦克风录语音笔记。";
+```
+
+The file is the text format Xcode writes, in UTF-8 or UTF-16, or a
+property list in XML.
+
 ## URL schemes and file types
 
 `urlSchemes` and `fileAssociations` in the configuration (see

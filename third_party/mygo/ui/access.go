@@ -3,7 +3,6 @@ package ui
 import (
 	"slices"
 	"strings"
-	"time"
 
 	"github.com/egoist/mygo/internal/platform"
 )
@@ -520,9 +519,10 @@ func (rt *engine) accessAction(ev platform.SurfaceEvent) {
 		rt.reveal(s.id)
 	case platform.AccessIncrement, platform.AccessDecrement:
 		rt.focusOn(s)
-		// Sliders step right and left, spin buttons up and down.
+		// Sliders step right and left, spin buttons up and down, as do
+		// sliders laid out right to left, whose Right goes down.
 		up, down := KeyRight, KeyLeft
-		if s.role == RoleStepper {
+		if s.role == RoleStepper || s.rtl {
 			up, down = KeyUp, KeyDown
 		}
 		k := up
@@ -535,6 +535,18 @@ func (rt *engine) accessAction(ev platform.SurfaceEvent) {
 		s.expand = 1
 		if ev.Action == platform.AccessCollapse {
 			s.expand = -1
+		}
+	case platform.AccessSelectText:
+		if ed := s.editor; ed != nil && s.flags&flagEditable != 0 {
+			n := ed.buf.n
+			ed.editorSelection = editorSelection{anchor: max(0, min(ev.From, n)), caret: max(0, min(ev.To, n))}
+			if ed.area != nil {
+				ed.area.reveal = true
+			}
+			break
+		}
+		if s.input != nil {
+			s.input(InputEvent{Kind: InputSelect, Start: ev.From, End: ev.To, Time: rt.now()})
 		}
 	case platform.AccessSetValue:
 		if s.editor == nil || s.flags&flagEditable == 0 || s.editor.readOnly {
@@ -553,7 +565,7 @@ func (rt *engine) focusOn(s *state) {
 	}
 	if rt.focused != s.id {
 		rt.focused = s.id
-		rt.blinkStart = time.Now()
+		rt.blinkStart = rt.now()
 	}
 	rt.focusVisible = true
 	rt.reveal(s.id)

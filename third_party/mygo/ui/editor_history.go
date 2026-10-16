@@ -68,7 +68,7 @@ func (ed *editor) setText(s string) {
 // record starts a step of undo before an edit; typing in a row makes one
 // step.
 func (ed *editor) record(typing bool) {
-	now := time.Now()
+	now := ed.now()
 	if typing && ed.coalesce && now.Sub(ed.lastEdit) < time.Second && len(ed.undo) > 0 {
 		ed.lastEdit = now
 		return

@@ -7,6 +7,7 @@ import (
 	"github.com/egoist/mygo/internal/platform"
 	"github.com/egoist/mygo/internal/scene"
 	"github.com/egoist/mygo/internal/text"
+	transfer "github.com/egoist/mygo/transfer"
 )
 
 // Align positions children along an axis: Justify places them along the
@@ -146,7 +147,7 @@ type shadow struct {
 // textStyle is the text styling of an element; descendants inherit what is
 // set.
 type textStyle struct {
-	set    uint16
+	set    uint32
 	family string
 	size   float32
 	weight int
@@ -161,6 +162,8 @@ type textStyle struct {
 	strike     bool
 	spacing    float32 // letter spacing
 	features   string
+	// lang is the language of the text, a BCP 47 tag (Lang).
+	lang string
 	// decoColor and decoThick are those of underlines and strikethroughs;
 	// background is behind the text.
 	decoColor  Color
@@ -171,7 +174,7 @@ type textStyle struct {
 }
 
 const (
-	setFamily uint16 = 1 << iota
+	setFamily uint32 = 1 << iota
 	setSize
 	setWeight
 	setItalic
@@ -186,9 +189,10 @@ const (
 	setDecoThick
 	setBackground
 	setSelection
+	setLang
 
 	// setAll has every bit of textStyle.set.
-	setAll = setSelection<<1 - 1
+	setAll = setLang<<1 - 1
 )
 
 // Element is a node of a frame's user interface. The functions that create
@@ -221,9 +225,13 @@ type node struct {
 	track *ScrollState
 
 	// Layout.
-	row                    bool
-	wrap                   bool
-	reverse, wrapReverse   bool
+	row                  bool
+	wrap                 bool
+	reverse, wrapReverse bool
+	// dir is the element's direction (dirRTL, dirSet), and logical which
+	// of its horizontal edges were set by their start or end
+	// (direction.go).
+	dir, logical           uint8
 	justify, align, self   Align
 	alignContent           Align
 	gapX, gapY             float32
@@ -263,16 +271,22 @@ type node struct {
 	backface bool
 
 	// Painting.
-	bg           Color
-	fill         fillKind
-	grad         LinearGradient
-	stripes      stripes
-	border       [4]float32 // top, right, bottom, left
-	borderC      Color
-	borderStyle  BorderStyle
-	radius       [4]float32
-	shadows      []shadow
-	material     Material
+	bg          Color
+	fill        fillKind
+	grad        LinearGradient
+	stripes     stripes
+	border      [4]float32 // top, right, bottom, left
+	borderC     Color
+	borderStyle BorderStyle
+	radius      [4]float32
+	shadows     []shadow
+	material    Material
+	effect      Effect
+	effecting   bool
+	// grads holds a conic fill and a border's gradient, which few elements
+	// have; blur is the standard deviation of the element's blur, in DIPs.
+	grads        *gradients
+	blur         float32
 	opacity      float32
 	opacitySet   bool
 	cursor       Cursor
@@ -286,6 +300,8 @@ type node struct {
 	textClient TextInputClient
 	caret      Rect
 	takesText  bool
+	noIME      bool // InputMethod(false)
+	copyData   func(parts []SelectedText) transfer.Data
 	// focusTo is the input a field around it focuses (field): Focus and
 	// AutoFocus on the field reach the editor, which alone takes text.
 	focusTo *node
@@ -368,6 +384,10 @@ type node struct {
 	// arrows click the element they move to with groupSelects.
 	focusGroup   Orientation
 	groupSelects bool
+	// placeOn is a sibling, laid out in the parent's flow, whose box an
+	// absolute element's insets are measured from instead of the parent's.
+	// A split uses it to keep its handle on the divider.
+	placeOn *node
 	// overflow is set on a toolbar, whose layout notes there the controls
 	// it had no room for, and takes them out of the flow, collapsed.
 	overflow  *[]toolbarItem
@@ -472,8 +492,8 @@ const (
 	BorderDashed
 )
 
-// LinearGradient blends two colors along a line across a box, as CSS's
-// linear-gradient does with two colors:
+// LinearGradient blends colors along a line across a box, as CSS's
+// linear-gradient does: two, From and To, or as many as its Stops.
 //
 //	e.LinearGradient(ui.LinearGradient{From: blue, To: yellow, Angle: 90, Oklab: true})
 type LinearGradient struct {
@@ -488,6 +508,67 @@ type LinearGradient struct {
 	// the colors' lightness and saturation, instead of in sRGB, as CSS's
 	// "in oklab" does.
 	Oklab bool
+	// Stops, unless empty, are the gradient's colors in place of From and
+	// To (and Start and End), at their places along the line from 0 to 1,
+	// in order:
+	//
+	//	ui.LinearGradient{Angle: 90, Stops: []ui.GradientStop{{red, 0}, {yellow, 0.5}, {blue, 1}}}
+	Stops []GradientStop
+}
+
+// GradientStop is a color of a gradient (LinearGradient, ConicGradient)
+// and its place along it, from 0 to 1, as CSS's color stops are. The
+// gradient shows its first color before its first stop, its last after
+// its last, and between two stops their colors blended; two stops at one
+// place make a sharp edge. A gradient takes 32 stops at most, in sRGB.
+type GradientStop struct {
+	Color Color
+	At    float32
+}
+
+// ConicGradient blends colors around a point, as CSS's conic-gradient()
+// does (SwiftUI's AngularGradient, Flutter's SweepGradient): its stops at
+// their places around a turn, clockwise from its angle.
+//
+//	e.ConicGradient(ui.ConicGradient{Stops: []ui.GradientStop{{red, 0}, {blue, 0.5}, {red, 1}}})
+type ConicGradient struct {
+	Stops []GradientStop
+	// Center is the point the colors turn around, in fractions of the
+	// box's width and height from its top left corner; the zero Point is
+	// its middle.
+	Center Point
+	// Angle is where the turn starts, in degrees clockwise from upwards, as
+	// CSS's "from": 90 starts at the right, where SwiftUI's and Flutter's
+	// start.
+	Angle float32
+	// Oklab mixes the colors in the Oklab color space, as LinearGradient's
+	// does.
+	Oklab bool
+}
+
+// gradients is a conic fill and a border's gradient, linear or conic.
+type gradients struct {
+	conic        ConicGradient
+	borderLinear LinearGradient
+	borderConic  ConicGradient
+	border       borderPaint
+}
+
+// borderPaint is what paints a border: its color, or a gradient.
+type borderPaint uint8
+
+const (
+	borderColor borderPaint = iota
+	borderLinear
+	borderConic
+)
+
+// grad returns the element's gradients, made the first time.
+func (e *node) gradients() *gradients {
+	if e.grads == nil {
+		e.grads = &gradients{}
+	}
+	return e.grads
 }
 
 type fillKind uint8
@@ -497,6 +578,7 @@ const (
 	fillGradient
 	fillStripes
 	fillMaterial
+	fillConic
 )
 
 type stripes struct {
@@ -593,20 +675,24 @@ func edges(v []float32) [4]float32 {
 
 // Padding sets the space inside the element's edges, CSS style: all
 // sides, vertical and horizontal, or top, right, bottom and left.
-func (e *node) Padding(v ...float32) *node { e.pad = edges(v); return e }
+func (e *node) Padding(v ...float32) *node { e.pad = edges(v); e.logical &^= logPad; return e }
 
 // PaddingX sets the left and right padding.
-func (e *node) PaddingX(v float32) *node { e.pad[1], e.pad[3] = v, v; return e }
+func (e *node) PaddingX(v float32) *node { e.pad[1], e.pad[3] = v, v; e.logical &^= logPad; return e }
 
 // PaddingY sets the top and bottom padding.
 func (e *node) PaddingY(v float32) *node { e.pad[0], e.pad[2] = v, v; return e }
 
 // Margin sets the space around the element, as Padding does. Auto
 // margins take the free space on their side.
-func (e *node) Margin(v ...float32) *node { e.margin = edges(v); return e }
+func (e *node) Margin(v ...float32) *node { e.margin = edges(v); e.logical &^= logMargin; return e }
 
 // MarginX sets the left and right margins.
-func (e *node) MarginX(v float32) *node { e.margin[1], e.margin[3] = v, v; return e }
+func (e *node) MarginX(v float32) *node {
+	e.margin[1], e.margin[3] = v, v
+	e.logical &^= logMargin
+	return e
+}
 
 // MarginY sets the top and bottom margins.
 func (e *node) MarginY(v float32) *node { e.margin[0], e.margin[2] = v, v; return e }
@@ -712,23 +798,26 @@ func (e *node) Absolute() *node { e.flags |= flagAbsolute; return e }
 // its parent's layout, they move it from where the layout put it, as CSS's
 // relative positioning does, without moving its siblings.
 func (e *node) Top(v float32) *node    { e.inset[0] = px(v); return e }
-func (e *node) Right(v float32) *node  { e.inset[1] = px(v); return e }
+func (e *node) Right(v float32) *node  { e.inset[1] = px(v); e.unlog(1, logInset); return e }
 func (e *node) Bottom(v float32) *node { e.inset[2] = px(v); return e }
-func (e *node) Left(v float32) *node   { e.inset[3] = px(v); return e }
+func (e *node) Left(v float32) *node   { e.inset[3] = px(v); e.unlog(3, logInset); return e }
 
 // TopPercent, RightPercent, BottomPercent and LeftPercent place the
 // element as Top, Right, Bottom and Left do, by a percentage of the
 // parent's height or width.
 func (e *node) TopPercent(p float32) *node    { e.inset[0] = percent(p); return e }
-func (e *node) RightPercent(p float32) *node  { e.inset[1] = percent(p); return e }
+func (e *node) RightPercent(p float32) *node  { e.inset[1] = percent(p); e.unlog(1, logInset); return e }
 func (e *node) BottomPercent(p float32) *node { e.inset[2] = percent(p); return e }
-func (e *node) LeftPercent(p float32) *node   { e.inset[3] = percent(p); return e }
+func (e *node) LeftPercent(p float32) *node   { e.inset[3] = percent(p); e.unlog(3, logInset); return e }
 
 // Anchor is a point of a box: a corner, the middle of a side, or the
 // center.
 type Anchor uint8
 
-// Anchors, from left to right and top to bottom.
+// Anchors, from left to right and top to bottom, then those on the side
+// lines start and on the other: on the left and the right, or the right
+// and the left of an element laid out right to left (Direction), as
+// Flutter's AlignmentDirectional.
 const (
 	AnchorTopLeft Anchor = iota
 	AnchorTop
@@ -739,17 +828,37 @@ const (
 	AnchorBottomLeft
 	AnchorBottom
 	AnchorBottomRight
+	AnchorTopStart
+	AnchorStart
+	AnchorBottomStart
+	AnchorTopEnd
+	AnchorEnd
+	AnchorBottomEnd
 )
 
-// fractions returns where the anchor is across a box and down it, from 0
-// to 1.
+// physical returns the anchor on the left or the right that a, which may
+// be on the start or the end side, is in direction rtl.
+func (a Anchor) physical(rtl bool) Anchor {
+	if a < AnchorTopStart {
+		return a
+	}
+	end := a >= AnchorTopEnd
+	row := (a - AnchorTopStart) % 3
+	if end != rtl {
+		return row*3 + 2
+	}
+	return row * 3
+}
+
+// fractions returns where the anchor, on the left or the right, is across
+// a box and down it, from 0 to 1.
 func (a Anchor) fractions() (fx, fy float32) { return float32(a%3) / 2, float32(a/3) / 2 }
 
-// attachment is where Attach puts an element: 1 + at*9 + self, 0 for
+// attachment is where Attach puts an element: 1 + at*15 + self, 0 for
 // nowhere.
 type attachment uint8
 
-func (a attachment) anchors() (at, self Anchor) { return Anchor((a - 1) / 9), Anchor((a - 1) % 9) }
+func (a attachment) anchors() (at, self Anchor) { return Anchor((a - 1) / 15), Anchor((a - 1) % 15) }
 
 // Attach takes the element out of its parent's layout, as Absolute does,
 // and puts its point self on the point at of the parent's padding box:
@@ -760,7 +869,7 @@ func (a attachment) anchors() (at, self Anchor) { return Anchor((a - 1) / 9), An
 // own size.
 func (e *node) Attach(at, self Anchor) *node {
 	e.flags |= flagAbsolute
-	e.attach = attachment(1 + min(at, AnchorBottomRight)*9 + min(self, AnchorBottomRight))
+	e.attach = attachment(1 + min(at, AnchorBottomEnd)*15 + min(self, AnchorBottomEnd))
 	return e
 }
 
@@ -783,8 +892,12 @@ func (e *node) AttachTo(target *node, at, self Anchor) *node {
 		return e
 	}
 	e.flags |= flagAbsolute
-	e.attach = attachment(1 + min(at, AnchorBottomRight)*9 + min(self, AnchorBottomRight))
+	e.attach = attachment(1 + min(at, AnchorBottomEnd)*15 + min(self, AnchorBottomEnd))
 	e.popover = target
+	if e.dir&dirSet == 0 {
+		// Built in an Overlay, it reads as what it is attached to.
+		e.setDir(target.rtl(), false)
+	}
 	return e
 }
 
@@ -824,7 +937,7 @@ func (e *node) Debug() *node { e.flags |= flagDebug; return e }
 // Background fills the element, in place of a gradient.
 func (e *node) Background(c Color) *node {
 	e.bg = c
-	if e.fill == fillGradient {
+	if e.fill == fillGradient || e.fill == fillConic {
 		e.fill = fillColor
 	}
 	return e
@@ -844,6 +957,44 @@ func (e *node) LinearGradient(g LinearGradient) *node {
 	return e
 }
 
+// ConicGradient fills the element with a conic gradient, its colors
+// turning around a point (CSS's conic-gradient()):
+//
+//	ui.Box(c).Size(80, 80).Radius(40).ConicGradient(ui.ConicGradient{
+//		Stops: []ui.GradientStop{{red, 0}, {yellow, 1.0 / 3}, {blue, 2.0 / 3}, {red, 1}},
+//	})
+func (e *node) ConicGradient(g ConicGradient) *node {
+	e.gradients().conic, e.fill = g, fillConic
+	return e
+}
+
+// BorderLinearGradient paints the element's border (Border, BorderWidth)
+// with a linear gradient across the element, in place of its color.
+func (e *node) BorderLinearGradient(g LinearGradient) *node {
+	gr := e.gradients()
+	gr.borderLinear, gr.border = g, borderLinear
+	return e
+}
+
+// BorderConicGradient paints the element's border (Border, BorderWidth)
+// with a conic gradient around the element, in place of its color: a ring
+// of colors, as SwiftUI's strokeBorder with an AngularGradient draws.
+//
+//	ui.Box(c).Size(120, 80).Radius(16).Border(4, ui.Color{}).BorderConicGradient(ui.ConicGradient{Stops: rainbow})
+func (e *node) BorderConicGradient(g ConicGradient) *node {
+	gr := e.gradients()
+	gr.borderConic, gr.border = g, borderConic
+	return e
+}
+
+// Blur blurs the element, with its children, by sigma DIPs, the standard
+// deviation of a Gaussian, as CSS's filter: blur() does: what it draws
+// spreads that far around, transparent beyond, on the GPU. It renders
+// into a bitmap first, as Effect does, about 3 sigma larger each way, and
+// an element with an Effect draws through it instead. Hit testing, focus
+// and accessibility do not change: only what shows.
+func (e *node) Blur(sigma float32) *node { e.blur = max(sigma, 0); return e }
+
 // Stripes draws stripes of c over the background, width DIPs wide with
 // gap DIPs between them, running at angle degrees clockwise from upwards:
 // 0 draws vertical stripes, 90 horizontal ones, and 45 slanting ones like
@@ -858,6 +1009,7 @@ func (e *node) Stripes(c Color, width, gap, angle float32) *node {
 // within the element's size: the padding and the children are inside it.
 func (e *node) Border(width float32, c Color) *node {
 	e.border, e.borderC = [4]float32{width, width, width, width}, c
+	e.logical &^= logBorder
 	return e
 }
 
@@ -866,7 +1018,11 @@ func (e *node) Border(width float32, c Color) *node {
 // below a header:
 //
 //	ui.Row(c).BorderWidth(0, 0, 1, 0).BorderColor(t.Border)
-func (e *node) BorderWidth(v ...float32) *node { e.border = edges(v); return e }
+func (e *node) BorderWidth(v ...float32) *node {
+	e.border = edges(v)
+	e.logical &^= logBorder
+	return e
+}
 
 // BorderColor sets the color of the border.
 func (e *node) BorderColor(c Color) *node { e.borderC = c; return e }
@@ -1051,6 +1207,26 @@ func (e *node) LetterSpacing(v float32) *node {
 func (e *node) FontFeatures(features ...string) *node {
 	e.ts.features = strings.Join(features, ",")
 	e.ts.set |= setFeatures
+	return e
+}
+
+// Lang sets the language of the element's text, and of the text of the
+// elements inside it, as a BCP 47 tag, as HTML's lang attribute does: the
+// system's text stack draws the glyphs of that language, as the Han
+// characters Chinese and Japanese draw apart, and falls back to its
+// fonts. Text is in the language the app shows (mygo.App.Locale) unless
+// told otherwise: a Japanese quote in a Chinese app,
+//
+//	ui.Text(c, "直").Lang("ja")
+//
+// "" takes the language of the elements around it. Browsers draw text in
+// the page's language whatever the element's.
+func (e *node) Lang(tag string) *node {
+	e.ts.lang = tag
+	e.ts.set |= setLang
+	if tag == "" {
+		e.ts.set &^= setLang
+	}
 	return e
 }
 

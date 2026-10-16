@@ -625,8 +625,7 @@ func TestRouterLayouts(t *testing.T) {
 	}, 500, 300)
 	pages := func(e *node) int { return len(e.children()) }
 	settle := func() {
-		time.Sleep(300 * time.Millisecond)
-		tt.Frame()
+		tt.Advance(300 * time.Millisecond)
 	}
 	tt.Click("Layout 0")
 	if !tt.HasText("General page") || !tt.HasText("Layout 1") || section != "general" {

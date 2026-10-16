@@ -70,6 +70,40 @@ sorted := sortFiles(app.files, app.sort) // by app.sort.Column, Descending or no
 app.files.Key = func(i int) any { return sorted[i].ID }
 ```
 
+To sort by several columns, set `ListState.SortBy`. A click still sorts by
+one column, and reverses it when it was first; a Cmd-click (Ctrl-click on
+Linux and Windows) or a Shift-click, as in web data grids, adds the column
+after those sorted by, ascending; another makes it descending, and a third
+takes it out. The headers show their direction and, when there are several,
+their place. `SortBy` gets a new slice as it changes, so one the app kept
+stays as it was. With `Sort` set too, the table keeps it the first of
+`SortBy`, the zero `SortOrder` when it sorts by none, so code that reads the
+column sorting first goes on reading `Sort`:
+
+```go
+app.files.SortBy = &app.sortBy // []ui.SortOrder, the first first
+sorted := sortFiles(app.files, app.sortBy...)
+```
+
+## Header menu
+
+`ListState.HeaderMenu` gives the header a context menu, built as
+[ContextMenu](context-menu.md)'s is. `col` is the index of the column
+clicked in the columns given to `Table`, whatever order the user moved them
+into, or -1 for the part of the header past the columns, as AppKit's
+`clickedColumn`. A menu built without items does not open:
+
+```go
+app.files.HeaderMenu = func(m *ui.Menu, col int) {
+	if col >= 0 && m.Item("Hide Column").Chosen() {
+		app.hide(cols[col].ID)
+	}
+	if m.Item("Show All Columns").Chosen() {
+		app.showAll()
+	}
+}
+```
+
 ## Renaming in place
 
 An [editable text](editable-text.md) in a cell is renamed in place, as

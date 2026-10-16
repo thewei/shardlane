@@ -23,6 +23,13 @@ type pathCmd struct {
 	pts [3][2]float32
 }
 
+// Reset empties the path and removes Trim, retaining its command storage.
+func (p *Path) Reset() *Path {
+	p.cmds = p.cmds[:0]
+	p.trim, p.trimmed = [2]float32{}, false
+	return p
+}
+
 // MoveTo starts a new subpath at (x, y).
 func (p *Path) MoveTo(x, y float32) *Path {
 	p.cmds = append(p.cmds, pathCmd{op: 0, pts: [3][2]float32{{x, y}}})
@@ -66,6 +73,26 @@ func (p *Path) Trim(from, to float32) *Path {
 	finiteMotion("trim", float64(from), float64(to))
 	p.trim, p.trimmed = [2]float32{max(0, min(from, 1)), max(0, min(to, 1))}, true
 	return p
+}
+
+// Bounds returns the smallest box holding the path's points and the
+// control points of its curves, in DIPs: the box of a circle (Circle), of
+// lines, and of curves whose control points lie on it; others may fit in
+// less. Empty paths have an empty box.
+func (p *Path) Bounds() Rect {
+	first := true
+	var x0, y0, x1, y1 float32
+	for _, c := range p.cmds {
+		n := [5]int{1, 1, 2, 3, 0}[c.op]
+		for _, pt := range c.pts[:n] {
+			if first {
+				x0, y0, x1, y1, first = pt[0], pt[1], pt[0], pt[1], false
+				continue
+			}
+			x0, y0, x1, y1 = min(x0, pt[0]), min(y0, pt[1]), max(x1, pt[0]), max(y1, pt[1])
+		}
+	}
+	return Rect{x0, y0, x1 - x0, y1 - y0}
 }
 
 // Circle adds a circle as a subpath.
@@ -250,6 +277,11 @@ type pathJob struct {
 // filled (non-zero winding), or with width > 0 stroked that many pixels
 // wide with round joins and caps.
 func (p *Painter) drawPath(f *flatPath, width float32, c Color, g *LinearGradient) {
+	p.drawPathPaint(f, width, c, g, nil)
+}
+
+// drawPathPaint is drawPath in a linear gradient (g) or a conic one (cg).
+func (p *Painter) drawPathPaint(f *flatPath, width float32, c Color, g *LinearGradient, cg *ConicGradient) {
 	if f.polys() == 0 {
 		return
 	}
@@ -308,12 +340,16 @@ func (p *Painter) drawPath(f *flatPath, width float32, c Color, g *LinearGradien
 	c = c.Alpha(p.opacity)
 	p.s.Glyphs = append(p.s.Glyphs, scene.Glyph{X: x0, Y: y0, W: float32(gi.W), H: float32(gi.H), U: gi.X, V: gi.Y, UW: gi.W, VH: gi.H, Color: c.scene(), Wide: p.glyphWide(c)})
 	op := scene.Op{Kind: scene.OpGlyphs, Start: start, End: start + 1}
-	if g != nil {
+	if g != nil || cg != nil {
 		// The gradient spans the path's bounds.
 		op.Rect = scene.Rect{X: minX - hw, Y: minY - hw, W: maxX - minX + 2*hw, H: maxY - minY + 2*hw}
 		op.Opacity = p.opacity
-		p.gradient(&op, *g)
-		op.Wide = p.wide(g.From, g.To, Color{})
+		if g != nil {
+			p.gradient(&op, *g)
+			op.Wide = p.wide(g.From, g.To, Color{})
+		} else {
+			p.conic(&op, *cg)
+		}
 	}
 	p.add(op)
 }
@@ -369,6 +405,26 @@ func (f *flatPath) capFade(width float32) float32 {
 		return 1
 	}
 	return f.kept / width
+}
+
+// FillPathConicGradient fills a path with a conic gradient around its
+// bounds.
+func (p *Painter) FillPathConicGradient(path *Path, g ConicGradient) {
+	f := &p.rt.paths.flat
+	path.flatten(f, p.scale)
+	p.drawPathPaint(f, 0, Color{R: 255, G: 255, B: 255, A: 255}, nil, &g)
+}
+
+// StrokePathConicGradient draws the outline of a path as StrokePath does,
+// in a conic gradient around its bounds.
+func (p *Painter) StrokePathConicGradient(path *Path, width float32, g ConicGradient) {
+	f := &p.rt.paths.flat
+	path.flatten(f, p.scale)
+	// Trimmed short, it fades as its caps would (capFade).
+	saved := p.opacity
+	p.opacity *= f.capFade(width * p.scale)
+	p.drawPathPaint(f, width*p.scale, Color{R: 255, G: 255, B: 255, A: 255}, nil, &g)
+	p.opacity = saved
 }
 
 // StrokePathGradient draws the outline of a path as StrokePath does, in a
@@ -477,7 +533,8 @@ func offsetLoop(z *vec.Rasterizer, pts [][2]float32, hw float32) {
 			steps := int(math.Ceil(math.Abs(turn) / (2 * math.Acos(max(1-0.02/float64(hw), -1)))))
 			for s := 1; s <= steps; s++ {
 				a := from + turn*float64(s)/float64(steps)
-				z.LineTo(b[0]+hw*float32(math.Cos(a)), b[1]+hw*float32(math.Sin(a)))
+				sin, cos := math.Sincos(a)
+				z.LineTo(b[0]+hw*float32(cos), b[1]+hw*float32(sin))
 			}
 		}
 		dx, dy, nx, ny = ex, ey, mx, my

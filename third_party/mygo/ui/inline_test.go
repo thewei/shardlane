@@ -166,7 +166,7 @@ func TestInlineInteraction(t *testing.T) {
 	// back after the click.
 	tt.Move(0, 90)
 	tt.Move(center(more.frags[0]))
-	tt.rt.tips.hoverSince = time.Now().Add(-time.Second)
+	tt.rt.tips.hoverSince = tt.now.Add(-time.Second)
 	tt.Frame()
 	if !tt.HasText("Lists every file") {
 		t.Error("no tooltip over inline text")

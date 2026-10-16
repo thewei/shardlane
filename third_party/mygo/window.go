@@ -143,6 +143,16 @@ type WindowOptions struct {
 	// Modal makes a child window modal to its Parent.
 	Modal bool
 
+	// Panel makes the window a panel, as the windows of launchers and
+	// quick entry (Spotlight, Raycast) are: it floats above the windows of
+	// all apps, on whichever Space or virtual desktop the user is on, over
+	// full-screen apps too, and stays out of the taskbar, the Dock and the
+	// app switcher. It cannot be minimized, maximized or go full screen. On
+	// macOS, showing or focusing it gives it the keyboard without
+	// activating the app, so the app the user was in stays active and gets
+	// the keyboard back when the panel hides.
+	Panel bool
+
 	// Page configures the window's web page.
 	Page PageOptions
 
@@ -209,6 +219,8 @@ type Window struct {
 	// it asked for. Main thread only.
 	flyout     *platform.Flyout
 	flyoutSize platform.Size
+	// panel is WindowOptions.Panel.
+	panel bool
 	// host is the window a web view is in, for the page of a web view
 	// (webView); webViews are the pages of a window's web views, guarded
 	// by the lock of windows.
@@ -226,10 +238,17 @@ type Window struct {
 	conn         *surface.Conn
 	devTools     bool
 	invalidating atomic.Bool
+	// userScripts are the scripts the window's pages run at document
+	// start: the bridge, the preferences and the preload script. Main
+	// thread only.
+	userScripts []platform.UserScript
 	// secret starts every message of the bridge in this window's pages.
 	// Only the bridge knows it, so messages posted from elsewhere (an
 	// iframe of another origin) are ignored.
 	secret string
+	// preload is PageOptions.PreloadScript, which the scripts of the pages
+	// loaded later keep (pageScripts).
+	preload string
 
 	// native is only accessed on the main thread; nil once destroyed.
 	native    platform.Window
@@ -242,6 +261,11 @@ type Window struct {
 	// hear the room the window controls take. Main thread only.
 	hiddenTitleBar bool
 	menu           *Menu
+	// title is the title the app or the page set; representedFile and
+	// documentEdited are the document the window shows. Main thread only.
+	title           string
+	representedFile string
+	documentEdited  bool
 	// stateKey is WindowOptions.StateKey; stateTimer captures the state
 	// once it settled. Main thread only.
 	stateKey   string
@@ -399,7 +423,7 @@ func newWindow(opts WindowOptions, bg *background, native uintptr, flyout *flyou
 	id := windows.nextID
 	windows.Unlock()
 
-	w := &Window{id: id, parent: opts.Parent, trustedOrigins: opts.Page.TrustedOrigins, secret: randomText(), stateKey: opts.StateKey, background: bg, content: opts.Content}
+	w := &Window{id: id, parent: opts.Parent, trustedOrigins: opts.Page.TrustedOrigins, secret: randomText(), stateKey: opts.StateKey, background: bg, content: opts.Content, panel: opts.Panel && flyout == nil}
 	w.pg = &Page{w}
 	w.hiddenTitleBar = !opts.Frameless && (opts.TitleBarStyle == TitleBarHidden || opts.TitleBarStyle == TitleBarHiddenInset)
 	w.resetPage()
@@ -428,6 +452,7 @@ func newWindow(opts WindowOptions, bg *background, native uintptr, flyout *flyou
 	if w.stateKey != "" {
 		restoreWindowState(w.stateKey, popts)
 	}
+	w.title = popts.Title
 	nw, err := backend().NewWindow(popts, &windowHandler{w})
 	if err != nil {
 		panic(fmt.Sprintf("mygo: cannot create window: %v", err))
@@ -489,6 +514,11 @@ func (w *Window) platformOptions(o *WindowOptions) *platform.WindowOptions {
 		UserAgent:      po.UserAgent,
 		Zoom:           po.ZoomFactor,
 		Schemes:        Protocol.schemes(),
+		Panel:          o.Panel,
+	}
+	if o.Panel {
+		p.Minimizable, p.Maximizable, p.Fullscreenable = false, false, false
+		p.AlwaysOnTop, p.SkipTaskbar = true, true
 	}
 	if p.Title == "" {
 		p.Title = App.Name()
@@ -511,10 +541,11 @@ func (w *Window) platformOptions(o *WindowOptions) *platform.WindowOptions {
 	if o.Parent != nil && o.Parent.native != nil {
 		p.Parent = o.Parent.native
 	}
-	p.UserScripts = []platform.UserScript{{Source: w.bridgeScript()}}
-	if po.PreloadScript != "" {
-		p.UserScripts = append(p.UserScripts, platform.UserScript{Source: po.PreloadScript})
-	}
+	w.preload = po.PreloadScript
+	p.UserScripts = w.pageScripts()
+	// Kept to replace the preferences' and the locale's (sendPreferences,
+	// pagesLocaleChanged).
+	w.userScripts = p.UserScripts
 	return p
 }
 
@@ -661,6 +692,10 @@ func (w *Window) Hide() {
 	})
 }
 
+// IsPanel reports whether the window was created with
+// WindowOptions.Panel.
+func (w *Window) IsPanel() bool { return w.panel }
+
 // IsVisible reports whether the window is shown.
 func (w *Window) IsVisible() bool { return get(w, platform.Window.IsVisible) }
 
@@ -720,11 +755,68 @@ func (w *Window) Center() { w.do(platform.Window.Center) }
 
 // SetTitle sets the native window title.
 func (w *Window) SetTitle(title string) {
-	w.do(func(n platform.Window) { n.SetTitle(title) })
+	w.do(func(n platform.Window) {
+		w.title = title
+		w.applyTitle(n)
+	})
 }
 
-// Title returns the native window title.
-func (w *Window) Title() string { return get(w, platform.Window.Title) }
+// Title returns the window title, without the mark of an edited document
+// (see SetDocumentEdited).
+func (w *Window) Title() string {
+	return get(w, func(platform.Window) string { return w.title })
+}
+
+// SetRepresentedFile tells which file the window shows, "" for none. On
+// macOS the title bar shows its icon, which the user can drag, and
+// Command-clicking the title lists the folders it is in. Other platforms
+// show nothing. Documents (NewDocuments) set it for their windows.
+func (w *Window) SetRepresentedFile(path string) {
+	if path != "" {
+		if abs, err := filepath.Abs(path); err == nil {
+			path = abs
+		}
+	}
+	w.do(func(n platform.Window) {
+		w.representedFile = path
+		n.SetRepresentedFile(path)
+	})
+}
+
+// RepresentedFile returns the path SetRepresentedFile set.
+func (w *Window) RepresentedFile() string {
+	return onMainValue(func() string { return w.representedFile })
+}
+
+// SetDocumentEdited tells whether the window's document has unsaved
+// changes: a dot in the close button on macOS, and a "*" before the title
+// on Linux and Windows, as Notepad and gedit show it. Documents
+// (NewDocuments) set it for their windows.
+func (w *Window) SetDocumentEdited(edited bool) {
+	w.do(func(n platform.Window) {
+		if w.documentEdited == edited {
+			return
+		}
+		w.documentEdited = edited
+		n.SetDocumentEdited(edited)
+		w.applyTitle(n)
+	})
+}
+
+// IsDocumentEdited reports what SetDocumentEdited set.
+func (w *Window) IsDocumentEdited() bool {
+	return onMainValue(func() bool { return w.documentEdited })
+}
+
+// applyTitle gives the native window its title, marked when the document
+// is edited where the title bar has no other mark. Main thread only.
+func (w *Window) applyTitle(n platform.Window) {
+	title := w.title
+	if w.documentEdited && runtime.GOOS != "darwin" {
+		title = "*" + title
+	}
+	n.SetTitle(title)
+}
 
 // SetBounds moves and resizes the window.
 func (w *Window) SetBounds(r Rectangle) {
@@ -950,7 +1042,10 @@ func (w *Window) SetSkipTaskbar(v bool) {
 }
 
 // SetVisibleOnAllWorkspaces shows the window on every workspace (macOS
-// Spaces, Linux virtual desktops), or on the current one only.
+// Spaces, Linux virtual desktops), or on the current one only. On macOS it
+// also shows over other apps in full screen, even with DisableFullScreen,
+// if the app is an accessory (ActivationPolicyAccessory, Dock.Hide): macOS
+// shows no windows of regular apps there.
 func (w *Window) SetVisibleOnAllWorkspaces(v bool) {
 	w.do(func(n platform.Window) { n.SetVisibleOnAllWorkspaces(v) })
 }
@@ -1643,7 +1738,8 @@ func (h *windowHandler) TitleChanged(title string) {
 	e := &TitleEvent{Title: title}
 	fire1(&h.w.onPageTitleUpdated, e)
 	if !e.prevented && h.w.native != nil {
-		h.w.native.SetTitle(title)
+		h.w.title = title
+		h.w.applyTitle(h.w.native)
 	}
 }
 

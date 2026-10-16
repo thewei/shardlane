@@ -57,6 +57,14 @@ type engine interface {
 	// register adds the fonts of a font file under family, or under their
 	// own family names when family is "".
 	register(data []byte, family string) error
+	// appFamilies lists the families of the app's fonts, in no order,
+	// under the names it registered them with, or their own when it gave
+	// none.
+	appFamilies() []FontFamily
+	// systemFamilies returns a function listing the system's families, in
+	// no order and without the app's, which runs without the System's lock
+	// on any goroutine, or nil when the engine knows none.
+	systemFamilies() func() []FontFamily
 	// resetScratch frees the room shape took from the engine's scratch,
 	// as a layout starts.
 	resetScratch()

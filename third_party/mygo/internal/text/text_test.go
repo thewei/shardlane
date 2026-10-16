@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/egoist/mygo/internal/scene"
+	"golang.org/x/image/font/gofont/gobold"
+	"golang.org/x/image/font/gofont/gomono"
 	"golang.org/x/image/font/gofont/goregular"
 )
 
@@ -451,6 +453,68 @@ func TestRegisterFont(t *testing.T) {
 	}
 }
 
+// TestFontFamilies lists the app's families first, each under the name
+// it registered it with, or its own, then the system's, telling the
+// monospaced ones, and lists the system's again after RegisterFont.
+func TestFontFamilies(t *testing.T) {
+	s := newSystem()
+	if err := s.RegisterFont(goregular.TTF, "MyGo Test Families"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RegisterFont(gomono.TTF, ""); err != nil {
+		t.Fatal(err)
+	}
+	start := time.Now()
+	all := s.FontFamilies()
+	t.Logf("%d families in %v", len(all), time.Since(start))
+	app := []FontFamily{{Name: "Go Mono", Monospaced: true, Registered: true}, {Name: "MyGo Test Families", Registered: true}}
+	if len(all) < len(app) || !slices.Equal(all[:len(app)], app) {
+		t.Fatalf("the registered families are not first: %+v", all[:min(4, len(all))])
+	}
+	name := func(f FontFamily) string { return f.Name }
+	names := func(fs []FontFamily) []string {
+		out := make([]string, len(fs))
+		for i, f := range fs {
+			out[i] = name(f)
+		}
+		return out
+	}
+	if slices.Contains(names(all), "Go") {
+		t.Error("a font registered under a name the app gave is listed under its own too")
+	}
+	system := all[len(app):]
+	if slices.ContainsFunc(system, func(f FontFamily) bool { return f.Registered }) ||
+		!slices.IsSortedFunc(system, func(a, b FontFamily) int { return strings.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name)) }) {
+		t.Errorf("the system's families are not sorted without regard to case: %q", names(system)[:min(8, len(system))])
+	}
+	start = time.Now()
+	if again := s.FontFamilies(); !slices.Equal(again, all) {
+		t.Error("listing again changed the families")
+	}
+	t.Logf("again in %v", time.Since(start))
+	if err := s.RegisterFont(gobold.TTF, ""); err != nil {
+		t.Fatal(err)
+	}
+	if i := slices.IndexFunc(s.FontFamilies(), func(f FontFamily) bool { return f.Name == "Go" }); i != 0 {
+		t.Errorf("a font registered after listing is at %d", i)
+	}
+
+	// A monospaced and a proportional family every such system has.
+	known, ok := map[string][2]string{
+		"windows": {"Consolas", "Segoe UI"},
+		"darwin":  {"Menlo", "Helvetica"},
+	}[runtime.GOOS]
+	if !ok {
+		return // the families of Linux desktops vary
+	}
+	for i, want := range known {
+		j := slices.IndexFunc(system, func(f FontFamily) bool { return f.Name == want })
+		if j < 0 || system[j].Monospaced != (i == 0) {
+			t.Errorf("%s: at %d of the system's families, %+v", want, j, system[max(j, 0)])
+		}
+	}
+}
+
 // TestUIFamily gives system-ui the desktop's interface font where the
 // engine takes it, as Pango does: the family before fontconfig's default.
 func TestUIFamily(t *testing.T) {
@@ -554,11 +618,11 @@ func TestSpans(t *testing.T) {
 }
 
 func TestEncodeSpans(t *testing.T) {
-	spans := []Span{{End: 3, Family: "A, B", Size: 1.5, Weight: 600, Italic: true, LetterSpacing: -0.5, Features: "tnum"}, {End: 9}}
-	if got := decodeSpans(EncodeSpans(spans)); !slices.Equal(got, spans) {
+	spans := []Span{{End: 3, Family: "A, B", Size: 1.5, Weight: 600, Italic: true, LetterSpacing: -0.5, Features: "tnum", Lang: "ja"}, {End: 9}}
+	if got := DecodeSpans(EncodeSpans(spans)); !slices.Equal(got, spans) {
 		t.Errorf("decoded %+v, want %+v", got, spans)
 	}
-	if got := decodeSpans(EncodeSpans(spans)[:5]); len(got) != 0 {
+	if got := DecodeSpans(EncodeSpans(spans)[:5]); len(got) != 0 {
 		t.Errorf("a cut encoding decodes to %+v", got)
 	}
 	// The spans of a paragraph, relative to it.
@@ -730,5 +794,54 @@ func TestDecorate(t *testing.T) {
 		if n := len(s.Decorate(l, 0, 0, len(l.Lines[0].Glyphs), 0, 0, 2, Underline, 0)); n < 3 {
 			t.Errorf("an underline of gypsy in %d pieces", n)
 		}
+	}
+}
+
+func TestLangRuns(t *testing.T) {
+	for _, c := range []struct {
+		text, base string
+		spans      []Span
+		want       []langRun
+	}{
+		{"abc 直", "", nil, nil},
+		{"abc 直", "zh-Hans", nil, nil},
+		{"abc", "en", nil, nil},
+		// Han characters, and their punctuation, in a language that does
+		// not write them keep the engine's own language.
+		{"ab直骨。c", "en", nil, []langRun{{2, 5, ""}}},
+		{"ab直c", "en", []Span{{End: 2}, {End: 3, Lang: "ja"}}, []langRun{{2, 3, "ja"}}},
+		{"ab直c", "", []Span{{End: 1, Lang: "fr"}}, []langRun{{0, 1, "fr"}}},
+		{"直直", "ja", []Span{{End: 1, Lang: "zh-Hans"}}, []langRun{{0, 1, "zh-Hans"}}},
+		{"a直", "", []Span{{End: 2, Lang: "en"}}, []langRun{{0, 1, "en"}}},
+	} {
+		if got := langRuns([]rune(c.text), c.base, c.spans); !slices.Equal(got, c.want) {
+			t.Errorf("langRuns(%q, %q, %+v) = %+v, want %+v", c.text, c.base, c.spans, got, c.want)
+		}
+	}
+	for lang, want := range map[string]bool{"zh-Hant": true, "ja_JP": true, "ko": true, "yue": true, "en": false, "vi": false, "": false} {
+		if writesHan(lang) != want {
+			t.Errorf("writesHan(%q) = %v", lang, !want)
+		}
+	}
+}
+
+// TestSetLanguage holds the system's language to a new generation of
+// layouts, which the layouts of text without a language are made anew in.
+func TestSetLanguage(t *testing.T) {
+	s := newSystem()
+	p := Params{Text: "abc", Style: Style{Size: 14}}
+	before, gen := s.Layout(p), s.Generation()
+	s.SetLanguage("ja")
+	if s.Generation() == gen || s.Language() != "ja" {
+		t.Fatal("SetLanguage kept the generation")
+	}
+	after := s.Layout(p)
+	if after == before || after.Params != p {
+		t.Errorf("the layout of text without a language was kept, or took other parameters: %+v", after.Params)
+	}
+	gen = s.Generation()
+	s.SetLanguage("ja")
+	if s.Generation() != gen {
+		t.Error("the same language made a new generation")
 	}
 }

@@ -68,18 +68,22 @@ func systemBackdrops() bool { return windowsBuild() >= 22621 }
 
 var (
 	// kernel32
-	procGetModuleHandleW       = kernel32.NewProc("GetModuleHandleW")
-	procGetCurrentThreadId     = kernel32.NewProc("GetCurrentThreadId")
-	procGlobalAlloc            = kernel32.NewProc("GlobalAlloc")
-	procGlobalFree             = kernel32.NewProc("GlobalFree")
-	procGlobalLock             = kernel32.NewProc("GlobalLock")
-	procGlobalUnlock           = kernel32.NewProc("GlobalUnlock")
-	procGlobalSize             = kernel32.NewProc("GlobalSize")
-	procGetUserDefaultLocaleNm = kernel32.NewProc("GetUserDefaultLocaleName")
-	procCreateActCtxW          = kernel32.NewProc("CreateActCtxW")
-	procActivateActCtx         = kernel32.NewProc("ActivateActCtx")
-	procLoadLibraryExW         = kernel32.NewProc("LoadLibraryExW")
-	procGetProcAddress         = kernel32.NewProc("GetProcAddress")
+	procGetModuleHandleW               = kernel32.NewProc("GetModuleHandleW")
+	procGetCurrentThreadId             = kernel32.NewProc("GetCurrentThreadId")
+	procGlobalAlloc                    = kernel32.NewProc("GlobalAlloc")
+	procGlobalFree                     = kernel32.NewProc("GlobalFree")
+	procGlobalLock                     = kernel32.NewProc("GlobalLock")
+	procGlobalUnlock                   = kernel32.NewProc("GlobalUnlock")
+	procGlobalSize                     = kernel32.NewProc("GlobalSize")
+	procGetUserPreferredUILanguages    = kernel32.NewProc("GetUserPreferredUILanguages")
+	procGetUserDefaultUILanguage       = kernel32.NewProc("GetUserDefaultUILanguage")
+	procLCIDToLocaleName               = kernel32.NewProc("LCIDToLocaleName")
+	procGetLocaleInfoEx                = kernel32.NewProc("GetLocaleInfoEx")
+	procSetProcessPreferredUILanguages = kernel32.NewProc("SetProcessPreferredUILanguages")
+	procCreateActCtxW                  = kernel32.NewProc("CreateActCtxW")
+	procActivateActCtx                 = kernel32.NewProc("ActivateActCtx")
+	procLoadLibraryExW                 = kernel32.NewProc("LoadLibraryExW")
+	procGetProcAddress                 = kernel32.NewProc("GetProcAddress")
 
 	// user32
 	procSetProcessDpiAwarenessContext = user32.NewProc("SetProcessDpiAwarenessContext")
@@ -202,6 +206,7 @@ var (
 	procShellNotifyIconW            = shell32.NewProc("Shell_NotifyIconW")
 	procShellNotifyIconGetRect      = shell32.NewProc("Shell_NotifyIconGetRect")
 	procSHCreateItemFromParsingName = shell32.NewProc("SHCreateItemFromParsingName")
+	procSHAddToRecentDocs           = shell32.NewProc("SHAddToRecentDocs")
 
 	// shlwapi
 	procSHCreateMemStream = shlwapi.NewProc("SHCreateMemStream")
@@ -279,6 +284,12 @@ const (
 	// wmAppDeviceRemoved tells the application window that the GPU device
 	// of DirectComposition was removed (compositor.go).
 	wmAppDeviceRemoved = wmApp + 5
+	// wmAppNetwork tells the application window that the connectivity
+	// hint changed (network.go). wmApp + 6 is a flyout's wmAppDismiss.
+	wmAppNetwork = wmApp + 7
+	// wmAppCookieView tells the application window to close the hidden web
+	// view of the cookies, outside the callbacks of that web view (cookies.go).
+	wmAppCookieView = wmApp + 8
 
 	wsOverlapped       = 0x00000000
 	wsPopup            = 0x80000000
@@ -367,7 +378,9 @@ const (
 	mfsDisabled   = 0x0003
 
 	tpmRightButton = 0x0002
+	tpmRightAlign  = 0x0008
 	tpmReturnCmd   = 0x0100
+	tpmLayoutRTL   = 0x8000
 	mncClose       = 1
 
 	monitorDefaultToNull    = 0
@@ -377,6 +390,8 @@ const (
 
 	smCxFrame        = 32
 	smCyFrame        = 33
+	smCxDoubleClk    = 36
+	smCyDoubleClk    = 37
 	smCxPaddedBorder = 92
 
 	vkShift   = 0x10
@@ -423,6 +438,11 @@ const (
 	qsAllInput         = 0x04FF
 	mwmoInputAvailable = 0x0004
 	pmRemove           = 0x0001
+	qsSendMessage      = 0x0040
+	pmNoRemove         = 0x0000
+	pmQSSendMessage    = qsSendMessage << 16
+
+	clipbrdECantOpen = 0x800401D0
 
 	sOK          = 0
 	eNoInterface = 0x80004002

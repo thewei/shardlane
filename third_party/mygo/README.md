@@ -27,7 +27,8 @@ memory and CPU use.
   on every platform with the glass plugin; web pages inside native UI, under
   the menus and dialogs it shows over them.
 - **Desktop APIs** for both: windows, menus, tray, dialogs, notifications,
-  global shortcuts, deep links, file associations and more.
+  global shortcuts, deep links, file associations, recent documents, the
+  system accent color and accessibility settings, watching files, and more.
 - **Ready to ship**: app bundles and disk images, Windows installers, Debian
   packages and a Linux install script, code signing, notarization, and signed
   auto-updates with delta updates and an update window in the manner of

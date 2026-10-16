@@ -61,7 +61,7 @@ func (clipboard) WriteData(data transfer.Data, released func()) error {
 	// One OLE initialization/vtable per process, shared with native drags.
 	dropOnce.Do(initDropTarget)
 	if len(data.Formats()) == 0 {
-		hr, _, _ := procOleSetClipboard.Call(0)
+		hr := oleClipboard(func() uintptr { hr, _, _ := procOleSetClipboard.Call(0); return hr })
 		if failed(hr) {
 			return hresultError("OleSetClipboard", hr)
 		}
@@ -80,7 +80,7 @@ func (clipboard) WriteData(data transfer.Data, released func()) error {
 	}
 	object := newTransferData(data, "", true)
 	defer release(object)
-	hr, _, _ := procOleSetClipboard.Call(object)
+	hr := oleClipboard(func() uintptr { hr, _, _ := procOleSetClipboard.Call(object); return hr })
 	if failed(hr) {
 		return hresultError("OleSetClipboard", hr)
 	}
@@ -106,7 +106,11 @@ func clipboardFormats() ([]transfer.Format, map[transfer.Format]uint16) {
 		if !slices.Contains(offered, f) {
 			offered = append(offered, f)
 		}
-		if nativeFormats[f] == 0 || oleRegisteredFormatName(id) == string(f) {
+		// The registered "PNG" format, as browsers and Office copy it,
+		// comes before bitmaps, whose alpha a DIB may lose, as ReadImage
+		// reads it.
+		if nativeFormats[f] == 0 || oleRegisteredFormatName(id) == string(f) ||
+			id == uint16(cfPNG) && oleRegisteredFormatName(nativeFormats[f]) != string(f) {
 			nativeFormats[f] = id
 		}
 		if f == transfer.FileList {
@@ -287,7 +291,7 @@ func (clipboard) Flush() error {
 	}
 	setTransferProviders(object, d, "")
 	s.data = d
-	hr, _, _ := procOleFlushClipboard.Call()
+	hr := oleClipboard(func() uintptr { hr, _, _ := procOleFlushClipboard.Call(); return hr })
 	if failed(hr) {
 		return hresultError("OleFlushClipboard", hr)
 	}

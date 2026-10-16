@@ -29,6 +29,10 @@ build, for a window with `DevToolsEnabled` to open it there. Apps built
 with `go build` keep it unless `-tags mygo_noinspector` leaves it out. Drag the panel's left edge to resize
 it. The panel follows the appearance, light or dark.
 
+The toolbar's RTL toggle lays the window out [right to left](right-to-left.md),
+or back, to try an interface before it is translated; the panel itself
+stays left to right. An element's computed styles show its `direction`.
+
 ## Elements
 
 The tree shows each element as a tag: the widget it is, as `<Button>` or

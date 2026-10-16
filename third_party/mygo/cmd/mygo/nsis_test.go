@@ -1,19 +1,11 @@
 package main
 
 import (
-	"archive/zip"
-	"bytes"
-	"crypto/sha256"
-	"encoding/hex"
-	"io"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
-	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -140,136 +132,6 @@ func uninstall(t *testing.T, dir string) {
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-}
-
-// TestNSISRelease checks that every copy of NSIS that mygo build tries is
-// the zip of its version, so that updating NSIS updates them all.
-func TestNSISRelease(t *testing.T) {
-	v := nsisRelease.version
-	for _, url := range nsisRelease.urls {
-		if !strings.HasSuffix(url, "/"+v+"/nsis-"+v+".zip") && !strings.HasSuffix(url, "/nsis-"+v+"/nsis-"+v+".zip") {
-			t.Errorf("%s is not NSIS %s", url, v)
-		}
-	}
-}
-
-// TestDownloadNSIS downloads NSIS from a test server into the cache once,
-// from the first copy that answers with the expected archive, and refuses
-// an archive that is not the expected one.
-func TestDownloadNSIS(t *testing.T) {
-	archive := zipArchive(t, "nsis-9.9/", "nsis-9.9/Bin/makensis.exe", "nsis-9.9/Include/MUI2.nsh")
-	var requests atomic.Int32
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requests.Add(1)
-		switch r.URL.Path {
-		case "/hangs/nsis-9.9.zip":
-			<-r.Context().Done()
-		case "/down/nsis-9.9.zip":
-			http.Error(w, "origin timeout", 522)
-		case "/wrong/nsis-9.9.zip":
-			io.WriteString(w, "<html>Not the archive</html>")
-		default:
-			w.Write(archive)
-		}
-	}))
-	defer srv.Close()
-	saved, savedTimeout := nsisRelease, downloadHeaderTimeout
-	defer func() { nsisRelease, downloadHeaderTimeout = saved, savedTimeout }()
-	sum := sha256.Sum256(archive)
-	nsisRelease.sha256 = hex.EncodeToString(sum[:])
-	nsisRelease.urls = []string{srv.URL + "/hangs/nsis-9.9.zip", srv.URL + "/down/nsis-9.9.zip", srv.URL + "/wrong/nsis-9.9.zip", srv.URL + "/nsis-9.9.zip"}
-	downloadHeaderTimeout = 200 * time.Millisecond
-
-	cache := t.TempDir()
-	dir := filepath.Join(cache, "nsis-9.9")
-	tool, err := downloadNSIS(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if tool != filepath.Join(dir, "Bin", "makensis.exe") {
-		t.Errorf("makensis = %s", tool)
-	}
-	if b, err := os.ReadFile(filepath.Join(dir, "Include", "MUI2.nsh")); err != nil || string(b) != "nsis-9.9/Include/MUI2.nsh" {
-		t.Errorf("Include/MUI2.nsh = %q, %v", b, err)
-	}
-	if again, err := downloadNSIS(dir); err != nil || again != tool || requests.Load() != 4 {
-		t.Errorf("downloading again = %s, %v after %d requests", again, err, requests.Load())
-	}
-
-	// Every copy fails, and the error says how.
-	nsisRelease.sha256 = strings.Repeat("0", 64)
-	other := filepath.Join(cache, "nsis-other")
-	_, err = downloadNSIS(other)
-	if err == nil {
-		t.Fatal("downloaded an unexpected archive")
-	}
-	for _, s := range []string{
-		srv.URL + "/hangs/nsis-9.9.zip\": net/http: timeout awaiting response headers",
-		srv.URL + "/down/nsis-9.9.zip: 522",
-		srv.URL + "/wrong/nsis-9.9.zip has the SHA-256",
-		srv.URL + "/nsis-9.9.zip has the SHA-256",
-	} {
-		if !strings.Contains(err.Error(), s) {
-			t.Errorf("the error does not say %q:\n%v", s, err)
-		}
-	}
-	if entries, _ := os.ReadDir(cache); len(entries) != 1 || entries[0].Name() != "nsis-9.9" {
-		t.Errorf("the cache holds %v", entries)
-	}
-}
-
-// TestUnzipTop unpacks the top directory of archives, and refuses entries
-// outside it.
-func TestUnzipTop(t *testing.T) {
-	for _, tc := range []struct {
-		entries []string
-		ok      bool
-	}{
-		{[]string{"top/", "top/a/b.txt", "top/c.txt"}, true},
-		{[]string{"top/a.txt", "other/b.txt"}, false},
-		{[]string{"top/a.txt", "b.txt"}, false},
-		{[]string{"top/../evil.txt"}, false},
-		{[]string{"top/a/../../evil.txt"}, false},
-	} {
-		path := filepath.Join(t.TempDir(), "archive.zip")
-		if err := os.WriteFile(path, zipArchive(t, tc.entries...), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		dir := filepath.Join(t.TempDir(), "out")
-		err := unzipTop(path, dir)
-		if (err == nil) != tc.ok {
-			t.Errorf("%q: %v", tc.entries, err)
-			continue
-		}
-		if tc.ok {
-			for _, name := range []string{"a/b.txt", "c.txt"} {
-				if b, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(name))); err != nil || string(b) != "top/"+name {
-					t.Errorf("%s = %q, %v", name, b, err)
-				}
-			}
-		}
-	}
-}
-
-// zipArchive makes a zip archive of the named entries: directories end with
-// a slash, and files hold their names.
-func zipArchive(t *testing.T, names ...string) []byte {
-	t.Helper()
-	var b bytes.Buffer
-	zw := zip.NewWriter(&b)
-	for _, name := range names {
-		w, err := zw.Create(name)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !strings.HasSuffix(name, "/") {
-			io.WriteString(w, name)
-		}
-	}
-	if err := zw.Close(); err != nil {
-		t.Fatal(err)
-	}
-	return b.Bytes()
 }
 
 // TestWindowsSigning signs a build with a throwaway self-signed

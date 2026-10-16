@@ -67,7 +67,7 @@ import (
 )
 
 // Version is the MyGo version.
-const Version = "0.4.8"
+const Version = "0.5.5"
 
 func init() {
 	// Cocoa, GTK and Win32 all require the UI to live on the thread that

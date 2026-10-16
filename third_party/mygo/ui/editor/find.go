@@ -1,7 +1,7 @@
 package editor
 
 import (
-	"fmt"
+	"github.com/egoist/mygo/internal/l10n"
 	"regexp"
 	"slices"
 	"sort"
@@ -366,19 +366,19 @@ func (f *finder) replacement(text string, i int) string {
 	return string(re.ExpandString(nil, f.replace, text, f.subs[i]))
 }
 
-// status is what the bar says of the matches.
-func (f *finder) status() string {
+// status is what the bar says of the matches, in the language of tx.
+func (f *finder) status(tx l10n.Messages) string {
 	switch {
 	case f.err != nil:
-		return "Invalid"
+		return tx.Invalid()
 	case f.query == "":
 		return ""
 	case len(f.matches) == 0:
-		return "No results"
+		return tx.NoResults()
 	case len(f.matches) >= maxMatches:
-		return fmt.Sprintf("%d of %d+", f.current+1, len(f.matches))
+		return tx.MatchesMore(f.current+1, len(f.matches))
 	}
-	return fmt.Sprintf("%d of %d", f.current+1, len(f.matches))
+	return tx.Matches(f.current+1, len(f.matches))
 }
 
 // selectAll selects every match, as alt-enter in Zed's search bar.

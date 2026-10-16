@@ -463,6 +463,13 @@ func gridLayout(e *node, cw, ch float32, commit bool) (usedW, usedH float32) {
 	if align == alignAuto {
 		align = Stretch
 	}
+	// Right to left, the columns go from the right, and items start at
+	// the right of their cells.
+	rtl := e.rtl()
+	ms, me := 3, 1
+	if rtl {
+		ms, me = 1, 3
+	}
 	for i := range items {
 		it := &items[i]
 		c := it.e
@@ -470,7 +477,7 @@ func gridLayout(e *node, cw, ch float32, commit bool) (usedW, usedH float32) {
 		for k := it.col; k < it.col+it.colSpan; k++ {
 			area += cols[k]
 		}
-		w, off := gridPlaceIn(c, area, c.width, c.marginX(), 3, 1, gridJustify(e, c), cw, func(avail float32) float32 { return fitWidth(c, avail, cw) }, c.clampW)
+		w, off := gridPlaceIn(c, area, c.width, c.marginX(), ms, me, gridJustify(e, c), cw, func(avail float32) float32 { return fitWidth(c, avail, cw) }, c.clampW)
 		widths[i], offs[i] = w, off
 		h := heightAt(c, w, ch) + c.marginY()
 		cs[i] = contrib{start: it.row, span: it.rowSpan, min: h, max: h}
@@ -527,6 +534,15 @@ func gridLayout(e *node, cw, ch float32, commit bool) (usedW, usedH float32) {
 			return heightAt(c, w, ch)
 		}, c.clampH)
 		y := rowAt[it.row] + offY
+		if rtl {
+			// x is from the right of the content, which is as wide as the
+			// columns where its width is not known.
+			right := cw
+			if !finite(right) {
+				right = usedW
+			}
+			x = right - x - w
+		}
 		c.x, c.y = e.contentX()+x, e.contentY()+y
 		layoutBox(c, w, h)
 		dx, dy := c.relative(cw, ch)
@@ -557,7 +573,7 @@ func gridPlaceIn(c *node, area float32, size length, margins float32, ms, me int
 	var v float32
 	if l, ok := size.resolve(base(cb)); ok {
 		v = clamp(l, cb)
-	} else if a == Stretch && !autoS && !autoE && c.kind != kindIcon && (c.aspect == 0 || ms == 3) {
+	} else if a == Stretch && !autoS && !autoE && c.kind != kindIcon && (c.aspect == 0 || ms%2 == 1) {
 		v = clamp(area-margins, cb)
 	} else {
 		v = natural(area - margins)

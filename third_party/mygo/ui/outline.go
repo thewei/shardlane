@@ -23,7 +23,10 @@ type OutlineState[K comparable] struct {
 	List ListState
 	// Open holds the items showing their children.
 	Open Selection[K]
-	rows []outlineRow[K]
+	// Indent is the width in DIPs each level adds before a row's arrow,
+	// the theme's Space(4) when zero. It must not be negative.
+	Indent float32
+	rows   []outlineRow[K]
 }
 
 // outlineRow is a row of an outline: its item, how deep it is, the row of
@@ -48,6 +51,9 @@ func (s *OutlineState[K]) Depth(row int) int { return s.rows[row].depth }
 // flatten lists the rows the outline shows: roots, and the children of
 // the items open.
 func (s *OutlineState[K]) flatten(roots []K, children func(K) []K) {
+	if !(s.Indent >= 0) {
+		panic("ui: an OutlineState's Indent must not be negative")
+	}
 	s.rows = s.rows[:0]
 	var walk func(items []K, depth, parent int)
 	walk = func(items []K, depth, parent int) {
@@ -155,7 +161,11 @@ func (s *OutlineState[K]) prefix(c *context, i int, children func(K) []K, conten
 		}
 	}
 	if r.depth > 0 {
-		coreBox(c).Width(float32(r.depth) * t.Space(4)).Shrink(0)
+		indent := s.Indent
+		if indent == 0 {
+			indent = t.Space(4)
+		}
+		coreBox(c).Width(float32(r.depth) * indent).Shrink(0)
 	}
 	arrow := coreBox(c).Size(t.Space(4), t.Space(4)).Shrink(0).Role(RoleNone)
 	if r.branch {
@@ -179,12 +189,9 @@ func (s *OutlineState[K]) prefix(c *context, i int, children func(K) []K, conten
 
 		})
 		turn := arrow.Animate("open", 90*b2f(open), 150*time.Millisecond)
+		rtl := arrow.rtl()
 		arrow.Draw(func(p *Painter, rect Rect) {
-			cx, cy, d := rect.X+rect.W/2, rect.Y+rect.H/2, rect.W/8
-			var path Path
-			at := rotate(cx, cy, turn)
-			path.MoveTo(at(-d, -2*d)).LineTo(at(d, 0)).LineTo(at(-d, 2*d))
-			p.StrokePath(&path, 1.5, arrowColor(t, item))
+			p.StrokePath(disclosurePath(rect, turn, rtl), 1.5, arrowColor(t, item))
 		})
 	}
 	content()
@@ -212,8 +219,11 @@ func (s *OutlineState[K]) keys(owner *node, children func(K) []K) {
 	if sel == nil {
 		return
 	}
-	right, left := owner.Shortcut(0, KeyRight), owner.Shortcut(0, KeyLeft)
-	allRight, allLeft := owner.Shortcut(allMod, KeyRight), owner.Shortcut(allMod, KeyLeft)
+	// Right opens, toward where the rows' content goes; Left right to
+	// left.
+	back, forth := owner.arrows()
+	right, left := owner.Shortcut(0, forth), owner.Shortcut(0, back)
+	allRight, allLeft := owner.Shortcut(allMod, forth), owner.Shortcut(allMod, back)
 	i := *sel
 	if i < 0 || i >= len(s.rows) {
 		return

@@ -20,7 +20,6 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/egoist/mygo/internal/update"
@@ -338,22 +337,6 @@ func swapFiles(dir, target string) error {
 		_ = os.RemoveAll(m[1])
 	}
 	return nil
-}
-
-// rename renames a file of the app, retrying for a few seconds while
-// Windows reports it in use: antivirus software opens new executables, such
-// as the app that just started and the one of the update, to scan them.
-func rename(from, to string) error {
-	for i := 1; ; i++ {
-		err := os.Rename(from, to)
-		if err == nil || i == 10 || runtime.GOOS != "windows" ||
-			// ERROR_SHARING_VIOLATION, or ERROR_ACCESS_DENIED for a directory
-			// holding an open file.
-			!errors.Is(err, syscall.Errno(32)) && !errors.Is(err, syscall.Errno(5)) {
-			return err
-		}
-		time.Sleep(time.Duration(i) * 100 * time.Millisecond)
-	}
 }
 
 // relaunchNow starts the app again; it runs after the quit sequence.

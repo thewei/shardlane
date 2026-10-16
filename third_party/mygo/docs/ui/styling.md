@@ -33,8 +33,37 @@ ui.Column(c).Padding(18).Gap(12).Radius(10).
 - **Gradients and stripes.** `Gradient(from, to, angle)` fills the box with
   a linear gradient; `LinearGradient` also places its colors along the line
   (`Start`, `End`) and mixes them in Oklab, which keeps their lightness,
-  instead of sRGB. `Stripes(c, width, gap, angle)` draws stripes over the
-  background, as on what is unavailable.
+  instead of sRGB, or takes as many colors as its `Stops`, each a
+  `GradientStop{Color, At}` at its place from 0 to 1. `ConicGradient` turns
+  its stops around a point instead, as CSS's `conic-gradient()` (SwiftUI's
+  `AngularGradient`): from `Angle`, in degrees clockwise from upwards,
+  around `Center`, the middle unless set. `BorderLinearGradient` and
+  `BorderConicGradient` paint the border with one in place of its color,
+  as SwiftUI's `strokeBorder` with a gradient:
+
+  ```go
+  rainbow := []ui.GradientStop{{red, 0}, {yellow, 0.33}, {blue, 0.66}, {red, 1}}
+  ui.Box(c).Size(120, 80).Radius(16).Border(4, ui.Color{}).
+  	BorderConicGradient(ui.ConicGradient{Stops: rainbow, Oklab: true})
+  ```
+
+  `Stripes(c, width, gap, angle)` draws stripes over the background, as on
+  what is unavailable. A painter fills rectangles and paths with the same
+  gradients (`FillGradient`, `FillConicGradient`, `FillPathGradient`,
+  `FillPathConicGradient`, `StrokePathConicGradient`).
+- **Blur.** `Blur(sigma)` blurs the element and its children, as CSS's
+  `filter: blur()`: what they draw spreads about 3 sigma DIPs around,
+  transparent beyond, on the GPU. They render into a bitmap first, as an
+  [effect](shaders.md#effects-on-elements) does, every frame they paint;
+  clicks, focus and assistive technology take the element where it is.
+  Glows are borders blurred, a sharp one and blurred ones stacked:
+
+  ```go
+  for _, l := range []struct{ width, blur float32 }{{6, 0}, {9, 4}, {15, 15}} {
+  	ui.Box(c).Absolute().Top(0).Left(0).Right(0).Bottom(0).PassThrough().
+  		Radius(16).Border(l.width, ui.Color{}).BorderConicGradient(glow).Blur(l.blur)
+  }
+  ```
 - **Materials.** `Material(m)` fills the box with a material a package
   paints, in place of a background, as the [glass
   plugin](../plugins/glass.md)'s Liquid Glass, which what is under it shows

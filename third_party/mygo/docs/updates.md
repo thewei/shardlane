@@ -154,8 +154,11 @@ last 3 versions: the published one and the earlier ones its manifest lists
 signed with your key and writes a delta from each to the new version:
 files that did not change are copied from the installed app, changed ones
 are patched ([bsdiff](https://www.daemonology.net/bsdiff/)), and the rest
-are included. The manifest lists the deltas, and the archives of the
-versions before for the next build. A delta that is not smaller than the
+are included. The notarization ticket stapled to a macOS app
+(`Contents/CodeResources`) is always included whole: the archives' apps
+have one, but the app copied from the disk image does not. The manifest
+lists the deltas, and the archives of the versions before for the next
+build. A delta that is not smaller than the
 archive is left out. Builds need to download the published updates then;
 when they cannot, such as for the first version, they make no deltas and
 say why.

@@ -220,6 +220,35 @@ func TestFlexOptions(t *testing.T) {
 			}
 		}
 	})
+	t.Run("percentage limits on the main axis", func(t *testing.T) {
+		// A maximum that is a percentage of the parent resolves against the
+		// parent's definite main size, but the automatic minimum of a child
+		// is measured against an unknown block, where that percentage does
+		// not resolve: the maximum has to bind all the same, as it does when
+		// the limit is in DIPs.
+		row := boxes(t, func(c *context) {
+			coreRow(c).Size(400, 100).Children(func() {
+				coreText(c, "supercalifragilisticexpialidocious").MaxWidthPercent(10).Shrink(0).Label("pct")
+				coreText(c, "supercalifragilisticexpialidocious").MaxWidth(40).Shrink(0).Label("px")
+			})
+		}, 400, 400, "pct", "px")
+		if row["pct"].W > 40.5 {
+			t.Errorf("a text limited to 10%% of a 400-wide row is %g wide, want 40 (MaxWidth(40) gives %g)", row["pct"].W, row["px"].W)
+		}
+		column := boxes(t, func(c *context) {
+			coreColumn(c).Size(200, 400).Children(func() {
+				coreBox(c).Height(300).MaxHeightPercent(50).Shrink(0).Label("pct")
+			})
+		}, 200, 400, "pct")
+		pixels := boxes(t, func(c *context) {
+			coreColumn(c).Size(200, 400).Children(func() {
+				coreBox(c).Height(300).MaxHeight(200).Shrink(0).Label("px")
+			})
+		}, 200, 400, "px")
+		if column["pct"].H > 200.5 {
+			t.Errorf("a box limited to 50%% of a 400-high column is %g high, want 200, as MaxHeight(200) gives %g", column["pct"].H, pixels["px"].H)
+		}
+	})
 	t.Run("absolute in the padding box", func(t *testing.T) {
 		// As in CSS, insets are measured from inside the border, whatever
 		// the padding, and percentages from the padding box's size.
@@ -476,7 +505,7 @@ func TestScrollBoth(t *testing.T) {
 	// Drag the horizontal thumb to the end.
 	tt.Move(50, 50)
 	st := sc.st
-	g := scrollBars(Rect{st.x, st.y, st.w, st.h}, st.barInset, float32(st.contentW), float32(st.contentH), float32(st.scrollX), float32(st.scrollY), st.flags, 6)
+	g := scrollBars(Rect{st.x, st.y, st.w, st.h}, st.barInset, float32(st.contentW), float32(st.contentH), float32(st.scrollX), float32(st.scrollY), st.flags, 6, false)
 	if !g.horizontal || !g.vertical {
 		t.Fatalf("scroll bars %+v", g)
 	}
@@ -499,7 +528,7 @@ func TestScrollbarInsets(t *testing.T) {
 	}, 200, 200)
 	tt.Move(50, 100)
 	st := sc.st
-	g := scrollBars(Rect{st.x, st.y, st.w, st.h}, st.barInset, float32(st.contentW), float32(st.contentH), float32(st.scrollX), float32(st.scrollY), st.flags, 6)
+	g := scrollBars(Rect{st.x, st.y, st.w, st.h}, st.barInset, float32(st.contentW), float32(st.contentH), float32(st.scrollX), float32(st.scrollY), st.flags, 6, false)
 	// The track runs from 50 below the top to 10 above the bottom, 4 in
 	// from the right; the thumb shows a quarter of it, the content's
 	// share in view.
@@ -573,8 +602,7 @@ func TestEasingAndLoop(t *testing.T) {
 		e := coreBox(c)
 		values = append(values, e.Loop("spin", 50*time.Millisecond, Linear))
 	}, 50, 50)
-	time.Sleep(20 * time.Millisecond)
-	tt.Frame()
+	tt.Advance(20 * time.Millisecond)
 	moved := false
 	for _, v := range values {
 		if v < 0 || v >= 1 {

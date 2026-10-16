@@ -73,6 +73,7 @@ var (
 	iidIDWriteFactory       = guid{0xb859ee5a, 0xd838, 0x4b5b, [8]byte{0xa2, 0xe8, 0x1a, 0xdc, 0x7d, 0x93, 0xdb, 0x48}}
 	iidIDWriteFactory2      = guid{0x0439fc60, 0xca44, 0x4994, [8]byte{0x8d, 0xee, 0x3a, 0x9a, 0xf7, 0xb7, 0x32, 0xec}}
 	iidIDWriteFactory5      = guid{0x958db99a, 0xbe2a, 0x4f09, [8]byte{0xaf, 0x7d, 0x65, 0x18, 0x98, 0x03, 0xd1, 0xd3}}
+	iidIDWriteFont1         = guid{0xacd16696, 0x8c14, 0x4f5d, [8]byte{0x87, 0x7e, 0xfe, 0x3f, 0xc1, 0xd3, 0x27, 0x38}}
 	iidIDWriteFontFace2     = guid{0xd8b768ff, 0x64bc, 0x4e66, [8]byte{0x98, 0x2b, 0xec, 0x8e, 0x87, 0xf6, 0x93, 0xf7}}
 	iidIDWriteFontFace3     = guid{0xd37d7598, 0x09be, 0x4222, [8]byte{0xa2, 0x36, 0x20, 0x81, 0x34, 0x1c, 0xc1, 0xf2}}
 	iidIDWriteFactory3      = guid{0x9a1b41c3, 0xd3bb, 0x466a, [8]byte{0x87, 0xfc, 0xfe, 0x67, 0x55, 0x6a, 0x3b, 0x65}}
@@ -125,6 +126,8 @@ const (
 	// IDWriteFont
 	fontGetFontFamily  = 3
 	fontCreateFontFace = 13
+	// IDWriteFont1
+	font1IsMonospacedFont = 17
 	// IDWriteFontFace
 	faceGetMetrics = 8
 	// IDWriteFontFace2
@@ -153,7 +156,9 @@ const (
 	layoutSetFontWeight        = 32
 	layoutSetFontStyle         = 33
 	layoutSetFontSize          = 35
+	layoutSetInlineObject      = 39
 	layoutSetTypography        = 40
+	layoutSetLocaleName        = 41
 	layoutDraw                 = 58
 	layoutGetLineMetrics       = 59
 	layoutHitTestTextPosition  = 65
@@ -369,11 +374,13 @@ type dwrite struct {
 	aliased      bool
 
 	// The fonts the app registers: their files, a collection of them,
-	// and the family name of each name they are registered under.
+	// the family name of each name they are registered under, and the
+	// names they are listed under: the one the app gave, or their own.
 	loader  uintptr
 	files   []uintptr
 	custom  uintptr
 	aliases map[string]string
+	names   []string
 
 	scratch []byte
 }
@@ -385,6 +392,7 @@ type formatKey struct {
 	weight int
 	italic bool
 	size   float32
+	lang   string // Style.Lang, "" for the user's locale
 }
 
 type faceKey struct {
@@ -492,9 +500,20 @@ func dwStyle(italic bool) uintptr {
 	return fontStyleNormal
 }
 
+// localeName returns the locale name DirectWrite takes for a language, which
+// text formats shape with and the font fallback picks fonts by: the
+// language's tag, or for "" the user's locale of regional formats
+// (GetUserDefaultLocaleName), as text without a language had.
+func (e *dwrite) localeName(lang string) []uint16 {
+	if lang == "" {
+		return e.locale
+	}
+	return utf16z(lang)
+}
+
 func (e *dwrite) format(style Style) uintptr {
 	family, custom := e.family(style.Family)
-	key := formatKey{style.Family, family, custom, style.weight(), style.Italic, style.FontSize()}
+	key := formatKey{style.Family, family, custom, style.weight(), style.Italic, style.FontSize(), style.Lang}
 	if f, ok := e.formats[key]; ok {
 		return f
 	}
@@ -507,7 +526,7 @@ func (e *dwrite) format(style Style) uintptr {
 	name := utf16z(family)
 	var format uintptr
 	hr := method[func(this uintptr, family *uint16, coll uintptr, weight, style, stretch uintptr, size float32, locale *uint16, out *uintptr) uintptr](e.factory, factoryCreateTextFormat)(
-		e.factory, &name[0], e.collection(custom), uintptr(key.weight), dwStyle(key.italic), fontStretchNormal, key.size, &e.locale[0], &format)
+		e.factory, &name[0], e.collection(custom), uintptr(key.weight), dwStyle(key.italic), fontStretchNormal, key.size, &e.localeName(key.lang)[0], &format)
 	if failed(hr) {
 		return 0
 	}
@@ -806,6 +825,16 @@ func (e *dwrite) shape(text []rune, style Style, spans []Span, width float32, rt
 		call(layout, layoutHitTestTextPosition, uintptr(r.pos), 0, uintptr(unsafe.Pointer(&x)), uintptr(unsafe.Pointer(&y)), uintptr(unsafe.Pointer(&hit)))
 		lines[li].runs = append(lines[li].runs, e.run(r, x, index))
 	}
+	if len(layoutObjects.objects) > 0 {
+		units := make([]uint32, len(text)+1)
+		for i, r := range text {
+			units[i+1] = units[i] + 1
+			if r >= 0x10000 {
+				units[i+1]++
+			}
+		}
+		objectRuns(layout, lines, ends, spans, units, index)
+	}
 	return lines
 }
 
@@ -854,6 +883,15 @@ func (e *dwrite) typeset(layout uintptr, style Style, spans []Span, text []rune)
 		e.spacing(layout, sp.LetterSpacing, r)
 		e.typography(layout, sp.Features, r)
 	}
+	// The runes in other languages than the format's: those of spans, and
+	// Han characters in a language that does not write them, which keep
+	// the user's locale.
+	for _, run := range langRuns(text, style.Lang, spans) {
+		name := e.localeName(run.lang)
+		call(layout, layoutSetLocaleName, uintptr(unsafe.Pointer(&name[0])), textRange(run.start, run.end))
+		runtime.KeepAlive(name)
+	}
+	setObjects(layout, spans, units)
 }
 
 // spacing adds letter spacing to a range of a text layout.
@@ -1356,6 +1394,10 @@ func (e *dwrite) register(data []byte, family string) error {
 	}
 	if family != "" {
 		e.aliases[strings.ToLower(family)] = names[0]
+		// Listed under the name the app gave it, which is the one it uses.
+		e.names = append(e.names, family)
+	} else {
+		e.names = append(e.names, names...)
 	}
 	for k, f := range e.formats {
 		if k.custom {
@@ -1393,9 +1435,61 @@ func (e *dwrite) newCollection(files []uintptr) (uintptr, error) {
 	return coll, nil
 }
 
+// appFamilies lists the families of the app's fonts, monospaced when
+// their regular font in the app's collection is.
+func (e *dwrite) appFamilies() []FontFamily {
+	if len(e.names) == 0 {
+		return nil
+	}
+	mono := map[string]bool{} // by the family's own name
+	for _, f := range collectionFamilies(e.custom) {
+		mono[f.Name] = f.Monospaced
+	}
+	out := make([]FontFamily, len(e.names))
+	for i, name := range e.names {
+		out[i] = FontFamily{Name: name, Monospaced: mono[e.aliases[strings.ToLower(name)]]}
+	}
+	return out
+}
+
+// systemFamilies lists the system collection's families, which hold none
+// of the app's, monospaced when their regular font IDWriteFont1 (Windows 8
+// and later) calls so: DirectWrite's shared factory is thread-safe.
+func (e *dwrite) systemFamilies() func() []FontFamily {
+	coll := e.system
+	if coll == 0 {
+		return nil
+	}
+	call(coll, comAddRef)
+	return func() []FontFamily {
+		defer release(coll)
+		return collectionFamilies(coll)
+	}
+}
+
 // familyNames returns the English names of a collection's families.
 func familyNames(coll uintptr) []string {
 	var names []string
+	eachFamily(coll, func(fam uintptr, name string) { names = append(names, name) })
+	return names
+}
+
+// collectionFamilies returns the families of a collection, by their
+// English names.
+func collectionFamilies(coll uintptr) []FontFamily {
+	var out []FontFamily
+	eachFamily(coll, func(fam uintptr, name string) {
+		out = append(out, FontFamily{Name: name, Monospaced: monospaced(fam)})
+	})
+	return out
+}
+
+// eachFamily calls fn with each family of a collection and its English
+// name.
+func eachFamily(coll uintptr, fn func(fam uintptr, name string)) {
+	if coll == 0 {
+		return
+	}
 	n := uint32(call(coll, collectionGetFontFamilyCount))
 	for i := range n {
 		var fam, strs uintptr
@@ -1404,13 +1498,27 @@ func familyNames(coll uintptr) []string {
 		}
 		if !failed(call(fam, familyGetFamilyNames, uintptr(unsafe.Pointer(&strs)))) {
 			if name := englishName(strs); name != "" {
-				names = append(names, name)
+				fn(fam, name)
 			}
 			release(strs)
 		}
 		release(fam)
 	}
-	return names
+}
+
+// monospaced reports whether a family's regular font is monospaced.
+func monospaced(fam uintptr) bool {
+	var font uintptr
+	if failed(call(fam, familyGetFirstMatchingFont, 400, fontStretchNormal, dwStyle(false), uintptr(unsafe.Pointer(&font)))) {
+		return false
+	}
+	defer release(font)
+	font1 := queryInterface(font, &iidIDWriteFont1)
+	if font1 == 0 {
+		return false
+	}
+	defer release(font1)
+	return call(font1, font1IsMonospacedFont) != 0
 }
 
 // englishName returns the English name of localized strings, or their

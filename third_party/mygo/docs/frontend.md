@@ -106,6 +106,16 @@ falling back to `index.html` like the frontend. Handling the `mygo` scheme
 replaces the frontend with your handler. Pages of custom schemes are the
 app's own: they may call Go methods.
 
+Each scheme is its own origin, so a page fetching another scheme makes a
+cross-origin request: the frontend reading `api://localhost/`, or, during
+`mygo dev`, the dev server reading `thumbs://localhost/`. Responses to the
+app's own pages, those that may call Go methods, carry the CORS headers
+that let them read the response, and MyGo answers their preflights.
+Other sites get none, unless the window trusts them
+(`PageOptions.TrustedOrigins`), and handlers may set their own.
+On Windows, fetch a scheme at `http://<scheme>.localhost/`, where
+WebView2 serves it.
+
 ## The mygo-runtime package
 
 MyGo injects its runtime into every page as `window.mygo`. The
@@ -131,6 +141,15 @@ await currentWindow.toggleMaximize();
 | `runtime()` | the runtime: `platform` (`"darwin"`, `"linux"` or `"win32"`), `windowId` (the Go window's `ID()`) and `version`; throws outside MyGo |
 | `currentWindow` | the page's window: `minimize`, `maximize`, `unmaximize`, `toggleMaximize`, `isMaximized`, `toggleFullScreen`, `close` and `setTitle` |
 | `onFileDrop(listener)` | files dropped on the window, with their paths |
+| `preferences()` | the accent color and the accessibility settings of the desktop; throws outside MyGo |
+| `onPreferences(listener)` | the changes of `preferences()` |
+| `locale()`, `direction()`, `onLocaleChange(listener)` | the language the app shows (`App.Locale`), such as `"zh-Hans"`, its direction, `"ltr"` or `"rtl"`, and its changes; the page has them from document start, as `mygo.locale` and `mygo.dir` |
+
+`mygo-runtime/i18n` formats messages of ICU MessageFormat, as package
+`i18n` does in Go. The module `mygo generate` writes for the app's
+[catalogs](i18n.md#in-pages), `locales.ts`, is built on it, and holds the
+messages of every language, which the frontend's build bundles: a page
+says its first words in the app's language without waiting for a request.
 
 Opened in a regular browser, which is handy for working on the layout,
 pages have no runtime: calls reject and `isMyGo()` is false.
@@ -284,6 +303,52 @@ mygo.NewWindow(mygo.WindowOptions{URL: "/", BackgroundColor: "light-dark(#f5f5f7
 
 `mygo.Theme.SetSource(mygo.ThemeDark)` forces an appearance, which pages see
 through the same media query.
+
+## Accent color and accessibility
+
+`prefers-reduced-motion` and `prefers-contrast` follow the desktop on their
+own. The accent color the desktop uses and the factor it asks text to grow
+by are what the media queries do not tell a page: they are CSS variables on
+`:root` from the first paint.
+
+| variable | |
+|---|---|
+| `--mygo-accent` | the accent as `#rrggbb`; unset where the desktop has none, so `var(--mygo-accent, AccentColor)` falls back to the desktop's own color |
+| `--mygo-text-scale` | the factor text grows by; `1` is the usual size, so `calc(1rem * var(--mygo-text-scale, 1))` |
+
+```css
+:root {
+  --accent: var(--mygo-accent, AccentColor);
+  font-size: calc(1rem * var(--mygo-text-scale, 1));
+}
+```
+
+`preferences()` of `mygo-runtime` returns the settings themselves, current
+from document start on, and `onPreferences` tells their changes, which only
+the desktop makes; a component reads the first and subscribes to the
+second, as with `matchMedia`:
+
+```ts
+import { onPreferences, preferences, type ThemePreferences } from "mygo-runtime";
+
+const apply = ({ reduceTransparency }: ThemePreferences) =>
+  document.documentElement.classList.toggle("opaque", reduceTransparency);
+apply(preferences());
+const off = onPreferences(apply);
+```
+
+| field | |
+|---|---|
+| `accent` | the accent as `"#rrggbb"`, or `null` where the desktop has none |
+| `reduceMotion` | the desktop asks for less motion, as `prefers-reduced-motion` |
+| `reduceTransparency` | the desktop asks for opaque surfaces: macOS's Reduce Transparency, Windows's transparency effects turned off; false on Linux, which has no such setting |
+| `highContrast` | the desktop asks for more contrast, as `prefers-contrast: more` |
+| `textScale` | how many times larger than usual text should be; `1` is usual |
+
+A page that navigates starts with the values of the moment: the script
+that tells them at document start is replaced when they change.
+`mygo.Theme.Preferences()` reads them on the Go side, see
+[native](native.md#accent-color-and-accessibility).
 
 ## Links and new windows
 

@@ -173,12 +173,17 @@ func TestPopoverFlyout(t *testing.T) {
 // and closes it with a second click on the button, which the closing
 // does not turn into opening it again: quick, or held as a user clicks,
 // whose press closes the flyout before the release would click the button
-// where the press goes on (macOS) but for the flyout's anchor.
+// where the press goes on (macOS) but for the flyout's anchor. The click
+// hooks return once the app handled the click: a frame the parent builds
+// after that reports a click the button got.
 func TestFlyoutToggle(t *testing.T) {
 	var parent, fl *mygo.Window // main thread only
+	var shown atomic.Pointer[mygo.Window]
+	var builds atomic.Int64
 	opened := make(chan struct{}, 4)
 	closed := make(chan struct{}, 4)
 	view := func(c *ui.Context) {
+		builds.Add(1)
 		if !ui.Button(c.Key("toggle"), "Toggle").Width(120).Height(30).Clicked() {
 			return
 		}
@@ -187,6 +192,7 @@ func TestFlyoutToggle(t *testing.T) {
 			return
 		}
 		fl = mygo.NewFlyout(mygo.FlyoutOptions{Parent: parent, Anchor: mygo.Rectangle{Width: 120, Height: 30}, Width: 150, Height: 100, Focusable: true, Content: ui.View(func(c *ui.Context) {})})
+		shown.Store(fl)
 		fl.OnClosed(func() {
 			fl = nil
 			closed <- struct{}{}
@@ -208,6 +214,14 @@ func TestFlyoutToggle(t *testing.T) {
 			t.Fatalf("timed out waiting for %s", what)
 		}
 	}
+	// built waits for the parent to build a frame after the clicks the
+	// hooks handled, which reports a click of the button.
+	built := func() {
+		t.Helper()
+		n := builds.Load()
+		parent.Invalidate()
+		eventually(t, "a frame of the parent built", func() bool { return builds.Load() > n })
+	}
 	wait(drawn, "the parent drawn")
 	parent.Focus()
 	eventually(t, "the parent focused", parent.IsFocused)
@@ -217,7 +231,8 @@ func TestFlyoutToggle(t *testing.T) {
 			t.Skip("clicks not available on this platform")
 		}
 		wait(opened, "the flyout opened")
-		time.Sleep(300 * time.Millisecond)
+		// A user clicks again once the flyout shows, with the keyboard.
+		eventually(t, "the flyout focused", func() bool { return shown.Load().IsFocused() || len(closed) > 0 })
 		select {
 		case <-closed:
 			// It closes as another app takes the keyboard.
@@ -226,7 +241,7 @@ func TestFlyoutToggle(t *testing.T) {
 		}
 		closing(parent, 60, 15)
 		wait(closed, "the flyout closed")
-		time.Sleep(500 * time.Millisecond)
+		built()
 		select {
 		case <-opened:
 			t.Fatalf("the click that closed the flyout opened it again (held %v)", i == 0)
@@ -242,27 +257,27 @@ func TestFlyoutEscape(t *testing.T) {
 	parent := newWindow(t, mygo.WindowOptions{Width: 300, Height: 200})
 	parent.Focus()
 	eventually(t, "the parent focused", parent.IsFocused)
-	var handled atomic.Bool
+	var handled, received atomic.Bool
 	native := mygo.NewFlyout(mygo.FlyoutOptions{Parent: parent, Width: 150, Height: 100, Focusable: true, Content: ui.View(func(c *ui.Context) {
-		if handled.Load() {
-			c.Shortcut(0, ui.KeyEscape)
+		if handled.Load() && c.Shortcut(0, ui.KeyEscape) {
+			received.Store(true)
 		}
 	})})
 	defer native.Destroy()
 	eventually(t, "the flyout focused", native.IsFocused)
+	// The view asks for Escape from the frame that handles the key on,
+	// whether or not a frame built since showed it.
 	handled.Store(true)
-	native.Invalidate() // its shortcut registers in a frame
-	time.Sleep(200 * time.Millisecond)
 	if !pressEscape(native) {
 		t.Skip("keys not available on this platform")
 	}
-	time.Sleep(500 * time.Millisecond)
+	// Posting the native key does not wait for the content to receive it.
+	eventually(t, "the content handling Escape", func() bool { return received.Load() || native.IsDestroyed() })
 	if native.IsDestroyed() {
 		t.Fatal("an Escape the content handled closed the flyout")
 	}
+	// It no longer does, from the frame that handles the key on.
 	handled.Store(false)
-	native.Invalidate()
-	time.Sleep(200 * time.Millisecond)
 	pressEscape(native)
 	eventually(t, "the flyout of native UI closed", native.IsDestroyed)
 
@@ -282,7 +297,6 @@ func TestFlyoutEscape(t *testing.T) {
 	popover := mygo.NewFlyout(mygo.FlyoutOptions{Parent: parent, Width: 150, Height: 100, Focusable: true, Popover: true, Content: ui.View(func(c *ui.Context) {})})
 	defer popover.Destroy()
 	eventually(t, "the popover focused", popover.IsFocused)
-	time.Sleep(300 * time.Millisecond)
 	pressEscape(popover)
 	eventually(t, "the popover closed", popover.IsDestroyed)
 }

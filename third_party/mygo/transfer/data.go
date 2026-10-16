@@ -25,6 +25,9 @@ const (
 	// it as the system's file-list format as well as text/uri-list.
 	FileList Format = "application/x-mygo-file-list"
 	PNG      Format = "image/png"
+	// Markdown is Markdown's text (RFC 7763), net.daringfireball.markdown
+	// on macOS.
+	Markdown Format = "text/markdown"
 )
 
 // ErrFormat means the requested item or representation is not available.

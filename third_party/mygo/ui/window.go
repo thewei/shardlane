@@ -6,6 +6,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/egoist/mygo/i18n"
 	"github.com/egoist/mygo/internal/platform"
 	"github.com/egoist/mygo/internal/raster"
 	"github.com/egoist/mygo/internal/scene"
@@ -37,6 +38,40 @@ func RegisterFont(data []byte, family string) error {
 	return text.Shared().RegisterFont(data, family)
 }
 
+// A FontFamily is a font family text can use, as FontFamilies lists it.
+type FontFamily struct {
+	// Name is the family as Font and Theme take it.
+	Name string
+	// Monospaced is whether its regular font gives every character the
+	// same advance, as a terminal's or a code editor's font setting
+	// offers.
+	Monospaced bool
+	// Registered is whether the app registered it with RegisterFont, under
+	// Name: the name it gave, or the font's own when it gave none.
+	Registered bool
+}
+
+// FontFamilies lists the font families text can use, as a font setting
+// offers them: the app's registered ones first, then the system's, each
+// once, sorted without regard to case. A font registered under a name the
+// app gave is listed under that name alone. Browsers do not tell what
+// fonts they have: there the list holds the registered families alone,
+// and a family is Monospaced once its font has loaded.
+//
+// The first call asks the system for its families, which takes a while
+// with many fonts installed (tens of milliseconds on a Mac with hundreds),
+// without holding up the windows' text; later calls reuse that list, until
+// RegisterFont, so fonts installed while the app runs show after a
+// restart. It is safe from any goroutine.
+func FontFamilies() []FontFamily {
+	families := text.Shared().FontFamilies()
+	out := make([]FontFamily, len(families))
+	for i, f := range families {
+		out[i] = FontFamily(f)
+	}
+	return out
+}
+
 // AttachContent connects the content to a window; package mygo calls it.
 func (v *Content) AttachContent(conn *surface.Conn) {
 	h := &windowHost{conn: conn}
@@ -50,6 +85,10 @@ func (v *Content) AttachContent(conn *surface.Conn) {
 	}
 	conn.TitleBarChanged = rt.requestFrame
 	conn.Changed = rt.changed
+	conn.LocaleChanged = func() {
+		h.textLanguage()
+		rt.changed()
+	}
 	conn.Capture = h.capture
 	conn.Detach = h.detach
 	rt.insp.enabled = conn.DevTools
@@ -59,6 +98,7 @@ func (v *Content) AttachContent(conn *surface.Conn) {
 		}
 	}
 	h.uiFont()
+	h.textLanguage()
 	// Load the fonts while the window shows up.
 	go text.Shared().Preload()
 	conn.Surface.RequestFrame()
@@ -87,6 +127,9 @@ type windowHost struct {
 	lastFrame time.Time
 	// framing tells that the surface asked for the frame being drawn.
 	framing bool
+	// told is what accelerated last told the frame being painted, asked
+	// that it did.
+	told, asked bool
 	// path is how the last frame was drawn, for MYGO_FRAME_STATS.
 	path string
 	// wide tells that the GPU renderer draws the colors of scenes outside
@@ -97,7 +140,9 @@ type windowHost struct {
 	idleTimer *time.Timer
 	idleAt    time.Time
 	idleArmed bool
-	detached  bool
+	// afterT and repaintT are the timers of After and Painter.After.
+	afterT, repaintT *time.Timer
+	detached         bool
 	// shown tells that a frame was presented, which makes the window
 	// ready to show.
 	shown bool
@@ -107,7 +152,17 @@ type windowHost struct {
 	views  []NativeWebView
 }
 
-func (h *windowHost) framePath() string { return h.path }
+func (h *windowHost) framePath() string {
+	if h.path == "drawn on the GPU" && h.gpu != nil {
+		// The stats logger calls this only while MYGO_FRAME_STATS is enabled.
+		if f, ok := h.gpu.(interface{ FrameInfo() string }); ok {
+			return h.path + ": " + f.FrameInfo()
+		}
+	}
+	return h.path
+}
+
+func (h *windowHost) rightToLeft() bool { return h.conn.RightToLeft != nil && h.conn.RightToLeft() }
 
 // newGPU makes the GPU renderer of a surface; tests replace it.
 var newGPU = newGPURenderer
@@ -186,6 +241,7 @@ func (h *windowHost) size() (float32, float32, float32) {
 
 func (h *windowHost) present(s *scene.Scene) {
 	h.last, h.path = s, ""
+	defer h.recheck()
 	if s.Width <= 0 || s.Height <= 0 {
 		return
 	}
@@ -366,6 +422,27 @@ func (h *windowHost) makeGPU() {
 	h.wide = false // the renderer draws sRGB until told otherwise
 }
 
+// accelerated reports whether the frame draws on a GPU (Painter.Accelerated).
+// The first frame makes its GPU renderer as it paints rather than as it
+// presents, to tell.
+func (h *windowHost) accelerated() bool {
+	if h.framing && !h.gpuTried {
+		h.makeGPU()
+	}
+	h.told, h.asked = h.gpu != nil && !software(h.gpu), true
+	return h.told
+}
+
+// recheck paints the window again when the frame presented draws on a GPU
+// and accelerated told its painters otherwise, or the other way round: the
+// GPU went away or came back as it presented.
+func (h *windowHost) recheck() {
+	if h.asked && h.told != (h.gpu != nil && !software(h.gpu)) && h.conn.Invalidate != nil {
+		h.invalidate()
+	}
+	h.asked = false
+}
+
 // software reports whether a renderer draws on the CPU, as Direct3D's WARP.
 func software(r gpuRenderer) bool {
 	s, ok := r.(interface{ Software() bool })
@@ -419,6 +496,34 @@ func (h *windowHost) detach() {
 
 func (h *windowHost) requestFrame() { h.conn.Surface.RequestFrame() }
 
+func (h *windowHost) afterTimer(at time.Time) {
+	switch {
+	case at.IsZero():
+		if h.afterT != nil {
+			h.afterT.Stop()
+		}
+	case h.afterT != nil:
+		h.afterT.Reset(max(time.Until(at), time.Millisecond))
+	default:
+		h.afterT = time.AfterFunc(max(time.Until(at), time.Millisecond), h.invalidate)
+	}
+}
+
+func (h *windowHost) repaintTimer(at time.Time) {
+	if at.IsZero() {
+		if h.repaintT != nil {
+			h.repaintT.Stop()
+		}
+		return
+	}
+	d := max(time.Until(at), time.Millisecond)
+	if h.repaintT == nil {
+		h.repaintT = time.AfterFunc(d, func() { h.post(h.rt.repaintNow) })
+	} else {
+		h.repaintT.Reset(d)
+	}
+}
+
 func (h *windowHost) startDataDrag(data transfer.Data, local any, options transfer.DragOptions, x, y float32) error {
 	return h.conn.StartDataDrag(data, local, options, float64(x), float64(y))
 }
@@ -461,9 +566,33 @@ func (h *windowHost) readClipboard() string {
 	return h.conn.Clipboard.ReadText()
 }
 
+func (h *windowHost) clipboardFormats() []transfer.Format {
+	if h.conn.Clipboard == nil {
+		return nil
+	}
+	return h.conn.Clipboard.Formats()
+}
+
 func (h *windowHost) writeClipboard(s string) {
 	if h.conn.Clipboard != nil {
 		h.conn.Clipboard.WriteText(s)
+	}
+}
+
+func (h *windowHost) readClipboardData(formats []transfer.Format) transfer.Data {
+	if h.conn.Clipboard == nil {
+		return transfer.Data{}
+	}
+	d, err := h.conn.Clipboard.ReadData(formats)
+	if err != nil && len(d.Items()) == 0 {
+		return transfer.Data{}
+	}
+	return d
+}
+
+func (h *windowHost) writeClipboardData(d transfer.Data) {
+	if h.conn.Clipboard != nil {
+		h.conn.Clipboard.WriteData(d, nil)
 	}
 }
 
@@ -492,6 +621,26 @@ func (h *windowHost) preferences() platform.Preferences {
 		return platform.Preferences{}
 	}
 	return h.conn.Preferences()
+}
+
+func (h *windowHost) locale() string {
+	if h.conn.Locale == nil {
+		return ""
+	}
+	return h.conn.Locale()
+}
+
+func (h *windowHost) region() i18n.Region {
+	if h.conn.Region == nil {
+		return i18n.Region{}
+	}
+	return h.conn.Region()
+}
+
+// textLanguage makes the language the app shows that of the text the
+// text engine lays out without one, as Painter.Shape does.
+func (h *windowHost) textLanguage() {
+	text.Shared().SetLanguage(h.locale())
 }
 
 func (h *windowHost) titleBar() TitleBar {

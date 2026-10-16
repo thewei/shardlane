@@ -282,6 +282,28 @@ func (d *diffModel) hunkAtNew(n int) int {
 	return -1
 }
 
+// hunkAt returns the index of the hunk holding or ending at line n of
+// the old text, or of the new, or -1: hunkAtNew for the new text.
+func (d *diffModel) hunkAt(n int, old bool) int {
+	if !old {
+		return d.hunkAtNew(n)
+	}
+	i := sort.Search(len(d.hunks), func(i int) bool { return d.hunks[i].A1 > n || d.hunks[i].A0 >= n })
+	if i < len(d.hunks) {
+		h := d.hunks[i]
+		if h.A0 <= n && n < h.A1 || h.A0 == h.A1 && h.A0 == n {
+			return i
+		}
+	}
+	// Lines added after the old text's last line go with it.
+	if k := len(d.hunks) - 1; k >= 0 && n == d.oldText.LineCount()-1 {
+		if h := d.hunks[k]; h.A0 == h.A1 && h.A0 >= d.oldText.LineCount() {
+			return k
+		}
+	}
+	return -1
+}
+
 // pastEnd returns the hunk deleting lines after the new text's last line,
 // as when a text without a final newline loses its last lines, which goes
 // with the last line, as no caret nor gutter row is past it; or -1.

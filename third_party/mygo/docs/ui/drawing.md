@@ -105,7 +105,8 @@ once. Canvases show other canvases, and text. A canvas's pixels are its
 units: draw it at the window's scale (`Painter.Scale`) for one as sharp as
 the window, or smaller and make its bitmap `Pixelated` to scale pixel art
 up crisp (the [game plugin](../plugins/game.md#pixel-perfect-scaling)
-shows one at whole multiples).
+shows one at whole multiples). A [shader](shaders.md) reads canvases as
+images, and draws into them.
 
 ## Transforms
 

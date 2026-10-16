@@ -51,6 +51,8 @@ type canvasEngine struct {
 	texts []string
 	// words caches the pen positions of the clusters of words.
 	words map[wordKey][]float32
+	// names are the families the app registered fonts under.
+	names []string
 	seg   segmenter.Segmenter
 	para  bidi.Paragraph
 	// image is the canvas's pixels read back, reused.
@@ -324,6 +326,23 @@ func (e *canvasEngine) shape(text []rune, style Style, spans []Span, width float
 			f := fonts[fontAt[start]]
 			clusters = e.measureWord(clusters, text, bounds[b:ce+1], f, st.LetterSpacing, noKern(st), levels[start])
 			b, start = ce, pe
+		}
+	}
+
+	// Inline objects take their width, whatever the canvas measured of
+	// their character.
+	{
+		start := 0
+		for _, sp := range spans {
+			end := min(sp.End, len(text))
+			if sp.ObjectWidth > 0 {
+				for k := range clusters {
+					if c := &clusters[k]; c.start >= start && c.start < end {
+						c.advance = sp.ObjectWidth
+					}
+				}
+			}
+			start = max(start, end)
 		}
 	}
 
@@ -712,6 +731,22 @@ func (e *canvasEngine) decorate(r decoRange) []Stroke {
 	return out
 }
 
+// appFamilies lists the app's families. A family is monospaced when an
+// "i" is as wide as a "W" in it, which tells only once its face has
+// loaded.
+func (e *canvasEngine) appFamilies() []FontFamily {
+	out := make([]FontFamily, len(e.names))
+	for i, name := range e.names {
+		e.setFont("100px " + strconv.Quote(name))
+		mono := e.ctx.Call("measureText", "i").Get("width").Float() == e.ctx.Call("measureText", "W").Get("width").Float()
+		out[i] = FontFamily{Name: name, Monospaced: mono}
+	}
+	return out
+}
+
+// systemFamilies lists none: a browser does not tell what fonts it has.
+func (e *canvasEngine) systemFamilies() func() []FontFamily { return nil }
+
 // register adds a font file to the document's fonts, as a FontFace of
 // family, or of its own family when family is "" (which the browser does
 // not tell: the face needs a family). Browsers load faces in the
@@ -726,6 +761,7 @@ func (e *canvasEngine) register(data []byte, family string) error {
 	fonts := js.Global().Get("document").Get("fonts")
 	fonts.Call("add", face)
 	face.Call("load").Call("catch", js.Global().Get("Function").New(""))
+	e.names = append(e.names, family)
 	clear(e.words)
 	return nil
 }

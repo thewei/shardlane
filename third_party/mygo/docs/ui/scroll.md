@@ -20,6 +20,11 @@ ui.Scroll(c).Grow(1).Padding(16).Gap(12).Children(func() {
 Give them a size, or grow them in their parent. For the rows of a
 collection, use a [list](list.md), which builds only those in view.
 
+Laid out [right to left](right-to-left.md), a container scrolling sideways
+shows the start of its content, at the right, first, and `ScrollState.X`
+counts from there: 0 is the start and `MaxX` the end, as Flutter's offsets
+are.
+
 ## Keeping the offset
 
 A scroll container keeps its offset as it keeps its other state, by its
@@ -69,7 +74,7 @@ The keyboard focus scrolls into view as it moves.
 
 A scroll container whose content overflows it shows the thumbs of its
 scroll bars over its content while the pointer is over it, which the user
-drags; they take no room. The theme's `ScrollbarWidth` sets their width and
+drags; they take no room. Right to left, the vertical bar is on the left. The theme's `ScrollbarWidth` sets their width and
 its `Scrollbar` their color.
 
 `ScrollbarInsets` moves the bars in from the container's edges, CSS style

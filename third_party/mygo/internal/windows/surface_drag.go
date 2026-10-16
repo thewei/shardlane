@@ -525,8 +525,12 @@ func oleFormat(f uint16) transfer.Format {
 		return transfer.PNG
 	}
 	name := oleRegisteredFormatName(f)
-	if name == "UniformResourceLocatorW" {
+	switch name {
+	case "UniformResourceLocatorW":
 		return transfer.URIList
+	case "Rich Text Format":
+		// RichEdit's, which WordPad and Word copy.
+		return "text/rtf"
 	}
 	return transfer.Format(name)
 }

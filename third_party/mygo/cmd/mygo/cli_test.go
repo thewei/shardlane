@@ -95,21 +95,22 @@ func TestIcons(t *testing.T) {
 	if string(icns[:4]) != "icns" || int(binary.BigEndian.Uint32(icns[4:])) != len(icns) {
 		t.Fatalf("bad icns header")
 	}
-	// Walk the entries and decode one of them.
-	found := 0
+	// Walk the entries and decode each: every one is a PNG of its size.
+	// icp4 and icp5 must not be among them, since IconServices draws
+	// their PNG payloads as noise.
+	sizes := map[string]int{"ic11": 32, "ic12": 64, "ic07": 128, "ic13": 256, "ic08": 256, "ic14": 512, "ic09": 512, "ic10": 1024}
+	var kinds []string
 	for off := 8; off < len(icns); {
 		kind, size := string(icns[off:off+4]), int(binary.BigEndian.Uint32(icns[off+4:]))
-		if kind == "ic07" {
-			img, err := png.Decode(bytes.NewReader(icns[off+8 : off+size]))
-			if err != nil || img.Bounds().Dx() != 128 {
-				t.Errorf("ic07 entry: %v", err)
-			}
+		img, err := png.Decode(bytes.NewReader(icns[off+8 : off+size]))
+		if err != nil || img.Bounds().Dx() != sizes[kind] {
+			t.Errorf("%s entry: %v, want a %d pixel PNG", kind, err, sizes[kind])
 		}
 		off += size
-		found++
+		kinds = append(kinds, kind)
 	}
-	if found != 10 {
-		t.Errorf("icns has %d entries", found)
+	if len(kinds) != len(sizes) {
+		t.Errorf("icns has entries %v", kinds)
 	}
 	ico, err := pngToICO(src)
 	if err != nil {

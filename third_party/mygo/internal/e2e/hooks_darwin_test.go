@@ -3,12 +3,23 @@
 package e2e
 
 import (
+	"log"
+	"os/exec"
+	"slices"
 	"testing"
-	"time"
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/internal/darwin"
+	"github.com/egoist/mygo/internal/wait"
 )
+
+// recentDocumentRecorded reports whether path is among the app's recent
+// documents.
+func recentDocumentRecorded(path string) (recorded, supported bool) {
+	var paths []string
+	mygo.RunOnMain(func() { paths = darwin.TestRecentDocuments() })
+	return slices.Contains(paths, path), true
+}
 
 func activateMenu(w *mygo.Window, path ...string) (err error) {
 	mygo.RunOnMain(func() { err = darwin.TestPerformMenuItem(path...) })
@@ -26,23 +37,42 @@ func endSheet(w *mygo.Window) (ok bool, supported bool) {
 }
 
 func click(w *mygo.Window, x, y float64) bool {
+	waitOnScreen(w)
 	mygo.RunOnMain(func() { darwin.TestClick(w.NativeHandle(), x, y) })
 	return true
 }
 
 // appClick clicks through the application, whose event monitors see it.
 func appClick(w *mygo.Window, x, y float64) bool {
+	waitOnScreen(w)
 	mygo.RunOnMain(func() { darwin.TestAppClick(w.NativeHandle(), x, y) })
 	return true
 }
 
-// heldAppClick is appClick with the button held down a while, as a user
-// clicks: what the press did runs before the release.
+// heldAppClick is appClick with the button held down, as a user clicks:
+// what the press did runs before the release, the work it left for the
+// main thread too.
 func heldAppClick(w *mygo.Window, x, y float64) bool {
+	waitOnScreen(w)
 	mygo.RunOnMain(func() { darwin.TestAppPress(w.NativeHandle(), x, y, true) })
-	time.Sleep(150 * time.Millisecond)
+	mygo.RunOnMain(func() {}) // after what the press posted
 	mygo.RunOnMain(func() { darwin.TestAppPress(w.NativeHandle(), x, y, false) })
 	return true
+}
+
+// waitOnScreen waits for a window to show on screen, as a user sees a
+// window before clicking it: a window shows a while after it is ordered
+// front and made key, longer on a busy runner, and AppKit puts a click
+// made for it before then elsewhere in it, as outside its content, where
+// it clicks nothing. wait.Guard is a hang guard: it says so if the window
+// did not show by then, before the click that will miss.
+func waitOnScreen(w *mygo.Window) {
+	if !wait.Poll(func() (on bool) {
+		mygo.RunOnMain(func() { on = darwin.TestOnScreen(w.NativeHandle()) })
+		return on
+	}) {
+		log.Printf("e2e: the window %q did not show on screen in %v: a click made for it misses", w.Title(), wait.Guard)
+	}
 }
 
 func sideButton(w *mygo.Window, back bool) (ok bool) {
@@ -58,6 +88,21 @@ func drag(w *mygo.Window, points [][2]float64) bool {
 func webViewAttached(w *mygo.Window) (attached bool, supported bool) {
 	mygo.RunOnMain(func() { attached = darwin.TestWebViewAttached(w.NativeHandle()) })
 	return attached, true
+}
+
+// deactivateApp activates the Finder, as the user would.
+func deactivateApp() bool {
+	return exec.Command("open", "-a", "Finder").Run() == nil
+}
+
+func appActive() (active bool, supported bool) {
+	mygo.RunOnMain(func() { active = darwin.TestIsFrontmost() })
+	return active, true
+}
+
+func collectionBehavior(w *mygo.Window) (behavior uint, supported bool) {
+	mygo.RunOnMain(func() { behavior = darwin.TestCollectionBehavior(w.NativeHandle()) })
+	return behavior, true
 }
 
 func dockDevTools(w *mygo.Window) (ok bool) {
@@ -129,6 +174,8 @@ func titleButtons(*mygo.Window) ([]string, bool) { return nil, false }
 func pressTitleButton(*mygo.Window, string) bool { return false }
 
 func topNonClient(*mygo.Window) (int32, int32, bool) { return 0, 0, false }
+
+func menuBarColors(*mygo.Window) (uint32, uint32, bool) { return 0, 0, false }
 
 func titleButtonColor(*mygo.Window, string) (uint8, uint8, uint8, bool) { return 0, 0, 0, false }
 
@@ -245,3 +292,21 @@ func pressEscape(*mygo.Window) bool {
 	mygo.RunOnMain(func() { darwin.TestAppKey(53, "\x1b") })
 	return true
 }
+
+func documentChrome(w *mygo.Window) (title, file string, icon, edited, supported bool) {
+	mygo.RunOnMain(func() { title, file, icon, edited = darwin.TestDocumentChrome(w.NativeHandle()) })
+	return title, file, icon, edited, true
+}
+
+func sheet(w *mygo.Window) (texts, buttons []string, ok, supported bool) {
+	mygo.RunOnMain(func() { texts, buttons, ok = darwin.TestSheet(w.NativeHandle()) })
+	return texts, buttons, ok, true
+}
+
+func endSheetButton(w *mygo.Window, i int) (ok bool) {
+	mygo.RunOnMain(func() { ok = darwin.TestEndSheetButton(w.NativeHandle(), i) })
+	return ok
+}
+
+// Panels' window styles are Windows'.
+func panelStyles(*mygo.Window) (bool, bool, bool, bool) { return false, false, false, false }

@@ -79,6 +79,9 @@ func (w *window) SetTitle(t string) {
 
 func (w *window) Title() string { return w.title }
 
+func (w *window) SetRepresentedFile(string) {}
+func (w *window) SetDocumentEdited(bool)    {}
+
 // bounds returns the window's element's rectangle in the page.
 func (w *window) bounds() platform.Rect {
 	r := w.el.Call("getBoundingClientRect")
@@ -216,6 +219,7 @@ func (w *window) CanGoForward() bool                                       { ret
 func (w *window) URL() string                                              { return "" }
 func (w *window) IsLoading() bool                                          { return false }
 func (w *window) Eval(string)                                              {}
+func (w *window) SetUserScripts([]platform.UserScript)                     {}
 func (w *window) SetZoom(float64)                                          {}
 func (w *window) Zoom() float64                                            { return 1 }
 func (w *window) SetUserAgent(string)                                      {}

@@ -76,7 +76,9 @@ func coreRadioBase[T comparable](c *context, selected *T, value T) *node {
 // range unless Step says otherwise; Changed reports a new value, and
 // assistive technology sees a slider of that range. Draw its track and
 // thumb where (*value-lo)/(hi-lo) puts them, and pad it by half the
-// thumb's width to keep the thumb inside it:
+// thumb's width to keep the thumb inside it. Right to left
+// (Context.Direction), lo is at the right of the content box, as the
+// arrows go: draw it mirrored.
 //
 //	s := ui.SliderBase(c, &app.volume, 0, 100).Height(24).PaddingX(12)
 //	s.Draw(func(p *ui.Painter, r ui.Rect) {
@@ -93,9 +95,14 @@ func coreSliderBase(c *context, value *float64, lo, hi float64) *node {
 	return s
 }
 
-// sliderSettings are what Step and Vertical said of a slider as the last
-// frame built it, which the input since applies by.
+// sliderSettings are what Step and Vertical say of a slider in this
+// build, and what they said in the build before, which the input since
+// applies by: the slider the user dragged.
 type sliderSettings struct {
+	now, shown sliderOptions
+}
+
+type sliderOptions struct {
 	step     float64
 	vertical bool
 }
@@ -108,7 +115,8 @@ func sliderBase(c *context, value *float64, lo, hi, step float64) *node {
 	s := coreBox(c).Focusable()
 	s.flags |= flagDraggable | flagHover
 	s.widget = "Slider"
-	*coreLocal(s, sliderKey{}, func() sliderSettings { return sliderSettings{} }) = sliderSettings{}
+	set := coreLocal(s, sliderKey{}, func() sliderSettings { return sliderSettings{} })
+	set.shown, set.now = set.now, sliderOptions{}
 	*valueBinding[sliderValue](s) = sliderValue{value: value, lo: lo, hi: hi, step: step}
 	s.onValueInput(sliderInput)
 	if step <= 0 {
@@ -128,7 +136,7 @@ func (e *node) Step(step float64) *node {
 	}
 	e.accStep = step
 	if e.widget == "Slider" || e.widget == "SliderBase" {
-		coreLocal(e, sliderKey{}, func() sliderSettings { return sliderSettings{} }).step = step
+		coreLocal(e, sliderKey{}, func() sliderSettings { return sliderSettings{} }).now.step = step
 	}
 	return e
 }
@@ -139,7 +147,7 @@ func (e *node) Step(step float64) *node {
 // so.
 func (e *node) Vertical() *node {
 	if e.widget == "SliderBase" {
-		coreLocal(e, sliderKey{}, func() sliderSettings { return sliderSettings{} }).vertical = true
+		coreLocal(e, sliderKey{}, func() sliderSettings { return sliderSettings{} }).now.vertical = true
 		e.vertical = true
 	}
 	return e
@@ -205,10 +213,11 @@ func (p tabsParts) Tab(i int) *node {
 		if tab.Clicked() {
 			choose(i, false)
 		}
+		back, forth := tab.arrows()
 		switch {
-		case tab.Shortcut(0, KeyRight), tab.Shortcut(0, KeyDown):
+		case tab.Shortcut(0, forth), tab.Shortcut(0, KeyDown):
 			choose(i+1, true)
-		case tab.Shortcut(0, KeyLeft), tab.Shortcut(0, KeyUp):
+		case tab.Shortcut(0, back), tab.Shortcut(0, KeyUp):
 			choose(i-1, true)
 		case tab.Shortcut(0, KeyHome):
 			choose(0, true)
@@ -409,12 +418,13 @@ func (e *node) Highlighted() bool { return e.highlighted }
 // true: fn styles the panel and builds its content. Pressing outside the
 // panel and the anchor, or Escape, sets *open to false, which Dismissed
 // reports; the press goes on to what is under the pointer, as with the
-// web's popovers. Where there is
+// web's popovers. It starts at the anchor's start: its left, or its right
+// right to left (Direction). Where there is
 // no room below the anchor, the panel shows above it; a top margin keeps
 // it apart from the anchor on either side. fn may place it elsewhere with
-// AttachTo, as to the right of the anchor:
+// AttachTo, as after the anchor:
 //
-//	panel.AttachTo(anchor, ui.AnchorRight, ui.AnchorLeft).Margin(0, 0, 0, 6)
+//	panel.AttachTo(anchor, ui.AnchorEnd, ui.AnchorStart).MarginStart(6)
 //
 // It returns the panel, or nil while closed; Popover is PopoverBase with
 // the theme's look.
@@ -441,7 +451,7 @@ func popover(c *context, anchor *node, open *bool, modal bool, fn func(panel *no
 				dismissed = true
 			}
 		}
-		panel = coreBox(c).Role(RolePopup).AttachTo(anchor, AnchorBottomLeft, AnchorTopLeft)
+		panel = coreBox(c).Role(RolePopup).AttachTo(anchor, AnchorBottomStart, AnchorTopStart)
 		// Presses on it stay in it.
 		panel.flags |= flagClickable
 		panel.Children(func() { fn(panel) })

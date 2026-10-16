@@ -68,19 +68,20 @@ func setupChooser(fc ptr, defaultPath string, filters []platform.FileFilter, hid
 }
 
 func (d dialogs) ShowOpenDialog(parent platform.Window, o *platform.OpenDialogOptions, cb func([]string, error)) {
+	tx := platform.CurrentTexts()
 	action := int32(0) // GTK_FILE_CHOOSER_ACTION_OPEN
-	title := "Open"
+	title := tx.Open
 	if o.OpenDirectories {
-		action, title = 2, "Select Folder" // SELECT_FOLDER
+		action, title = 2, tx.SelectFolder // SELECT_FOLDER
 	}
 	if o.Title != "" {
 		title = o.Title
 	}
-	accept := "_Open"
+	accept := "_" + tx.Open
 	if o.ButtonLabel != "" {
 		accept = o.ButtonLabel
 	}
-	fc := gtkFileChooserNativeNew(cs(title), parentWindow(parent), action, cs(accept), cs("_Cancel"))
+	fc := gtkFileChooserNativeNew(cs(title), parentWindow(parent), action, cs(accept), cs("_"+tx.Cancel))
 	gtkFileChooserSetSelectMultiple(fc, o.Multiple)
 	setupChooser(fc, o.DefaultPath, o.Filters, o.ShowHiddenFiles, false)
 	var paths []string
@@ -92,15 +93,16 @@ func (d dialogs) ShowOpenDialog(parent platform.Window, o *platform.OpenDialogOp
 }
 
 func (d dialogs) ShowSaveDialog(parent platform.Window, o *platform.SaveDialogOptions, cb func(string, error)) {
+	tx := platform.CurrentTexts()
 	title := o.Title
 	if title == "" {
-		title = "Save"
+		title = tx.Save
 	}
-	accept := "_Save"
+	accept := "_" + tx.Save
 	if o.ButtonLabel != "" {
 		accept = o.ButtonLabel
 	}
-	fc := gtkFileChooserNativeNew(cs(title), parentWindow(parent), 1, cs(accept), cs("_Cancel")) // SAVE
+	fc := gtkFileChooserNativeNew(cs(title), parentWindow(parent), 1, cs(accept), cs("_"+tx.Cancel)) // SAVE
 	gtkFileChooserSetDoOverwriteConfirm(fc, true)
 	setupChooser(fc, o.DefaultPath, o.Filters, o.ShowHiddenFiles, true)
 	path := ""

@@ -3,13 +3,14 @@ package ui
 import (
 	"maps"
 	"slices"
+	"strconv"
 )
 
 // TableColumn describes a column of a Table.
 type TableColumn struct {
 	// Title heads the column. ID identifies it among the others, for the
 	// order and the widths the user gives the columns (ListState.Columns)
-	// and for the sort (ListState.Sort): the Title when empty.
+	// and for the sort (ListState.Sort and SortBy): the Title when empty.
 	Title, ID string
 	// Width is the column's width in DIPs, or 0 to share the room the
 	// others leave. The user resizes the column by dragging the right edge
@@ -19,7 +20,7 @@ type TableColumn struct {
 	// Align aligns the content of its cells.
 	Align Align
 	// Sortable lets a click on the column's header sort the rows by it,
-	// with ListState.Sort.
+	// with ListState.Sort or SortBy.
 	Sortable bool
 	// Fixed keeps the column where it is and as wide as it is: the user
 	// neither moves nor resizes it.
@@ -124,7 +125,9 @@ type tableDrag struct {
 // The user resizes columns by dragging the edges of their headers, and
 // moves them by dragging the headers, which s.Columns keeps; columns wider
 // than the table scroll sideways, the header with them. With s.Sort, a
-// click on the header of a Sortable column sorts the rows by it.
+// click on the header of a Sortable column sorts the rows by it; with
+// s.SortBy, a Cmd-click or a Shift-click sorts by it after the others;
+// with s.HeaderMenu, the header has a context menu.
 //
 //	cols := []ui.TableColumn{{Title: "Name", Sortable: true}, {Title: "Size", Width: 90, Align: ui.End, Sortable: true}}
 //	app.files.Selected, app.files.Sort = &app.file, &app.sort
@@ -158,6 +161,7 @@ func table(c *context, s *ListState, columns []TableColumn, n int, cell func(row
 		s = coreLocal(table, "rows", func() ListState { return ListState{} })
 	}
 	drag := coreLocal(table, "drag", func() tableDrag { return tableDrag{} })
+	s.syncSort()
 	layout := &s.Columns
 	order := layout.arrange(columns)
 	// The least width of the rows: the columns', those sharing the room
@@ -204,16 +208,25 @@ func table(c *context, s *ListState, columns []TableColumn, n int, cell func(row
 	table.Children(func() {
 		// The header, which scrolls sideways with the rows.
 		head := coreRow(c).Height(tableRow).Shrink(0).AlignItems(Stretch).Role(RoleRow).Clip()
+		if menu := s.HeaderMenu; menu != nil {
+			// The part of the header past the columns, as AppKit's
+			// clickedColumn -1.
+			head.ContextMenu(func(m *Menu) { menu(m, -1) })
+		}
 		head.Children(func() {
 			heads := cells(RoleColumnHeader, func(j int) {
 				col := &columns[j]
 				coreText(c, col.Title).SingleLine().FontWeight(600).TextColor(t.TextMuted)
-				if s.Sort != nil && col.Sortable && s.Sort.Column == col.id() {
-					sortArrow(c, s.Sort.Descending)
+				if at, descending := s.sortPlace(col); at >= 0 {
+					place := 0
+					if s.SortBy != nil && len(*s.SortBy) > 1 {
+						place = at + 1
+					}
+					sortArrow(c, descending, place)
 				}
 			})
 			for k, j := range order {
-				tableHeader(c, table, heads[k], &columns[j], s, drag, heads, order, columns)
+				tableHeader(c, table, heads[k], j, s, drag, heads, order, columns)
 			}
 		})
 		coreDivider(c)
@@ -261,19 +274,25 @@ func table(c *context, s *ListState, columns []TableColumn, n int, cell func(row
 	return table
 }
 
-// tableHeader makes a column's header sort the rows when clicked, move the
-// column when dragged, and resize it from its right edge.
-func tableHeader(c *context, table, h *node, col *TableColumn, s *ListState, drag *tableDrag, heads []*node, order []int, columns []TableColumn) {
+// tableHeader makes the header of columns[j] sort the rows when clicked,
+// move the column when dragged, resize it from its end edge (the right,
+// or the left right to left), and open s.HeaderMenu.
+func tableHeader(c *context, table, h *node, j int, s *ListState, drag *tableDrag, heads []*node, order []int, columns []TableColumn) {
 	t := c.theme
+	col := &columns[j]
 	id := col.id()
-	if s.Sort != nil && col.Sortable {
-		h.sort = 1
-		if s.Sort.Column == id && s.Sort.Descending {
-			h.sort = 2
+	if menu := s.HeaderMenu; menu != nil {
+		h.ContextMenu(func(m *Menu) { menu(m, j) })
+	}
+	if s.sorts() && col.Sortable {
+		h.sort = 0
+		if at, descending := s.sortPlace(col); at >= 0 {
+			h.sort = 1
+			if descending {
+				h.sort = 2
+			}
 		}
-		if s.Sort.Column != id {
-			h.sort = 0
-		}
+		h.Label(col.Title) // the title alone, not the place number beside it
 		h.flags |= flagClickable | flagHover
 		h.styleFn = func(h *node) {
 			if h.Hovered() {
@@ -303,11 +322,14 @@ func tableHeader(c *context, table, h *node, col *TableColumn, s *ListState, dra
 		}
 	}
 	h.afterInput(func() {
-		if s.Sort != nil && col.Sortable && h.Clicked() {
-			if s.Sort.Column == id {
-				s.Sort.Descending = !s.Sort.Descending
+		if s.sorts() && col.Sortable && h.Clicked() {
+			if s.SortBy != nil {
+				// Cmd-click as Finder, Shift-click as web grids (TanStack
+				// Table, AG Grid, MUI).
+				*s.SortBy = sortClicked(*s.SortBy, id, h.ClickModifiers()&(Cmd|Shift) != 0)
+				s.syncSort()
 			} else {
-				*s.Sort = SortOrder{Column: id}
+				*s.Sort = sortClicked([]SortOrder{*s.Sort}, id, false)[0]
 			}
 			table.st.markChanged()
 		}
@@ -319,13 +341,18 @@ func tableHeader(c *context, table, h *node, col *TableColumn, s *ListState, dra
 	// double click.
 	grip := t.Space(2)
 	h.Children(func() {
-		edge := coreBox(c).Absolute().Top(0).Bottom(0).Right(0).Width(grip).Cursor(CursorResizeEW).Role(RoleNone)
+		edge := coreBox(c).Absolute().Top(0).Bottom(0).End(0).Width(grip).Cursor(CursorResizeEW).Role(RoleNone)
+		rtl := edge.rtl()
 		edge.flags |= flagHover
 		if edge.DoubleClicked() {
 			drag.fit = id
 			c.rt.consumed = true
 		}
 		if dx, _, held := edge.Dragged(); held && dx != 0 {
+			if rtl {
+				// The edge is on the left: dragging it left widens.
+				dx = -dx
+			}
 			// The columns before it sharing the room left keep their
 			// widths, for the edge to follow the pointer: the room the
 			// column takes or gives comes from the columns after it, or
@@ -346,6 +373,9 @@ func tableHeader(c *context, table, h *node, col *TableColumn, s *ListState, dra
 		}
 		edge.Draw(func(p *Painter, r Rect) {
 			x := r.X + r.W - 0.5
+			if rtl {
+				x = r.X + 0.5
+			}
 			color := t.Border
 			if edge.Hovered() || edge.Pressed() {
 				color = t.Accent
@@ -374,13 +404,19 @@ func moveColumn(c *context, s *ListState, drag *tableDrag, heads []*node, order 
 		return
 	}
 	to := at
+	// The columns after it are to its left right to left.
+	sign := float32(1)
+	if heads[at].rtl() {
+		sign = -1
+	}
+	dx := drag.dx * sign
 	switch {
-	case drag.dx > 0 && at+1 < len(order):
-		if next := heads[at+1].Bounds(); next.W > 0 && drag.dx > next.W/2 {
+	case dx > 0 && at+1 < len(order):
+		if next := heads[at+1].Bounds(); next.W > 0 && dx > next.W/2 {
 			to = at + 1
 		}
-	case drag.dx < 0 && at > 0:
-		if prev := heads[at-1].Bounds(); prev.W > 0 && -drag.dx > prev.W/2 {
+	case dx < 0 && at > 0:
+		if prev := heads[at-1].Bounds(); prev.W > 0 && -dx > prev.W/2 {
 			to = at - 1
 		}
 	}
@@ -390,9 +426,9 @@ func moveColumn(c *context, s *ListState, drag *tableDrag, heads []*node, order 
 	// Under the pointer still: the column's place moved by the other's
 	// width.
 	if to > at {
-		drag.dx -= heads[to].Bounds().W
+		drag.dx -= sign * heads[to].Bounds().W
 	} else {
-		drag.dx += heads[to].Bounds().W
+		drag.dx += sign * heads[to].Bounds().W
 	}
 	ids := make([]string, len(order))
 	for k, j := range order {
@@ -436,10 +472,73 @@ func (tf *tableFit) apply() {
 	tf.layout.Widths[tf.id] = w
 }
 
-// sortArrow draws the arrow of the column the rows are sorted by.
-func sortArrow(c *context, descending bool) {
+// syncSort keeps Sort, when set with SortBy, the first column SortBy sorts
+// by, or the zero SortOrder when it sorts by none.
+func (s *ListState) syncSort() {
+	if s.Sort == nil || s.SortBy == nil {
+		return
+	}
+	var first SortOrder
+	if by := *s.SortBy; len(by) > 0 {
+		first = by[0]
+	}
+	*s.Sort = first
+}
+
+// sorts reports whether a Table's headers sort its rows.
+func (s *ListState) sorts() bool { return s.Sort != nil || s.SortBy != nil }
+
+// sortPlace returns the place of col among the columns the rows are sorted
+// by, from 0, and whether it sorts them descending, or -1.
+func (s *ListState) sortPlace(col *TableColumn) (int, bool) {
+	if !col.Sortable {
+		return -1, false
+	}
+	id := col.id()
+	if s.SortBy != nil {
+		for i, o := range *s.SortBy {
+			if o.Column == id {
+				return i, o.Descending
+			}
+		}
+		return -1, false
+	}
+	if s.Sort != nil && s.Sort.Column == id {
+		return 0, s.Sort.Descending
+	}
+	return -1, false
+}
+
+// sortClicked returns, as a new slice, the columns sorted by after a click
+// on the header of the column whose ID is id, a Cmd-click when add.
+func sortClicked(by []SortOrder, id string, add bool) []SortOrder {
+	i := slices.IndexFunc(by, func(o SortOrder) bool { return o.Column == id })
+	if !add {
+		if i == 0 {
+			return []SortOrder{{Column: id, Descending: !by[0].Descending}}
+		}
+		return []SortOrder{{Column: id}}
+	}
+	by = slices.Clone(by)
+	switch {
+	case i < 0:
+		return append(by, SortOrder{Column: id})
+	case !by[i].Descending:
+		by[i].Descending = true
+		return by
+	default:
+		return slices.Delete(by, i, i+1)
+	}
+}
+
+// sortArrow draws the arrow of a column the rows are sorted by, after its
+// place among them from 1, or alone for 0.
+func sortArrow(c *context, descending bool, place int) {
 	t := c.theme
-	coreBox(c).Size(t.Space(2.5), t.Space(2.5)).Shrink(0).Margin(0, 0, 0, t.Space(1)).Draw(func(p *Painter, r Rect) {
+	if place > 0 {
+		coreText(c, strconv.Itoa(place)).FontSize(t.FontSize * 0.75).TextColor(t.TextMuted).Shrink(0).MarginStart(t.Space(1)).Role(RoleNone)
+	}
+	coreBox(c).Size(t.Space(2.5), t.Space(2.5)).Shrink(0).MarginStart(t.Space(1)).Draw(func(p *Painter, r Rect) {
 		var path Path
 		if descending {
 			path.MoveTo(r.X+r.W*0.1, r.Y+r.H*0.3).LineTo(r.X+r.W*0.5, r.Y+r.H*0.7).LineTo(r.X+r.W*0.9, r.Y+r.H*0.3)

@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 	"unsafe"
+
+	"github.com/egoist/mygo/internal/wait"
 )
 
 // uinput makes virtual input devices.
@@ -88,21 +90,15 @@ func testEvdev(t *testing.T, vendor uint16, west uint16) {
 	defer syscall.Syscall(syscall.SYS_IOCTL, uintptr(fd), uiDevDestroy, 0)
 
 	var pad *Pad
-	for range 50 {
+	wait.Until(t, "the virtual pad", func() bool {
 		scanned = time.Time{}
 		for _, p := range Pads() {
 			if p.Name() == "Virtual Pad" {
 				pad = p
 			}
 		}
-		if pad != nil {
-			break
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	if pad == nil {
-		t.Fatal("the virtual pad does not show")
-	}
+		return pad != nil
+	})
 	emit := func(typ, code uint16, value int32) {
 		var e [24]byte
 		binary.LittleEndian.PutUint16(e[16:], typ)
@@ -119,7 +115,8 @@ func testEvdev(t *testing.T, vendor uint16, west uint16) {
 	emit(evAbs, absRZ, 255)
 	emit(evAbs, absHat0Y, -1)
 	emit(0, 0, 0) // SYN_REPORT
-	time.Sleep(20 * time.Millisecond)
+	// State drains what the kernel passed on so far: wait until it has.
+	wait.Until(t, "the report read", func() bool { return pad.State().Axes[LeftX] >= 0.99 })
 	s := pad.State()
 	for _, b := range []Button{South, West, RightTrigger, Up} {
 		if !s.Pressed(b) {
@@ -136,13 +133,7 @@ func testEvdev(t *testing.T, vendor uint16, west uint16) {
 	}
 	emit(evKey, btnSouth, 0)
 	emit(0, 0, 0)
-	time.Sleep(20 * time.Millisecond)
-	if pad.State().Pressed(South) {
-		t.Error("South still pressed after its release")
-	}
+	wait.Until(t, "South released", func() bool { return !pad.State().Pressed(South) })
 	set(uiDevDestroy, 0)
-	time.Sleep(50 * time.Millisecond)
-	if pad.State(); pad.Connected() {
-		t.Error("the pad is still connected once destroyed")
-	}
+	wait.Until(t, "the pad disconnected once destroyed", func() bool { pad.State(); return !pad.Connected() })
 }

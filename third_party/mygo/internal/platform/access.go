@@ -54,6 +54,31 @@ type AccessNode struct {
 	// (Surface.NewWebView): assistive technology finds the page's elements
 	// inside it, and it has no children of its own.
 	WebView WebView
+	// TextRuns are the formats of the runes of a text field's Value, as a
+	// rich text editor's: runs in order, from rune Start to End, that
+	// screen readers read as bold, italic, links and headings. Runes no
+	// run holds take the text's default font. Empty for plain text.
+	TextRuns []AccessTextRun
+}
+
+// AccessTextRun is a run of the Value of a text field with formats of its
+// own (AccessNode.TextRuns).
+type AccessTextRun struct {
+	// Start and End are the run's runes of Value.
+	Start, End int
+	// Family is its font's family, "" for the system's; Size its size in
+	// DIPs, 0 for the text's; Weight from 100 to 900, 0 for 400.
+	Family                           string
+	Size                             float32
+	Weight                           int
+	Italic, Underline, Strikethrough bool
+	// Color and Background are RGBA, transparent where unset.
+	Color, Background [4]uint8
+	// Link is the URL the run links to.
+	Link string
+	// Heading is the level of the heading the run is in, from 1, 0 in a
+	// body paragraph.
+	Heading int
 }
 
 // AccessRole is the kind of an element of an AccessTree.
@@ -200,4 +225,6 @@ const (
 	AccessScrollIntoView
 	AccessExpand
 	AccessCollapse
+	// AccessSelectText selects runes From to To of a text field's Value.
+	AccessSelectText
 )

@@ -5,15 +5,18 @@ package mygo
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"image/png"
 	"log"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/egoist/mygo/internal/fake"
 	"github.com/egoist/mygo/internal/platform"
+	"github.com/egoist/mygo/internal/wait"
 	"github.com/egoist/mygo/ui"
 )
 
@@ -49,7 +52,7 @@ func TestContentReadyToShow(t *testing.T) {
 	onMain(func() { s.Frame() })
 	select {
 	case <-ready:
-	case <-time.After(5 * time.Second):
+	case <-time.After(wait.Guard):
 		t.Fatal("not ready after its first frame")
 	}
 	w.Invalidate()
@@ -336,5 +339,32 @@ func TestContentDuplicateKeyTellsWhere(t *testing.T) {
 	_, _, _ = contentWindow(t, view)
 	if s := out.String(); !strings.Contains(s, "key 1") || !strings.Contains(s, "content_test.go:") {
 		t.Errorf("a duplicate key logs %q", s)
+	}
+}
+
+// TestContentMenuRightToLeft shows the context menu of an element laid
+// out right to left right to left, and others left to right.
+func TestContentMenuRightToLeft(t *testing.T) {
+	view := func(c *ui.Context) {
+		ui.Row(c).Fill().Children(func() {
+			ui.Box(c).Size(100, 100).ContextMenu(func(m *ui.Menu) { m.Item("Left to right") })
+			ui.Row(c).Direction(ui.RightToLeft).Size(100, 100).ContextMenu(func(m *ui.Menu) { m.Item("Right to left") })
+		})
+	}
+	_, _, s := contentWindow(t, view)
+	for _, x := range []float64{50, 150} {
+		onMain(func() {
+			s.Send(platform.SurfaceEvent{Kind: platform.PointerDown, X: x, Y: 50, Button: 1})
+			s.Send(platform.SurfaceEvent{Kind: platform.PointerUp, X: x, Y: 50, Button: 1})
+			s.Frame()
+		})
+		onMain(func() {}) // the menu, posted
+	}
+	var got []string
+	for _, p := range fb.Popups() {
+		got = append(got, fmt.Sprintf("%s %v", p.Menu.Items[0].Label, p.Menu.RightToLeft))
+	}
+	if want := []string{"Left to right false", "Right to left true"}; !slices.Equal(got, want) {
+		t.Errorf("the menus shown are %q, want %q", got, want)
 	}
 }

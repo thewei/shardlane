@@ -32,7 +32,7 @@ func TestSelectableContainerMultiClick(t *testing.T) {
 	}, 300, 150)
 	for _, unit := range []int{2, 3} {
 		x, y := selectableAt(t, tt, "Alpha beta", 7)
-		tt.rt.lastPress.at = time.Time{}
+		tt.clicks = platform.ClickCounter{}
 		for range unit - 1 {
 			tt.ClickAt(x, y)
 		}
@@ -128,7 +128,7 @@ func selectBetween(t *testing.T, tt *Tester, first string, from int, last string
 	t.Helper()
 	x0, y0 := selectableAt(t, tt, first, from)
 	x1, y1 := selectableAt(t, tt, last, to)
-	tt.rt.lastPress.at = time.Time{} // each drag is a new gesture
+	tt.clicks = platform.ClickCounter{} // each drag is a new gesture
 	tt.Press(x0, y0)
 	tt.Move(x1, y1)
 	tt.Release(x1, y1)

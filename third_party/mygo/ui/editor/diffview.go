@@ -94,7 +94,10 @@ type DiffState struct {
 	expandV     int
 	selected    DiffLineRange
 	hasSel      bool
-	prepared    diffPrepared
+	// oldActive is set while the old side of a split view has the
+	// keyboard, and stays after it goes, until the new side has it.
+	oldActive bool
+	prepared  diffPrepared
 	// blocksV counts the blocks prepare made, and built is the geometry
 	// the separators and buttons were built for, which a frame changing
 	// it builds again (diffGeom).
@@ -283,45 +286,133 @@ func (d *DiffState) SetSelectedLines(r DiffLineRange, ok bool) {
 	d.selected, d.hasSel = r, ok
 }
 
-// GoToHunk puts the new side's caret at the start of hunk i and scrolls
-// it to the middle of the view.
+// GoToHunk puts the caret of the active side (ActiveSide) at the start
+// of hunk i and scrolls it to the middle of the view.
 func (d *DiffState) GoToHunk(i int) {
 	d.ensure()
 	if i < 0 || i >= len(d.model.hunks) {
 		return
 	}
 	h := d.model.hunks[i]
-	ed := d.newEditor()
+	side := d.ActiveSide()
+	ed := d.editorOf(side)
+	line := h.B0
+	if side == DiffOld {
+		line = h.A0
+	}
 	r := &ed.view.text
-	off := r.LineStart(min(h.B0, r.LineCount()-1))
+	off := r.LineStart(min(line, r.LineCount()-1))
 	ed.setSels([]sel{ed.newSel(off, off)}, revealCenter)
 }
 
-func (d *DiffState) newEditor() *editor { return &d.eds[1] }
+// Run runs a command in the editor of the active side (ActiveSide), as
+// its key would, and reports whether it did something: Find opens its
+// find bar, as an app's menu item does.
+func (d *DiffState) Run(cmd Command) bool {
+	ed := d.editorOf(d.ActiveSide())
+	return ed.retry(func() bool { return ed.run(cmd) })
+}
+
+// Find opens the find bar of the active side's editor (ActiveSide) with
+// query, and selects its first match after the caret.
+func (d *DiffState) Find(query string) {
+	ed := d.editorOf(d.ActiveSide())
+	f := &ed.find
+	f.open, f.query, f.stale = true, query, true
+	f.step(ed, 1)
+}
+
+// ActiveSide returns the side that has the keyboard, or had it last: the
+// new side before either had it, and in a unified view. Cursor,
+// CursorPos, CurrentHunk, GoToHunk, Run and Find act in its editor.
+func (d *DiffState) ActiveSide() DiffSide {
+	if d.oldActive && d.Layout == DiffSplit {
+		return DiffOld
+	}
+	return DiffNew
+}
+
+// Cursor returns the offset of the newest caret of the active side, in
+// its text.
+func (d *DiffState) Cursor() int {
+	return d.editorOf(d.ActiveSide()).primary().head
+}
+
+// CursorPos returns the line and column of the newest caret of the
+// active side, in its text.
+func (d *DiffState) CursorPos() Pos {
+	ed := d.editorOf(d.ActiveSide())
+	return posOf(ed.view.text, ed.primary().head)
+}
+
+// CurrentHunk returns the hunk the caret of the active side is in, with
+// inside true, as for Revert; else the last hunk before the caret, as
+// "2 of 5" counts changes and Next Change steps from (GoToHunk(i+1)), or
+// -1 before the first. On a side the hunk has no lines of, as the new
+// side of a deletion, the caret is in it on the line where its lines
+// were.
+func (d *DiffState) CurrentHunk() (i int, inside bool) {
+	side := d.ActiveSide()
+	ed := d.editorOf(side)
+	line := ed.view.text.LineOf(ed.primary().head)
+	if j := d.model.hunkAt(line, side == DiffOld); j >= 0 {
+		return j, true
+	}
+	i = -1
+	for j, h := range d.model.hunks {
+		start := h.B0
+		if side == DiffOld {
+			start = h.A0
+		}
+		if start > line {
+			break
+		}
+		i = j
+	}
+	return i, false
+}
+
+// editorOf returns the editor of a side, made ready to act in before the
+// viewer is first built.
+func (d *DiffState) editorOf(side DiffSide) *editor {
+	d.ensure()
+	ed, buf := &d.eds[side], d.New
+	if side == DiffOld {
+		buf = d.Old
+	}
+	if ed.view.buf != buf || ed.sels == nil {
+		ed.init(buf, d.sideOptions(side == DiffOld), ui.LightTheme())
+	}
+	ed.sync()
+	return ed
+}
+
+// sideOptions are the options of the editor of the old side, or the new.
+func (d *DiffState) sideOptions(old bool) options {
+	// Both gutters as wide, so that both sides wrap alike.
+	digits := max(3, len(strconv.Itoa(max(d.Old.LineCount(), d.New.LineCount()))))
+	o := options{
+		readOnly: old || !d.Editable, font: d.Font, lineHeight: d.LineHeight, tabSize: d.TabSize,
+		wrap: d.Wrap, lineNumbers: LineNumbersOn, whitespace: WhitespaceNone, autoClose: true,
+		theme: d.Theme, bindings: d.Bindings, fitContent: d.FitContent, minDigits: digits,
+		renderFindBar: d.RenderFindBar, renderGoToLine: d.RenderGoToLine,
+	}
+	if d.NoLineNumbers {
+		o.lineNumbers = LineNumbersOff
+	}
+	o.diffSide = diffNewSide
+	if old {
+		o.diffSide = diffOldSide
+	}
+	return o
+}
 
 // DiffView builds the diff viewer.
 func DiffView(c *ui.Context, d *DiffState) ui.Element {
 	d.ensure()
 	t := c.Theme()
 	ct := d.Theme.resolve(t)
-	// Both gutters as wide, so that both sides wrap alike.
-	digits := max(3, len(strconv.Itoa(max(d.Old.LineCount(), d.New.LineCount()))))
-	opts := func(old bool) options {
-		o := options{
-			readOnly: old || !d.Editable, font: d.Font, lineHeight: d.LineHeight, tabSize: d.TabSize,
-			wrap: d.Wrap, lineNumbers: LineNumbersOn, whitespace: WhitespaceNone, autoClose: true,
-			theme: d.Theme, bindings: d.Bindings, fitContent: d.FitContent, minDigits: digits,
-			renderFindBar: d.RenderFindBar, renderGoToLine: d.RenderGoToLine,
-		}
-		if d.NoLineNumbers {
-			o.lineNumbers = LineNumbersOff
-		}
-		o.label = "New text"
-		if old {
-			o.label = "Old text"
-		}
-		return o
-	}
+	opts := d.sideOptions
 	d.sides[0] = diffSide{d: d, old: true, hide: d.sides[0].hide, blks: d.sides[0].blks}
 	d.sides[1] = diffSide{d: d, unified: d.Layout == DiffUnified, hide: d.sides[1].hide, blks: d.sides[1].blks}
 	if d.Layout == DiffUnified {
@@ -333,7 +424,7 @@ func DiffView(c *ui.Context, d *DiffState) ui.Element {
 		if d.Indicators == DiffClassic {
 			o.signs = true
 		}
-		root := ui.Box(c).Clip()
+		root := ui.Box(c).Direction(ui.LeftToRight).Clip()
 		root.Draw(func(p *ui.Painter, r ui.Rect) {
 			ed := &d.eds[1]
 			ed.layout(r.W, r.H, p.Scale())
@@ -358,7 +449,8 @@ func DiffView(c *ui.Context, d *DiffState) ui.Element {
 	}
 	// Side by side: two editors sharing their scroll.
 	d.scroll.eds = []*editor{&d.eds[0], &d.eds[1]}
-	row := ui.Row(c).Clip()
+	// The old text on the left, as code reads left to right.
+	row := ui.Row(c).Direction(ui.LeftToRight).Clip()
 	row.Draw(func(p *ui.Painter, r ui.Rect) {
 		w := (r.W - 1) / 2
 		for i := range d.eds {
@@ -399,6 +491,9 @@ func DiffView(c *ui.Context, d *DiffState) ui.Element {
 			ed.Grow(1).Basis(0).FillHeight()
 			if i == 0 {
 				ui.Box(c).Width(1).FillHeight().Background(ct.Background.Mix(t.Border, 0.6))
+			}
+			if d.eds[i].focused {
+				d.oldActive = i == 0
 			}
 		}
 		d.buildSeparators(c, ct)

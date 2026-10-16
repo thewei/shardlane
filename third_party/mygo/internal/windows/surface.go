@@ -3,6 +3,7 @@
 package windows
 
 import (
+	"time"
 	"unicode/utf16"
 	"unsafe"
 
@@ -25,6 +26,9 @@ var (
 	procEndPaint              = user32.NewProc("EndPaint")
 	procRedrawWindow          = user32.NewProc("RedrawWindow")
 	procSystemParametersInfoW = user32.NewProc("SystemParametersInfoW")
+	procGetDoubleClickTime    = user32.NewProc("GetDoubleClickTime")
+	procGetMessageTime        = user32.NewProc("GetMessageTime")
+	procGetSystemMetrics      = user32.NewProc("GetSystemMetrics")
 	procSetDIBitsToDevice     = gdi32.NewProc("SetDIBitsToDevice")
 	procImmGetContext         = imm32.NewProc("ImmGetContext")
 	procImmReleaseContext     = imm32.NewProc("ImmReleaseContext")
@@ -119,6 +123,7 @@ type surface struct {
 	paintDC  uintptr
 	tracking bool
 	buttons  int
+	clicks   platform.ClickCounter
 	cursor   platform.Cursor
 	high     uint16 // a high surrogate of WM_CHAR waiting for its pair
 	ime      bool
@@ -307,7 +312,9 @@ func cursorHandle(c platform.Cursor) uintptr {
 }
 
 func (s *surface) SetTextInput(t platform.TextInputState) {
-	active, caret := t.Active, t.Caret
+	// Without input methods, the window has no input context: keys type
+	// the layout's characters, as WM_CHAR, as winit's do.
+	active, caret := t.Active && !t.NoInputMethod, t.Caret
 	if s.input.Active && s.input.Client != t.Client {
 		s.clientComposition.Reset()
 		if himc, _, _ := procImmGetContext.Call(s.hwnd); himc != 0 {
@@ -393,9 +400,30 @@ func mods() platform.Modifiers {
 	return m
 }
 
+// systemMetric is GetSystemMetrics' metric for the DPI of the window hwnd.
+func systemMetric(metric, hwnd uintptr) uintptr {
+	if has(procGetSystemMetricsForDpi) {
+		if n, _, _ := procGetSystemMetricsForDpi.Call(metric, uintptr(dpiOf(hwnd))); n != 0 {
+			return n
+		}
+	}
+	n, _, _ := procGetSystemMetrics.Call(metric)
+	return n
+}
+
 func (s *surface) pointer(kind platform.SurfaceEventKind, lp uintptr, button int) {
 	x, y := int16(loword(lp)), int16(hiword(lp))
-	s.send(platform.SurfaceEvent{Kind: kind, X: s.toDIP(int32(x)), Y: s.toDIP(int32(y)), Button: button, Mods: mods()})
+	clicks := 0
+	if kind == platform.PointerDown {
+		// A press carries no count: it follows the double-click time and
+		// the rectangle centered on the last press, in the window's pixels,
+		// as set.
+		ms, _, _ := procGetDoubleClickTime.Call()
+		at, _, _ := procGetMessageTime.Call()
+		w, h := systemMetric(smCxDoubleClk, s.hwnd), systemMetric(smCyDoubleClk, s.hwnd)
+		clicks = s.clicks.Press(button, float64(x), float64(y), uint32(at), platform.DoubleClick{Time: time.Duration(ms) * time.Millisecond, DX: float64(w) / 2, DY: float64(h) / 2})
+	}
+	s.send(platform.SurfaceEvent{Kind: kind, X: s.toDIP(int32(x)), Y: s.toDIP(int32(y)), Button: button, Clicks: clicks, Mods: mods()})
 }
 
 func (s *surface) message(hwnd uintptr, m uint32, wp, lp uintptr) (uintptr, bool) {

@@ -52,6 +52,35 @@ ui.TextArea(c, &app.notes).Height(160)
   })
   ```
 
+- `OnTextKey(fn)` sees a key that types no text before the input takes
+  it: Enter, Tab, Escape, Backspace and Delete, the arrows and the other
+  keys that move the caret, and chords with Cmd or Ctrl, as AppKit's
+  `doCommandBySelector` and a web page's `keydown` do. fn runs as the key
+  comes, after the keys and text typed before it, and returning true takes
+  the key: a text area inserts no newline, a `TextInput` does not submit,
+  Tab does not move the focus. A key left goes on as without fn. Keys that
+  a `Shortcut` around the focus handles go to it first, as with
+  `HandleInput`, unless the input edits with them, as with Enter and the
+  arrows. fn may run between frames, so it reads the text and replaces it
+  through its `ui.TextKey` rather than an `Element` kept from the view
+  (they panic once fn returns), as a chat composer sends with Enter, breaks
+  the line with Shift+Enter, and puts the last message back with Up:
+
+  ```go
+  ui.TextArea(c, &app.draft).Lines(1, 8).OnTextKey(func(k ui.TextKey) bool {
+  	switch {
+  	case k.Key == ui.KeyEnter && k.Mods == 0:
+  		app.send(k.Text())
+  		k.SetText("")
+  		return true
+  	case k.Key == ui.KeyUp && k.Mods == 0 && k.Text() == "":
+  		k.SetText(app.lastSent())
+  		return true
+  	}
+  	return false // Shift+Enter breaks the line
+  })
+  ```
+
 A `TextInput` too narrow for its text keeps the caret in view while it has
 the focus, and shows the start of its text without it.
 
@@ -65,9 +94,22 @@ for _, m := range mentions(app.draft) {
 }
 ```
 
-The ranges are runes of the text, found in it each frame, and do not
-overlap; a password shows none. While an input method composes, its text
-sits unstyled at the caret and the ranges keep their style around it.
+The ranges are runes of the text, found in it each frame. They may overlap
+and nest, as the attributes of an attributed string (`NSAttributedString`)
+do: a range sets its `Color` when its alpha is not zero and its `Weight`
+when it is not zero, and where ranges overlap, each of the two is the last
+given range's that sets it, across the calls of the frame. A bold range
+with a colored mention inside it shows the mention bold and colored:
+
+```go
+in.TextRanges(
+	ui.TextRange{Start: 0, End: 40, Weight: 700},
+	ui.TextRange{Start: 10, End: 16, Color: t.Accent},
+)
+```
+
+A password shows none. While an input method composes, its text sits
+unstyled at the caret and the ranges keep their style around it.
 
 A text area is at least a few lines high and grows with its text; given a
 height, it scrolls within it, with the wheel and a scroll bar, and keeps
@@ -112,6 +154,17 @@ if start, _ := input.TextSelection(); app.completed != "" {
 	app.draft, start = complete(app.draft, start, app.completed)
 	input.SetTextSelection(start, start)
 }
+```
+
+`TextSelection` returns the selection in order. `TextAnchorCaret` returns
+it from where it was started to its caret, so an app can tell a selection
+made backwards from one made forwards: an editor's own keys that extend a
+selection, such as Shift-Home moving to the first character of the line,
+extend it from its anchor:
+
+```go
+anchor, caret := input.TextAnchorCaret()
+input.SetTextSelection(anchor, lineStart(app.draft, caret))
 ```
 
 ## Beside the lines

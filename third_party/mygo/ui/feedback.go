@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"fmt"
 	"runtime"
 )
 
@@ -40,7 +39,7 @@ func coreCheckboxGroup(c *context, label string, fn func()) *node {
 		saved := c.checks
 		group = &checkGroup{}
 		c.checks = group
-		boxes := coreColumn(c).Gap(t.Space(2)).Padding(0, 0, 0, t.Space(6)).Role(RoleGroup).Label(label)
+		boxes := coreColumn(c).Gap(t.Space(2)).PaddingStart(t.Space(6)).Role(RoleGroup).Label(label)
 		boxes.Children(fn)
 		c.checks = saved
 		on := 0
@@ -116,10 +115,16 @@ func coreBreadcrumbs(c *context, items []string, chosen *int) *node {
 	e.Children(func() {
 		for i, item := range items {
 			if i > 0 {
-				coreBox(c).Size(t.Space(3), t.Space(3)).Shrink(0).Role(RoleNone).Draw(func(p *Painter, r Rect) {
+				sep := coreBox(c).Size(t.Space(3), t.Space(3)).Shrink(0).Role(RoleNone)
+				rtl := sep.rtl()
+				sep.Draw(func(p *Painter, r Rect) {
 					cx, cy, d := r.X+r.W/2, r.Y+r.H/2, r.W/6
+					if rtl {
+						// Pointing left, along the path.
+						d = -d
+					}
 					var path Path
-					path.MoveTo(cx-d, cy-2*d).LineTo(cx+d, cy).LineTo(cx-d, cy+2*d)
+					path.MoveTo(cx-d, cy-2*abs32(d)).LineTo(cx+d, cy).LineTo(cx-d, cy+2*abs32(d))
 					p.StrokePath(&path, 1.2, t.TextMuted)
 				})
 			}
@@ -233,7 +238,7 @@ func coreFindBar(c *context, open *bool, query *string, matches int, current *in
 	}
 	// Keyed, for its state to go as it closes, to open anew.
 	bar := coreRow(c).Key("find bar").Gap(t.Space(2)).Padding(t.Space(1.5), t.Space(3)).AlignItems(Center).Background(t.Surface).
-		BorderWidth(0, 0, 1, 0).BorderColor(t.Border).Shrink(0).Role(RoleToolbar).Label("Find")
+		BorderWidth(0, 0, 1, 0).BorderColor(t.Border).Shrink(0).Role(RoleToolbar).Label(c.texts().Find())
 	bar.widget = "FindBar"
 	// Its state goes as it closes: true in the frame it opens.
 	opening := coreLocal(bar, "opening", func() bool { return true })
@@ -258,11 +263,11 @@ func coreFindBar(c *context, open *bool, query *string, matches int, current *in
 	bar.Children(func() {
 		f, in := field(c, func() *node {
 			magnifier(c)
-			in := coreTextInputBase(c, query).Grow(1).MinWidth(t.Space(25)).Placeholder("Find")
+			in := coreTextInputBase(c, query).Grow(1).MinWidth(t.Space(25)).Placeholder(c.texts().Find())
 			in.search = true
 			return in
 		})
-		f.Label("Find").Grow(1).MaxWidth(t.Space(90))
+		f.Label(c.texts().Find()).Grow(1).MaxWidth(t.Space(90))
 		if *opening {
 			// Opening the bar focuses its field, with what was found before
 			// chosen, ready to type over.
@@ -284,18 +289,18 @@ func coreFindBar(c *context, open *bool, query *string, matches int, current *in
 			}
 
 		})
-		status := "No matches"
+		status := c.texts().NoMatches()
 		switch {
 		case *query == "":
 			status = ""
 		case matches > 0:
-			status = fmt.Sprintf("%d of %d", *current+1, matches)
+			status = c.texts().Matches(*current+1, matches)
 		}
 		coreText(c, status).TextColor(t.TextMuted).FontFeatures("tnum").MinWidth(t.Space(18)).Role(RoleStatus)
 		for _, b := range []struct {
 			label string
 			d     int
-		}{{"Previous", -1}, {"Next", 1}} {
+		}{{c.texts().Previous(), -1}, {c.texts().Next(), 1}} {
 			btn := coreButton(c, "").Padding(t.Space(1.5), t.Space(2)).Label(b.label).Disabled(matches == 0)
 			up := b.d < 0
 			btn.Children(func() {
@@ -316,7 +321,7 @@ func coreFindBar(c *context, open *bool, query *string, matches int, current *in
 				}
 			})
 		}
-		done := coreButton(c, "Done")
+		done := coreButton(c, c.texts().Done())
 		done.afterInput(func() {
 			if done.Clicked() {
 				*open = false

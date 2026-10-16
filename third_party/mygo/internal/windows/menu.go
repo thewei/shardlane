@@ -219,7 +219,7 @@ func (w *window) popupMenuBar(key uintptr) {
 		w.menuKey = menuKey{popup: popup, key: key}
 		postMessage(w.hwnd, wmChar, key, 0)
 	}
-	cmd := w.b.trackPopup(popup, w.hwnd, pt)
+	cmd := w.b.trackPopup(popup, w.hwnd, pt, 0)
 	w.menuKey = menuKey{}
 	for i := count - 1; i >= 0; i-- {
 		procRemoveMenu.Call(popup, uintptr(i), mfByPosition)
@@ -248,7 +248,7 @@ func (w *window) menuChar(wp, lp uintptr) (uintptr, bool) {
 func (b *Backend) SetApplicationMenu(m *platform.Menu) {
 	b.appMenu = m
 	for _, w := range b.windows {
-		if !w.ownMenu {
+		if !w.ownMenu && w.hasAppMenu() {
 			w.installMenu(m)
 		}
 	}
@@ -309,10 +309,7 @@ func editRole(w *window, role string) bool {
 		return editRole(v, role)
 	}
 	if w.surface != nil {
-		if role == "pasteAndMatchStyle" {
-			role = "paste"
-		}
-		if _, ok := commands[role]; !ok && role != "paste" {
+		if _, ok := commands[role]; !ok && role != "paste" && role != "pasteAndMatchStyle" {
 			return false
 		}
 		w.h.SurfaceEvent(platform.SurfaceEvent{Kind: platform.SurfaceCommand, Text: role})
@@ -327,11 +324,22 @@ func editRole(w *window, role string) bool {
 	}
 	cmd, ok := commands[role]
 	if !ok {
+		// The Format menu's, in the page with the keyboard.
+		cmd, ok = formatCommands[role]
+	}
+	if !ok {
 		return false
 	}
 	params, _ := json.Marshal(map[string]any{"expression": "document.execCommand(" + jsString(cmd) + ")", "userGesture": true})
 	w.withWebView(func() { w.devtools("Runtime.evaluate", string(params), nil) })
 	return true
+}
+
+// formatCommands are the page's commands of the Format menu's roles; in
+// native UI, they go to the content as the other roles.
+var formatCommands = map[string]string{
+	"bold": "bold", "italic": "italic", "underline": "underline", "strikethrough": "strikeThrough",
+	"alignLeft": "justifyLeft", "alignCenter": "justifyCenter", "alignRight": "justifyRight",
 }
 
 func jsString(s string) string {
@@ -360,18 +368,24 @@ func (b *Backend) PopupMenu(m *platform.Menu, pw platform.Window, pos *platform.
 	} else {
 		procGetCursorPos.Call(uintptr(unsafe.Pointer(&pt)))
 	}
-	cmd := b.trackPopup(menu, owner, pt)
+	var flags uintptr
+	if m.RightToLeft {
+		// Its right edge at the point, laid out from the right.
+		flags = tpmRightAlign | tpmLayoutRTL
+	}
+	cmd := b.trackPopup(menu, owner, pt, flags)
 	if cmd != 0 {
 		b.menuCommand(cmd, w)
 	}
 }
 
-// trackPopup shows a popup menu and returns the chosen command, or 0.
-func (b *Backend) trackPopup(menu, owner uintptr, pt point) uint16 {
+// trackPopup shows a popup menu, with TrackPopupMenuEx's flags besides
+// those it always gives, and returns the chosen command, or 0.
+func (b *Backend) trackPopup(menu, owner uintptr, pt point, flags uintptr) uint16 {
 	// The owner must be in the foreground, or the menu does not close
 	// when the user clicks elsewhere.
 	procSetForegroundWindow.Call(owner)
-	cmd, _, _ := procTrackPopupMenuEx.Call(menu, tpmReturnCmd|tpmRightButton, uintptr(pt.X), uintptr(pt.Y), owner, 0)
+	cmd, _, _ := procTrackPopupMenuEx.Call(menu, tpmReturnCmd|tpmRightButton|flags, uintptr(pt.X), uintptr(pt.Y), owner, 0)
 	postMessage(owner, 0, 0, 0) // WM_NULL, as the documentation asks
 	return uint16(cmd)
 }

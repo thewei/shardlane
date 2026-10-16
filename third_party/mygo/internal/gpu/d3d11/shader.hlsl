@@ -247,10 +247,6 @@ float4 premul(float4 c) { return float4(c.rgb * c.a, c.a); }
 
 float3 unpremul(float4 c) { return c.a > 0 ? c.rgb / c.a : float3(0, 0, 0); }
 
-// What follows is the renderer's own; effects (effect.hlsl) take what is
-// above.
-#ifndef EFFECT
-
 // textCoverage corrects the coverage a of a glyph of straight color c as
 // Direct2D blends text (scene.TextCoverage): it enhances the contrast,
 // the more the darker c is, and corrects for gamma with the ratios g.
@@ -260,6 +256,10 @@ float textCoverage(float a, float3 c, float contrast, float boost, float4 g) {
 	float f = dot(c, float3(0.25, 0.5, 0.25));
 	return saturate(a + a * (1 - a) * ((g.x * f + g.y) * a + (g.z * f + g.w)));
 }
+
+// What follows is the renderer's own; effects (effect.hlsl) take what is
+// above.
+#ifndef EFFECT
 
 // subpixelCoverage does the same for each subpixel of a subpixel glyph.
 float3 subpixelCoverage(float3 a, float3 c, float contrast, float boost, float4 g) {
@@ -328,11 +328,78 @@ float3 fromOklab(float3 lab) {
 						 -0.0041960863 * lms.x - 0.7034186147 * lms.y + 1.7076147010 * lms.z));
 }
 
+// The stops of the frame's gradients (gpu.Builder.Stops): two texels each,
+// the color, straight sRGB, then its place and its color in Oklab.
+Texture2D stopsTex : register(t10);
+
+// stop returns texel k of the stops.
+float4 stop(int k) {
+	return stopsTex.Load(int3(k % 1024, k / 1024, 0));
+}
+
+// stopsAt returns the color at t of the gradient whose stops stopsTex
+// holds from first, n of them (gpu.Builder.Stops): the first stop's
+// before it, the last's after it, and between two the colors of both
+// mixed, premultiplied, in sRGB, or in Oklab, as internal/raster's stopsAt.
+float4 stopsAt(float4 c2, float t, bool lab) {
+	int first = int(c2.x);
+	int n = int(c2.y);
+	if (n <= 0) {
+		return float4(0, 0, 0, 0);
+	}
+	float4 a = stop(2 * first);
+	float4 ap = stop(2 * first + 1);
+	if (t <= ap.x) {
+		return premul(a);
+	}
+	float4 last = stop(2 * (first + n - 1));
+	float4 lastp = stop(2 * (first + n - 1) + 1);
+	if (t >= lastp.x) {
+		return premul(last);
+	}
+	float4 b = last;
+	float4 bp = lastp;
+	for (int i = 1; i < n - 1; i++) {
+		float4 c = stop(2 * (first + i));
+		float4 cp = stop(2 * (first + i) + 1);
+		if (t < cp.x) {
+			b = c;
+			bp = cp;
+			break;
+		}
+		a = c;
+		ap = cp;
+	}
+	float f = saturate((t - ap.x) / max(bp.x - ap.x, 1e-6));
+	float alpha = lerp(a.a, b.a, f);
+	if (!lab) {
+		return float4(lerp(a.rgb * a.a, b.rgb * b.a, f), alpha);
+	}
+	if (alpha <= 0) {
+		return float4(0, 0, 0, 0);
+	}
+	return float4(saturate(fromOklab(lerp(ap.yzw * a.a, bp.yzw * b.a, f) / alpha)) * alpha, alpha);
+}
+
 // paint returns the premultiplied color at p of plain color, a gradient
-// mixed in sRGB (1) or Oklab (2), or stripes (3), as scene.Paint says.
+// mixed in sRGB (1) or Oklab (2), stripes (3), or a gradient of stops,
+// linear (4, 5) or conic (6, 7), mixed in sRGB or in Oklab, as
+// scene.Paint says.
 float4 paint(float2 p, float mode, float4 rect, float4 c1, float4 c2, float4 g) {
 	if (mode < 0.5) {
 		return premul(c1);
+	}
+	if (mode > 3.5) {
+		float t;
+		if (mode < 5.5) {
+			float2 d = g.zw - g.xy;
+			t = dot(p - g.xy, d) / max(dot(d, d), 0.0001);
+		} else {
+			float2 d = p - g.xy;
+			t = (atan2(d.x, -d.y) - g.z) * 0.15915494309189535;
+			t -= floor(t);
+		}
+		return stopsAt(c2, t, mode > 4.5 && mode < 5.5 || mode > 6.5);
 	}
 	if (mode < 2.5) {
 		float2 d = g.zw - g.xy;
@@ -401,16 +468,21 @@ PSOut ps(VSOut i) {
 	float glyphCov = i.transform0.w > 0.5 ? localCoverage(i.pt.xy, i.rect, float4(0, 0, 0, 0), 1, fr) : 1;
 	if (kind < 0.5) {
 		float outer = localCoverage(i.pt.xy, i.rect, i.radii, i.transform0.w, fr);
-		res = paint(i.pt.xy, i.params.z, i.rect, i.color, i.color2, i.grad) * outer;
+		// params.y: 1 dashes the border, 2 paints it with the gradient (the
+		// inside with plain color), 3 both.
+		bool borderPaint = i.params.y > 1.5;
+		float4 pc = paint(i.pt.xy, i.params.z, i.rect, i.color, i.color2, i.grad);
+		res = (borderPaint ? premul(i.color) : pc) * outer;
 		float4 bw = i.widths; // top, right, bottom, left
 		if (any(bw > 0)) {
 			float4 ir = float4(i.rect.xy + bw.wx, i.rect.zw - bw.yz - bw.wx);
 			float innerCov = (ir.z > 0 && ir.w > 0) ? localCoverage(i.pt.xy, ir, i.inner, i.transform0.w, fr) : 0;
 			float bc = saturate(outer - innerCov);
-			if (i.params.y > 0.5) {
+			float dashed = i.params.y - (borderPaint ? 2 : 0);
+			if (dashed > 0.5) {
 				bc *= dash(i.pt.xy, i.rect, bw);
 			}
-			float4 b = premul(i.border) * bc;
+			float4 b = (borderPaint ? pc * float4(i.border.rgb * i.border.a, i.border.a) : premul(i.border)) * bc;
 			res = b + res * (1 - b.a);
 		}
 	} else if (kind < 1.5 && i.params.y > 0.5) {
@@ -484,7 +556,7 @@ cbuffer PassConstants : register(b1) {
 	int passDown;	 // down: the size of the squares averaged
 	int passRadius;	 // blur: how far it reaches each way
 	float passSigma; // blur: its standard deviation, 0 for none
-	float passPad;
+	int passMode;	 // 1: transparent beyond the area or the texels (gpu.PassClear)
 };
 
 Texture2D passSrc : register(t4);
@@ -495,19 +567,25 @@ float4 passvs(uint vid : SV_VertexID) : SV_Position {
 }
 
 // down averages the square of the area that texel stands for, repeating
-// the area's last pixels past its far edges.
+// the area's last pixels past its far edges, or, for an image blurred
+// (mode 1), reading them as transparent.
 float4 downps(float4 pos : SV_Position) : SV_Target {
 	int2 o = passOrigin + int2(pos.xy) * passDown;
 	float4 c = float4(0, 0, 0, 0);
 	for (int y = 0; y < passDown; y++) {
 		for (int x = 0; x < passDown; x++) {
-			c += passSrc.Load(int3(min(o + int2(x, y), passLimit) - passShift, 0));
+			int2 at = o + int2(x, y);
+			if ((passMode & 1) != 0 && (at.x > passLimit.x || at.y > passLimit.y)) {
+				continue;
+			}
+			c += passSrc.Load(int3(min(at, passLimit) - passShift, 0));
 		}
 	}
 	return c * (1.0 / float(passDown * passDown));
 }
 
-// blur blurs along a row or a column, clamping at its ends.
+// blur blurs along a row or a column, clamping at its ends, or, for an
+// image blurred (mode 1), transparent beyond them.
 float4 blurps(float4 pos : SV_Position) : SV_Target {
 	int2 at = int2(pos.xy);
 	float4 c = float4(0, 0, 0, 0);
@@ -515,8 +593,12 @@ float4 blurps(float4 pos : SV_Position) : SV_Target {
 	for (int o = -passRadius; o <= passRadius; o++) {
 		float x = float(o);
 		float w = passSigma > 0 ? exp(-(x * x) / (2 * passSigma * passSigma)) : 1;
-		c += passSrc.Load(int3(clamp(at + passDir * o, int2(0, 0), passLimit), 0)) * w;
+		int2 q = at + passDir * o;
 		sum += w;
+		if ((passMode & 1) != 0 && (any(q < int2(0, 0)) || any(q > passLimit))) {
+			continue;
+		}
+		c += passSrc.Load(int3(clamp(q, int2(0, 0), passLimit), 0)) * w;
 	}
 	return c / sum;
 }

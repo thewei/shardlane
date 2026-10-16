@@ -344,7 +344,7 @@ func TestInlineTransformMovesGlyphsAndInteraction(t *testing.T) {
 
 func TestTransformedViewStaysIdle(t *testing.T) {
 	tt := coreNewTester(func(c *context) { coreBox(c).Size(80, 40).Rotate(10).Translate(50, 30).Background(RGB(20, 80, 120)) }, 200, 120)
-	if tt.rt.animating || tt.rt.repainting || tt.h.requested.Load() || tt.rt.timer != nil || tt.rt.repaintTimer != nil {
+	if tt.rt.animating || tt.rt.repainting || tt.FramePending() || !tt.h.afterAt.IsZero() || !tt.h.repaintAt.IsZero() {
 		t.Fatal("static transformed content scheduled work")
 	}
 }

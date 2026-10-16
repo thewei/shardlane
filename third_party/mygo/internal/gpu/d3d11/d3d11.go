@@ -301,6 +301,20 @@ type Renderer struct {
 	// effects are the pixel shaders of the effects drawn, made as first
 	// drawn.
 	effects map[*scene.Effect]*effectShader
+	// shaderCB holds the uniforms of the shader being drawn (package
+	// ui/shader), of shaderCBSize bytes, laid out in shaderBytes.
+	shaderCB     uintptr
+	shaderCBSize int
+	shaderBytes  []byte
+	// stops is the texture of the stops of gradients (register t10), and
+	// stopsSRV the scene drawn's view of it, 0 for none; blurred are the
+	// textures of the images the frame draws blurred, the first used of
+	// them, and blurTmp the textures their passes go through.
+	stops    texture
+	stopsSRV uintptr
+	blurred  []texture
+	used     int
+	blurTmp  [2]texture
 
 	b gpu.Builder
 }
@@ -612,7 +626,15 @@ func (r *Renderer) Release() {
 	for _, p := range r.effects {
 		free(&p.ps)
 	}
-	for _, t := range []*texture{&r.grab, &r.backdrop[0], &r.backdrop[1]} {
+	free(&r.shaderCB)
+	for i := range r.blurred {
+		t := &r.blurred[i]
+		free(&t.rtv)
+		free(&t.srv)
+		free(&t.tex)
+	}
+	r.blurred = nil
+	for _, t := range []*texture{&r.grab, &r.backdrop[0], &r.backdrop[1], &r.blurTmp[0], &r.blurTmp[1], &r.stops} {
 		free(&t.rtv)
 		free(&t.srv)
 		free(&t.tex)
@@ -730,6 +752,7 @@ func (r *Renderer) Render(s *scene.Scene) error {
 // draw draws s into the swap chain's back buffer.
 func (r *Renderer) draw(s *scene.Scene) error {
 	r.frame++
+	r.used = 0
 	if err := r.resize(s.Width, s.Height); err != nil {
 		return err
 	}
@@ -792,7 +815,12 @@ func freeCanvas(t *canvasTexture) {
 // drawScene draws s into the render target rtv with b.
 func (r *Renderer) drawScene(s *scene.Scene, b *gpu.Builder, rtv uintptr) error {
 	r.drawing = rtv
+	b.BlurredImage = r.blurImage
 	s = b.Build(s, r.imageView)
+	b.BlurredImage = nil
+	if err := r.syncStops(b); err != nil {
+		return err
+	}
 	if err := r.fitBackdrop(b); err != nil {
 		return err
 	}
@@ -827,7 +855,7 @@ func (r *Renderer) drawScene(s *scene.Scene, b *gpu.Builder, rtv uintptr) error 
 	call(ctx, ctxRSSetState, r.raster)
 	call(ctx, ctxIASetPrimitiveTopology, topologyTriangleStrip)
 	r.bindState(s, 0)
-	bound, ps, blend := uintptr(0), r.ps, r.blend
+	bound, ps, blend, shaders := uintptr(0), r.ps, r.blend, false
 	for _, bt := range b.Batches {
 		if bt.Count == 0 {
 			continue
@@ -862,10 +890,55 @@ func (r *Renderer) drawScene(s *scene.Scene, b *gpu.Builder, rtv uintptr) error 
 		}
 		mask := bt.ClipMask
 		call(ctx, ctxPSSetShaderResources, 5, 1, uintptr(unsafe.Pointer(&mask)))
+		if bt.Shader != nil {
+			if err := r.bindShader(bt); err != nil {
+				return err
+			}
+			shaders = true
+		}
 		sc := bt.Scissor // a D3D11_RECT
 		call(ctx, ctxRSSetScissorRects, 1, uintptr(unsafe.Pointer(&sc)))
 		call(ctx, ctxDrawInstanced, 4, uintptr(bt.Count), 0, uintptr(bt.Start))
 	}
+	if shaders {
+		// Images may be drawn into next, as canvases.
+		var none [4]uintptr
+		call(ctx, ctxPSSetShaderResources, 6, 4, uintptr(unsafe.Pointer(&none[0])))
+	}
+	return nil
+}
+
+// bindShader binds what the shader of batch b reads: its uniforms, laid
+// out as its effect says, in the constant buffer of register b2, which
+// grows as needed, and its images in registers t6 to t9, its backdrop as
+// one of them when it reads it.
+func (r *Renderer) bindShader(b gpu.Batch) error {
+	r.shaderBytes = b.Effect.Shader.Pack(r.shaderBytes, b.Uniforms)
+	if n := len(r.shaderBytes); n > 0 {
+		if n > r.shaderCBSize {
+			free(&r.shaderCB)
+			r.shaderCBSize = 0
+			bd := bufferDesc{ByteWidth: uint32(n), Usage: usageDynamic, BindFlags: bindConstantBuffer, CPUAccessFlags: cpuAccessWrite}
+			if hr := call(r.device, devCreateBuffer, uintptr(unsafe.Pointer(&bd)), 0, uintptr(unsafe.Pointer(&r.shaderCB))); failed(hr) {
+				return fmt.Errorf("d3d11: cannot create the constant buffer of shaders: %#x", uint32(hr))
+			}
+			r.shaderCBSize = n
+		}
+		var m mapped
+		if hr := call(r.ctx, ctxMap, r.shaderCB, 0, mapWriteDiscard, 0, uintptr(unsafe.Pointer(&m))); failed(hr) {
+			return fmt.Errorf("d3d11: cannot map the constant buffer of shaders: %#x", uint32(hr))
+		}
+		copy(unsafe.Slice((*byte)(ptr(m.Data)), n), r.shaderBytes)
+		call(r.ctx, ctxUnmap, r.shaderCB, 0)
+		call(r.ctx, ctxPSSetConstantBuffers, 2, 1, uintptr(unsafe.Pointer(&r.shaderCB)))
+	}
+	views := b.Textures
+	if b.Backdrop != 0 {
+		// A shader reading its backdrop reads it as its image
+		// BackdropImage.
+		views[gpu.BackdropImage] = r.backdrop[0].srv
+	}
+	call(r.ctx, ctxPSSetShaderResources, 6, 4, uintptr(unsafe.Pointer(&views[0])))
 	return nil
 }
 
@@ -890,7 +963,7 @@ func (r *Renderer) effectShader(e *scene.Effect) uintptr {
 	r.effects[e] = p
 	code := e.HLSL.Compiled
 	if len(code) == 0 || e.HLSL.Sum != gpu.SourceSum(EffectSource(e.HLSL.Source)) {
-		code, p.err = CompileEffect(e.HLSL.Source)
+		code, p.err = compileEffectCode(e.HLSL.Source)
 	}
 	if p.err == nil {
 		if hr := call(r.device, devCreatePixelShader, uintptr(unsafe.Pointer(&code[0])), uintptr(len(code)), 0, uintptr(unsafe.Pointer(&p.ps))); failed(hr) {
@@ -923,6 +996,79 @@ func (r *Renderer) bindState(s *scene.Scene, backdrop uintptr) {
 	call(ctx, ctxPSSetSamplers, 0, 1, uintptr(unsafe.Pointer(&r.samp)))
 	views := [4]uintptr{r.mask.srv, r.color.srv, 0, backdrop}
 	call(ctx, ctxPSSetShaderResources, 0, 4, uintptr(unsafe.Pointer(&views[0])))
+	call(ctx, ctxPSSetShaderResources, 10, 1, uintptr(unsafe.Pointer(&r.stopsSRV)))
+}
+
+// syncStops uploads the stops of the gradients b built into r.stops,
+// whose view r.stopsSRV then is, or 0 for none.
+func (r *Renderer) syncStops(b *gpu.Builder) error {
+	r.stopsSRV = 0
+	w, h := b.StopsSize()
+	if w == 0 {
+		return nil
+	}
+	data := b.Stops
+	for len(data) < 4*w*h {
+		data = append(data, 0)
+	}
+	b.Stops = data[:len(b.Stops)]
+	bytes := unsafe.Slice((*byte)(unsafe.Pointer(&data[0])), 4*len(data))
+	if r.stops.tex == 0 || r.stops.w != w || r.stops.h != h {
+		if err := r.newTexture(&r.stops, w, h, formatR32G32B32A32Float, bytes, 16); err != nil {
+			return err
+		}
+	} else {
+		call(r.ctx, ctxUpdateSubresource, r.stops.tex, 0, 0, uintptr(unsafe.Pointer(&bytes[0])), uintptr(w*16), 0)
+	}
+	r.stopsSRV = r.stops.srv
+	return nil
+}
+
+// blurImage computes the area of img that bk says blurred
+// (gpu.Builder.BlurredImage) into a texture of the frame's own, as
+// internal/raster computes it, and returns its view, or 0. drawScene sets
+// again the state its passes change.
+func (r *Renderer) blurImage(img *scene.Image, bk scene.Backdrop) uintptr {
+	src := r.imageView(img)
+	w, h := bk.Size()
+	if src == 0 || w <= 0 || h <= 0 {
+		return 0
+	}
+	for i := range r.blurTmp {
+		if t := &r.blurTmp[i]; t.w < w || t.h < h {
+			if r.newTarget(t, max(w, t.w), max(h, t.h), true) != nil {
+				return 0
+			}
+		}
+	}
+	if r.used == len(r.blurred) {
+		r.blurred = append(r.blurred, texture{})
+	}
+	out := &r.blurred[r.used]
+	r.used++
+	if out.tex == 0 || out.w != w || out.h != h {
+		if r.newTarget(out, w, h, true) != nil {
+			return 0
+		}
+	}
+	ctx := r.ctx
+	// No texture drawn into may be bound for reading.
+	var none [5]uintptr
+	call(ctx, ctxPSSetShaderResources, 0, 5, uintptr(unsafe.Pointer(&none[0])))
+	call(ctx, ctxOMSetBlendState, 0, 0, 0xffffffff)
+	call(ctx, ctxRSSetState, r.raster)
+	call(ctx, ctxIASetPrimitiveTopology, topologyTriangleStrip)
+	call(ctx, ctxIASetInputLayout, 0)
+	call(ctx, ctxVSSetShader, r.passVS, 0, 0)
+	call(ctx, ctxPSSetConstantBuffers, 1, 1, uintptr(unsafe.Pointer(&r.passCB)))
+	if bk.Radius == 0 {
+		r.pass(r.downPS, src, out, w, h, gpu.ImageDownPass(bk))
+		return out.srv
+	}
+	r.pass(r.downPS, src, &r.blurTmp[0], w, h, gpu.ImageDownPass(bk))
+	r.pass(r.blurPS, r.blurTmp[0].srv, &r.blurTmp[1], w, h, gpu.ImageBlurPass(bk, [2]int32{1, 0}))
+	r.pass(r.blurPS, r.blurTmp[1].srv, out, w, h, gpu.ImageBlurPass(bk, [2]int32{0, 1}))
+	return out.srv
 }
 
 // readBackdrop computes the backdrop bk of what the target drawn holds,
@@ -1044,3 +1190,6 @@ func (r *Renderer) present(sync uintptr) error {
 	}
 	return nil
 }
+
+// FrameInfo describes the last frame for MYGO_FRAME_STATS.
+func (r *Renderer) FrameInfo() string { return r.b.Summary() }

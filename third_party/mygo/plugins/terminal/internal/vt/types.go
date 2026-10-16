@@ -181,6 +181,45 @@ type clipboardWriteReply struct {
 	remember bool
 }
 
+// clipboardRead is a GhosttyClipboardRead.
+type clipboardRead struct {
+	size                 uintptr
+	location             int32
+	mimes                uintptr
+	mimesLen             uintptr
+	list                 bool
+	name                 cString
+	granted, canRemember bool
+	ctx, reply           uintptr
+}
+
+// clipboardReadReply is a GhosttyClipboardReadReply.
+type clipboardReadReply struct {
+	size         uintptr
+	result       int32
+	contents     uintptr
+	contentsLen  uintptr
+	available    uintptr
+	availableLen uintptr
+	remember     bool
+}
+
+// paste is a GhosttyPaste: what a paste offers the program.
+type paste struct {
+	size        uintptr
+	location    int32
+	source      int32
+	mimes       uintptr
+	mimesLen    uintptr
+	reader      mimeReader
+	allowUnsafe bool
+}
+
+// mimeReader is a GhosttyMimeReader.
+type mimeReader struct {
+	read, userdata uintptr
+}
+
 // desktopNotification is a GhosttyTerminalDesktopNotification.
 type desktopNotification struct {
 	size        uintptr
@@ -226,6 +265,9 @@ func layouts() map[string]layout {
 		cw  clipboardWrite
 		cc  clipboardContent
 		cwr clipboardWriteReply
+		cr  clipboardRead
+		crr clipboardReadReply
+		pa  paste
 		dn  desktopNotification
 		pr  progressReport
 		da  deviceAttributes
@@ -275,8 +317,22 @@ func layouts() map[string]layout {
 			"location": unsafe.Offsetof(cw.location), "contents": unsafe.Offsetof(cw.contents), "contents_len": unsafe.Offsetof(cw.contentsLen),
 			"name": unsafe.Offsetof(cw.name), "granted": unsafe.Offsetof(cw.granted), "ctx": unsafe.Offsetof(cw.ctx), "reply": unsafe.Offsetof(cw.reply),
 		}},
-		"GhosttyClipboardContent":            {unsafe.Sizeof(cc), map[string]uintptr{"mime": 0, "data": unsafe.Offsetof(cc.data)}},
-		"GhosttyClipboardWriteReply":         {unsafe.Sizeof(cwr), map[string]uintptr{"result": unsafe.Offsetof(cwr.result), "remember": unsafe.Offsetof(cwr.remember)}},
+		"GhosttyClipboardContent":    {unsafe.Sizeof(cc), map[string]uintptr{"mime": 0, "data": unsafe.Offsetof(cc.data)}},
+		"GhosttyClipboardWriteReply": {unsafe.Sizeof(cwr), map[string]uintptr{"result": unsafe.Offsetof(cwr.result), "remember": unsafe.Offsetof(cwr.remember)}},
+		"GhosttyClipboardRead": {unsafe.Sizeof(cr), map[string]uintptr{
+			"location": unsafe.Offsetof(cr.location), "mimes": unsafe.Offsetof(cr.mimes), "mimes_len": unsafe.Offsetof(cr.mimesLen),
+			"list": unsafe.Offsetof(cr.list), "name": unsafe.Offsetof(cr.name), "granted": unsafe.Offsetof(cr.granted),
+			"can_remember": unsafe.Offsetof(cr.canRemember), "ctx": unsafe.Offsetof(cr.ctx), "reply": unsafe.Offsetof(cr.reply),
+		}},
+		"GhosttyClipboardReadReply": {unsafe.Sizeof(crr), map[string]uintptr{
+			"result": unsafe.Offsetof(crr.result), "contents": unsafe.Offsetof(crr.contents), "contents_len": unsafe.Offsetof(crr.contentsLen),
+			"available": unsafe.Offsetof(crr.available), "available_len": unsafe.Offsetof(crr.availableLen), "remember": unsafe.Offsetof(crr.remember),
+		}},
+		"GhosttyPaste": {unsafe.Sizeof(pa), map[string]uintptr{
+			"location": unsafe.Offsetof(pa.location), "source": unsafe.Offsetof(pa.source), "mimes": unsafe.Offsetof(pa.mimes),
+			"mimes_len": unsafe.Offsetof(pa.mimesLen), "reader": unsafe.Offsetof(pa.reader), "allow_unsafe": unsafe.Offsetof(pa.allowUnsafe),
+		}},
+		"GhosttyMimeReader":                  {unsafe.Sizeof(mimeReader{}), map[string]uintptr{"read": 0, "userdata": unsafe.Offsetof(mimeReader{}.userdata)}},
 		"GhosttyTerminalDesktopNotification": {unsafe.Sizeof(dn), map[string]uintptr{"title": unsafe.Offsetof(dn.title), "body": unsafe.Offsetof(dn.body)}},
 		"GhosttyTerminalProgressReport":      {unsafe.Sizeof(pr), map[string]uintptr{"state": unsafe.Offsetof(pr.state), "progress": unsafe.Offsetof(pr.progress)}},
 		"GhosttyDeviceAttributes":            {unsafe.Sizeof(da), map[string]uintptr{"primary": 0, "secondary": unsafe.Offsetof(da.deviceType), "tertiary": unsafe.Offsetof(da.unitID)}},

@@ -630,3 +630,271 @@ func TestPasteDuringFrame(t *testing.T) {
 		t.Fatalf("pasted %q", text)
 	}
 }
+
+// A chat composer sends with Enter and breaks the line with Shift+Enter:
+// OnTextKey sees the Enter before the editor takes it, and one taken
+// changes nothing — a text area inserts no newline, a single-line input
+// does not submit.
+func TestOnTextKeyTakesEnterByModifier(t *testing.T) {
+	for _, multiline := range []bool{false, true} {
+		text, submits, takes := "", 0, false
+		sent, sends := "", 0
+		tt := coreNewTester(func(c *context) {
+			var in *node
+			if multiline {
+				in = coreTextAreaBase(c, &text)
+			} else {
+				in = coreTextInputBase(c, &text)
+			}
+			in.Width(100).Label("draft")
+			in.OnTextKey(func(k TextKey) bool {
+				if takes && k.Key == KeyEnter {
+					sends++
+					sent = k.Text()
+					if !multiline {
+						k.SetText("") // a composer clears the draft it sent
+					}
+					return true
+				}
+				return false
+			})
+			if in.Submitted() {
+				submits++
+			}
+		}, 200, 50)
+		tt.Click("draft")
+		tt.Type("hello")
+
+		// Not taken: the editor does what it always does.
+		tt.Key(0, KeyEnter)
+		tt.Frame()
+		if multiline {
+			if text != "hello\n" {
+				t.Fatalf("multiline: text %q, want a newline", text)
+			}
+		} else if submits != 1 {
+			t.Fatalf("single-line: submitted %d times, want 1", submits)
+		}
+
+		// Taken: a newline is not inserted, and nothing submits.
+		takes = true
+		tt.Key(Shift, KeyEnter)
+		tt.Frame()
+		if sends != 1 || sent != "hello" && sent != "hello\n" {
+			t.Fatalf("taken Enter: sent %q %d times, want the draft once", sent, sends)
+		}
+		if multiline {
+			if text != "hello\n" {
+				t.Fatalf("taken Shift+Enter: text %q, want the newline kept", text)
+			}
+		} else {
+			if submits != 1 {
+				t.Fatalf("taken Enter: submitted %d times, want still 1", submits)
+			}
+			if text != "" {
+				t.Fatalf("taken Enter: text %q, want the draft cleared", text)
+			}
+		}
+		// The draft still edits normally afterwards.
+		tt.Type("x")
+		tt.Frame()
+		if multiline {
+			if text != "hello\nx" {
+				t.Fatalf("multiline after take: text %q, want hello\nx", text)
+			}
+		} else if text != "x" {
+			t.Fatalf("single-line after clear: text %q, want x", text)
+		}
+	}
+}
+
+// OnTextKey holds until the next frame, as ReadOnly does, and reports the
+// modifiers held: Shift+Enter can break the line while Enter sends.
+func TestOnTextKeySeesModifiersAndHolds(t *testing.T) {
+	text := ""
+	var seen []Modifiers
+	armed := true
+	tt := coreNewTester(func(c *context) {
+		in := coreTextAreaBase(c, &text).Width(100).Label("draft")
+		in.OnTextKey(func(k TextKey) bool {
+			if armed && k.Key == KeyEnter {
+				seen = append(seen, k.Mods)
+				return true
+			}
+			return false
+		})
+	}, 200, 80)
+	tt.Click("draft")
+
+	tt.Key(0, KeyEnter)
+	tt.Key(Shift, KeyEnter)
+	tt.Frame()
+	if len(seen) != 2 || seen[0] != 0 || seen[1] != Shift {
+		t.Fatalf("saw mods %v, want [0 Shift]", seen)
+	}
+	if text != "" {
+		t.Fatalf("taken Enters changed nothing, text %q", text)
+	}
+
+	// The next frame without OnTextKey goes back to the editor.
+	armed = false
+	tt.Key(0, KeyEnter)
+	tt.Frame()
+	if text != "\n" {
+		t.Fatalf("after the hold lapsed: text %q, want a newline", text)
+	}
+}
+
+// The usage OnTextKey documents, through the public API: fn runs as the
+// key comes, between frames, where the Element the view kept is no longer
+// valid, and sends and clears the draft through its TextKey.
+func TestOnTextKeyComposer(t *testing.T) {
+	for _, buffered := range []bool{false, true} {
+		draft, buffer := "", NewTextBuffer("")
+		var sent []string
+		var kept TextKey
+		tt := NewTester(func(c *Context) {
+			var composer Element
+			if buffered {
+				composer = TextAreaBuffer(c, buffer)
+			} else {
+				composer = TextArea(c, &draft)
+			}
+			composer.Label("draft").OnTextKey(func(k TextKey) bool {
+				if k.Key != KeyEnter || k.Mods != 0 {
+					return false
+				}
+				sent = append(sent, k.Text())
+				k.SetText("")
+				kept = k
+				return true
+			})
+		}, 200, 80)
+		text := func() string {
+			if buffered {
+				return buffer.String()
+			}
+			return draft
+		}
+		tt.Click("draft")
+
+		tt.Type("hello")
+		tt.Key(Shift, KeyEnter) // breaks the line
+		tt.Type("world")
+		tt.Key(0, KeyEnter)
+		if len(sent) != 1 || sent[0] != "hello\nworld" || text() != "" {
+			t.Fatalf("buffered %v: sent %q, text %q; want the draft sent and cleared", buffered, sent, text())
+		}
+
+		// The text typed with the Enter before a frame, which the bound
+		// value does not hold yet, is what fn reads.
+		tt.rt.event(platform.SurfaceEvent{Kind: platform.TextInput, Text: "again"})
+		tt.rt.event(platform.SurfaceEvent{Kind: platform.KeyPressed, Key: platform.Key(KeyEnter)})
+		tt.Frame()
+		if len(sent) != 2 || sent[1] != "again" || text() != "" {
+			t.Fatalf("buffered %v: sent %q, text %q; want the typed text sent", buffered, sent, text())
+		}
+
+		// The input edits on after a clear, and a TextKey kept past fn
+		// panics rather than change anything.
+		tt.Type("next")
+		for _, use := range []func(){func() { kept.SetText("stale") }, func() { kept.Text() }} {
+			func() {
+				defer func() {
+					if recover() == nil {
+						t.Fatalf("buffered %v: a kept TextKey did not panic", buffered)
+					}
+				}()
+				use()
+			}()
+		}
+		tt.Frame()
+		if text() != "next" {
+			t.Fatalf("buffered %v: text %q after a kept TextKey", buffered, text())
+		}
+		tt.rt.close()
+	}
+}
+
+// OnTextKey sees the keys that type no text, Tab, Escape, the arrows and
+// Cmd chords among them, and what it leaves goes on as it would without
+// it: Tab moves the focus, Up moves the caret.
+func TestOnTextKeySeesKeysThatTypeNoText(t *testing.T) {
+	draft, other := "", ""
+	var seen []TextKey
+	take := map[Key]bool{}
+	escapes := 0
+	tt := coreNewTester(func(c *context) {
+		col := coreColumn(c)
+		col.Children(func() {
+			in := coreTextInputBase(c, &draft).Width(100).Label("draft")
+			in.OnTextKey(func(k TextKey) bool {
+				seen = append(seen, TextKey{Key: k.Key, Mods: k.Mods})
+				if k.Key == KeyUp {
+					if take[KeyUp] && k.Text() == "" {
+						k.SetText("last message") // Up edits the last message
+						return true
+					}
+					return false
+				}
+				return take[k.Key]
+			})
+			coreTextInputBase(c, &other).Width(100).Label("other")
+		})
+		if col.Shortcut(0, KeyEscape) {
+			escapes++
+		}
+	}, 200, 100)
+	tt.Click("draft")
+	tt.TypeKey(0, KeyA, "a")
+	tt.TypeKey(Shift, KeyB, "B")
+	if len(seen) != 0 {
+		t.Fatalf("keys that type text reached fn: %v", seen)
+	}
+
+	// Taken, Tab stays in the input; left, it moves the focus.
+	take[KeyTab] = true
+	tt.Key(0, KeyTab)
+	tt.Frame()
+	if len(seen) != 1 || seen[0].Key != KeyTab || draft != "aB" {
+		t.Fatalf("saw %v, draft %q", seen, draft)
+	}
+	tt.Type("c")
+	tt.Frame()
+	if draft != "aBc" {
+		t.Fatalf("a taken Tab moved the focus: draft %q, other %q", draft, other)
+	}
+	take[KeyTab] = false
+	tt.Key(0, KeyTab)
+	tt.Type("x")
+	tt.Frame()
+	if other != "x" {
+		t.Fatalf("a Tab left did not move the focus: draft %q, other %q", draft, other)
+	}
+
+	// A Cmd chord, and Escape, which a shortcut around the focus takes
+	// first, as HandleInput's keys.
+	tt.Click("draft")
+	seen = nil
+	tt.Key(Cmd, KeyEnter)
+	tt.Key(0, KeyEscape)
+	tt.Frame()
+	if len(seen) != 1 || seen[0].Key != KeyEnter || seen[0].Mods != Cmd || escapes != 1 {
+		t.Fatalf("saw %v and %d escapes, want Cmd+Enter and the shortcut's Escape", seen, escapes)
+	}
+
+	// Up in an empty input puts the last message back.
+	take[KeyUp] = true
+	tt.Key(0, KeyUp)
+	tt.Frame()
+	if draft != "aBc" {
+		t.Fatalf("Up with a draft: %q", draft)
+	}
+	tt.Key(Cmd, KeyA)
+	tt.Key(0, KeyBackspace)
+	tt.Key(0, KeyUp)
+	tt.Frame()
+	if draft != "last message" {
+		t.Fatalf("Up in an empty input: %q, want the last message", draft)
+	}
+}

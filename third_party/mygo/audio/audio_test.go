@@ -513,14 +513,49 @@ func TestNullOutput(t *testing.T) {
 	openOutput = func() (device, int, error) { return nil, 0, failure }
 	defer func() { openOutput = openDevice }()
 	p := NewSound(sampleRate, 1, make([]float32, sampleRate/10)).Play()
-	start := time.Now()
-	for p.Playing() && time.Since(start) < 2*time.Second {
-		time.Sleep(5 * time.Millisecond)
-	}
-	if took := time.Since(start); took < 80*time.Millisecond || took > time.Second {
-		t.Errorf("100 ms played in %v", took)
+	// How long it takes is TestNullDeviceKeepsTime's: a minute only
+	// guards against a hang.
+	for start := time.Now(); p.Playing(); time.Sleep(5 * time.Millisecond) {
+		if time.Since(start) > time.Minute {
+			t.Fatal("100 ms still playing after a minute")
+		}
 	}
 	if Err() != failure {
 		t.Errorf("Err = %v", Err())
+	}
+}
+
+// A null device takes as long as what it plays would, on a clock of its
+// own here, does not hurry to catch up once behind, and fails after a
+// while for the device to be tried again.
+func TestNullDeviceKeepsTime(t *testing.T) {
+	start := time.Date(2026, 10, 16, 12, 0, 0, 0, time.UTC)
+	clock := start
+	d := newNullDevice(true)
+	d.next, d.retry = start, start.Add(2*time.Second)
+	d.now = func() time.Time { return clock }
+	d.sleep = func(dt time.Duration) { clock = clock.Add(max(dt, 0)) }
+	chunk := make([]float32, nullFrames*channels) // 10 ms
+	for range 10 {
+		if err := d.write(chunk); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := clock.Sub(start); got != 100*time.Millisecond {
+		t.Errorf("100 ms played in %v", got)
+	}
+	// Late by a second, as after the computer slept: the next chunk takes
+	// its 10 ms from now.
+	clock = clock.Add(time.Second)
+	late := clock
+	if err := d.write(chunk); err != nil {
+		t.Fatal(err)
+	}
+	if got := clock.Sub(late); got != 10*time.Millisecond {
+		t.Errorf("10 ms played late in %v", got)
+	}
+	clock = start.Add(2*time.Second + time.Millisecond)
+	if err := d.write(chunk); err != errRetry {
+		t.Errorf("after 2 s: %v, want errRetry", err)
 	}
 }

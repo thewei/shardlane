@@ -3,7 +3,6 @@ package editor
 import (
 	"slices"
 	"strings"
-	"time"
 	"unicode"
 	"unicode/utf8"
 )
@@ -43,7 +42,7 @@ func (ed *editor) apply(edits []Edit, kind editKind, after func(move func(int, b
 			return false
 		}
 		ed.setSels(mergeSels(sels), revealFit)
-		ed.blinkStart = time.Now()
+		ed.blinkStart = ed.frameNow
 		return true
 	}
 	ed.dropSuggestion()
@@ -71,7 +70,7 @@ func (ed *editor) apply(edits []Edit, kind editKind, after func(move func(int, b
 	}
 	b.setSelectionsAfter(ed, slices.Clone(ed.sels))
 	ed.reveal = max(ed.reveal, revealFit)
-	ed.blinkStart = time.Now()
+	ed.blinkStart = ed.frameNow
 	ed.needsBuild = true
 	return true
 }

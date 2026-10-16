@@ -155,6 +155,7 @@ type surface struct {
 	// focus to a web view passes on to it (TabInto).
 	pressing     ptr
 	lastPointer  ptr
+	clicks       platform.ClickCounter
 	dragContext  ptr
 	dragRequest  *platform.DragRequest
 	dragError    error
@@ -464,15 +465,54 @@ func (s *surface) SetCursor(c platform.Cursor) {
 
 func (s *surface) SetTextInput(t platform.TextInputState) {
 	active, caret := t.Active, t.Caret
-	if s.textInput && (!active || s.input.Client != t.Client) {
+	if s.textInput && (!active || s.input.Client != t.Client || t.NoInputMethod) {
 		s.clientComposition.Reset()
 		gtkIMContextReset(s.im)
+	}
+	// Without input methods, the input context loses the focus, as a
+	// Wayland compositor's input method grabs the keys while it has it,
+	// and keys type the layout's characters (typed), as winit's do.
+	if was, raw := s.rawInput(), active && t.NoInputMethod; raw != was {
+		if raw {
+			gtkIMContextFocusOut(s.im)
+		} else if gtkWidgetHasFocus(s.area) {
+			gtkIMContextFocusIn(s.im)
+		}
 	}
 	s.input = t
 	s.textInput, s.caret = active, caret
 	if active {
 		r := gdkRectangle{X: int32(caret.X), Y: int32(caret.Y), Width: max(int32(caret.W), 1), Height: int32(caret.H + 0.5)}
 		gtkIMContextSetCursorLoc(s.im, &r)
+	}
+}
+
+// rawInput reports whether the focused element takes text with input
+// methods off (NoInputMethod).
+func (s *surface) rawInput() bool { return s.textInput && s.input.NoInputMethod }
+
+// typed sends the text a key press types with input methods off: the
+// character of its keyval, unless a modifier makes it a shortcut, as
+// GtkIMContextSimple has it.
+func (s *surface) typed(event ptr) {
+	if gdkMods(field[uint32](event, 24))&(platform.ModCtrl|platform.ModAlt|platform.ModSuper) != 0 {
+		return
+	}
+	r := rune(gdkKeyvalToUnicode(field[uint32](event, 28)))
+	if r < 0x20 || r == 0x7F {
+		return
+	}
+	s.commit(string(r))
+}
+
+// commit sends text typed or committed by an input method.
+func (s *surface) commit(text string) {
+	if c := s.input.Client; c != nil {
+		s.clientComposition.Replace(c, nil, text)
+		return
+	}
+	if text != "" {
+		s.send(platform.SurfaceEvent{Kind: platform.TextInput, Text: text})
 	}
 }
 
@@ -694,7 +734,12 @@ func initSurfaceCallbacks() {
 			}
 			s.lastPointer = gdkEventCopy(event)
 		}
-		s.send(platform.SurfaceEvent{Kind: kind, X: field[float64](event, 24), Y: field[float64](event, 32), Button: button, Mods: mods})
+		x, y := field[float64](event, 24), field[float64](event, 32)
+		clicks := 0
+		if kind == platform.PointerDown {
+			clicks = s.clicks.Press(button, x, y, field[uint32](event, 20), doubleClick())
+		}
+		s.send(platform.SurfaceEvent{Kind: kind, X: x, Y: y, Button: button, Clicks: clicks, Mods: mods})
 		if kind == platform.PointerUp && button == 0 && s.dragRequest == nil && s.lastPointer != 0 {
 			gdkEventFree(s.lastPointer)
 			s.lastPointer = 0
@@ -762,7 +807,11 @@ func initSurfaceCallbacks() {
 			}
 			s.lastKey = gdkEventCopy(event)
 		}
-		if s.textInput && gtkIMContextFilterKeypress(s.im, event) {
+		if s.rawInput() {
+			if kind == platform.KeyPressed {
+				defer s.typed(event)
+			}
+		} else if s.textInput && gtkIMContextFilterKeypress(s.im, event) {
 			return true
 		}
 		// A modifier key on its own: the state is the one before the
@@ -802,7 +851,9 @@ func initSurfaceCallbacks() {
 	})
 	cbSurfaceFocusIn = purego.NewCallback(func(widget, event, data ptr) bool {
 		if s := b().surfaceOf(data); s != nil {
-			gtkIMContextFocusIn(s.im)
+			if !s.rawInput() {
+				gtkIMContextFocusIn(s.im)
+			}
 			s.send(platform.SurfaceEvent{Kind: platform.SurfaceFocus})
 		}
 		return false
@@ -816,13 +867,7 @@ func initSurfaceCallbacks() {
 	})
 	cbIMCommit = purego.NewCallback(func(im, str, data ptr) {
 		if s := b().surfaceOf(data); s != nil {
-			if c := s.input.Client; c != nil {
-				s.clientComposition.Replace(c, nil, goStr(str))
-				return
-			}
-			if text := goStr(str); text != "" {
-				s.send(platform.SurfaceEvent{Kind: platform.TextInput, Text: text})
-			}
+			s.commit(goStr(str))
 		}
 	})
 	cbIMPreedit = purego.NewCallback(func(im, data ptr) {

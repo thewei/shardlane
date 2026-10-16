@@ -221,11 +221,7 @@ func TestSearchField(t *testing.T) {
 			}
 		})
 	}, 500, 400)
-	// AutoFocus reaches the field's input: typing works without a click
-	// (the field hands the focus to its editor).
-	if !tt.Focused("Search mail") {
-		t.Fatal("AutoFocus did not focus the search field")
-	}
+	tt.Click("Search mail")
 	tt.Type("invoice")
 	if query != "invoice" || changes == 0 {
 		t.Fatalf("typed %q, %d changes", query, changes)

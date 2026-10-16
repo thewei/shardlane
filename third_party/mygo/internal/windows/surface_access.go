@@ -76,6 +76,7 @@ const (
 	ifaceSelection
 	ifaceScrollItem
 	ifaceHwndOverride
+	ifaceText
 	uiaIfaces
 )
 
@@ -92,11 +93,12 @@ var uiaIIDs = [uiaIfaces]GUID{
 	guid("fb8b03af-3bdf-48d4-bd36-1a65793be168"), // ISelectionProvider
 	guid("2360c714-4bf1-4b26-ba65-9b21316127eb"), // IScrollItemProvider
 	guid("1d5df27c-8947-4425-b8d9-79787bb460b8"), // IRawElementProviderHwndOverride
+	guid("3589c92c-63f3-4367-99bb-ada653b77cf2"), // ITextProvider
 }
 
 // Pattern identifiers of UI Automation, by interface.
 var uiaPatterns = map[uintptr]int{10000: ifaceInvoke, 10001: ifaceSelection, 10002: ifaceValue, 10003: ifaceRangeValue,
-	10005: ifaceExpandCollapse, 10010: ifaceSelectionItem, 10015: ifaceToggle, 10017: ifaceScrollItem}
+	10005: ifaceExpandCollapse, 10010: ifaceSelectionItem, 10014: ifaceText, 10015: ifaceToggle, 10017: ifaceScrollItem}
 
 const (
 	uiaRootObjectID  = -25
@@ -135,6 +137,8 @@ const (
 	uiaElementRemovedFromSelectionEvent = 20011
 	uiaElementSelectedEvent             = 20012
 	uiaLiveRegionChangedEvent           = 20024
+	uiaTextSelectionChangedEvent        = 20014
+	uiaTextChangedEvent                 = 20015
 
 	// announcerID identifies the live region holding announcements.
 	announcerID = ^uint64(0)
@@ -187,14 +191,17 @@ type uiaIface struct {
 
 // uiaElement is a node of the tree as UI Automation sees it, or the root.
 type uiaElement struct {
-	ifaces   [uiaIfaces]uiaIface
-	refs     int32
-	tree     *uiaTree
-	root     bool
-	dead     bool
-	n        platform.AccessNode
-	parent   *uiaElement
-	children []*uiaElement
+	ifaces [uiaIfaces]uiaIface
+	refs   int32
+	tree   *uiaTree
+	root   bool
+	dead   bool
+	n      platform.AccessNode
+	// textRunes are the runes of n.Value, runesOf the value they are of.
+	textRunes []rune
+	runesOf   string
+	parent    *uiaElement
+	children  []*uiaElement
 }
 
 // uiaTree is what UI Automation sees of a surface.
@@ -277,6 +284,10 @@ func (e *uiaElement) supports(i int) bool {
 	case ifaceValue:
 		return n.Role == platform.RoleTextField || n.Role == platform.RolePopUpButton || n.Role == platform.RoleComboBox ||
 			n.Role == platform.RoleColorWell
+	case ifaceText:
+		// Text fields' text, by characters, formats, words and lines,
+		// with the formats of a rich text's runs; a password's is not.
+		return n.Role == platform.RoleTextField && n.States&platform.AccessPassword == 0
 	case ifaceExpandCollapse:
 		// A menu button expands into its menu, as WinUI's DropDownButton.
 		return n.Role == platform.RolePopUpButton || n.Role == platform.RoleTreeItem || n.Role == platform.RoleMenuButton ||
@@ -533,6 +544,14 @@ func (e *uiaElement) notifyChanges(prev platform.AccessNode) {
 	}
 	if e.supports(ifaceValue) && prev.Value != n.Value {
 		str(uiaValueProperty, prev.Value, n.Value)
+	}
+	if e.supports(ifaceText) {
+		if prev.Value != n.Value || !slices.Equal(prev.TextRuns, n.TextRuns) {
+			procUiaRaiseAutomationEvent.Call(e.ptr(ifaceSimple), uiaTextChangedEvent)
+		}
+		if prev.SelStart != n.SelStart || prev.SelEnd != n.SelEnd {
+			procUiaRaiseAutomationEvent.Call(e.ptr(ifaceSimple), uiaTextSelectionChangedEvent)
+		}
 	}
 	if e.supports(ifaceExpandCollapse) && prev.States&platform.AccessExpanded != n.States&platform.AccessExpanded {
 		changed(uiaExpandStateProperty, variant{VT: vtI4, Val: uint64(expandState(prev))}, variant{VT: vtI4, Val: uint64(expandState(n))})
@@ -817,6 +836,9 @@ func initUIA() {
 			return out(p, e.tree.pageOfWindow(hwnd), ifaceSimple)
 		}),
 	)
+
+	uiaVtbls[ifaceText] = vtbl(textProviderMethods()...)
+	initTextRanges()
 
 	uiaVtbls[ifaceRoot] = vtbl(
 		fromPoint,

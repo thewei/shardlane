@@ -848,3 +848,29 @@ func TestTextRangesWhileComposing(t *testing.T) {
 		}
 	}
 }
+
+// A selection made backwards keeps its caret before its anchor, as the app
+// reads it to extend it from its anchor.
+func TestTextAnchorCaret(t *testing.T) {
+	draft := "abcde"
+	var input *node
+	tt := coreNewTester(func(c *context) {
+		input = coreTextAreaBase(c, &draft).Label("Draft")
+	}, 400, 300)
+	if err := tt.Click("Draft"); err != nil {
+		t.Fatal(err)
+	}
+	input.SetTextSelection(5, 2)
+	tt.Frame()
+	if anchor, caret := input.TextAnchorCaret(); anchor != 5 || caret != 2 {
+		t.Errorf("anchor %d, caret %d, want 5 and 2", anchor, caret)
+	}
+	if start, end := input.TextSelection(); start != 2 || end != 5 {
+		t.Errorf("selection %d–%d, want 2–5", start, end)
+	}
+	// Shift and an arrow move the caret, not the anchor.
+	tt.Key(Shift, KeyLeft)
+	if anchor, caret := input.TextAnchorCaret(); anchor != 5 || caret != 1 {
+		t.Errorf("anchor %d, caret %d after Shift-Left, want 5 and 1", anchor, caret)
+	}
+}

@@ -55,15 +55,27 @@ type editor struct {
 	password           bool
 	// onPaste sees a paste before it is inserted (OnPaste).
 	onPaste func(text string) bool
+	// onTextKey sees a key before the editor takes it (OnTextKey).
+	onTextKey func(k TextKey) bool
+	// keying is set while onTextKey runs, as the TextKey numbered keySeq
+	// is valid.
+	keying bool
+	keySeq uint64
 	// leaveEmptyBackspace leaves Backspace to shortcuts while the text is
 	// empty, as a token field's input does to take out a token.
 	leaveEmptyBackspace bool
+	// shown are the options the build before set, of the input the user
+	// typed in, which its edits apply by (see withShown).
+	shown editorOptions
 	// lines are a text area's least and most lines (Lines), as high as its
 	// wrapped text between them; zero for the paragraphs, at least three.
 	lines       [2]int
 	placeholder string
-	// ranges style runs of the text (TextRanges), sorted by Start.
+	// ranges style runs of the text (TextRanges): as given until apart is
+	// set, then merged into runs apart, sorted by Start (sortRanges).
 	ranges []TextRange
+	apart  bool
+	merge  rangeMerge
 	// layout is what the last frame laid out of a single-line input or a
 	// selectable text; area lays out a text area (textarea.go).
 	layout           *text.Layout
@@ -80,6 +92,8 @@ type editor struct {
 	hasDesired       bool
 	undo, redo       []undoStep
 	lastEdit         time.Time
+	// now is the time, the engine's (engine.now), for what depends on it.
+	now func() time.Time
 	coalesce         bool
 	dragging         bool
 	dragUnit         int // 1 rune, 2 word, 3 line
@@ -88,7 +102,7 @@ type editor struct {
 	contentW         float32
 }
 
-func newEditor() *editor { return &editor{} }
+func newEditor(now func() time.Time) *editor { return &editor{now: now} }
 
 func (ed *editor) String() string { return ed.buf.string() }
 
@@ -98,6 +112,34 @@ func (ed *editor) edit(a, z int, s string) {
 	if ed.area != nil {
 		ed.area.edited(&ed.buf, first, old, after)
 	}
+}
+
+// editorOptions are the options of a text input that its fluent methods
+// set in each build and its edits follow.
+type editorOptions struct {
+	readOnly, password bool
+	onPaste            func(text string) bool
+	onTextKey          func(k TextKey) bool
+}
+
+// rebuild starts a build of the input: what the build before set becomes
+// the options its pending edits apply by, and this build's start from
+// the defaults.
+func (ed *editor) rebuild() {
+	ed.shown = editorOptions{ed.readOnly, ed.password, ed.onPaste, ed.onTextKey}
+	ed.readOnly, ed.password, ed.lines, ed.onPaste, ed.onTextKey = false, false, [2]int{}, nil, nil
+}
+
+// withShown runs fn, which applies the user's edits, with the options of
+// the build the user typed in: input reaches an input as its constructor
+// returns, before this build's ReadOnly or OnPaste, and follows what the
+// user saw.
+func (ed *editor) withShown(fn func()) {
+	now := editorOptions{ed.readOnly, ed.password, ed.onPaste, ed.onTextKey}
+	o := ed.shown
+	ed.readOnly, ed.password, ed.onPaste, ed.onTextKey = o.readOnly, o.password, o.onPaste, o.onTextKey
+	fn()
+	ed.readOnly, ed.password, ed.onPaste, ed.onTextKey = now.readOnly, now.password, now.onPaste, now.onTextKey
 }
 
 func (ed *editor) insert(s string) {

@@ -7,7 +7,6 @@ import (
 	"math"
 	"strconv"
 	"syscall/js"
-	"time"
 	"unicode/utf8"
 
 	"github.com/egoist/mygo/internal/gpu/gl"
@@ -47,12 +46,9 @@ type surface struct {
 	// event that follows does not repeat.
 	copied bool
 
-	// The last press, which the next counts clicks from.
-	downAt     time.Time
-	downX      float64
-	downY      float64
-	downButton int
-	clicks     int
+	// downX and downY place the last press, where a context menu opens.
+	downX, downY float64
+	clicks       platform.ClickCounter
 }
 
 func newSurface(w *window) (*surface, error) {
@@ -165,14 +161,9 @@ func (s *surface) listen() {
 		}
 		c.Call("setPointerCapture", e.Get("pointerId"))
 		b := buttonOf(button)
-		now := time.Now()
-		if b == s.downButton && now.Sub(s.downAt) < 500*time.Millisecond && math.Abs(x-s.downX) < 5 && math.Abs(y-s.downY) < 5 {
-			s.clicks++
-		} else {
-			s.clicks = 1
-		}
-		s.downAt, s.downX, s.downY, s.downButton = now, x, y, b
-		s.send(platform.SurfaceEvent{Kind: platform.PointerDown, X: x, Y: y, Button: b, Clicks: s.clicks, Mods: s.mods(e)})
+		s.downX, s.downY = x, y
+		clicks := s.clicks.Press(b, x, y, uint32(e.Get("timeStamp").Float()), platform.DefaultDoubleClick) // browsers tell no double-click settings
+		s.send(platform.SurfaceEvent{Kind: platform.PointerDown, X: x, Y: y, Button: b, Clicks: clicks, Mods: s.mods(e)})
 	})
 	s.on(c, "pointerup", true, func(e js.Value) {
 		button := e.Get("button").Int()
@@ -180,7 +171,7 @@ func (s *surface) listen() {
 			return
 		}
 		x, y := s.point(e)
-		s.send(platform.SurfaceEvent{Kind: platform.PointerUp, X: x, Y: y, Button: buttonOf(button), Clicks: s.clicks, Mods: s.mods(e)})
+		s.send(platform.SurfaceEvent{Kind: platform.PointerUp, X: x, Y: y, Button: buttonOf(button), Mods: s.mods(e)})
 	})
 	s.on(c, "pointercancel", true, func(e js.Value) {
 		x, y := s.point(e)
@@ -189,6 +180,10 @@ func (s *surface) listen() {
 	s.on(c, "pointerleave", true, func(js.Value) {
 		s.send(platform.SurfaceEvent{Kind: platform.PointerLeave})
 	})
+	// iOS sends a tap's mouse events even though its pointerdown was
+	// canceled: the mousedown would move the focus to the canvas, and the
+	// touch keyboard would hide as soon as it showed.
+	s.on(c, "mousedown", false, func(e js.Value) { e.Call("preventDefault") })
 	s.on(c, "contextmenu", false, func(e js.Value) { e.Call("preventDefault") })
 	s.on(c, "wheel", false, func(e js.Value) {
 		e.Call("preventDefault")
@@ -331,8 +326,24 @@ func (s *surface) listen() {
 		if data.IsNull() || data.IsUndefined() {
 			return
 		}
+		// The text formats pasted: plain text, HTML, and those of apps.
+		var reps []transfer.Representation
+		types := data.Get("types")
+		for i := range types.Length() {
+			f := types.Index(i).String()
+			if f == "Files" {
+				continue
+			}
+			if v := data.Call("getData", f).String(); v != "" {
+				reps = append(reps, transfer.Bytes(transfer.Format(f), []byte(v)))
+			}
+		}
 		s.w.b.mu.Lock()
 		s.w.b.clip = data.Call("getData", "text/plain").String()
+		s.w.b.clipData = transfer.Data{}
+		if len(reps) > 0 {
+			s.w.b.clipData = transfer.New(transfer.NewItem(reps...))
+		}
 		s.w.b.mu.Unlock()
 		s.send(platform.SurfaceEvent{Kind: platform.SurfaceCommand, Text: "paste"})
 	})
@@ -350,10 +361,19 @@ func (s *surface) copy(e js.Value, cmd string) {
 	}
 	s.copied = false
 	s.w.b.mu.Lock()
-	text := s.w.b.clip
+	text, all := s.w.b.clip, s.w.b.clipData
 	s.w.b.mu.Unlock()
 	if data := e.Get("clipboardData"); !data.IsNull() && !data.IsUndefined() && text != "" {
 		data.Call("setData", "text/plain", text)
+		// The other text formats copied, as a rich text's HTML.
+		for _, f := range all.Formats() {
+			if f == transfer.Text || f == transfer.FileList || f == transfer.PNG {
+				continue
+			}
+			if b, err := all.Read(f); err == nil {
+				data.Call("setData", string(f), string(b))
+			}
+		}
 	}
 }
 

@@ -5,6 +5,8 @@ package mygo
 import (
 	"testing"
 	"time"
+
+	"github.com/egoist/mygo/internal/wait"
 )
 
 func TestPower(t *testing.T) {
@@ -21,13 +23,7 @@ func TestPower(t *testing.T) {
 			off()
 		}
 	}()
-	deadline := time.Now().Add(time.Second)
-	for !onMainValue(func() bool { return fb.Watching }) {
-		if time.Now().After(deadline) {
-			t.Fatal("the backend was not asked to watch power events")
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
+	wait.Until(t, "the backend asked to watch power events", func() bool { return onMainValue(func() bool { return fb.Watching }) })
 	onMain(func() {
 		for _, e := range []string{"suspend", "resume", "lock-screen", "unlock-screen", "unknown"} {
 			fb.EmitPower(e)
@@ -87,7 +83,7 @@ func TestDockMenuAndRelaunch(t *testing.T) {
 	App.Relaunch()
 	select {
 	case <-canceled:
-	case <-time.After(time.Second):
+	case <-time.After(wait.Guard):
 		t.Fatal("Relaunch did not start quitting")
 	}
 	if onMainValue(func() bool { return App.relaunch }) {

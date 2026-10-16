@@ -1,9 +1,9 @@
 package editor
 
 import (
-	"fmt"
 	"unicode/utf8"
 
+	"github.com/egoist/mygo/internal/l10n"
 	"github.com/egoist/mygo/ui"
 )
 
@@ -58,7 +58,7 @@ func (f *FindBar) Matches() (count, current int) {
 // Status says what was found, as "3 of 12", "No results", or "Invalid"
 // for a regular expression that is not one (Err); nothing without a
 // query.
-func (f *FindBar) Status() string { return f.ed.find.status() }
+func (f *FindBar) Status() string { return f.ed.find.status(l10n.In(f.c.Locale())) }
 
 // Err is the error of a query that is not a valid regular expression.
 func (f *FindBar) Err() error { return f.ed.find.err }
@@ -126,6 +126,7 @@ func (f *FindBar) ReplacementInput(in ui.Element) ui.Element {
 // through them, and the replacement below it while replacing.
 func DefaultFindBar(c *ui.Context, bar ui.Element, f *FindBar) {
 	t := c.Theme()
+	tx := l10n.In(c.Locale())
 	bar.Gap(t.Space(1)).Padding(t.Space(1.5)).Background(t.Surface).Border(1, t.Border).Radius(t.Radius).
 		Shadow(0, 2, 8, 0, ui.RGBA(0, 0, 0, 0.18))
 	field := func(value *string, placeholder string) ui.Element {
@@ -139,7 +140,7 @@ func DefaultFindBar(c *ui.Context, bar ui.Element, f *FindBar) {
 	}
 	bar.Children(func() {
 		ui.Row(c).Gap(t.Space(1)).AlignItems(ui.Center).Children(func() {
-			f.QueryInput(field(f.Query(), "Find"))
+			f.QueryInput(field(f.Query(), tx.Find()))
 			toggle := func(on *bool, label, tip string) {
 				b := ui.ToggleBase(c, on).Padding(t.Space(0.5), t.Space(1.5)).Radius(t.Radius - 2).Label(tip).Tooltip(tip).KeepFocus()
 				if *on {
@@ -147,31 +148,31 @@ func DefaultFindBar(c *ui.Context, bar ui.Element, f *FindBar) {
 				}
 				b.Children(func() { ui.Text(c, label).FontSize(t.FontSize - 1) })
 			}
-			toggle(f.CaseSensitive(), "Aa", "Match case")
-			toggle(f.WholeWord(), "ab", "Match whole word")
-			toggle(f.Regexp(), ".*", "Use regular expression")
-			toggle(f.InSelection(), "[ ]", "Find in selection")
+			toggle(f.CaseSensitive(), "Aa", tx.MatchCase())
+			toggle(f.WholeWord(), "ab", tx.MatchWholeWord())
+			toggle(f.Regexp(), ".*", tx.UseRegularExpression())
+			toggle(f.InSelection(), "[ ]", tx.FindInSelection())
 			ui.Text(c, f.Status()).FontSize(t.FontSize - 2).TextColor(t.TextMuted).FontFeatures("tnum").MinWidth(t.Space(16)).Role(ui.RoleStatus)
-			if button("↑", "Previous match").Clicked() {
+			if button("↑", tx.PreviousMatch()).Clicked() {
 				f.Previous()
 			}
-			if button("↓", "Next match").Clicked() {
+			if button("↓", tx.NextMatch()).Clicked() {
 				f.Next()
 			}
-			if f.CanReplace() && button("⇄", "Replace").Clicked() {
+			if f.CanReplace() && button("⇄", tx.Replace()).Clicked() {
 				f.SetReplacing(!f.Replacing())
 			}
-			if button("✕", "Close").Clicked() {
+			if button("✕", tx.Close()).Clicked() {
 				f.Close()
 			}
 		})
 		if f.Replacing() {
 			ui.Row(c).Gap(t.Space(1)).AlignItems(ui.Center).Children(func() {
-				f.ReplacementInput(field(f.Replacement(), "Replace"))
-				if ui.Button(c, "Replace").Padding(t.Space(0.5), t.Space(2)).FontSize(t.FontSize - 1).Clicked() {
+				f.ReplacementInput(field(f.Replacement(), tx.Replace()))
+				if ui.Button(c, tx.Replace()).Padding(t.Space(0.5), t.Space(2)).FontSize(t.FontSize - 1).Clicked() {
 					f.Replace()
 				}
-				if ui.Button(c, "Replace All").Padding(t.Space(0.5), t.Space(2)).FontSize(t.FontSize - 1).Clicked() {
+				if ui.Button(c, tx.ReplaceAll()).Padding(t.Space(0.5), t.Space(2)).FontSize(t.FontSize - 1).Clicked() {
 					f.ReplaceAll()
 				}
 			})
@@ -186,7 +187,7 @@ func (ed *editor) buildFindBar(c *ui.Context) {
 	f.update(ed)
 	t := c.Theme()
 	bar := ui.Box(c).Key("code find").Absolute().Top(t.Space(1)).Right(t.Space(4)).
-		Role(ui.RoleToolbar).Label("Find").Cursor(ui.CursorDefault).HandleInput(shield)
+		Role(ui.RoleToolbar).Label(l10n.In(c.Locale()).Find()).Cursor(ui.CursorDefault).HandleInput(shield)
 	render := ed.o.renderFindBar
 	if render == nil {
 		render = DefaultFindBar
@@ -269,13 +270,14 @@ func (g *GoToLineBar) Close() { g.ed.goTo.close(g.ed) }
 // field, and where the caret is.
 func DefaultGoToLine(c *ui.Context, bar ui.Element, g *GoToLineBar) {
 	t := c.Theme()
+	tx := l10n.In(c.Locale())
 	bar.Row().Gap(t.Space(2)).AlignItems(ui.Center).Padding(t.Space(1.5), t.Space(2)).Background(t.Surface).
 		Border(1, t.Border).Radius(t.Radius).Shadow(0, 2, 8, 0, ui.RGBA(0, 0, 0, 0.18))
 	bar.Children(func() {
 		g.Input(ui.TextInputBase(c, g.Text()).Width(t.Space(60)).Padding(t.Space(1), t.Space(2)).Background(t.Background).
-			Border(1, t.Border).Radius(t.Radius - 2).Label("Go to line").Placeholder(fmt.Sprintf("Line 1 to %d, then :column", g.LineCount())))
+			Border(1, t.Border).Radius(t.Radius - 2).Label(tx.GoToLine()).Placeholder(tx.LineRange(g.LineCount())))
 		cur := g.Cursor()
-		ui.Text(c, fmt.Sprintf("Current line %d of %d, column %d", cur.Line+1, g.LineCount(), cur.Col+1)).
+		ui.Text(c, tx.CurrentLine(cur.Line+1, g.LineCount(), cur.Col+1)).
 			FontSize(t.FontSize - 2).TextColor(t.TextMuted)
 	})
 }
@@ -286,7 +288,7 @@ func (ed *editor) buildGoToLine(c *ui.Context) {
 	t := c.Theme()
 	g := &ed.goTo
 	ui.Row(c).Key("code go to line").Absolute().Top(t.Space(1)).Left(0).Right(0).Justify(ui.Center).PassThrough().Children(func() {
-		bar := ui.Box(c).Role(ui.RoleDialog).Label("Go to line").Cursor(ui.CursorDefault).HandleInput(shield)
+		bar := ui.Box(c).Role(ui.RoleDialog).Label(l10n.In(c.Locale()).GoToLine()).Cursor(ui.CursorDefault).HandleInput(shield)
 		render := ed.o.renderGoToLine
 		if render == nil {
 			render = DefaultGoToLine
@@ -452,7 +454,7 @@ func (ed *editor) buildCompletions(c *ui.Context, anchor ui.Element) {
 	cc := &ed.complete
 	ui.Overlay(c, func() {
 		panel := ui.Box(c).Key("code completions").AttachTo(anchor, ui.AnchorBottomLeft, ui.AnchorTopLeft).
-			Role(ui.RoleList).Label("Completions").Cursor(ui.CursorDefault).KeepFocus().HandleInput(shield)
+			Role(ui.RoleList).Label(l10n.In(c.Locale()).Completions()).Cursor(ui.CursorDefault).KeepFocus().HandleInput(shield)
 		render := ed.o.renderCompletions
 		if render == nil {
 			render = DefaultCompletions

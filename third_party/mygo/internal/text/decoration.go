@@ -53,7 +53,7 @@ func (s *System) Decorate(l *Layout, li, i, j int, x, y, scale float32, d Decora
 	style := l.Params.Style
 	if l.Params.Spans != "" {
 		r := line.Glyphs[i].Cluster
-		for _, sp := range decodeSpans(l.Params.Spans) {
+		for _, sp := range DecodeSpans(l.Params.Spans) {
 			if r < sp.End {
 				style = sp.style(style)
 				break

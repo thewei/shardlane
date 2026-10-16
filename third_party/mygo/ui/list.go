@@ -45,11 +45,24 @@ type ListState struct {
 	// follows its item, and the list keeps its place and its choice when
 	// rows are added or removed above them, as when older messages load.
 	Key func(row int) any
+	// KeepOffset keeps a list with a Key where it is scrolled as its rows
+	// move, rather than with the item at its top: for rows sorted again as
+	// they change, as a process monitor's, which the list would otherwise
+	// scroll along with the item at its top. The state of a row, the choice
+	// and the row Shift chooses from still follow their items.
+	KeepOffset bool
 	// FollowEnd starts the list at its end, and keeps the end in view as
 	// rows are added or grow while it shows it, as a chat or a log does:
 	// scrolling away from the end stops following it, and scrolling back
 	// to it follows again.
 	FollowEnd bool
+	// FollowAnimation, when set, makes a list following its end glide to
+	// it as rows are added or grow, as the animation says (Smooth, a
+	// spring, or a curve), rather than show it at once: what is added
+	// comes up from below, as the chat apps scroll. A glide on its way
+	// goes on from where it is as more comes, and the user scrolling stops
+	// it. It shows the end at once where the desktop asks for less motion.
+	FollowAnimation *Animation
 	// Selected, when set, lets a click choose a row, as Up, Down, Home and
 	// End do while the list has the keyboard focus, and Page Up and Page
 	// Down on Linux and Windows: *Selected is the chosen row, -1 for none,
@@ -83,8 +96,20 @@ type ListState struct {
 	// Sort, when set, is the column a Table's rows are sorted by: a click
 	// on the header of a Sortable column sorts by it, ascending, and
 	// another reverses the order, which the header shows. Sort the rows as
-	// it says, when it changes.
+	// it says, when it changes. SortBy sorts by several columns, which
+	// Sort, set with it, follows.
 	Sort *SortOrder
+	// SortBy sorts a Table's rows by several columns, the first first. A
+	// click on a Sortable column's header sorts by it alone, as with Sort,
+	// and reverses it when it was first; a Cmd-click (Ctrl-click on Linux
+	// and Windows) or a Shift-click adds it after the others, ascending,
+	// another makes it descending, and a third takes it out. The headers
+	// show their direction and, when there are several, their place. It
+	// gets a new slice as it changes, so one the app kept stays as it was.
+	// When Sort is set too, the table keeps it the first of SortBy, the
+	// zero SortOrder when SortBy is empty, for the app to read the column
+	// that sorts first.
+	SortBy *[]SortOrder
 	// Columns keeps the order and the widths the user gave a Table's
 	// columns, by ID: restore it from saved settings, and save it as it
 	// changes.
@@ -93,6 +118,12 @@ type ListState struct {
 	// the theme's Radius, as a List's are, rather than leaving them square
 	// from edge to edge.
 	RoundRows bool
+	// HeaderMenu, when set, gives a Table's header a context menu, built
+	// as ContextMenu's is: col is the index of the column clicked in the
+	// columns given to Table, not in the order the user moved them into,
+	// or -1 for the part of the header past the columns, as AppKit's
+	// clickedColumn. A menu built without items does not open.
+	HeaderMenu func(m *Menu, col int)
 
 	// The place: the first row in view, and how far the list is scrolled
 	// past its top: the row's top is that far above where the content
@@ -102,7 +133,18 @@ type ListState struct {
 	anchorKey any
 	following bool
 	started   bool
-	laidOut   bool
+	// followLag is how far below its place the end shows as it glides
+	// there (FollowAnimation); followRow and followKey are the last row of
+	// the frame before, followBelow how much content was from its top to
+	// the end, and followWidth the width of rows then: more content below
+	// that row, as it grows or rows come after it, is the end moving down.
+	followLag   channel
+	followRow   int
+	followKey   any
+	followBelow float64
+	followWidth float32
+	followSeen  bool
+	laidOut     bool
 	// wroteY is the offset the list set, to tell it from scrolling.
 	wroteY  float64
 	req     listRequest
@@ -421,6 +463,8 @@ func (s *ListState) sync(e *node, n int) {
 			s.req = listRequest{set: true, offset: true, y: max(0, st.scrollY)}
 		}
 		st.list = s
+	case st.scrollY != s.wroteY && !s.req.set && s.following && s.followLag.value > 0.5 && st.scrollY > s.wroteY:
+		// Scrolled toward the end it glides to: it goes on following.
 	case st.scrollY != s.wroteY && !s.req.set:
 		// Scrolled by the wheel, the keys, the scroll bar or the app: a
 		// step moves the rows by as much, from the place; a jump goes
@@ -1188,6 +1232,7 @@ func (e *node) layoutList(w, h float32) {
 			shift(H - end())
 		}
 	}
+	glide := s.glideToEnd(e, n, lo, hi, H, func(d float64) { shift(d); cover() })
 	for k := 0; k < listOverscan && hi < n-1 && ensure(hi+1); k++ {
 		yHi += ht(hi) + gap
 		hi++
@@ -1271,7 +1316,59 @@ func (e *node) layoutList(w, h float32) {
 	e.scrollBase = scroll
 	st.scrollTo(st.scrollX, scroll)
 	s.inset = inset
-	s.remember(e, first, last, hi == n-1 && end() <= H+0.5, scroll)
+	s.remember(e, first, last, hi == n-1 && end()-glide <= H+0.5, scroll)
+}
+
+// glideToEnd moves the rows of a list following its end with a
+// FollowAnimation below their place, by as much as the end moved down
+// since the frame before, and on toward their place, as the animation
+// says; it returns how far below it they show. Rows lo to hi are placed,
+// and shift moves them. What moved is measured in the content, so that
+// the list growing or shrinking moves nothing.
+func (s *ListState) glideToEnd(e *node, n, lo, hi int, H float64, shift func(float64)) float64 {
+	rt, now := e.c.rt, e.c.now
+	if s.FollowAnimation == nil || !s.following || s.req.set || hi != n-1 || rt.preferences().ReduceMotion || rt.instant() {
+		s.followLag, s.followSeen = channel{}, false
+		return 0
+	}
+	hs, gap := &s.heights, s.gap
+	below := func(i int) float64 { return hs.top(n, gap) - hs.top(i, gap) }
+	ch := &s.followLag
+	if ch.at.IsZero() {
+		ch.at = now
+	}
+	ch.advance(now)
+	if s.followSeen && s.width == s.followWidth {
+		// The row last at the end: as much as came below it, the rows
+		// come up from below; as much as went, the glide takes back.
+		prev, ok := s.followRow, s.followRow < n
+		if s.Key != nil && s.followKey != nil {
+			prev, ok = s.find(s.followKey, s.followRow, n)
+		}
+		if !ok {
+			*ch = channel{at: now}
+		} else if d := below(prev) - s.followBelow; d > 0.5 {
+			ch.value = min(ch.value+d, H)
+			ch.retarget(0, *s.FollowAnimation)
+		} else if d < -0.5 {
+			// The rows stay where they show, above their place, and go
+			// down to it.
+			ch.value = max(ch.value+d, -H)
+			ch.retarget(0, *s.FollowAnimation)
+		}
+	}
+	s.followSeen, s.followRow, s.followBelow, s.followWidth, s.followKey = true, n-1, below(n-1), s.width, nil
+	if s.Key != nil {
+		s.followKey = s.Key(n - 1)
+	}
+	if ch.moving || ch.pending {
+		rt.animating = true
+	}
+	lag := ch.value
+	if lag > 0.01 || lag < -0.01 {
+		shift(lag)
+	}
+	return lag
 }
 
 // relayoutList lays the list out anew scrolled to y, as revealing its
@@ -1306,7 +1403,7 @@ func (s *ListState) remember(e *node, first, last int, atEnd bool, scroll float6
 	s.anchor, s.anchorKey = max(0, first), nil
 	if n == 0 {
 		s.inset = 0
-	} else if s.Key != nil {
+	} else if s.Key != nil && !s.KeepOffset {
 		s.anchorKey = s.Key(first)
 	}
 	s.selKey, s.pivotKey = nil, nil

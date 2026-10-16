@@ -119,7 +119,8 @@ func buildDMG(c *Config, app, dir, goarch string, opts buildOptions) (_ string, 
 			return "", err
 		}
 		// The ticket covers the app too: staple it for updates, which
-		// install the bare app.
+		// install the bare app. The image's copy stays without it, which
+		// deltas allow for (stapledTicket in internal/update).
 		if err := command("xcrun", "stapler", "staple", app); err != nil {
 			return "", err
 		}

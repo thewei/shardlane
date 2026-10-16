@@ -37,13 +37,16 @@ func (cv *Canvas) Size() (w, h int) { return cv.img.W, cv.img.H }
 // callback's painter. What fn paints is what any painter paints: shapes,
 // paths, text, images, parts of them, other canvases, under transforms and
 // clips. Drawn, the canvas shows it from this frame on.
-func (cv *Canvas) Draw(p *Painter, fn func(cp *Painter)) {
+func (cv *Canvas) Draw(p *Painter, fn func(cp *Painter)) { cv.draw(p, 1, fn) }
+
+// draw is Draw with scale pixels a DIP, the units fn paints in.
+func (cv *Canvas) draw(p *Painter, scale float32, fn func(cp *Painter)) {
 	s := cv.img.Scene
 	s.Reset(cv.img.W, cv.img.H, scene.Color{})
-	s.Scale = 1
+	s.Scale = scale
 	parent := p.s
 	s.MaskAtlas, s.ColorAtlas, s.Text = parent.MaskAtlas, parent.ColorAtlas, parent.Text
-	cp := &Painter{rt: p.rt, s: s, scale: 1, opacity: 1, clip: Rect{W: float32(cv.img.W), H: float32(cv.img.H)}}
+	cp := &Painter{rt: p.rt, s: s, scale: scale, opacity: 1, clip: Rect{W: float32(cv.img.W) / scale, H: float32(cv.img.H) / scale}}
 	fn(cp)
 	cv.img.Changed()
 	// The frame's renderer draws it, before the frame: canvases drawn in

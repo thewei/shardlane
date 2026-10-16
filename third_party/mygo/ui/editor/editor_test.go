@@ -1,6 +1,7 @@
 package editor
 
 import (
+	"bytes"
 	"strings"
 	"testing"
 	"time"
@@ -267,6 +268,23 @@ func TestCodeEditorLines(t *testing.T) {
 	ct.want("[a\nb]")
 }
 
+// The caret blinks by the frames' time, and shows again as it moves.
+func TestCodeEditorCaretBlinks(t *testing.T) {
+	ct := newEditorTest(t, "", "hello|")
+	tt := ct.tt
+	ct.key(0, ui.KeyLeft)
+	shown := bytes.Clone(tt.Image().Pix)
+	tt.Advance(blinkInterval)
+	if bytes.Equal(tt.Image().Pix, shown) {
+		t.Fatal("the caret still shows a blink on")
+	}
+	ct.key(0, ui.KeyRight)
+	ct.key(0, ui.KeyLeft)
+	if !bytes.Equal(tt.Image().Pix, shown) {
+		t.Error("the caret does not show as it moved")
+	}
+}
+
 func TestCodeEditorUndo(t *testing.T) {
 	ct := newEditorTest(t, "", "|")
 	ct.typ("abc")
@@ -455,4 +473,19 @@ func TestCodeEditorSharedBuffer(t *testing.T) {
 	if s := b.Selection(); s.Start() != 8 || s.End() != 13 {
 		t.Fatalf("other editor's selection %+v", s)
 	}
+}
+
+// A double click selects the word under it and a triple click its line,
+// on a backend that does not count clicks.
+func TestCodeEditorMultiClick(t *testing.T) {
+	ct := newEditorTest(t, "", "|select customers from orders\nx")
+	ed := &ct.st.ed
+	x, y := ed.textX+ed.view.charWidth*10, float32(ed.rowTop(0))+ed.view.lineHeight/2
+	ct.tt.ClickAt(x, y)
+	ct.tt.ClickAt(x, y)
+	ct.tt.Frame()
+	ct.want("select [customers] from orders\nx")
+	ct.tt.ClickAt(x, y)
+	ct.tt.Frame()
+	ct.want("[select customers from orders\n]x")
 }

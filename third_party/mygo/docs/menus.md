@@ -53,15 +53,25 @@ shortcut, which `Label` and `Accelerator` override:
 
 - editing: `RoleUndo`, `RoleRedo`, `RoleCut`, `RoleCopy`, `RolePaste`,
   `RoleDelete`, `RoleSelectAll`, and on macOS `RolePasteAndMatchStyle`;
+- formatting: `RoleBold`, `RoleItalic`, `RoleUnderline`,
+  `RoleStrikethrough`, `RoleAlignLeft`, `RoleAlignCenter` and
+  `RoleAlignRight`, which format the selection of a [rich text
+  editor](ui/rich-text-editor.md) of native UI, or of an editable page
+  (`document.execCommand`); Paste and Match Style pastes plain text into a
+  rich text editor;
 - the page: `RoleReload`, `RoleForceReload`, `RoleToggleDevTools` (in a
   window of native UI, its [inspector](ui/inspector.md)),
   `RoleResetZoom`, `RoleZoomIn`, `RoleZoomOut`;
 - the window: `RoleToggleFullScreen`, `RoleMinimize`, `RoleZoom`,
   `RoleClose`;
+- [documents](documents.md#the-file-menu): `RoleNew`, `RoleOpen`,
+  `RoleOpenRecent`, `RoleSave`, `RoleSaveAs`, `RoleDuplicate`,
+  `RoleRename`, `RoleMoveTo`, `RoleRevert`;
 - the app: `RoleQuit`, and on macOS `RoleAbout`, `RoleHide`,
   `RoleHideOthers`, `RoleUnhide`, `RoleFront`, `RoleServices`,
   `RoleStartSpeaking`, `RoleStopSpeaking`;
-- whole menus: `RoleFileMenu`, `RoleEditMenu`, `RoleViewMenu` and
+- whole menus: `RoleFileMenu`, `RoleEditMenu`, `RoleFormatMenu` (Bold,
+  Italic, Underline, Strikethrough and the alignments), `RoleViewMenu` and
   `RoleWindowMenu`, and on macOS `RoleAppMenu` (the menu named after the
   app), `RoleWindow` (the menu listing the windows) and `RoleHelp` (the
   menu with the search field).
@@ -95,8 +105,12 @@ paste work.
 
 On Linux and Windows menu bars belong to windows. `App.SetMenu` gives its
 menu to every window without one of its own, `Window.SetMenu` gives a
-window its own, and windows have none by default. `App.SetMenu(nil)`
+window its own, and windows have none by default, except in apps with
+[documents](documents.md), which get File and Edit menus. `App.SetMenu(nil)`
 removes the menu.
+
+On Windows, menu bars and menus follow the appearance, light or dark, as
+the title bar does (see [dark mode](frontend.md#dark-mode)).
 
 A window with `AutoHideMenuBar` keeps its menu bar out of sight, and the
 room for the page. Alt pressed alone, or F10, shows the bar with the

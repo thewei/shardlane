@@ -17,7 +17,13 @@ import (
 )
 
 // ErrUnsupported is returned by features the current backend cannot provide.
-var ErrUnsupported = errors.New("not supported on this platform")
+// It is errors.ErrUnsupported too (errors.Is), which apps check.
+var ErrUnsupported error = unsupportedError{}
+
+type unsupportedError struct{}
+
+func (unsupportedError) Error() string        { return "not supported on this platform" }
+func (unsupportedError) Is(target error) bool { return target == errors.ErrUnsupported }
 
 // ErrNotificationsDenied is what ShowNotification fails with when the user
 // does not allow the app to show notifications.
@@ -85,6 +91,24 @@ type Backend interface {
 	Screen() Screen
 	Theme() Theme
 	Power() Power
+	Network() Network
+	// Secrets may be called before Init, from any goroutine.
+	Secrets() Secrets
+	// Applications lists the applications installed on the computer.
+	// Unlike other methods it may be called from any goroutine once Init
+	// returned: it reads the disk, which the core does off the main thread.
+	Applications() ([]Application, error)
+
+	// NewFileWatch starts watching files, with no target yet. notify is
+	// called on a goroutine of the backend, one notice at a time.
+	// NewFileWatch may be called before Init, from any goroutine.
+	NewFileWatch(notify func(FileWatchNotice)) (FileWatch, error)
+	// ReplaceFile replaces the file at target with the file at
+	// replacement, in the same directory, keeping what the system keeps of
+	// the target's metadata (permissions, owner, extended attributes,
+	// creation date); replacement is gone afterwards. It may be called
+	// before Init, from any goroutine.
+	ReplaceFile(target, replacement string) error
 
 	NewTray(h TrayHandler) (Tray, error)
 	RegisterHotkey(id int, accelerator string) error
@@ -98,6 +122,13 @@ type Backend interface {
 	// RemoveAllNotifications removes the app's notifications, on macOS
 	// those of earlier runs too.
 	RemoveAllNotifications()
+
+	// WebViewAvailable reports whether the system webview is there, and so
+	// whether windows showing web pages can work: WKWebView on macOS,
+	// WebKitGTK on Linux, the WebView2 Runtime on Windows. A window showing
+	// native UI needs none, so an app whose windows all do runs without one.
+	// It may be called before Init, from any goroutine.
+	WebViewAvailable() bool
 }
 
 // AppOptions configures Backend.Init.
@@ -130,8 +161,14 @@ type AppHandler interface {
 	MenuItemClicked(id int)
 	ThemeChanged()
 	DisplaysChanged()
+	// LocaleChanged is called when the languages the user prefers, or the
+	// regional formats, may have changed, on the systems that report it.
+	LocaleChanged()
 	// PowerEvent is "suspend", "resume", "lock-screen" or "unlock-screen".
 	PowerEvent(event string)
+	// NetworkChanged reports the network's status, once Network.Watch was
+	// called, when it may have changed.
+	NetworkChanged(status NetworkStatus)
 	HotkeyPressed(id int)
 	NotificationClicked(id string)
 }
@@ -154,8 +191,37 @@ type AppController interface {
 	// ClearBrowsingData deletes the data pages stored; done runs on the
 	// main thread.
 	ClearBrowsingData(done func(error))
+	// Cookie operations address the default page store. Calls and exactly-once
+	// completions run on main; ListCookies returns independent Go values:
+	// every cookie, or with an http or https url the cookies a request to
+	// it sends (CookieMatchesURL where the engine cannot tell).
+	ListCookies(url string, done func([]Cookie, error))
+	SetCookie(cookie Cookie, done func(error))
+	DeleteCookie(key CookieKey, done func(error))
+	ClearCookies(done func(error))
 	ShowAboutPanel(opts AboutPanelOptions)
-	Locale() string
+	// PreferredLanguages returns the languages the user reads, most
+	// preferred first, as the system's settings list them, in the forms
+	// the system writes them (the core normalizes them): never what the
+	// app chose for itself (SaveLocale). Safe before Init.
+	PreferredLanguages() []string
+	// Region returns the user's regional formats. Safe before Init.
+	Region() Region
+	// SavedLocale returns the language the app chose for itself, as the
+	// system keeps it, and whether the system keeps one at all (macOS:
+	// AppleLanguages in the app's own defaults, which System Settings
+	// shows as the app's language; browsers: localStorage). Where it
+	// keeps none, the core keeps it in a file. Safe before Init.
+	SavedLocale() (tag string, kept bool)
+	// SaveLocale keeps tag where SavedLocale reads it, "" to forget it,
+	// and reports whether the system keeps one at all.
+	SaveLocale(tag string) bool
+	// SetLanguages tells the backend the languages the app shows, its
+	// own language first, and whether it is laid out right to left, for
+	// what shows text the core does not draw: the web views it creates
+	// later and, where it can change, those it created, and the system's
+	// own texts and widgets.
+	SetLanguages(tags []string, rtl bool)
 	// RegisterURLScheme makes the app, identified by id (its identifier)
 	// and named name, the handler of the URLs of scheme for the user.
 	RegisterURLScheme(scheme, id, name string) error
@@ -171,6 +237,27 @@ type AppController interface {
 	// is false for a plain executable (e.g. `go run`). Safe to call from
 	// any goroutine, before Init too.
 	Package() (info PackageInfo, ok bool)
+	// AddRecentDocument records the absolute path of a document the user
+	// opened in the system's recent documents; ClearRecentDocuments
+	// removes the ones the app recorded.
+	AddRecentDocument(path string) error
+	ClearRecentDocuments() error
+	// SetJumpList commits the app's whole jump list (Windows); elsewhere
+	// it does nothing.
+	SetJumpList(list JumpList) error
+}
+
+// Region is the user's regional formats, as the system's settings have
+// them with the user's changes.
+type Region struct {
+	// Locale is the locale of the formats, in the form the system writes
+	// it, "" when unknown.
+	Locale string
+	// FirstWeekday is the first day of the week, 0 for Sunday to 6 for
+	// Saturday, or -1 when the system does not say.
+	FirstWeekday int
+	// HourCycle is 12 or 24, or 0 when the system does not say.
+	HourCycle int
 }
 
 // PackageInfo is metadata of a packaged application.
@@ -187,6 +274,24 @@ type AboutPanelOptions struct {
 	Version            string
 	Copyright          string
 	Credits            string
+}
+
+// JumpList is the whole jump list of the app: Windows replaces all of it
+// at each commit.
+type JumpList struct {
+	Tasks []JumpListTask
+}
+
+// JumpListTask is a task of a jump list: a program to run with its
+// arguments, unquoted, its label, tooltip and icon.
+type JumpListTask struct {
+	Title       string
+	Description string
+	Path        string
+	Args        []string
+	WorkingDir  string
+	IconPath    string
+	IconIndex   int
 }
 
 // WindowOptions configures a native window and its webview. The public
@@ -237,6 +342,11 @@ type WindowOptions struct {
 	// takes the keyboard. Show of a flyout that is not focusable shows it
 	// without the keyboard, as ShowInactive.
 	Flyout *Flyout
+	// Panel makes the window a panel (mygo.WindowOptions.Panel): it floats
+	// above the windows of all apps on the current workspace, full-screen
+	// ones included, out of the taskbar and the app switcher, and on macOS
+	// takes the keyboard without activating the app.
+	Panel bool
 
 	// UserScripts are injected into every page, in order.
 	UserScripts []UserScript
@@ -276,6 +386,14 @@ type Window interface {
 
 	SetTitle(title string)
 	Title() string
+	// SetRepresentedFile shows the file a window shows, "" for none: the
+	// proxy icon of the title bar and its menu of folders (macOS). Other
+	// platforms do nothing.
+	SetRepresentedFile(path string)
+	// SetDocumentEdited shows that the window's document has unsaved
+	// changes: the dot of the close button (macOS). Other platforms do
+	// nothing; the core marks the title there.
+	SetDocumentEdited(edited bool)
 	SetBounds(r Rect)
 	Bounds() Rect
 	SetContentBounds(r Rect)
@@ -372,6 +490,11 @@ type Page interface {
 	IsLoading() bool
 	// Eval runs JavaScript in the main frame and ignores the result.
 	Eval(js string)
+	// SetUserScripts replaces the scripts of WindowOptions.UserScripts:
+	// the documents the page loads from then on run the new ones, while
+	// the current document keeps what it ran. Scripts a backend injects
+	// itself, as the title bar's, stay.
+	SetUserScripts(scripts []UserScript)
 	// CallAsyncFunction runs body as the body of an async function in the
 	// main frame, awaits it and reports the returned value, which the
 	// caller arranges to be a string. err is non-nil when the body fails to
@@ -577,6 +700,10 @@ const (
 // Menu is a snapshot of a menu tree.
 type Menu struct {
 	Items []*MenuItem
+	// RightToLeft lays a context menu out right to left, as that of an
+	// interface laid out so: its items from the right, opening to the
+	// left of where it shows, which is its top right corner.
+	RightToLeft bool
 }
 
 // MenuItem is a snapshot of a menu item. ID identifies the public item the
@@ -687,6 +814,18 @@ type Shell interface {
 	ShowItemInFolder(path string)
 	TrashItem(path string) error
 	Beep()
+	// FileIcon returns the icon the file manager shows for a file, a
+	// folder or an application, as a PNG image of size by size pixels.
+	FileIcon(path string, size int) ([]byte, error)
+	// OpenApplication starts the application at Application.Path, or
+	// brings it to the front.
+	OpenApplication(path string) error
+}
+
+// Application is an installed application (Backend.Applications): Path is
+// where FileIcon finds its icon and OpenApplication starts it.
+type Application struct {
+	Name, ID, Path string
 }
 
 // Display describes a monitor.
@@ -719,7 +858,7 @@ type Theme interface {
 	// text where the system's text stack does not know them, as on Linux.
 	FontRendering() FontRendering
 	// Preferences returns the settings of the desktop that the system's
-	// controls follow. A change calls Handler.ThemeChanged.
+	// controls follow. A change of any of them calls Handler.ThemeChanged.
 	Preferences() Preferences
 }
 
@@ -732,6 +871,11 @@ type Preferences struct {
 	// ReduceMotion asks for less motion: macOS's Reduce Motion, Windows's
 	// animation effects and GNOME's animations turned off.
 	ReduceMotion bool
+	// ReduceTransparency asks for opaque surfaces in place of translucent
+	// ones: macOS's Reduce Transparency, Windows's transparency effects
+	// turned off, prefers-reduced-transparency in browsers. Linux desktops
+	// have no such setting.
+	ReduceTransparency bool
 	// HighContrast asks for more contrast: macOS's Increase Contrast,
 	// Windows's contrast themes, the desktop portal's higher contrast.
 	HighContrast bool
@@ -769,6 +913,41 @@ type Power interface {
 	KeepAwake(display bool, reason string) (release func())
 	OnBattery() bool
 	IdleTime() time.Duration
+}
+
+// NetworkStatus is the state of the computer's network connection.
+type NetworkStatus struct {
+	Online  bool
+	Metered bool // expensive, metered or in a low data mode
+}
+
+// Network reports the state of the computer's network connection.
+type Network interface {
+	// Watch starts reporting AppHandler.NetworkChanged, which may also be
+	// called when the status stayed the same.
+	Watch()
+	// Status returns the current state.
+	Status() NetworkStatus
+}
+
+// ErrSecretNotFound is what Secrets.Secret fails with when the store has
+// no secret for the service and account.
+var ErrSecretNotFound = errors.New("mygo: secret not found")
+
+// Secrets keeps small secrets in the system's credential store: the
+// Keychain on macOS, the Secret Service on Linux (through libsecret) and
+// the Credential Manager on Windows. A secret is identified by a service,
+// the app, and an account, its key, as Electron's keytar stores them.
+//
+// Unlike other platform methods these may be called from any goroutine,
+// and they may block while the system asks the user, e.g. to unlock the
+// keyring: the core never calls them on the main thread of a running app.
+type Secrets interface {
+	SetSecret(service, account string, secret []byte) error
+	// Secret fails with ErrSecretNotFound when there is none.
+	Secret(service, account string) ([]byte, error)
+	// DeleteSecret succeeds when there is no secret to delete.
+	DeleteSecret(service, account string) error
 }
 
 // TrayHandler receives tray icon events.

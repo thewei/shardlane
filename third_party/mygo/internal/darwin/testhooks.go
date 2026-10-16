@@ -5,7 +5,9 @@ package darwin
 import (
 	"fmt"
 	"math"
+	"os"
 	"sync"
+	"time"
 	"unsafe"
 
 	"github.com/ebitengine/purego"
@@ -60,6 +62,13 @@ func TestPerformKeyEquivalent(key string, shift bool) bool {
 	return handled
 }
 
+// TestOnScreen reports whether some of a window shows on screen, as the
+// window server reports once it put the window there.
+func TestOnScreen(handle uintptr) bool {
+	const occlusionStateVisible = 1 << 1
+	return sendInt(id(handle), "occlusionState")&occlusionStateVisible != 0
+}
+
 // TestEndSheet ends the sheet attached to a window as if its first button
 // was clicked, and reports whether there was one.
 func TestEndSheet(handle uintptr) bool {
@@ -77,7 +86,8 @@ func TestClick(handle uintptr, x, y float64) { testClick(handle, x, y, false) }
 
 // TestAppClick is TestClick through the application's event queue, where
 // event monitors see the click as they see the user's, as those of
-// transient popovers that close on clicks elsewhere.
+// transient popovers that close on clicks elsewhere. The application has
+// handled the click when it returns (handlePosted).
 func TestAppClick(handle uintptr, x, y float64) { testClick(handle, x, y, true) }
 
 // TestAppPress is half of TestAppClick: the left mouse down, or the up,
@@ -110,6 +120,52 @@ func testMouse(handle uintptr, x, y float64, viaApp bool, types ...uint) {
 			}
 		}
 	})
+	if viaApp {
+		handlePosted()
+	}
+}
+
+// testHandledSubtype marks the application-defined event handlePosted
+// posts after the events a test posted.
+const testHandledSubtype = 0x6d74 // 'mt'
+
+// testHandledMark tells handlePosted's events apart. Main thread only.
+var testHandledMark int
+
+// handlePosted handles the events posted to the application's queue, up to
+// an event it posts after them, before it returns: it takes them from the
+// queue and sends them as the run loop does, so that event monitors and
+// transient popovers see them as they see the user's. A test that posts
+// input so knows that the application handled it before it checks what
+// the input did, rather than waiting a while. It gives up after 10
+// seconds, which only a hung application would take.
+func handlePosted() {
+	testHandledMark++
+	mark := testHandledMark
+	withPool(func() {
+		ev := msgOtherEvent(class("NSEvent"), sel("otherEventWithType:location:modifierFlags:timestamp:windowNumber:context:subtype:data1:data2:"),
+			nsEventTypeApplicationDefined, NSPoint{}, 0, 0, 0, 0, testHandledSubtype, mark, 0)
+		send(theBackend.app, "postEvent:atStart:", uintptr(ev), 0)
+	})
+	mode := nsString("kCFRunLoopDefaultMode")
+	for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); {
+		done := false
+		withPool(func() {
+			until := msgDateSince(class("NSDate"), sel("dateWithTimeIntervalSinceNow:"), 0.5)
+			ev := msgNextEvent(theBackend.app, sel("nextEventMatchingMask:untilDate:inMode:dequeue:"), ^uint64(0), until, mode, true)
+			if ev == 0 {
+				return
+			}
+			if sendInt(ev, "type") == nsEventTypeApplicationDefined && int16(sendInt(ev, "subtype")) == testHandledSubtype && sendInt(ev, "data1") == mark {
+				done = true
+				return
+			}
+			send(theBackend.app, "sendEvent:", uintptr(ev))
+		})
+		if done {
+			return
+		}
+	}
 }
 
 // TestDrag presses the primary button at the first of points, in points
@@ -221,6 +277,23 @@ func TestWebViewAttached(handle uintptr) bool {
 	return w != nil && send(w.web, "window") == w.win
 }
 
+// TestIsFrontmost reports whether the application is the frontmost one,
+// which NSApp's isActive does not tell while a nonactivating panel is the
+// key window: it reports the app active then.
+func TestIsFrontmost() bool {
+	var front bool
+	withPool(func() {
+		app := send(send(class("NSWorkspace"), "sharedWorkspace"), "frontmostApplication")
+		front = app != 0 && sendInt(app, "processIdentifier") == os.Getpid()
+	})
+	return front
+}
+
+// TestCollectionBehavior returns a window's NSWindowCollectionBehavior.
+func TestCollectionBehavior(handle uintptr) uint {
+	return uint(sendInt(id(handle), "collectionBehavior"))
+}
+
 // TestDockInspector opens the web inspector of a window docked to it, and
 // reports whether the window has one.
 func TestDockInspector(handle uintptr) bool {
@@ -310,6 +383,19 @@ func TestDockMenu(click int) []string {
 		}
 	})
 	return titles
+}
+
+// TestRecentDocuments returns the paths of the documents the app recorded
+// with App.AddRecentDocument and did not clear, in the order the system
+// keeps them.
+func TestRecentDocuments() []string {
+	var paths []string
+	withPool(func() {
+		for _, u := range arrayItems(send(send(class("NSDocumentController"), "sharedDocumentController"), "recentDocumentURLs")) {
+			paths = append(paths, goString(send(u, "path")))
+		}
+	})
+	return paths
 }
 
 // TestFullScreenHidesToolbar reports whether a window asks to hide its
@@ -406,7 +492,8 @@ func TestKey(handle uintptr, code uint16, chars string) bool {
 
 // TestAppKey posts a key down and up to the application's event queue,
 // which sends it to the key window as it does the user's keys, to a page
-// or native UI.
+// or native UI. The application has handled the key when it returns
+// (handlePosted).
 func TestAppKey(code uint16, chars string) {
 	withPool(func() {
 		number := sendInt(send(theBackend.app, "keyWindow"), "windowNumber")
@@ -417,6 +504,7 @@ func TestAppKey(code uint16, chars string) {
 			send(theBackend.app, "postEvent:atStart:", uintptr(ev), 0)
 		}
 	})
+	handlePosted()
 }
 
 // TestKeyShift is TestKey with Shift held when shift is set.
@@ -715,4 +803,69 @@ func TestObserve(handle uintptr) (stop func()) {
 			}
 		})
 	}
+}
+
+// TestDocumentChrome describes what a window's title bar shows of its
+// document: the title, the file of the proxy icon, whether the icon
+// shows, and the dot of an edited document.
+func TestDocumentChrome(handle uintptr) (title, file string, icon, edited bool) {
+	withPool(func() {
+		w := id(handle)
+		title = goString(send(w, "title"))
+		if u := send(w, "representedURL"); u != 0 {
+			file = goString(send(u, "path"))
+		}
+		const documentIconButton = 4 // NSWindowDocumentIconButton
+		if b := send(w, "standardWindowButton:", documentIconButton); b != 0 {
+			icon = !sendBool(b, "isHidden")
+		}
+		edited = sendBool(w, "isDocumentEdited")
+	})
+	return
+}
+
+// TestSheet returns the texts of the alert attached to a window as a
+// sheet, and its button titles in the order the alert was given them
+// (their tags), which TestEndSheetButton takes.
+func TestSheet(handle uintptr) (texts, buttons []string, ok bool) {
+	withPool(func() {
+		sheet := send(id(handle), "attachedSheet")
+		if sheet == 0 {
+			return
+		}
+		ok = true
+		tagged := map[int]string{}
+		var walk func(v id)
+		walk = func(v id) {
+			switch {
+			case sendBool(v, "isKindOfClass:", uintptr(class("NSButton"))):
+				if t := goString(send(v, "title")); t != "" {
+					tagged[sendInt(v, "tag")-nsAlertFirstButtonReturn] = t
+				}
+			case sendBool(v, "isKindOfClass:", uintptr(class("NSTextField"))):
+				if t := goString(send(v, "stringValue")); t != "" {
+					texts = append(texts, t)
+				}
+			}
+			for _, sub := range arrayItems(send(v, "subviews")) {
+				walk(sub)
+			}
+		}
+		walk(send(sheet, "contentView"))
+		for i := 0; i < len(tagged); i++ {
+			buttons = append(buttons, tagged[i])
+		}
+	})
+	return
+}
+
+// TestEndSheetButton ends the alert attached to a window as a sheet as if
+// its button i, in the order the alert was given them, was clicked.
+func TestEndSheetButton(handle uintptr, i int) bool {
+	sheet := send(id(handle), "attachedSheet")
+	if sheet == 0 {
+		return false
+	}
+	send(id(handle), "endSheet:returnCode:", uintptr(sheet), uintptr(nsAlertFirstButtonReturn+i))
+	return true
 }

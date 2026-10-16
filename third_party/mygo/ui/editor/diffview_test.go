@@ -227,3 +227,111 @@ func TestDiffViewerLineSelection(t *testing.T) {
 		t.Fatalf("extended %+v", r)
 	}
 }
+
+// The app runs commands and reads the caret in the side that has the
+// keyboard, or had it last: the new side's until the old one has it.
+func TestDiffViewerActiveSide(t *testing.T) {
+	var oldText, newText strings.Builder
+	for i := range 40 {
+		line := "line " + strconv.Itoa(i)
+		oldText.WriteString(line + "\n")
+		switch i {
+		case 5, 30:
+			newText.WriteString("changed " + strconv.Itoa(i) + "\n")
+		default:
+			newText.WriteString(line + "\n")
+		}
+	}
+	d := &DiffState{Old: NewBuffer(oldText.String()), New: NewBuffer(newText.String()), ExpandUnchanged: true}
+	type caret struct {
+		side   DiffSide
+		line   int
+		hunk   int
+		inside bool
+	}
+	at := func() caret {
+		h, in := d.CurrentHunk()
+		return caret{d.ActiveSide(), d.CursorPos().Line, h, in}
+	}
+	// Before the viewer is built, the new side's caret is at the start.
+	if c := at(); c != (caret{DiffNew, 0, -1, false}) || d.Cursor() != 0 {
+		t.Fatalf("before building: %+v, offset %d", c, d.Cursor())
+	}
+	tt := ui.NewTester(func(c *ui.Context) {
+		DiffView(c, d).Fill()
+	}, 900, 500)
+	tt.Frame()
+	d.GoToHunk(1)
+	tt.Frame()
+	if c := at(); c != (caret{DiffNew, 30, 1, true}) || d.Cursor() != d.New.Offset(Pos{Line: 30}) {
+		t.Fatalf("after GoToHunk(1): %+v, offset %d", c, d.Cursor())
+	}
+	// Between changes, the current one is the one before the caret: the
+	// view shows the second change in its middle, lines of the first
+	// above it.
+	lh := float32(d.eds[1].view.lineHeight)
+	tt.ClickAt(200, 2.5*lh)
+	tt.Frame()
+	if c := at(); c.side != DiffOld || c.line <= 5 || c.line >= 30 || c.hunk != 0 || c.inside {
+		t.Fatalf("clicked in the old side: %+v", c)
+	}
+	// The old side stays active as the window loses the keyboard.
+	tt.SetFocused(false)
+	tt.Frame()
+	if side := d.ActiveSide(); side != DiffOld {
+		t.Fatalf("unfocused: side %v", side)
+	}
+	// GoToHunk moves the caret CursorPos reads, so an app's Next Change
+	// steps from it.
+	h, _ := d.CurrentHunk()
+	d.GoToHunk(h + 1)
+	tt.Frame()
+	if c := at(); c != (caret{DiffOld, 30, 1, true}) {
+		t.Fatalf("after GoToHunk in the old side: %+v", c)
+	}
+	tt.SetFocused(true)
+	tt.Frame()
+	if !d.Run(Find) {
+		t.Fatal("Run(Find) did nothing")
+	}
+	tt.Frame()
+	if !d.eds[0].find.open || d.eds[1].find.open {
+		t.Fatalf("find bars open: old %v, new %v", d.eds[0].find.open, d.eds[1].find.open)
+	}
+	// Back in the new side, between the changes, Find selects the match
+	// after the caret.
+	tt.ClickAt(650, 2.5*lh)
+	tt.Frame()
+	d.Find("changed")
+	tt.Frame()
+	if c := at(); c.side != DiffNew || c.line != 30 || !d.eds[1].find.open {
+		t.Fatalf("Find in the new side: %+v, open %v", c, d.eds[1].find.open)
+	}
+	// A unified view has only the new side's editor.
+	d.Layout = DiffUnified
+	tt.Frame()
+	if side := d.ActiveSide(); side != DiffNew {
+		t.Fatalf("unified: side %v", side)
+	}
+}
+
+// The caret is in a hunk on the lines it changes, and in a deletion on
+// the line of the side without its lines where they were; after the last
+// line of a hunk, it is after it.
+func TestDiffViewerCurrentHunk(t *testing.T) {
+	d := &DiffState{Old: NewBuffer("a\nb\nc\nd\ne\n"), New: NewBuffer("a\nB\nc\ne\n"), ExpandUnchanged: true}
+	if n := len(d.Hunks()); n != 2 {
+		t.Fatalf("%d hunks, want 2", n)
+	}
+	ed := d.editorOf(DiffNew)
+	for _, c := range []struct {
+		line, hunk int
+		inside     bool
+	}{{0, -1, false}, {1, 0, true}, {2, 0, false}, {3, 1, true}, {4, 1, false}} {
+		off := d.New.Offset(Pos{Line: c.line})
+		ed.setSels([]sel{ed.newSel(off, off)}, revealNone)
+		if h, in := d.CurrentHunk(); h != c.hunk || in != c.inside {
+			t.Errorf("new line %d: hunk %d inside %v, want %d %v", c.line, h, in, c.hunk, c.inside)
+		}
+	}
+}

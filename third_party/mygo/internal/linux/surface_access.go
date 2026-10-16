@@ -1176,12 +1176,30 @@ func initAccessCallbacks() {
 	textAtOffset := purego.NewCallback(func(obj ptr, offset, boundary int32, start, end ptr) ptr {
 		return stringAt(obj, offset, int([]int32{0, 1, 1, 3, 3, 3, 3}[max(0, min(boundary, 6))]), start, end)
 	})
+	// The formats of a rich text's runs, in ATK's text attributes, which
+	// Orca reads as bold, italic, underlined.
+	runAttributes := purego.NewCallback(func(obj ptr, offset int32, start, end ptr) ptr {
+		an := node(obj)
+		if an == nil {
+			setInt(start, 0)
+			setInt(end, 0)
+			return 0
+		}
+		run, a, z := textRunAt(an.n.TextRuns, int(offset), len(an.text()))
+		setInt(start, a)
+		setInt(end, z)
+		return textAttributeSet(run)
+	})
+	defaultAttributes := purego.NewCallback(func(obj ptr) ptr {
+		return textAttributeSet(platform.AccessTextRun{})
+	})
 	cbTextInit = purego.NewCallback(func(iface, data ptr) {
 		// get_text, get_text_at_offset, get_character_at_offset,
-		// get_caret_offset, get_character_count, get_n_selections,
-		// get_selection and get_string_at_offset.
-		setIface(iface, map[int]ptr{0: getText, 2: textAtOffset, 3: charAt, 5: caret, 9: count, 11: selections,
-			12: selection, 23: stringAtOffset})
+		// get_caret_offset, get_run_attributes, get_default_attributes,
+		// get_character_count, get_n_selections, get_selection and
+		// get_string_at_offset.
+		setIface(iface, map[int]ptr{0: getText, 2: textAtOffset, 3: charAt, 5: caret, 6: runAttributes, 7: defaultAttributes,
+			9: count, 11: selections, 12: selection, 23: stringAtOffset})
 	})
 
 	// The rows a list chooses, which choosing a row as a click does
@@ -1288,4 +1306,64 @@ func (t *accessTree) graft(list []*accessNode) {
 			}
 		}
 	}
+}
+
+// textRunAt returns the run of runs holding rune i of a text of n runes,
+// and where it starts and ends: between runs, a run without formats
+// over the runes between them.
+func textRunAt(runs []platform.AccessTextRun, i, n int) (platform.AccessTextRun, int, int) {
+	start := 0
+	for _, r := range runs {
+		switch {
+		case i < r.Start:
+			return platform.AccessTextRun{}, start, r.Start
+		case i < r.End:
+			return r, r.Start, r.End
+		}
+		start = r.End
+	}
+	return platform.AccessTextRun{}, min(start, n), n
+}
+
+// textAttributeSet returns the formats of a run as an AtkAttributeSet,
+// which ATK frees.
+func textAttributeSet(r platform.AccessTextRun) ptr {
+	var list ptr
+	add := func(name, value string) {
+		attr := gMalloc0(16) // AtkAttribute: name, value
+		*slot(attr, 0), *slot(attr, 8) = cString(name), cString(value)
+		list = gSlistAppend(list, attr)
+	}
+	if r.Family != "" {
+		add("family-name", r.Family)
+	}
+	if r.Size > 0 {
+		add("size", strconv.FormatFloat(float64(r.Size)*0.75, 'g', 4, 32)) // points
+	}
+	weight := r.Weight
+	if weight <= 0 {
+		weight = 400
+	}
+	add("weight", strconv.Itoa(weight))
+	if r.Italic {
+		add("style", "italic")
+	} else {
+		add("style", "normal")
+	}
+	if r.Underline {
+		add("underline", "single")
+	} else {
+		add("underline", "none")
+	}
+	add("strikethrough", strconv.FormatBool(r.Strikethrough))
+	color := func(c [4]uint8) string {
+		return strconv.Itoa(int(c[0])*257) + "," + strconv.Itoa(int(c[1])*257) + "," + strconv.Itoa(int(c[2])*257)
+	}
+	if r.Color[3] > 0 {
+		add("fg-color", color(r.Color))
+	}
+	if r.Background[3] > 0 {
+		add("bg-color", color(r.Background))
+	}
+	return list
 }

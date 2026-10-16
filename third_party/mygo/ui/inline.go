@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"slices"
 	"strings"
 	"unicode/utf8"
 
@@ -40,9 +39,12 @@ func (e *node) inlineText() {
 // inlineSpans returns the spans of a paragraph: its own, then those of the
 // elements inside it, in the styles they set over it.
 func (e *node) inlineSpans() []Span {
-	out := slices.Clone(e.spans)
-	if out == nil && e.ownText != "" {
-		out = []Span{{Text: e.ownText}}
+	// The spans go into a buffer the element's state keeps, as the frame
+	// is done with them once it painted.
+	sc := e.st.spanCache()
+	out := append(sc.inline[:0], e.spans...)
+	if len(e.spans) == 0 && e.ownText != "" {
+		out = append(out, Span{Text: e.ownText})
 	}
 	for ch := e.first; ch != nil; ch = ch.next {
 		spans := ch.spans
@@ -57,6 +59,7 @@ func (e *node) inlineSpans() []Span {
 			out = append(out, over(s, base))
 		}
 	}
+	sc.inline = out
 	return out
 }
 
@@ -90,6 +93,9 @@ func (e *node) spanStyle() Span {
 	}
 	if t.set&setFeatures != 0 {
 		s.Features = t.features
+	}
+	if t.set&setLang != 0 {
+		s.Lang = t.lang
 	}
 	if t.set&setDecoColor != 0 {
 		s.DecorationColor = t.decoColor
@@ -147,6 +153,9 @@ func over(s, base Span) Span {
 	if s.Features == "" {
 		s.Features = base.Features
 	}
+	if s.Lang == "" {
+		s.Lang = base.Lang
+	}
 	s.Italic = s.Italic || base.Italic
 	s.Underline = s.Underline || base.Underline
 	s.WavyUnderline = s.WavyUnderline || base.WavyUnderline
@@ -164,7 +173,9 @@ func placeInline(para, e *node, offset int) {
 		ch.frags = ch.frags[:0]
 		var box Rect
 		if para.tl != nil {
-			for i, r := range para.tl.Selection(a, b) {
+			rt := para.c.rt
+			rt.inlineRects = para.tl.AppendSelection(rt.inlineRects[:0], a, b, false)
+			for i, r := range rt.inlineRects {
 				f := Rect{ox + r.X, oy + r.Y, r.W, r.H}
 				ch.frags = append(ch.frags, f)
 				if i == 0 {

@@ -3,6 +3,9 @@
 package e2e
 
 import (
+	"log"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -20,6 +23,14 @@ func pressShortcut(string, bool) (bool, bool) { return false, false }
 
 func endSheet(*mygo.Window) (bool, bool) { return false, false }
 
+// recentDocumentRecorded reports whether path is in the Recent category of
+// the app's jump list.
+func recentDocumentRecorded(path string) (recorded, supported bool) {
+	var paths []string
+	mygo.RunOnMain(func() { paths = win.TestRecentDocuments() })
+	return slices.ContainsFunc(paths, func(p string) bool { return strings.EqualFold(p, path) }), true
+}
+
 // Clicks reach windows showing native UI only: WebView2 takes the mouse in
 // windows of its own process.
 func click(w *mygo.Window, x, y float64) (ok bool) {
@@ -27,9 +38,14 @@ func click(w *mygo.Window, x, y float64) (ok bool) {
 	return ok
 }
 
-// appClick clicks with the system's input, which activates windows.
+// appClick clicks with the system's input, which activates windows, and
+// returns once the app handled the click.
 func appClick(w *mygo.Window, x, y float64) (ok bool) {
-	mygo.RunOnMain(func() { ok = win.TestInputClick(w.NativeHandle(), x, y) })
+	var missed string
+	mygo.RunOnMain(func() { ok, missed = win.TestInputClick(w.NativeHandle(), x, y) })
+	if missed != "" {
+		log.Printf("e2e: the click at (%v, %v) did not reach the app; the window there: %s", x, y, missed)
+	}
 	return ok
 }
 
@@ -48,6 +64,11 @@ func drag(w *mygo.Window, points [][2]float64) (ok bool) {
 }
 
 func webViewAttached(*mygo.Window) (bool, bool) { return false, false }
+
+// Collection behaviors and deactivating the app are macOS's.
+func collectionBehavior(*mygo.Window) (uint, bool) { return 0, false }
+func deactivateApp() bool                          { return false }
+func appActive() (bool, bool)                      { return false, false }
 
 // WebView2 opens DevTools in a window of its own.
 func dockDevTools(*mygo.Window) bool { return false }
@@ -151,6 +172,13 @@ func titleButtons(w *mygo.Window) (names []string, supported bool) {
 func pressTitleButton(w *mygo.Window, name string) (ok bool) {
 	mygo.RunOnMain(func() { ok = win.TestPressCaptionButton(w.NativeHandle(), name) })
 	return ok
+}
+
+// menuBarColors returns the colors of a window's menu bar and of the line
+// below it, as 0xBBGGRR.
+func menuBarColors(w *mygo.Window) (bar, line uint32, supported bool) {
+	mygo.RunOnMain(func() { bar, line, supported = win.TestMenuBarColors(w.NativeHandle()) })
+	return bar, line, supported
 }
 
 // topNonClient returns how many pixels at the top of a window are not its
@@ -313,4 +341,18 @@ func axAttribute(*mygo.Window, string, string) (string, bool, bool, bool) {
 func pressEscape(*mygo.Window) bool {
 	mygo.RunOnMain(func() { win.TestPressKeys(0x1B) }) // VK_ESCAPE
 	return true
+}
+
+// Windows shows no document but the title.
+func documentChrome(w *mygo.Window) (title, file string, icon, edited, supported bool) {
+	mygo.RunOnMain(func() { title = win.TestWindowTitle(w.NativeHandle()) })
+	return title, "", false, false, true
+}
+
+func sheet(*mygo.Window) ([]string, []string, bool, bool) { return nil, nil, false, false }
+func endSheetButton(*mygo.Window, int) bool               { return false }
+
+func panelStyles(w *mygo.Window) (tool, topmost, owned, supported bool) {
+	mygo.RunOnMain(func() { tool, topmost, owned = win.TestPanelStyles(w.NativeHandle()) })
+	return tool, topmost, owned, true
 }

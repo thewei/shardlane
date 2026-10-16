@@ -9,6 +9,7 @@ package tsgen
 import (
 	"bytes"
 	"fmt"
+	"maps"
 	"reflect"
 	"slices"
 	"strings"
@@ -59,7 +60,21 @@ type generator struct {
 	taken map[string]reflect.Type
 	decls map[string]string
 	busy  map[reflect.Type]bool
+	// imported are the types of mygo-runtime the client uses.
+	imported map[string]bool
 }
+
+// runtimeTypes are the types of package mygo whose JSON is a type of
+// mygo-runtime, by the Go type's package path and name: the client
+// imports that type instead of declaring one, which their JSON methods
+// would leave unknown.
+var runtimeTypes = map[string]string{
+	"github.com/egoist/mygo.ThemePreferences": "ThemePreferences",
+}
+
+// runtimeSentinel holds the names of runtimeTypes in generator.taken, so
+// that types of the app with those names get others.
+type runtimeSentinel struct{}
 
 // Generate renders the TypeScript client.
 func Generate(m Model) ([]byte, error) {
@@ -69,6 +84,11 @@ func Generate(m Model) ([]byte, error) {
 		taken: map[string]reflect.Type{},
 		decls: map[string]string{},
 		busy:  map[reflect.Type]bool{},
+
+		imported: map[string]bool{},
+	}
+	for _, name := range runtimeTypes {
+		g.taken[name] = reflect.TypeFor[runtimeSentinel]()
 	}
 
 	// Learn package directories first so type docs can be found.
@@ -177,6 +197,9 @@ func Generate(m Model) ([]byte, error) {
 	if channels {
 		imports = append(imports, "type Channel")
 	}
+	for _, name := range slices.Sorted(maps.Keys(g.imported)) {
+		imports = append(imports, "type "+name)
+	}
 	if len(imports) > 0 {
 		fmt.Fprintf(&out, "import { %s } from %q;\n", strings.Join(imports, ", "), RuntimePackage)
 	}
@@ -278,6 +301,10 @@ func (g *generator) ts(t reflect.Type) string {
 			return inner
 		}
 		return inner + " | null"
+	}
+	if name, ok := runtimeTypes[t.PkgPath()+"."+t.Name()]; ok && t.Name() != "" {
+		g.imported[name] = true
+		return name
 	}
 	if s, ok := special(t); ok {
 		return s

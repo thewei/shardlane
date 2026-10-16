@@ -179,3 +179,42 @@ func TestFindBarButtons(t *testing.T) {
 		t.Fatal("find bar open after Close")
 	}
 }
+
+// snapshotHighlighter colors from the text it follows, as a highlighter
+// that parses the whole text does, rather than from the line it is
+// given; behind marks a line asked of it before it heard of its text.
+type snapshotHighlighter struct {
+	text   Snapshot
+	behind []string
+}
+
+func (h *snapshotHighlighter) Edit(_, new Snapshot, _ []Change)  { h.text = new }
+func (h *snapshotHighlighter) Highlight(int, time.Duration) bool { return true }
+func (h *snapshotHighlighter) Tokens(i int, text string, dst []Token) ([]Token, bool) {
+	if i >= h.text.LineCount() || h.text.Slice(h.text.LineStart(i), h.text.LineEnd(i)) != text {
+		h.behind = append(h.behind, text)
+	}
+	return append(dst, Token{End: len(text), Kind: TokenKeyword}), true
+}
+
+// An edit reaches the highlighter before a line of its text is laid out,
+// as when the selection is set before the next frame.
+func TestHighlighterHearsEditsBeforeLayout(t *testing.T) {
+	h := &snapshotHighlighter{}
+	lang := &Language{Name: "Snapshot", Highlighter: func(text Snapshot, _ func()) Highlighter {
+		h.text = text
+		return h
+	}}
+	st := &State{Buffer: NewBuffer("")}
+	st.Buffer.SetLanguage(lang)
+	tt := ui.NewTester(func(c *ui.Context) {
+		View(c, st).Fill().AutoFocus()
+	}, 500, 300)
+	tt.Frame()
+	st.Buffer.Set("SELECT 1")
+	st.Select(8, 8)
+	tt.Frame()
+	if len(h.behind) > 0 {
+		t.Fatalf("asked for the tokens of %q before hearing of the edit", h.behind)
+	}
+}

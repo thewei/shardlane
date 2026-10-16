@@ -74,6 +74,8 @@ type renderer struct {
 	profile []float32
 	// spanBuf holds the clips' spans (clip.spans).
 	spanBuf []int32
+	// blurred holds, by op, the images blurred of the ops that blur theirs.
+	blurred []*blurredImage
 }
 
 // Render draws s into dst, which must be s.Width×s.Height.
@@ -111,6 +113,8 @@ const (
 // holds the backdrops of the effects in it (Renderer.diff).
 func (d *drawer) draw(dst *Image, s *scene.Scene, area image.Rectangle, bounds []image.Rectangle) {
 	area = area.Intersect(image.Rect(0, 0, dst.W, dst.H))
+	d.blurred = d.blurImages(s, area, bounds)
+	defer func() { d.blurred = nil }()
 	// px draws operation from, an effect over the backdrop b.
 	from, px, b := 0, scene.EffectPixels(nil), (*scene.BackdropImage)(nil)
 	for i := range s.Ops {
@@ -130,7 +134,12 @@ func (d *drawer) draw(dst *Image, s *scene.Scene, area image.Rectangle, bounds [
 			d.bd.img.Transform = op.Transform
 			b = &d.bd.img
 		}
-		next.Begin(fx, op.Rect, scene.FitRadii(op.Rect, op.Radii))
+		rect := op.Rect
+		if fx.Masked() {
+			// Its shader's positions start from the box it fills.
+			rect.X, rect.Y = fx.Origin[0], fx.Origin[1]
+		}
+		next.Begin(fx, rect, scene.FitRadii(op.Rect, op.Radii))
 		from, px = i, next
 	}
 	d.drawOps(dst, s, area, bounds, from, len(s.Ops), px, b)
@@ -152,6 +161,9 @@ func (d *drawer) drawOps(dst *Image, s *scene.Scene, area image.Rectangle, bound
 	n := max(min(runtime.GOMAXPROCS(0), area.Dx()*area.Dy()/workArea, bands, maxWorkers), 1)
 	for len(d.rs) < n {
 		d.rs = append(d.rs, renderer{})
+	}
+	for i := range d.rs {
+		d.rs[i].blurred = d.blurred
 	}
 	if n == 1 {
 		d.rs[0].render(dst, s, area, bounds, from, to, px, b)
@@ -232,6 +244,12 @@ func (r *renderer) render(dst *Image, s *scene.Scene, area image.Rectangle, boun
 				r.glyphs(op)
 			}
 		case scene.OpImage:
+			if r.blurred != nil && r.blurred[i] != nil {
+				// The image blurred, in its place.
+				b := *op
+				b.Image, b.Src, b.Blur = r.blurred[i].img, r.blurred[i].src, 0
+				op = &b
+			}
 			if op.Transform.Set {
 				r.transformed(op, nil, nil)
 			} else {
@@ -245,7 +263,9 @@ func (r *renderer) render(dst *Image, s *scene.Scene, area image.Rectangle, boun
 			}
 		case scene.OpEffect:
 			if i == from && px != nil {
-				if op.Transform.Set {
+				if fx := &s.Effects[op.Start]; fx.Masked() {
+					r.maskedEffect(op, fx, px)
+				} else if op.Transform.Set {
 					r.transformed(op, px, b)
 				} else {
 					r.effect(op, px, b)
@@ -620,9 +640,18 @@ type painter struct {
 	lab1, lab2 [3]float32 // premultiplied Oklab
 	g          [4]float32
 	origin     [2]float32
+	stops      []paintStop
 }
 
-func newPainter(op *scene.Op, opacity float32) painter {
+// paintStop is a stop of a gradient as the painter mixes it: its color
+// premultiplied and times the opacity, the same in Oklab, and its place.
+type paintStop struct {
+	c   [4]float32
+	lab [3]float32
+	at  float32
+}
+
+func newPainter(op *scene.Op, opacity float32, stops []scene.Stop) painter {
 	p := painter{paint: op.Paint, c1: op.Color.Premul(opacity), c2: op.Color2.Premul(opacity), g: op.Gradient, origin: [2]float32{op.Rect.X, op.Rect.Y}}
 	if p.paint == scene.PaintOklab {
 		p.lab1, p.lab2 = oklab(op.Color), oklab(op.Color2)
@@ -631,14 +660,52 @@ func newPainter(op *scene.Op, opacity float32) painter {
 			p.lab2[i] *= p.c2[3]
 		}
 	}
+	if p.paint.HasStops() {
+		for _, st := range opStops(op, stops) {
+			c := st.Color.Premul(opacity)
+			lab := oklab(st.Color)
+			p.stops = append(p.stops, paintStop{c: c, lab: [3]float32{lab[0] * c[3], lab[1] * c[3], lab[2] * c[3]}, at: st.At})
+		}
+	}
 	return p
+}
+
+// opStops returns the stops of op's gradient in stops, at most
+// scene.MaxStops of them.
+func opStops(op *scene.Op, stops []scene.Stop) []scene.Stop {
+	a, b := int(op.Stops[0]), int(op.Stops[1])
+	if a < 0 || b > len(stops) || a >= b {
+		return nil
+	}
+	return stops[a:min(b, a+scene.MaxStops)]
+}
+
+// borderPainter returns the painters of op's inside and of its border,
+// that of its border nil when BorderColor paints it: with BorderPaint, its
+// gradient paints the border, and plain Color the inside.
+func borderPainter(op *scene.Op, opacity float32, stops []scene.Stop) (fill painter, border *painter) {
+	if !op.BorderPaint {
+		return newPainter(op, opacity, stops), nil
+	}
+	b := newPainter(op, opacity, stops)
+	return painter{paint: scene.PaintSolid, c1: op.Color.Premul(opacity)}, &b
 }
 
 // solid reports whether the fill is one color.
 func (p *painter) solid() bool { return p.paint == scene.PaintSolid }
 
 // visible reports whether the fill shows anywhere.
-func (p *painter) visible() bool { return p.c1[3] > 0 || (!p.solid() && p.c2[3] > 0) }
+func (p *painter) visible() bool {
+	if p.paint.HasStops() {
+		for _, s := range p.stops {
+			if s.c[3] > 0 {
+				return true
+			}
+		}
+		return false
+	}
+	return p.c1[3] > 0 || (!p.solid() && p.c2[3] > 0)
+}
 
 // at returns the fill at a pixel center.
 func (p *painter) at(px, py float32) [4]float32 {
@@ -655,6 +722,14 @@ func (p *painter) at(px, py float32) [4]float32 {
 			c[i] = p.c1[i]*cov + p.c2[i]*(1-cov)
 		}
 		return c
+	case scene.PaintLinearStops, scene.PaintLinearStopsOklab:
+		g := p.g
+		dx, dy := g[2]-g[0], g[3]-g[1]
+		t := ((px-g[0])*dx + (py-g[1])*dy) / max(dx*dx+dy*dy, 0.0001)
+		return p.stopsAt(t)
+	case scene.PaintConic, scene.PaintConicOklab:
+		t := conicT(px-p.g[0], py-p.g[1], p.g[2])
+		return p.stopsAt(t)
 	}
 	g := p.g
 	dx, dy := g[2]-g[0], g[3]-g[1]
@@ -677,6 +752,50 @@ func (p *painter) at(px, py float32) [4]float32 {
 	return [4]float32{clamp01(rgb[0]) * a, clamp01(rgb[1]) * a, clamp01(rgb[2]) * a, a}
 }
 
+// conicT returns where (dx, dy) from a conic gradient's center lies
+// around it, from 0 at angle (radians clockwise from upwards) to 1 a
+// turn later, as the shaders compute it.
+func conicT(dx, dy, angle float32) float32 {
+	t := (float32(math.Atan2(float64(dx), float64(-dy))) - angle) * (1 / (2 * math.Pi))
+	return t - float32(math.Floor(float64(t)))
+}
+
+// stopsAt returns the gradient's color at t: the first stop's before it,
+// the last's after it, and between two stops their colors mixed, in sRGB
+// or in Oklab, premultiplied, as the shaders' stopsAt.
+func (p *painter) stopsAt(t float32) [4]float32 {
+	s := p.stops
+	n := len(s)
+	if n == 0 {
+		return [4]float32{}
+	}
+	if t <= s[0].at {
+		return s[0].c
+	}
+	if t >= s[n-1].at {
+		return s[n-1].c
+	}
+	i := 1
+	for i < n-1 && t >= s[i].at {
+		i++
+	}
+	a, b := &s[i-1], &s[i]
+	k := clamp01((t - a.at) / max(b.at-a.at, 1e-6))
+	alpha := a.c[3]*(1-k) + b.c[3]*k
+	if p.paint == scene.PaintLinearStops || p.paint == scene.PaintConic {
+		return [4]float32{a.c[0]*(1-k) + b.c[0]*k, a.c[1]*(1-k) + b.c[1]*k, a.c[2]*(1-k) + b.c[2]*k, alpha}
+	}
+	if alpha <= 0 {
+		return [4]float32{}
+	}
+	var lab [3]float32
+	for i := range lab {
+		lab[i] = (a.lab[i]*(1-k) + b.lab[i]*k) / alpha
+	}
+	rgb := fromOklab(lab)
+	return [4]float32{clamp01(rgb[0]) * alpha, clamp01(rgb[1]) * alpha, clamp01(rgb[2]) * alpha, alpha}
+}
+
 func toLinear(c float32) float32 {
 	if c <= 0.04045 {
 		return c / 12.92
@@ -692,17 +811,7 @@ func toSRGB(c float32) float32 {
 }
 
 // oklab converts an sRGB color to Oklab, as the shaders do.
-func oklab(c scene.Color) [3]float32 {
-	r, g, b := toLinear(float32(c.R)/255), toLinear(float32(c.G)/255), toLinear(float32(c.B)/255)
-	l := float32(math.Cbrt(float64(0.4122214708*r + 0.5363325363*g + 0.0514459929*b)))
-	m := float32(math.Cbrt(float64(0.2119034982*r + 0.6806995451*g + 0.1073969566*b)))
-	s := float32(math.Cbrt(float64(0.0883024619*r + 0.2817188376*g + 0.6299787005*b)))
-	return [3]float32{
-		0.2104542553*l + 0.7936177850*m - 0.0040720468*s,
-		1.9779984951*l - 2.4285922050*m + 0.4505937099*s,
-		0.0259040371*l + 0.7827717662*m - 0.8086757660*s,
-	}
-}
+func oklab(c scene.Color) [3]float32 { return scene.Oklab(c) }
 
 // fromOklab converts an Oklab color to sRGB components, unclamped.
 func fromOklab(lab [3]float32) [3]float32 {
@@ -763,7 +872,7 @@ func (r *renderer) fill(op *scene.Op) {
 	}
 	radii := scene.Corners(op.Rect, op.Radii, op.Continuous)
 	outer := newShape(op.Rect, radii)
-	pt := newPainter(op, opacity)
+	pt, bp := borderPainter(op, opacity, r.s.Stops)
 	border := op.BorderColor.Premul(opacity)
 	bw := op.Border
 	if op.BorderColor.A == 0 {
@@ -832,11 +941,23 @@ func (r *renderer) fill(op *scene.Op) {
 					bc *= dash(op.Rect, bw, px, py)
 				}
 				if bc > 0 {
-					blend(p, border, bc*clipCov)
+					blend(p, borderAt(bp, border, op.BorderColor, px, py), bc*clipCov)
 				}
 			}
 		}
 	}
+}
+
+// borderAt returns the color of a border at a pixel center: border, or,
+// painted with a gradient (bp), the gradient's color there times
+// BorderColor, straight.
+func borderAt(bp *painter, border [4]float32, c scene.Color, px, py float32) [4]float32 {
+	if bp == nil {
+		return border
+	}
+	g := bp.at(px, py)
+	k := [4]float32{float32(c.R) / 255, float32(c.G) / 255, float32(c.B) / 255, float32(c.A) / 255}
+	return [4]float32{g[0] * k[0] * k[3], g[1] * k[1] * k[3], g[2] * k[2] * k[3], g[3] * k[3]}
 }
 
 // hole makes a rounded rectangle transparent within the clips: each pixel
@@ -1181,12 +1302,12 @@ func erf(x float32) float32 {
 
 func (r *renderer) glyphs(op *scene.Op) {
 	var pt *painter
-	if op.Paint == scene.PaintLinear || op.Paint == scene.PaintOklab {
+	if op.Paint == scene.PaintLinear || op.Paint == scene.PaintOklab || op.Paint.HasStops() {
 		opacity := op.Opacity
 		if opacity == 0 {
 			opacity = 1
 		}
-		p := newPainter(op, opacity)
+		p := newPainter(op, opacity, r.s.Stops)
 		pt = &p
 	}
 	text := r.s.Text

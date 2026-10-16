@@ -90,6 +90,10 @@ func Spoiler(c *ui.Context, text string) {
 }
 ```
 
+A widget whose input changes what it edits reports it with `SetChanged`
+on its element, as it builds: `Changed` then returns true for it, as for
+the widgets' own. The [rich text editor](rich-text-editor.md) does so.
+
 Give a widget a [role](accessibility.md#roles), a name and its
 [states](accessibility.md#states) for assistive technology, take the keys
 it needs with `Shortcut` on its element, or every key as it comes with

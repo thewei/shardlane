@@ -171,6 +171,13 @@ var (
 	gDBusConnectionGetUniqueName   func(conn ptr) ptr
 )
 
+// GIO's network monitor (network.go).
+var (
+	gNetworkMonitorGetDefault          func() ptr
+	gNetworkMonitorGetNetworkAvailable func(monitor ptr) bool
+	gNetworkMonitorGetNetworkMetered   func(monitor ptr) bool
+)
+
 // GDK and GdkPixbuf.
 var (
 	gdkScreenGetRGBAVisual      func(screen ptr) ptr
@@ -265,6 +272,8 @@ var (
 	gtkWindowSetIcon                    func(w, pixbuf ptr)
 	gtkWindowSetDefaultIcon             func(pixbuf ptr)
 	gtkWidgetShowAll                    func(w ptr)
+	gtkWidgetSetDirection               func(w ptr, dir int32)
+	gtkWidgetSetDefaultDirection        func(dir int32)
 	gtkWidgetShow                       func(w ptr)
 	gtkWidgetHide                       func(w ptr)
 	gtkWidgetDestroy                    func(w ptr)
@@ -375,6 +384,7 @@ var (
 	webkitWebContextRegisterURIScheme                 func(ctx ptr, scheme *byte, cb ptr, data ptr, destroy ptr)
 	webkitWebContextGetSecurityManager                func(ctx ptr) ptr
 	webkitWebContextGetWebsiteDataManager             func(ctx ptr) ptr
+	webkitWebContextSetPreferredLanguages             func(ctx ptr, languages **byte)
 	webkitWebsiteDataManagerClear                     func(m ptr, types uint32, timespan int64, cancellable ptr, cb ptr, data ptr)
 	webkitWebsiteDataManagerClearFinish               func(m, res ptr, err *ptr) bool
 	webkitDownloadGetWebView                          func(d ptr) ptr
@@ -455,6 +465,15 @@ var (
 	gtkPageSetupSetRightMargin                        func(setup ptr, margin float64, unit int32)
 	gtkPaperSizeNewCustom                             func(name, displayName *byte, width, height float64, unit int32) ptr
 	gtkPaperSizeFree                                  func(size ptr)
+	gtkRecentManagerGetDefault                        func() ptr
+	gtkRecentManagerAddItem                           func(manager ptr, uri *byte) bool
+	gtkRecentManagerGetItems                          func(manager ptr) ptr
+	gtkRecentInfoGetURI                               func(info ptr) ptr
+	gtkRecentInfoHasApplication                       func(info, app ptr) bool
+	gtkRecentInfoUnref                                func(info ptr)
+	gGetApplicationName                               func() ptr
+	gtkRecentManagerRemoveItem                        func(manager ptr, uri *byte, gerr ptr) bool
+	gtkRecentManagerHasItem                           func(manager ptr, uri *byte) bool
 	webkitJavascriptResultGetJSValue                  func(r ptr) ptr
 	webkitNavigationPolicyDecisionGetNavigationAction func(d ptr) ptr
 	webkitNavigationPolicyDecisionGetFrameName        func(d ptr) ptr
@@ -540,6 +559,7 @@ func load() error {
 	mustBind(g, &gMainLoopUnref, "g_main_loop_unref")
 	mustBind(g, &gSlistFree, "g_slist_free")
 	mustBind(g, &gListFree, "g_list_free")
+	mustBind(g, &gGetApplicationName, "g_get_application_name")
 	mustBind(g, &gVariantNewString, "g_variant_new_string")
 	mustBind(g, &gVariantNewUint32, "g_variant_new_uint32")
 	mustBind(g, &gVariantNewInt32, "g_variant_new_int32")
@@ -587,6 +607,9 @@ func load() error {
 	mustBind(i, &gDBusConnectionCallSync, "g_dbus_connection_call_sync")
 	mustBind(i, &gDBusConnectionSignalSubscribe, "g_dbus_connection_signal_subscribe")
 	mustBind(i, &gDBusConnectionGetUniqueName, "g_dbus_connection_get_unique_name")
+	mustBind(i, &gNetworkMonitorGetDefault, "g_network_monitor_get_default")
+	mustBind(i, &gNetworkMonitorGetNetworkAvailable, "g_network_monitor_get_network_available")
+	mustBind(i, &gNetworkMonitorGetNetworkMetered, "g_network_monitor_get_network_metered")
 
 	d := libGDK
 	mustBind(d, &gdkScreenGetRGBAVisual, "gdk_screen_get_rgba_visual")
@@ -669,6 +692,8 @@ func load() error {
 	mustBind(t, &gtkWindowSetIcon, "gtk_window_set_icon")
 	mustBind(t, &gtkWindowSetDefaultIcon, "gtk_window_set_default_icon")
 	mustBind(t, &gtkWidgetShowAll, "gtk_widget_show_all")
+	mustBind(t, &gtkWidgetSetDirection, "gtk_widget_set_direction")
+	mustBind(t, &gtkWidgetSetDefaultDirection, "gtk_widget_set_default_direction")
 	mustBind(t, &gtkWidgetShow, "gtk_widget_show")
 	mustBind(t, &gtkWidgetHide, "gtk_widget_hide")
 	mustBind(t, &gtkWidgetDestroy, "gtk_widget_destroy")
@@ -783,6 +808,14 @@ func load() error {
 	mustBind(t, &gtkPageSetupSetRightMargin, "gtk_page_setup_set_right_margin")
 	mustBind(t, &gtkPaperSizeNewCustom, "gtk_paper_size_new_custom")
 	mustBind(t, &gtkPaperSizeFree, "gtk_paper_size_free")
+	mustBind(t, &gtkRecentManagerGetDefault, "gtk_recent_manager_get_default")
+	mustBind(t, &gtkRecentManagerAddItem, "gtk_recent_manager_add_item")
+	mustBind(t, &gtkRecentManagerGetItems, "gtk_recent_manager_get_items")
+	mustBind(t, &gtkRecentInfoGetURI, "gtk_recent_info_get_uri")
+	mustBind(t, &gtkRecentInfoHasApplication, "gtk_recent_info_has_application")
+	mustBind(t, &gtkRecentInfoUnref, "gtk_recent_info_unref")
+	mustBind(t, &gtkRecentManagerRemoveItem, "gtk_recent_manager_remove_item")
+	mustBind(t, &gtkRecentManagerHasItem, "gtk_recent_manager_has_item")
 	mustBind(libCairo, &cairoSurfaceWriteToPNGStream, "cairo_surface_write_to_png_stream")
 	mustBind(libCairo, &cairoSurfaceDestroy, "cairo_surface_destroy")
 
@@ -810,6 +843,9 @@ var (
 // and 20 ms of startup.
 func webKit() error {
 	webKitOnce.Do(func() { errWebKit = loadWebKit() })
+	if errWebKit == nil && theBackend != nil {
+		cookiesOnce.Do(persistCookies)
+	}
 	return errWebKit
 }
 
@@ -818,18 +854,29 @@ func loadWebKit() error {
 	if libWebKit, err = open("libwebkit2gtk-4.1.so.0", "libwebkit2gtk-4.0.so.37"); err != nil {
 		return fmt.Errorf("%w (install WebKitGTK: libwebkit2gtk-4.1-0 on Debian/Ubuntu, webkit2gtk4.1 on Fedora)", err)
 	}
-	if libJSC, err = open("libjavascriptcoregtk-4.1.so.0", "libjavascriptcoregtk-4.0.so.18"); err != nil {
+	// 4.1 links libsoup 3 and 4.0 libsoup 2.4. Opening the loaded library
+	// again returns the same handle, which tells the two apart.
+	h41, _ := open("libwebkit2gtk-4.1.so.0")
+	soup3 = h41 != 0 && h41 == libWebKit
+	jsc, soup := "libjavascriptcoregtk-4.1.so.0", "libsoup-3.0.so.0"
+	if !soup3 {
+		jsc, soup = "libjavascriptcoregtk-4.0.so.18", "libsoup-2.4.so.1"
+	}
+	// SoupCookie pointers must never cross Soup ABI generations.
+	if libJSC, err = open(jsc); err != nil {
 		return err
 	}
-	if libSoup, err = open("libsoup-3.0.so.0", "libsoup-2.4.so.1"); err != nil {
+	if libSoup, err = open(soup); err != nil {
 		return err
 	}
+	bindCookies()
 
 	w := libWebKit
 	mustBind(w, &webkitWebContextGetDefault, "webkit_web_context_get_default")
 	mustBind(w, &webkitWebContextRegisterURIScheme, "webkit_web_context_register_uri_scheme")
 	mustBind(w, &webkitWebContextGetSecurityManager, "webkit_web_context_get_security_manager")
 	mustBind(w, &webkitWebContextGetWebsiteDataManager, "webkit_web_context_get_website_data_manager")
+	bind(w, &webkitWebContextSetPreferredLanguages, "webkit_web_context_set_preferred_languages")
 	mustBind(w, &webkitWebsiteDataManagerClear, "webkit_website_data_manager_clear")
 	mustBind(w, &webkitWebsiteDataManagerClearFinish, "webkit_website_data_manager_clear_finish")
 	mustBind(w, &webkitDownloadGetWebView, "webkit_download_get_web_view")

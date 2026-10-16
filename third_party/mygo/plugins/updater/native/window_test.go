@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/egoist/mygo"
+	"github.com/egoist/mygo/internal/wait"
 	"github.com/egoist/mygo/plugins/updater/internal/frontend"
 	"github.com/egoist/mygo/plugins/updater/internal/markdown"
 	"github.com/egoist/mygo/ui"
@@ -83,7 +84,7 @@ func (s *session) fit(t *testing.T) [2]int {
 	var size [2]int
 	select {
 	case size = <-s.fits:
-	case <-time.After(5 * time.Second):
+	case <-time.After(wait.Guard):
 		t.Fatal("the window did not ask for a size")
 	}
 	for {

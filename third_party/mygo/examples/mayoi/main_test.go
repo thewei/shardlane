@@ -145,8 +145,7 @@ func TestView(t *testing.T) {
 	h := newMayoi(false)
 	tt := ui.NewTester(h.view, 960, 640)
 	step := func() {
-		time.Sleep(3 * time.Second / game.Rate)
-		tt.Frame()
+		tt.Advance(3 * time.Second / game.Rate)
 	}
 	tt.Key(0, ui.KeySpace)
 	step()
@@ -166,8 +165,7 @@ func TestView(t *testing.T) {
 	}
 	x := h.w.pos.x
 	tt.KeyDown(ui.KeyD)
-	time.Sleep(200 * time.Millisecond)
-	tt.Frame()
+	tt.Advance(200 * time.Millisecond)
 	if h.w.pos.x <= x || h.w.facingLeft {
 		t.Errorf("D held: at %v, facing left %v", h.w.pos.x, h.w.facingLeft)
 	}

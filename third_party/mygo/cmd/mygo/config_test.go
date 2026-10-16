@@ -134,6 +134,7 @@ func TestConfigTypes(t *testing.T) {
 	for name, typ := range map[string]reflect.Type{
 		"Config":          reflect.TypeFor[Config](),
 		"FileAssociation": reflect.TypeFor[FileAssociation](),
+		"I18nConfig":      reflect.TypeFor[I18n](),
 		"UpdatesConfig":   reflect.TypeFor[Updates](),
 		"S3Config":        reflect.TypeFor[S3](),
 		"MacOSConfig":     reflect.TypeFor[MacOS](),

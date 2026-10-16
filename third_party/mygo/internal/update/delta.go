@@ -65,6 +65,12 @@ func (e *deltaEntry) isFile() bool { return !e.Dir && e.Link == "" }
 // are included whole.
 const maxDiff = 256 << 20
 
+// stapledTicket is where stapling writes the notarization ticket of an app
+// bundle. The archive's app has it, but the app installed from the disk
+// image does not (dmg.go staples the app after copying it into the image),
+// so deltas include it whole, never as a copy or patch of the old app's.
+const stapledTicket = "Contents/CodeResources"
+
 // WriteDelta writes the delta that turns the app in oldDir, of version from,
 // into the app in newDir, of version to: the entries of newDir, or all of
 // it when entries is nil.
@@ -79,6 +85,9 @@ func WriteDelta(w io.Writer, from, to, oldDir, newDir string, entries []string) 
 	err := filepath.WalkDir(oldDir, func(p string, d fs.DirEntry, err error) error {
 		if err != nil || !d.Type().IsRegular() {
 			return err
+		}
+		if relPath(oldDir, p) == stapledTicket {
+			return nil
 		}
 		f, err := os.Open(p)
 		if err != nil {

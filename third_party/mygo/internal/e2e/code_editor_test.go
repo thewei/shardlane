@@ -61,3 +61,41 @@ func TestContentWindowCodeEditor(t *testing.T) {
 		})
 	}
 }
+
+// With NoInputMethod, keys type the characters of the layout, which come
+// to OnInput as text, without going through the input method.
+func TestContentWindowCodeEditorNoInputMethod(t *testing.T) {
+	var frames atomic.Int32
+	var typed atomic.Value
+	typed.Store("")
+	st := &editor.State{Buffer: editor.NewBuffer("abc"), NoInputMethod: true, CursorShape: editor.CursorBlock}
+	st.OnInput = func(ev ui.InputEvent) bool {
+		if ev.Kind == ui.InputText {
+			typed.Store(typed.Load().(string) + ev.Text)
+			return true
+		}
+		return false
+	}
+	w := newWindow(t, mygo.WindowOptions{Title: "Code editor", Width: 500, Height: 240, Content: ui.View(func(c *ui.Context) {
+		editor.View(c, st).Fill().AutoFocus()
+		frames.Add(1)
+	})})
+	eventually(t, "an editor frame", func() bool { return frames.Load() > 0 })
+	if !click(w, 400, 30) {
+		t.Skip("click automation unavailable")
+	}
+	eventually(t, "the editor focused", func() bool {
+		var focused bool
+		mygo.RunOnMain(func() { focused = st.Focused() })
+		return focused
+	})
+	if !pressKey(w, 38, "j") && !pressKeys("j") { // kVK_ANSI_J on macOS
+		t.Skip("key automation unavailable")
+	}
+	eventually(t, "j for OnInput", func() bool { return typed.Load().(string) == "j" })
+	var text string
+	mygo.RunOnMain(func() { text = st.Buffer.String() })
+	if text != "abc" {
+		t.Fatalf("the text is %q, want it untouched", text)
+	}
+}

@@ -2,6 +2,8 @@ package ui
 
 import (
 	"slices"
+
+	transfer "github.com/egoist/mygo/transfer"
 )
 
 // TextInput creates a single-line text input editing *value.
@@ -32,7 +34,7 @@ func textInputBase(c *context, value *string, multiline bool) *node {
 	}
 	st := e.st
 	if st.editor == nil || st.editor.document != nil {
-		st.editor = newEditor()
+		st.editor = newEditor(c.rt.now)
 		st.editor.setText(*value)
 		st.editor.caret, st.editor.anchor = st.editor.buf.n, st.editor.buf.n
 	}
@@ -53,7 +55,7 @@ func textInputBase(c *context, value *string, multiline bool) *node {
 		ed.setText(*value)
 		ed.compose = ""
 	}
-	ed.readOnly, ed.password, ed.lines, ed.onPaste = false, false, [2]int{}, nil
+	ed.rebuild()
 	ed.ranges = ed.ranges[:0]
 	e.onValueInput(stringInput)
 
@@ -97,6 +99,92 @@ func (e *node) OnPaste(fn func(text string) bool) *node {
 	return e
 }
 
+// OnTextKey has fn see a key pressed in the text input before the input
+// takes it, on the main thread as the key comes, with the text typed
+// before it in place, as AppKit's doCommandBySelector and a web page's
+// keydown on a text field: Enter that sends a message, Up that edits the
+// last one, Tab that accepts a completion, Escape that cancels, Cmd+Enter.
+// fn reports whether it took the key; one taken changes nothing but what
+// fn sets: a text area inserts no newline, a single-line input does not
+// submit, Tab does not move the focus. One left goes on as it would
+// without fn.
+//
+// fn sees the keys that type no text: those with Cmd or Ctrl, and Enter,
+// Tab, Escape, Backspace, Delete, the arrows and the other keys that move
+// the caret, as pressed (macOS's Control keys that move the caret too).
+// While an input method composes, its keys are its own. Keys that the
+// window or an element around the focus handles as a Shortcut go to the
+// shortcut first, as with HandleInput, unless the input edits with them,
+// as with Enter and the arrows. Like ReadOnly, OnTextKey holds for the
+// input that comes until the next frame.
+//
+// fn runs between frames, where an Element kept from the view is no longer
+// valid: it reads and replaces the text through k instead, as a chat
+// composer sends with Enter, clears what it sent, and breaks the line with
+// Shift+Enter:
+//
+//	ui.TextArea(c, &app.draft).OnTextKey(func(k ui.TextKey) bool {
+//		if k.Key != ui.KeyEnter || k.Mods != 0 {
+//			return false // Shift+Enter breaks the line
+//		}
+//		app.send(k.Text())
+//		k.SetText("")
+//		return true
+//	})
+func (e *node) OnTextKey(fn func(k TextKey) bool) *node {
+	if ed := e.st.editor; ed != nil && e.flags&flagEditable != 0 {
+		ed.onTextKey = fn
+	}
+	return e
+}
+
+// A TextKey is a key pressed in a text input, as OnTextKey's fn sees it.
+// It is valid while fn runs: Text and SetText panic after fn returns.
+type TextKey struct {
+	Key  Key
+	Mods Modifiers
+	ed   *editor
+	seq  uint64
+}
+
+// valid panics unless k's fn is running.
+func (k TextKey) valid() *editor {
+	if k.ed == nil || !k.ed.keying || k.ed.keySeq != k.seq {
+		panic("ui: a TextKey is valid only while its OnTextKey fn runs")
+	}
+	return k.ed
+}
+
+// Text returns the text of the input as the key comes, with what was typed
+// before it, which may be ahead of the bound value: that takes what is
+// typed as the next frame is built.
+func (k TextKey) Text() string { return k.valid().String() }
+
+// SetText replaces the text of the input, and its bound value, as the app
+// does by setting the value as the view is built: a composer clears the
+// draft it sent, Up puts the last message back. Writing the bound value
+// from fn is not enough, as the editor writes what it holds over it.
+func (k TextKey) SetText(s string) {
+	ed := k.valid()
+	if ed.document != nil {
+		// A TextBuffer takes the text as when the app sets it.
+		ed.document.Set(s)
+		ed.loadBuffer(ed.document.Snapshot())
+		ed.bufferDirty = false
+	} else {
+		ed.setText(s)
+		ed.compose = ""
+		if ed.value != nil {
+			*ed.value = s
+		}
+	}
+	if w := ed.client; w != nil {
+		// What the view built before the key shows the old text.
+		w.rt.consumed = true
+		w.rt.requestFrame()
+	}
+}
+
 // Lines makes a text area as high as its text, wrapped at its width, from
 // min lines up to max, past which it scrolls, as a message field grows with
 // what is typed: TextArea(c, &draft).Lines(1, 8). Without it, a text area is
@@ -117,6 +205,17 @@ func (e *node) TextSelection() (start, end int) {
 		return 0, 0
 	}
 	return ed.selection()
+}
+
+// TextAnchorCaret returns the selection of a text input as offsets in runes
+// into its text, from where it was started to its caret: the anchor is after
+// the caret when the selection was made backwards.
+func (e *node) TextAnchorCaret() (anchor, caret int) {
+	ed := e.st.editor
+	if ed == nil {
+		return 0, 0
+	}
+	return ed.anchor, ed.caret
 }
 
 // SetTextSelection selects the runes of a text input from start to end, or
@@ -180,6 +279,35 @@ func (e *node) Selectable() *node {
 	return e
 }
 
+// SelectedText is the part of a paragraph that the selection of a
+// Selectable container holds.
+type SelectedText struct {
+	// ID is the paragraph's element's (Element.ID).
+	ID uint64
+	// Text is the paragraph's text, and Start and End the runes of it the
+	// selection holds.
+	Text       string
+	Start, End int
+}
+
+// SelectedTexts returns the parts of the paragraphs that the selection of
+// a Selectable container holds, in the order they were built, or none,
+// as of the last frame: to copy them otherwise, as a context menu's item
+// does.
+func (e *node) SelectedTexts() []SelectedText {
+	return e.c.rt.selectedTexts(e.id)
+}
+
+// CopyData sets what Copy, its shortcut and the context menu's put on
+// the clipboard for the selection of a Selectable container: fn gets its
+// parts, as SelectedTexts returns them, and returns the data, as a
+// document copies its paragraphs with blank lines between them as text
+// (transfer.TextData), and as HTML too to keep their formatting.
+func (e *node) CopyData(fn func(parts []SelectedText) transfer.Data) *node {
+	e.copyData = fn
+	return e
+}
+
 // Unselectable excludes a paragraph or container subtree from a surrounding
 // Selectable container. A Selectable container nested inside it can provide
 // a selection of its own. For inline elements, set it on their paragraph.
@@ -193,8 +321,8 @@ func (e *node) Unselectable() *node {
 }
 
 // TextRange styles runes Start up to End of a text input's text: their
-// color and, when Weight is set, their weight, as a message field shows
-// the mentions in what is typed.
+// color, when its alpha is not zero, and their weight, when Weight is set,
+// as a message field shows the mentions in what is typed.
 type TextRange struct {
 	Start, End int
 	Color      Color
@@ -202,10 +330,12 @@ type TextRange struct {
 }
 
 // TextRanges styles runs of a text input's text, in the frames that call
-// it, with ranges that do not overlap. They follow the text as it is: an
-// app that finds them in the text finds them again as it changes. A
-// password shows none; an input method's composition shows unstyled
-// between them.
+// it. Ranges may overlap and nest, as the attributes of an attributed
+// string do: where they do, each of Color and Weight is that of the last
+// range given that sets it, across the calls of the frame. They follow the
+// text as it is: an app that finds them in the text finds them again as it
+// changes. A password shows none; an input method's composition shows
+// unstyled between them.
 func (e *node) TextRanges(ranges ...TextRange) *node {
 	ed := e.st.editor
 	if ed == nil || e.flags&flagEditable == 0 {
@@ -214,8 +344,114 @@ func (e *node) TextRanges(ranges ...TextRange) *node {
 	for _, r := range ranges {
 		if r.End > r.Start {
 			ed.ranges = append(ed.ranges, r)
+			ed.apart = false
 		}
 	}
-	slices.SortFunc(ed.ranges, func(a, b TextRange) int { return a.Start - b.Start })
 	return e
+}
+
+// rangeMerge is what sortRanges reuses from frame to frame.
+type rangeMerge struct {
+	given          []TextRange
+	points, starts []int
+	all, colors    rangeHeap
+	weights        rangeHeap
+}
+
+// sortRanges splits the ranges into runs apart, sorted by start, where
+// each of Color and Weight is that of the last range given setting it, as
+// TextRanges says, once the frame has given them all: a frame calling
+// TextRanges for each range merges them once. It takes O(n log n) for n
+// ranges: a sweep over their ends, with the ranges covering it on heaps
+// by the order they were given in.
+func (ed *editor) sortRanges() {
+	m := &ed.merge
+	given := append(m.given[:0], ed.ranges...)
+	points, starts := m.points[:0], m.starts[:0]
+	for i, r := range given {
+		points = append(points, r.Start, r.End)
+		starts = append(starts, i)
+	}
+	slices.Sort(points)
+	points = slices.Compact(points)
+	slices.SortFunc(starts, func(a, b int) int { return given[a].Start - given[b].Start })
+	m.all, m.colors, m.weights = m.all[:0], m.colors[:0], m.weights[:0]
+	out, next := ed.ranges[:0], 0
+	for k := 0; k+1 < len(points); k++ {
+		from, to := points[k], points[k+1]
+		for ; next < len(starts) && given[starts[next]].Start <= from; next++ {
+			i := starts[next]
+			m.all.push(i)
+			if given[i].Color.A > 0 {
+				m.colors.push(i)
+			}
+			if given[i].Weight != 0 {
+				m.weights.push(i)
+			}
+		}
+		if _, ok := m.all.top(given, from); !ok {
+			continue // between ranges
+		}
+		r := TextRange{Start: from, End: to}
+		if i, ok := m.colors.top(given, from); ok {
+			r.Color = given[i].Color
+		}
+		if i, ok := m.weights.top(given, from); ok {
+			r.Weight = given[i].Weight
+		}
+		if n := len(out); n > 0 && out[n-1].End == from && out[n-1].Color == r.Color && out[n-1].Weight == r.Weight {
+			out[n-1].End = to // a run as one, as an attributed string's
+			continue
+		}
+		out = append(out, r)
+	}
+	m.given, m.points, m.starts = given[:0], points[:0], starts[:0]
+	ed.ranges, ed.apart = out, true
+}
+
+// rangeHeap is a heap of ranges by the order they were given in, the last
+// on top.
+type rangeHeap []int
+
+func (h *rangeHeap) push(i int) {
+	*h = append(*h, i)
+	s := *h
+	for j := len(s) - 1; j > 0; {
+		p := (j - 1) / 2
+		if s[p] >= s[j] {
+			break
+		}
+		s[p], s[j] = s[j], s[p]
+		j = p
+	}
+}
+
+// top returns the last range given that covers at, taking off those that
+// end by it, which cover nothing after it either.
+func (h *rangeHeap) top(given []TextRange, at int) (int, bool) {
+	s := *h
+	for len(s) > 0 && given[s[0]].End <= at {
+		n := len(s) - 1
+		s[0] = s[n]
+		s = s[:n]
+		for j := 0; ; {
+			c := 2*j + 1
+			if c >= n {
+				break
+			}
+			if c+1 < n && s[c+1] > s[c] {
+				c++
+			}
+			if s[j] >= s[c] {
+				break
+			}
+			s[j], s[c] = s[c], s[j]
+			j = c
+		}
+	}
+	*h = s
+	if len(s) == 0 {
+		return 0, false
+	}
+	return s[0], true
 }

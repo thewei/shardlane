@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/egoist/mygo/internal/platform"
+	"github.com/egoist/mygo/internal/wait"
 )
 
 func TestWindowState(t *testing.T) {
@@ -45,14 +46,12 @@ func TestWindowState(t *testing.T) {
 	}
 	captured := func(key string, want WindowState) {
 		t.Helper()
-		for deadline := time.Now().Add(2 * time.Second); ; time.Sleep(5 * time.Millisecond) {
-			got := onMainValue(func() WindowState { return windowStates.byKey[key] })
-			if got == want {
-				return
-			}
-			if time.Now().After(deadline) {
-				t.Fatalf("%s captured as %+v, want %+v", key, got, want)
-			}
+		var got WindowState
+		if !wait.Poll(func() bool {
+			got = onMainValue(func() WindowState { return windowStates.byKey[key] })
+			return got == want
+		}) {
+			t.Fatalf("%s captured as %+v, want %+v", key, got, want)
 		}
 	}
 
@@ -225,7 +224,7 @@ func TestFileDrop(t *testing.T) {
 		if len(e.Paths) != 2 || e.Paths[0] != "/tmp/a.txt" || e.X != 10 || e.Y != 20 {
 			t.Errorf("drop = %+v", e)
 		}
-	case <-time.After(time.Second):
+	case <-time.After(wait.Guard):
 		t.Fatal("OnFileDrop was not called")
 	}
 	// about:blank is the app's own page: it gets the paths too.

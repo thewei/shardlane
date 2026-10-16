@@ -1,6 +1,7 @@
 package text
 
 import (
+	"cmp"
 	"encoding/binary"
 	"image"
 	"math"
@@ -31,6 +32,12 @@ type Style struct {
 	// Features are OpenType features, comma separated: a tag turns one
 	// on, and tag=value sets it, as "tnum, liga=0, salt=2".
 	Features string
+	// Lang is the language of the text, a BCP 47 tag as "ja" or
+	// "zh-Hant": the system's text stack picks the glyphs of that
+	// language, as the Han characters Chinese and Japanese write apart,
+	// and falls back to fonts for it. "" is the language of the System
+	// (SetLanguage).
+	Lang string
 }
 
 func (s Style) weight() int {
@@ -57,6 +64,10 @@ const (
 	Start Align = iota
 	Center
 	End
+	// Left and Right align lines so whatever their direction, as the
+	// start and the end of an interface laid out right to left do.
+	Left
+	Right
 )
 
 // Params describe a text to lay out.
@@ -74,6 +85,12 @@ type Params struct {
 	// all the same.
 	NoWrap bool
 	Align  Align
+	// RTL makes paragraphs without a strongly directional character, as
+	// numbers or an empty line, right to left, as in an interface laid out
+	// right to left; the others read in the direction of their first
+	// strongly directional character, as Unicode's bidirectional
+	// algorithm finds it by default (rules P2 and P3), whichever this is.
+	RTL bool
 	// KeepSpaces keeps the advance of whitespace at the end of wrapped
 	// lines, as text editors do.
 	KeepSpaces bool
@@ -96,6 +113,15 @@ type Span struct {
 	Italic        bool
 	LetterSpacing float32
 	Features      string
+	// Lang is the language of the runes, as Style.Lang; "" keeps the
+	// text's.
+	Lang string
+	// ObjectWidth and ObjectHeight, when ObjectWidth is set, make each
+	// rune of the span, an object replacement character (U+FFFC), an
+	// inline object: a box that wide, standing that high on the baseline,
+	// which lines break around and which draws no glyph, as an image in a
+	// rich text's line (Glyph.Object).
+	ObjectWidth, ObjectHeight float32
 }
 
 // style returns the style of the span's runes in a text of style base.
@@ -118,6 +144,9 @@ func (sp Span) style(base Style) Style {
 	}
 	if sp.Features != "" {
 		s.Features = sp.Features
+	}
+	if sp.Lang != "" {
+		s.Lang = sp.Lang
 	}
 	return s
 }
@@ -142,12 +171,15 @@ func EncodeSpans(spans []Span) string {
 		}
 		b = binary.LittleEndian.AppendUint32(b, math.Float32bits(sp.LetterSpacing))
 		str(sp.Features)
+		b = binary.LittleEndian.AppendUint32(b, math.Float32bits(sp.ObjectWidth))
+		b = binary.LittleEndian.AppendUint32(b, math.Float32bits(sp.ObjectHeight))
+		str(sp.Lang)
 	}
 	return string(b)
 }
 
-// decodeSpans reads what EncodeSpans wrote.
-func decodeSpans(s string) []Span {
+// DecodeSpans reads what EncodeSpans wrote.
+func DecodeSpans(s string) []Span {
 	b := []byte(s)
 	var out []Span
 	uvarint := func() int {
@@ -190,6 +222,9 @@ func decodeSpans(s string) []Span {
 		}
 		sp.LetterSpacing = f32()
 		sp.Features = str()
+		sp.ObjectWidth = f32()
+		sp.ObjectHeight = f32()
+		sp.Lang = str()
 		if b == nil {
 			break
 		}
@@ -265,6 +300,9 @@ type Glyph struct {
 	// runes the cluster holds; glyphs of the ellipsis have Runes 0.
 	Cluster, Runes int
 	RTL            bool
+	// Object marks the box of an inline object (Span.ObjectWidth), which
+	// draws no glyph: what shows there is the caller's.
+	Object bool
 }
 
 // System lays out text and rasterizes glyphs with the system's own text
@@ -277,6 +315,13 @@ type System struct {
 	// rasterizing text, if the app gave them (SetFontRendering).
 	uiFamily  string
 	rendering *[3]string
+	// families are the system's font families as FontFamilies last listed
+	// them, while listed; RegisterFont forgets them, counting familiesGen.
+	families    []FontFamily
+	listed      bool
+	familiesGen uint64
+	// lang is the language of texts whose style names none (SetLanguage).
+	lang string
 	// fonts caches the font of each style.
 	fonts map[Style]*Font
 
@@ -446,6 +491,30 @@ func (s *System) SetUIFamily(family string) {
 	}
 }
 
+// SetLanguage sets the language of the texts whose Style names none, a
+// BCP 47 tag, or "" for none: the system's text stack then picks glyphs
+// and fallback fonts as it does by default, by the user's settings. The
+// ui package sets the language the app shows. The layouts made before are
+// made anew (Generation).
+func (s *System) SetLanguage(tag string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if tag == s.lang {
+		return
+	}
+	s.lang = tag
+	s.gen++
+	s.clearLayouts()
+	clear(s.marks)
+}
+
+// Language returns the language SetLanguage set.
+func (s *System) Language() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.lang
+}
+
 // RegisterFont adds a TrueType or OpenType font (or collection) to the
 // fonts text can use, under family, or the font's own family name when
 // family is empty.
@@ -455,11 +524,75 @@ func (s *System) RegisterFont(data []byte, family string) error {
 	if err := s.engine().register(data, family); err != nil {
 		return err
 	}
+	// The system's families may hold the app's under their own names.
+	s.families, s.listed = nil, false
+	s.familiesGen++
 	s.gen++
 	clear(s.fonts)
 	s.clearLayouts()
 	clear(s.marks)
 	return nil
+}
+
+// A FontFamily is a font family text can use.
+type FontFamily struct {
+	Name string
+	// Monospaced is whether its regular font gives every character the
+	// same advance.
+	Monospaced bool
+	// Registered is whether the app registered it (RegisterFont).
+	Registered bool
+}
+
+// FontFamilies lists the families text can use: the app's registered ones
+// first, under the names it gave them, or their own when it gave none,
+// then the system's, each once and sorted without regard to case. The
+// system's are listed once, outside the lock, and kept until RegisterFont.
+func (s *System) FontFamilies() []FontFamily {
+	s.mu.Lock()
+	app := s.engine().appFamilies()
+	system, listed, gen := s.families, s.listed, s.familiesGen
+	var list func() []FontFamily
+	if !listed {
+		list = s.eng.systemFamilies()
+	}
+	s.mu.Unlock()
+	if !listed {
+		if list != nil {
+			system = list()
+		}
+		s.mu.Lock()
+		if s.familiesGen == gen {
+			s.families, s.listed = system, true
+		}
+		s.mu.Unlock()
+	}
+	seen := map[string]int{} // the index of each family, by lowercased name
+	var out []FontFamily
+	add := func(families []FontFamily, registered bool) {
+		from := len(out)
+		for _, f := range families {
+			key := strings.ToLower(f.Name)
+			i, ok := seen[key]
+			switch {
+			case f.Name == "":
+			case !ok:
+				f.Registered = registered
+				seen[key] = len(out)
+				out = append(out, f)
+			case i >= from:
+				// Fonts of one family, as its bold after its regular: it is
+				// monospaced if one of them is.
+				out[i].Monospaced = out[i].Monospaced || f.Monospaced
+			}
+		}
+		slices.SortFunc(out[from:], func(a, b FontFamily) int {
+			return cmp.Or(strings.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name)), strings.Compare(a.Name, b.Name))
+		})
+	}
+	add(app, true)
+	add(system, false)
+	return out
 }
 
 // Preload starts the text engine and finds the system UI font, which the
@@ -522,6 +655,7 @@ func (s *System) Layout(p Params) *Layout {
 	p.Ellipsis = strings.Clone(p.Ellipsis)
 	p.Style.Family = strings.Clone(p.Style.Family)
 	p.Style.Features = strings.Clone(p.Style.Features)
+	p.Style.Lang = strings.Clone(p.Style.Lang)
 	c := s.layout(p)
 	c.bytes = layoutBytes(c)
 	// A large paragraph still lays out correctly; keeping it would evict
@@ -558,7 +692,7 @@ func (s *System) overLayoutBudget(n int) bool {
 
 func layoutBytes(c *cached) int {
 	l, p := &c.layout, c.layout.Params
-	n := int(unsafe.Sizeof(*c)+unsafe.Sizeof(p)) + len(p.Text) + len(p.Spans) + len(p.Ellipsis) + len(p.Style.Family) + len(p.Style.Features)
+	n := int(unsafe.Sizeof(*c)+unsafe.Sizeof(p)) + len(p.Text) + len(p.Spans) + len(p.Ellipsis) + len(p.Style.Family) + len(p.Style.Features) + len(p.Style.Lang)
 	n += cap(l.Runes) * int(unsafe.Sizeof(rune(0)))
 	if cap(l.Lines) > 1 {
 		n += cap(l.Lines) * int(unsafe.Sizeof(Line{}))
@@ -692,9 +826,14 @@ func (s *System) layout(p Params) *cached {
 	s.engine().resetScratch()
 	m := metricsOf(s.font(p.Style), p.Style)
 	runes := []rune(p.Text)
-	spans := decodeSpans(p.Spans)
+	spans := DecodeSpans(p.Spans)
 	c := &cached{layout: Layout{Params: p, Runes: runes}}
 	l := &c.layout
+	// The layout keeps its parameters as they came; the engine shapes in
+	// the system's language where they name none.
+	if p.Style.Lang == "" {
+		p.Style.Lang = s.lang
+	}
 	l.Lines = c.line[:0]
 	y := float32(0)
 	for start := 0; start <= len(runes); {
@@ -738,7 +877,7 @@ func (s *System) layout(p Params) *cached {
 		switch align {
 		case Center:
 			dx = (box - line.Width) / 2
-		case End:
+		case End, Right:
 			dx = box - line.Width
 		}
 		if dx != 0 {
@@ -761,7 +900,7 @@ func (s *System) paragraph(out []Line, p Params, spans []Span, runes []rune, sta
 	if n := len(text); n > 0 && text[n-1] == '\r' {
 		text = text[:n-1]
 	}
-	rtl := isRTL(text)
+	rtl := isRTL(text, p.RTL)
 	spans = spansIn(spans, start, start+len(text))
 	var shaped []shapedLine
 	if len(text) > 0 {
@@ -792,7 +931,7 @@ func (s *System) paragraph(out []Line, p Params, spans []Span, runes []rune, sta
 	first := len(out)
 	for _, sl := range shaped {
 		k := glyphCount(sl)
-		out = append(out, line(p, text, sl, start, rtl, m, y, room[:0:k], &s.starts))
+		out = append(out, line(p, text, sl, start, rtl, m, y, room[:0:k], &s.starts, spans))
 		room = room[k:]
 	}
 	lines := out[first:]
@@ -819,7 +958,7 @@ func glyphCount(sl shapedLine) int {
 // line positions a line of the paragraph text, which starts at rune
 // offset of the layout, with its top at *y, and moves *y past it. Its
 // glyphs go to room, which has room for those of sl; buf is a buffer.
-func line(p Params, text []rune, sl shapedLine, offset int, rtl bool, m lineMetrics, y *float32, room []Glyph, buf *[]int) Line {
+func line(p Params, text []rune, sl shapedLine, offset int, rtl bool, m lineMetrics, y *float32, room []Glyph, buf *[]int, spans []Span) Line {
 	line := Line{Start: offset + sl.start, End: offset + sl.end, RTL: rtl, Ascent: m.ascent, Descent: m.descent}
 	if cap(room) > 0 {
 		line.Glyphs = room
@@ -864,6 +1003,12 @@ func line(p Params, text []rune, sl shapedLine, offset int, rtl bool, m lineMetr
 					next = starts[i+1]
 				}
 				g.Runes = max(next-g.Cluster, 1)
+				if o := objectAt(spans, g.Cluster); o != nil {
+					// An inline object stands on the baseline, as high as
+					// it is, whatever font its run took.
+					g.Object, g.Advance, g.ID = true, o.ObjectWidth, 0
+					line.Ascent = max(line.Ascent, o.ObjectHeight)
+				}
 				g.Cluster += offset
 			}
 			g.Size = runSize
@@ -889,6 +1034,21 @@ func line(p Params, text []rune, sl shapedLine, offset int, rtl bool, m lineMetr
 	*y += line.Height
 	*buf = starts
 	return line
+}
+
+// objectAt returns the span of rune i if it makes it an inline object,
+// else nil.
+func objectAt(spans []Span, i int) *Span {
+	k, _ := slices.BinarySearchFunc(spans, i, func(sp Span, i int) int {
+		if sp.End <= i {
+			return -1
+		}
+		return 1
+	})
+	if k < len(spans) && spans[k].ObjectWidth > 0 {
+		return &spans[k]
+	}
+	return nil
 }
 
 // ellipsis ends text cut short, unless Params.Ellipsis gives another.
@@ -986,8 +1146,8 @@ func advance(l shapedLine) float32 {
 }
 
 // isRTL reports whether a paragraph is right-to-left: whether its first
-// strongly directional rune is.
-func isRTL(para []rune) bool {
+// strongly directional rune is, else neutral.
+func isRTL(para []rune, neutral bool) bool {
 	for _, r := range para {
 		switch {
 		case unicode.In(r, unicode.Hebrew, unicode.Arabic, unicode.Syriac, unicode.Thaana, unicode.Nko, unicode.Samaritan, unicode.Mandaic, unicode.Adlam):
@@ -996,5 +1156,5 @@ func isRTL(para []rune) bool {
 			return false
 		}
 	}
-	return false
+	return neutral
 }

@@ -40,7 +40,7 @@ var (
 	fnMouseEncoderReset, fnMouseEncoderEncode, fnMouseEventNew, fnMouseEventFree, fnMouseEventSetAction,
 	fnMouseEventSetButton, fnMouseEventClearButton, fnMouseEventSetMods uintptr
 
-	fnFocusEncode, fnPasteEncode, fnPasteIsSafe, fnFree uintptr
+	fnFocusEncode, fnPasteEncode, fnPasteIsSafe, fnTerminalPaste, fnFree uintptr
 
 	fnGestureNew, fnGestureFree, fnGestureReset, fnGestureGet, fnGestureEventNew, fnGestureEventFree,
 	fnGestureEventSet, fnGestureEvent, fnSelectAll uintptr
@@ -119,6 +119,7 @@ var symbols = []struct {
 	{"ghostty_mouse_event_set_position", &fnMouseEventSetPosition},
 	{"ghostty_focus_encode", &fnFocusEncode},
 	{"ghostty_paste_encode", &fnPasteEncode},
+	{"ghostty_terminal_paste", &fnTerminalPaste},
 	{"ghostty_paste_is_safe", &fnPasteIsSafe},
 	{"ghostty_free", &fnFree},
 	{"ghostty_selection_gesture_new", &fnGestureNew},

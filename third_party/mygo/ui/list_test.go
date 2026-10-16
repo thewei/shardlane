@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/egoist/mygo/internal/platform"
 )
@@ -618,7 +619,7 @@ func TestListScrollBarDragReachesTheEnd(t *testing.T) {
 	}, 300, 400)
 	tt.Move(150, 200)
 	st := listStateOf(&s)
-	g := scrollBars(Rect{st.x, st.y, st.w, st.h}, st.barInset, float32(st.contentH), float32(st.contentH), 0, float32(st.scrollY), st.flags, 6)
+	g := scrollBars(Rect{st.x, st.y, st.w, st.h}, st.barInset, float32(st.contentH), float32(st.contentH), 0, float32(st.scrollY), st.flags, 6, false)
 	x, y := g.v.X+g.v.W/2, g.v.Y+g.v.H/2
 	tt.Move(x, y)
 	tt.Press(x, y)
@@ -649,7 +650,7 @@ func TestListScrollBarDragFollowsThePointerAsEstimatesChange(t *testing.T) {
 	}, 300, 400)
 	tt.Move(150, 200)
 	st := listStateOf(&s)
-	g := scrollBars(Rect{st.x, st.y, st.w, st.h}, st.barInset, float32(st.contentH), float32(st.contentH), 0, float32(st.scrollY), st.flags, 6)
+	g := scrollBars(Rect{st.x, st.y, st.w, st.h}, st.barInset, float32(st.contentH), float32(st.contentH), 0, float32(st.scrollY), st.flags, 6, false)
 	x, y := g.v.X+g.v.W/2, g.v.Y+g.v.H/2
 	travel := g.vTrack.H - 4 - g.v.H
 	tt.Move(x, y)
@@ -1130,5 +1131,68 @@ func BenchmarkListScroll(b *testing.B) {
 	b.ReportAllocs()
 	for b.Loop() {
 		tt.Scroll(400, 300, 0, 97)
+	}
+}
+
+// TestListFollowAnimation checks that a list following its end with a
+// FollowAnimation glides to the end as its last row grows and rows come,
+// and that the user scrolling stops it.
+func TestListFollowAnimation(t *testing.T) {
+	n, last := 30, 40
+	s := ListState{FollowEnd: true, FollowAnimation: &Smooth}
+	now := time.Unix(1000, 0)
+	tt := coreNewTester(func(c *context) {
+		coreList(c, &s, n, func(i int) {
+			h := float32(40)
+			if i == n-1 {
+				h = float32(last)
+			}
+			coreBox(c).Height(h).Children(func() { coreTextf(c, "Message %d", i) })
+		}).Grow(1)
+	}, 300, 400)
+	tt.rt.clock = func() time.Time { return now }
+	tt.Frame()
+	if r, _ := rowBox(tt, &s, n-1); r.Y+r.H != 400 {
+		t.Fatalf("at first, the last row ends at %v", r.Y+r.H)
+	}
+	// The last row grows by 60: its end shows below the list, then comes
+	// up.
+	last += 60
+	tt.Frame()
+	r0, _ := rowBox(tt, &s, n-1)
+	if r0.Y+r0.H <= 400+50 || !s.AtEnd() {
+		t.Fatalf("grown: the last row ends at %v, at the end %v", r0.Y+r0.H, s.AtEnd())
+	}
+	now = now.Add(80 * time.Millisecond)
+	tt.Frame()
+	r1, _ := rowBox(tt, &s, n-1)
+	if !(r1.Y+r1.H < r0.Y+r0.H && r1.Y+r1.H > 400) {
+		t.Errorf("on the way: the last row ends at %v, after %v", r1.Y+r1.H, r0.Y+r0.H)
+	}
+	now = now.Add(2 * time.Second)
+	tt.Frame()
+	if r, _ := rowBox(tt, &s, n-1); r.Y+r.H != 400 || !s.AtEnd() {
+		t.Errorf("done: the last row ends at %v", r.Y+r.H)
+	}
+	// A row comes, and the user scrolls up on the way: the list stays.
+	n++
+	tt.Frame()
+	now = now.Add(30 * time.Millisecond)
+	tt.Move(100, 100)
+	tt.Scroll(100, 100, 0, -150)
+	r2, _ := rowBox(tt, &s, n-5)
+	now = now.Add(time.Second)
+	tt.Frame()
+	if r, _ := rowBox(tt, &s, n-5); r != r2 || s.AtEnd() {
+		t.Errorf("scrolled up on the way: the row moved from %v to %v, at the end %v", r2, r, s.AtEnd())
+	}
+	// Without motion, it shows the end at once.
+	tt.SetPreferences(Preferences{ReduceMotion: true})
+	s.ScrollToEnd()
+	tt.Frame()
+	last += 60
+	tt.Frame()
+	if r, _ := rowBox(tt, &s, n-1); r.Y+r.H != 400 {
+		t.Errorf("reduced motion: the last row ends at %v", r.Y+r.H)
 	}
 }

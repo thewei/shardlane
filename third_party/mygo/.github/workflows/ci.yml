@@ -59,25 +59,34 @@ jobs:
           go build $(go list -f '{{if .GoFiles}}{{.ImportPath}}{{end}}' ./... | grep -v /cmd/mygo)
           go vet $(go list ./... | grep -v /cmd/mygo)
           go test -exec "$(go env GOROOT)/lib/wasm/go_js_wasm_exec" ./internal/web ./internal/gpu/gl
-      # The installer tests download NSIS on Windows; keeping it in the cache
-      # spares them the download, and the hosts it comes from.
-      - name: Restore NSIS
-        id: nsis
-        if: runner.os == 'Windows'
+      # The plugins' tests load the native libraries their mygo-plugin.json
+      # pins, and on Windows the installer tests run the NSIS that
+      # internal/nsis pins, all of which they download into the user's cache
+      # when it lacks them. Downloading them here, before the tests, and
+      # keeping them in the Actions cache under a key of what pins them,
+      # keeps the tests off the network and its hosts' passing failures.
+      - name: Restore the downloads of the tests
+        id: downloads
         uses: actions/cache/restore@v6
         with:
-          path: ~\AppData\Local\mygo\nsis-*
-          key: nsis-${{ hashFiles('cmd/mygo/nsis.go') }}
+          path: |
+            ${{ runner.os == 'Windows' && '~/AppData/Local' || runner.os == 'macOS' && '~/Library/Caches' || '~/.cache' }}/mygo/natives
+            ${{ runner.os == 'Windows' && '~/AppData/Local' || runner.os == 'macOS' && '~/Library/Caches' || '~/.cache' }}/mygo/nsis-*
+          key: downloads-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('plugins/*/mygo-plugin.json', 'internal/nsis/nsis.go') }}
+      - name: Download what the tests need
+        run: go run ./internal/prefetch
+      - name: Save the downloads of the tests
+        if: steps.downloads.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: |
+            ${{ runner.os == 'Windows' && '~/AppData/Local' || runner.os == 'macOS' && '~/Library/Caches' || '~/.cache' }}/mygo/natives
+            ${{ runner.os == 'Windows' && '~/AppData/Local' || runner.os == 'macOS' && '~/Library/Caches' || '~/.cache' }}/mygo/nsis-*
+          key: ${{ steps.downloads.outputs.cache-primary-key }}
       - run: go test ./...
       - name: Test without the inspector, as production builds
         if: runner.os == 'Linux'
         run: go test -tags mygo_noinspector ./ui .
-      - name: Save NSIS
-        if: always() && runner.os == 'Windows' && steps.nsis.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v6
-        with:
-          path: ~\AppData\Local\mygo\nsis-*
-          key: ${{ steps.nsis.outputs.cache-primary-key }}
       - run: bun run test
       - run: bun run typecheck
       - name: GUI tests
@@ -114,22 +123,29 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
-      - name: Restore NSIS
-        id: nsis
+      # As in the job above.
+      - name: Restore the downloads of the tests
+        id: downloads
         uses: actions/cache/restore@v6
         with:
-          path: ~\AppData\Local\mygo\nsis-*
-          key: nsis-${{ hashFiles('cmd/mygo/nsis.go') }}
+          path: |
+            ${{ runner.os == 'Windows' && '~/AppData/Local' || runner.os == 'macOS' && '~/Library/Caches' || '~/.cache' }}/mygo/natives
+            ${{ runner.os == 'Windows' && '~/AppData/Local' || runner.os == 'macOS' && '~/Library/Caches' || '~/.cache' }}/mygo/nsis-*
+          key: downloads-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('plugins/*/mygo-plugin.json', 'internal/nsis/nsis.go') }}
+      - name: Download what the tests need
+        run: go run ./internal/prefetch
+      - name: Save the downloads of the tests
+        if: steps.downloads.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: |
+            ${{ runner.os == 'Windows' && '~/AppData/Local' || runner.os == 'macOS' && '~/Library/Caches' || '~/.cache' }}/mygo/natives
+            ${{ runner.os == 'Windows' && '~/AppData/Local' || runner.os == 'macOS' && '~/Library/Caches' || '~/.cache' }}/mygo/nsis-*
+          key: ${{ steps.downloads.outputs.cache-primary-key }}
       - run: go test ./...
       - name: Test without the inspector, as production builds
         if: runner.os == 'Linux'
         run: go test -tags mygo_noinspector ./ui .
-      - name: Save NSIS
-        if: always() && steps.nsis.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v6
-        with:
-          path: ~\AppData\Local\mygo\nsis-*
-          key: ${{ steps.nsis.outputs.cache-primary-key }}
       - name: GUI tests of native UI
         env:
           MYGO_E2E: 1

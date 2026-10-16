@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/egoist/mygo/internal/wait"
 	"github.com/egoist/mygo/plugins/updater/internal/markdown"
 )
 
@@ -74,7 +75,7 @@ func (h *harness) shown() *session {
 	select {
 	case s := <-h.presented:
 		return s
-	case <-time.After(5 * time.Second):
+	case <-time.After(wait.Guard):
 		h.t.Fatal("no window was shown")
 		return nil
 	}
@@ -93,7 +94,7 @@ func (h *harness) noWindow() {
 // waitView waits for s to show a view whose title starts with title.
 func waitView(t *testing.T, s *session, title string) view {
 	t.Helper()
-	deadline := time.After(5 * time.Second)
+	deadline := time.After(wait.Guard)
 	for {
 		v, changed := s.Current()
 		if strings.HasPrefix(v.Title, title) {
@@ -111,7 +112,7 @@ func waitDone(t *testing.T, done chan struct{}) {
 	t.Helper()
 	select {
 	case <-done:
-	case <-time.After(5 * time.Second):
+	case <-time.After(wait.Guard):
 		t.Fatal("the check did not end")
 	}
 }
@@ -137,6 +138,9 @@ func newRelease(version string, install func(ctx context.Context, progress func(
 }
 
 func TestUpToDate(t *testing.T) {
+	checked := time.Date(2026, 10, 16, 9, 30, 0, 0, time.UTC)
+	t.Cleanup(func(n func() time.Time) func() { return func() { now = n } }(now))
+	now = func() time.Time { return checked }
 	h := newHarness(t, Options{})
 	done := h.begin(true)
 	s := h.shown()
@@ -149,8 +153,8 @@ func TestUpToDate(t *testing.T) {
 	if h.u.session != nil {
 		t.Error("the session was not cleared")
 	}
-	if st := h.saved(); time.Since(st.LastCheck) > time.Minute {
-		t.Errorf("last check %v", st.LastCheck)
+	if st := h.saved(); !st.LastCheck.Equal(checked) {
+		t.Errorf("last check %v, want %v", st.LastCheck, checked)
 	}
 }
 

@@ -31,9 +31,9 @@ identifier "<identifier>.dev", in .mygo/dev: a real bundle on macOS, and
 on Windows an executable with the icon, manifest and version information
 that mygo build embeds.
 
-Changes to the Go code, mygo.json or mygo.config.ts, the icon or the
-resources rebuild the app, regenerate the TypeScript client and relaunch
-it. A build that fails to compile keeps the previous one running; the next
+Changes to the Go code, mygo.json or mygo.config.ts, the icon, the
+resources or the catalogs of messages rebuild the app, regenerate the
+TypeScript client and the accessors of the catalogs, and relaunch it. A build that fails to compile keeps the previous one running; the next
 change tries again. Frontend changes are left to the dev server. Quitting the app ends mygo dev.
 
 On a terminal, type r and Enter to rebuild and restart the app, c to clear
@@ -42,12 +42,18 @@ the console, q to quit, h for help.
 With -web, it develops an app of native UI in browsers instead: it builds
 the app for them (GOOS=js GOARCH=wasm), serves it at http://localhost:<port>,
 opens it, and rebuilds it as its code changes, which reloads the page; the
-page shows why a build failed.`)
+page shows why a build failed.
+
+With -lang, the app runs in that language, a BCP 47 tag such as de or
+zh-Hant, or a pseudo locale: en-XA (accented and longer text) or ar-XB
+(right to left), which test layouts without translations. It does not
+keep it: the app's own setting is left as it is.`)
 	skipDevCommand := flags.Bool("skip-dev-command", false, "do not run devCommand")
 	sign := flags.String("sign", "-", "macOS signing identity for the development app")
 	web := flags.Bool("web", false, "develop the app in browsers")
 	port := flags.Int("port", 5174, "with -web, the port to serve the app at, or the next free one")
 	openPage := flags.Bool("open", true, "with -web, open the app in the browser")
+	lang := flags.String("lang", "", "run the app in this language (as de, or the pseudo locales en-XA and ar-XB), without keeping it")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -55,16 +61,24 @@ page shows why a build failed.`)
 	if err != nil {
 		return err
 	}
+	locale, err := devLocale(*lang)
+	if err != nil {
+		return err
+	}
 	if *web {
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
 		con.startBanner("dev")
-		return runWebDev(ctx, c, *port, *openPage)
+		return runWebDev(ctx, c, *port, *openPage, locale)
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	s := &devSession{root: c.root, sign: *sign, name: devConfig(c).Name, env: []string{"MYGO_ENV=development"}}
+	if locale != "" {
+		// The app reads it as it starts, over the language it keeps.
+		s.env = append(s.env, "MYGO_LOCALE="+locale)
+	}
 	var server atomic.Pointer[exec.Cmd] // the dev command
 	go func() {
 		// Ctrl+C again does not wait for the app to quit.
@@ -79,7 +93,11 @@ page shows why a build failed.`)
 	}()
 
 	con.startBanner("dev")
-	// The TypeScript client comes first: the frontend imports it.
+	// The accessors of the catalogs and the TypeScript client come first:
+	// the app and the frontend import them.
+	if err := generateI18n(c); err != nil {
+		return err
+	}
 	if err := writeClient(ctx, c, false); err != nil {
 		if ctx.Err() != nil {
 			return nil
@@ -172,10 +190,11 @@ type devSession struct {
 	env  []string // for the app
 
 	// Used by one build at a time.
-	iconKey string
-	icns    []byte
-	mainFor string // the Main that mainDir is the package directory of
-	mainDir string
+	i18nWarnings string // the warnings of the catalogs last shown
+	iconKey      string
+	icns         []byte
+	mainFor      string // the Main that mainDir is the package directory of
+	mainDir      string
 
 	// Used by the run loop only.
 	app *devProcess // the running build
@@ -234,7 +253,8 @@ func (s *devSession) run(ctx context.Context, c *Config) error {
 	results := make(chan result, 1)
 	builds, cancel := context.WithCancel(ctx)
 	building, pending, restart := false, false, false
-	launched := false    // a build has started
+	launched := false // a build has started
+	importChecked := false
 	var changed []string // the inputs that changed since the last build started
 	start := func() {
 		running := s.sum
@@ -356,6 +376,10 @@ func (s *devSession) run(ctx context.Context, c *Config) error {
 			building = false
 			if r.inputs != nil {
 				w.set(r.inputs)
+				if !importChecked && r.err == nil {
+					importChecked = true
+					checkCatalogImported(c, r.inputs.sourceDirs)
+				}
 			}
 			if r.err == nil {
 				prev := s.app
@@ -517,6 +541,10 @@ func (s *devSession) buildAndLaunch(ctx context.Context, t *task, running [32]by
 			return nil, sum, err
 		}
 	}
+	if err := s.updateI18n(c); err != nil {
+		cleanup()
+		return nil, sum, err
+	}
 	err = goBuild(ctx, c, t, bin, nil, "-ldflags", strings.TrimSpace(packageFlags(dc)))
 	cleanup()
 	if err != nil {
@@ -594,6 +622,29 @@ func (s *devSession) buildAndLaunch(ctx context.Context, t *task, running [32]by
 		return nil, sum, err
 	}
 	return p, sum, nil
+}
+
+// updateI18n writes the accessors of the catalogs where they changed, and
+// shows their warnings when they changed too.
+func (s *devSession) updateI18n(c *Config) error {
+	out, err := writeI18n(c)
+	if err != nil {
+		return err
+	}
+	for _, f := range out.written {
+		logf("Wrote %s", cyan(f))
+	}
+	var b strings.Builder
+	for _, d := range out.warnings {
+		b.WriteString(d.String() + "\n")
+	}
+	if w := b.String(); w != s.i18nWarnings {
+		s.i18nWarnings = w
+		for _, d := range out.warnings {
+			warnf("%s", d)
+		}
+	}
+	return nil
 }
 
 // hashEntitlements writes the entitlements that sign the app and code among

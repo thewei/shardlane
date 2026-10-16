@@ -229,12 +229,12 @@ func (w *Window) setFlyoutSize(width, height int) bool {
 	return true
 }
 
-// escape closes a flyout on an Escape its page or native UI did not
-// handle, as the user closing it: menus and popovers close so. Its
-// content may be building a frame: the flyout closes after it. Main
-// thread only.
+// escape closes a flyout or a panel on an Escape its page or native UI
+// did not handle, as the user closing it: menus, popovers and launchers
+// close so. Its content may be building a frame: the window closes after
+// it. Main thread only.
 func (w *Window) escape() {
-	if w.flyout != nil {
+	if w.flyout != nil || w.panel {
 		postMain(func() { w.close() })
 	}
 }

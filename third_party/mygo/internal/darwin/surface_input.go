@@ -3,6 +3,7 @@
 package darwin
 
 import (
+	"strings"
 	"unicode/utf16"
 
 	"github.com/egoist/mygo/internal/platform"
@@ -182,4 +183,17 @@ func (s *surface) unmarkText() {
 		s.marked = ""
 		s.send(platform.SurfaceEvent{Kind: platform.TextComposition})
 	}
+}
+
+// typedChars returns the text of a key's characters, without the control
+// characters of Return, Tab, Escape and Delete, nor the private-use ones
+// AppKit gives the arrows and function keys (NSUpArrowFunctionKey…),
+// which come as keys.
+func typedChars(chars string) string {
+	return strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7F || r >= 0xF700 && r <= 0xF8FF {
+			return -1
+		}
+		return r
+	}, chars)
 }

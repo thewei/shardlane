@@ -1,5 +1,7 @@
 package ui
 
+import time "time"
+
 // InputKind is the kind of an InputEvent.
 type InputKind uint8
 
@@ -9,7 +11,7 @@ const (
 	// Repeat marks the auto-repeat of a key held down. A key that types
 	// text comes before the text, an InputText event, on macOS and
 	// Windows; on Linux, only the text comes while the element takes text
-	// (TextCaret).
+	// (TextCaret) with input methods on (InputMethod).
 	InputKeyDown InputKind = iota + 1
 	InputKeyUp
 	// InputText is text typed, or committed by an input method.
@@ -18,8 +20,11 @@ const (
 	// at rune Caret; an empty Text ends it.
 	InputCompose
 	// InputCommand is an edit command of the menus, such as Copy of the
-	// Edit menu: "copy", "cut", "paste", "selectAll", "undo", "redo" or
-	// "delete".
+	// Edit menu: "copy", "cut", "paste", "pasteAndMatchStyle" (which
+	// comes again as "paste" when the element doesn't take it),
+	// "selectAll", "undo", "redo" or "delete", or one of the Format menu,
+	// as Bold: "bold", "italic", "underline", "strikethrough",
+	// "alignLeft", "alignCenter" or "alignRight".
 	InputCommand
 	// InputPointerDown and InputPointerUp report Button pressed or
 	// released at X, Y, with Clicks the count of quick successive presses
@@ -34,6 +39,10 @@ const (
 	// InputScroll scrolls by DX, DY DIPs at X, Y; Precise marks
 	// touchpads, which scroll by pixels rather than by lines.
 	InputScroll
+	// InputSelect selects runes Start to End of the text an element
+	// describes to assistive technology (Element.Access), as a screen
+	// reader moves the selection of a text field of the app's own.
+	InputSelect
 )
 
 // InputEvent is input an element takes as it comes (HandleInput).
@@ -60,6 +69,11 @@ type InputEvent struct {
 	// down the content.
 	DX, DY  float32
 	Precise bool
+	// Start and End are the runes InputSelect selects.
+	Start, End int
+	// Time is when the event came, by the clock of the window's frames
+	// (Context.Now), which a Tester's clock is in tests.
+	Time time.Time
 }
 
 // HandleInput has fn take the element's input as it comes, on the main
@@ -88,6 +102,19 @@ func (e *node) TextCaret(r Rect) *node {
 	return e
 }
 
+// InputMethod sets whether the system's input methods compose text for the
+// element while it has the keyboard focus, as they do by default for one
+// that takes text (HandleTextInput, TextCaret). Turned off, keys type the
+// characters of the keyboard's layout, which come as InputText, and
+// nothing is composed: a mode that reads letters as commands, as Vim's
+// normal mode, gets j as j with a Chinese input method on, as Neovide and
+// winit's set_ime_allowed(false) have it. Browsers cannot turn input
+// methods off, and compose still.
+func (e *node) InputMethod(on bool) *node {
+	e.noIME = !on
+	return e
+}
+
 // handler returns the state of the innermost element of chain that
 // handles its input.
 func (rt *engine) handler(chain []uint64) *state {
@@ -106,6 +133,7 @@ func (rt *engine) deliver(s *state, ev InputEvent) bool {
 		return false
 	}
 	ev.X, ev.Y = s.local(rt.pointerX, rt.pointerY)
+	ev.Time = rt.now()
 	if ev.Kind == InputScroll {
 		ev.DX, ev.DY = s.vector(rt.pointerX, rt.pointerY, ev.DX, ev.DY)
 	}

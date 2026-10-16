@@ -122,6 +122,158 @@ func TestSplitVertical(t *testing.T) {
 	}
 }
 
+// TestSplitShrinks keeps both panes in a window made smaller than the
+// first pane: the first gives way, and takes its size back when there is
+// room again; the divider moves from where it shows.
+func TestSplitShrinks(t *testing.T) {
+	size := float32(450)
+	tt := coreNewTester(func(c *context) {
+		coreSplitVertical(c, &size, func() { coreText(c, "top") }, func() { coreText(c, "bottom") }).Fill()
+	}, 300, 600)
+	tt.SetSize(300, 300)
+	if r := at(t, tt, "bottom"); r.Y != 300-40 {
+		t.Fatalf("in a window 300 high, the second pane starts at %v, want %v", r.Y, 300-40)
+	}
+	if size != 450 {
+		t.Errorf("shrinking the window changed the size to %v", size)
+	}
+	// Assistive technology hears the size that shows.
+	tt.rt.accessibilityOn()
+	tt.Frame()
+	dividers := 0
+	for _, n := range tt.h.access.Nodes {
+		if n.Role == platform.RoleSplitter {
+			dividers++
+			if n.Now != 259 || n.Max != 259 {
+				t.Errorf("the divider says %v of at most %v, want 259 of 259", n.Now, n.Max)
+			}
+		}
+	}
+	if dividers != 1 {
+		t.Errorf("assistive technology sees %d dividers", dividers)
+	}
+	tt.SetSize(300, 600)
+	if r := at(t, tt, "bottom"); r.Y != 451 {
+		t.Errorf("made high again, the second pane starts at %v, want 451", r.Y)
+	}
+	tt.SetSize(300, 300)
+	// The divider shows at 259.
+	drag(tt, 100, 259, 100, 219)
+	if size != 219 {
+		t.Errorf("dragged 40 DIPs up from where it shows, the first pane is %v high, want 219", size)
+	}
+	size = 450
+	tt.Frame()
+	tt.Key(0, KeyUp)
+	if size != 249 {
+		t.Errorf("Up from where it shows: %v, want 249", size)
+	}
+}
+
+// TestSplitShrinksSideways is TestSplitShrinks for a split side by side,
+// left to right and right to left.
+func TestSplitShrinksSideways(t *testing.T) {
+	for _, rtl := range []bool{false, true} {
+		size := float32(350)
+		view := func(c *context) {
+			coreSplit(c, &size, func() { coreText(c, "first") }, func() { coreText(c, "second") }).Fill()
+		}
+		tt := coreNewTester(view, 400, 200)
+		if rtl {
+			tt = rtlTester(view, 400, 200)
+		}
+		tt.SetSize(200, 200)
+		r := at(t, tt, "second")
+		if want := float32(200 - 40); !rtl && r.X != want || rtl && r.X >= 40 {
+			t.Errorf("rtl %v: in a window 200 wide, the second pane's text is at %v", rtl, r.X)
+		}
+		// The divider shows 159 from the start.
+		x := float32(159)
+		if rtl {
+			x = 200 - 160
+		}
+		// Toward the second pane, which narrows the first.
+		to := x - 20
+		if rtl {
+			to = x + 20
+		}
+		drag(tt, x, 100, to, 100)
+		if size != 139 {
+			t.Errorf("rtl %v: dragged 20 DIPs from where the divider shows, the first pane is %v, want 139", rtl, size)
+		}
+	}
+}
+
+// TestSplitPercent shares the room in proportion: both panes follow the
+// window, and the divider moves the percentage.
+func TestSplitPercent(t *testing.T) {
+	firstPercent := float32(75)
+	tt := coreNewTester(func(c *context) {
+		coreSplitVerticalPercent(c, &firstPercent, func() { coreText(c, "top") }, func() { coreText(c, "bottom") }).Fill()
+	}, 300, 401)
+	if r := at(t, tt, "bottom"); r.Y != 301 {
+		t.Fatalf("three quarters of 400: the second pane starts at %v, want 301", r.Y)
+	}
+	tt.SetSize(300, 201)
+	if r := at(t, tt, "bottom"); r.Y != 151 {
+		t.Errorf("three quarters of 200: the second pane starts at %v, want 151", r.Y)
+	}
+	if firstPercent != 75 {
+		t.Errorf("resizing the window changed the first pane's percentage to %v", firstPercent)
+	}
+	drag(tt, 100, 150, 100, 100)
+	if firstPercent != 50 {
+		t.Errorf("dragged to the middle, the first pane takes %v%%, want 50", firstPercent)
+	}
+	tt.Key(0, KeyUp)
+	if firstPercent != 45 {
+		t.Errorf("Up from the middle: %v, want 45", firstPercent)
+	}
+	// Each pane keeps 40 DIPs.
+	firstPercent = 100
+	tt.Frame()
+	if r := at(t, tt, "bottom"); r.Y != 201-40 {
+		t.Errorf("100%%: the second pane starts at %v, want %v", r.Y, 201-40)
+	}
+	firstPercent = 0
+	tt.Frame()
+	if r := at(t, tt, "bottom"); r.Y != 41 {
+		t.Errorf("0%%: the second pane starts at %v, want 41", r.Y)
+	}
+}
+
+// TestSplitPercentSideways is TestSplitPercent side by side, left to right and
+// right to left.
+func TestSplitPercentSideways(t *testing.T) {
+	for _, rtl := range []bool{false, true} {
+		firstPercent := float32(25)
+		view := func(c *context) {
+			coreSplitPercent(c, &firstPercent, func() { coreText(c, "first") }, func() { coreText(c, "second") }).Fill()
+		}
+		tt := coreNewTester(view, 401, 200)
+		if rtl {
+			tt = rtlTester(view, 401, 200)
+		}
+		// The divider at 100 from the start.
+		x := float32(100)
+		if rtl {
+			x = 401 - 101
+		}
+		if r := at(t, tt, "second"); !rtl && r.X != 101 || rtl && r.X >= 300 {
+			t.Errorf("rtl %v: a quarter of 400: the second pane's text is at %v", rtl, r.X)
+		}
+		// Toward the second pane, which widens the first.
+		to := x + 100
+		if rtl {
+			to = x - 100
+		}
+		drag(tt, x, 100, to, 100)
+		if firstPercent != 50 {
+			t.Errorf("rtl %v: dragged 100 DIPs, the first pane takes %v%%, want 50", rtl, firstPercent)
+		}
+	}
+}
+
 func TestNumberInput(t *testing.T) {
 	v := 5.0
 	tt := coreNewTester(func(c *context) {
@@ -177,8 +329,7 @@ func TestToast(t *testing.T) {
 	if len(tt.rt.toasts) != 1 {
 		t.Errorf("the same message shows %d times", len(tt.rt.toasts))
 	}
-	tt.rt.toasts[0].at = time.Now().Add(-toastTime)
-	tt.Frame()
+	tt.Advance(toastTime)
 	if tt.HasText("Saved") {
 		t.Error("the toast stays once its time is over")
 	}
@@ -358,7 +509,7 @@ func TestDateInput(t *testing.T) {
 			}
 		})
 	}, 400, 420)
-	if !tt.HasText("2026-10-03") {
+	if !tt.HasText("10/3/2026") {
 		t.Fatalf("texts %q", tt.Texts())
 	}
 	if err := tt.Click("Due"); err != nil {
@@ -442,7 +593,7 @@ func TestTooltipHidesOnPress(t *testing.T) {
 	}, 400, 200)
 	rest := func(x, y float32) {
 		tt.Move(x, y)
-		tt.rt.tips.hoverSince = time.Now().Add(-time.Second)
+		tt.rt.tips.hoverSince = tt.now.Add(-time.Second)
 		tt.Frame()
 	}
 	r, _ := tt.Find("Save")

@@ -21,6 +21,14 @@ OpenType features of the font by tag, or sets them with `tag=value`:
 `FontFeatures("tnum")` gives digits of one width for numbers that change,
 `FontFeatures("liga=0")` turns ligatures off.
 
+Text in Arabic, Hebrew and the other scripts written so reads right to
+left, mixed with text reading left to right as Unicode's bidirectional
+algorithm says: a paragraph reads in the direction of its first strongly
+directional character. `TextAlign`'s `Start` is the left, or the right of
+a paragraph reading right to left, and of any text of an element laid out
+[right to left](right-to-left.md), where paragraphs without a strongly
+directional character, as numbers, read right to left too.
+
 `SingleLine` keeps text on one line, cut with an ellipsis, `MaxLines`
 limits it to a few, and `Ellipsis(" →")` ends what they cut with another
 mark; `NoWrap` keeps its lines whole, breaking them only at newlines.
@@ -46,6 +54,12 @@ order the paragraphs were built. Select All selects the whole container,
 including built paragraphs outside its viewport. Inline text and links
 inside a paragraph are copied as part of that paragraph.
 
+`CopyData` on the container sets what Copy writes from the parts of the
+paragraphs selected, as a document joins them with blank lines as text
+and writes HTML too to keep their formatting, and
+`SelectedTexts` returns those parts, for a menu item copying them
+otherwise. A paragraph whose text grows at its end keeps the selection.
+
 Nested `Selectable` containers have separate selections. Buttons and
 text inputs keep their own interaction; their labels do not join the
 container's selection. Use `Unselectable` on a text or a container to
@@ -65,7 +79,9 @@ replaces that menu, and `Menu.EditItems` puts Copy and Select All in it.
 `ui.RichText` mixes styles in one paragraph: each `ui.Span` sets what it
 changes (font, size, weight, italics, color, underlines, strikethrough,
 their color and thickness, a background, letter spacing, features) over
-the style of the text, and the spans wrap together:
+the style of the text, and the spans wrap together. A `Radius` rounds a
+span's background, which then hugs its glyphs rather than filling the
+line, as code within text shows:
 
 ```go
 ui.RichText(c,
@@ -73,6 +89,11 @@ ui.RichText(c,
 	ui.Span{Text: "report.pdf", Weight: 600},
 	ui.Span{Text: " to "},
 	ui.Span{Text: "Documents", Color: t.Accent, Underline: true},
+)
+
+ui.RichText(c,
+	ui.Span{Text: "Run "},
+	ui.Span{Text: "go test", Font: "monospace", Background: t.Surface, Radius: 4},
 )
 
 ui.RichText(c,
@@ -132,6 +153,29 @@ Then `Font("Inter")` uses it, or set it for every element in the theme's
 `Font`. A list of families, as `Font("Inter, Noto Sans JP")`, draws with
 the first the system or the app has, and what it lacks with the next that
 has it, before the system's own choice.
+
+`ui.FontFamilies()` lists the families text can use, as a font setting
+offers them: the app's registered ones first, under the names it gave them
+(or their own when it gave none), then the system's, each once and sorted
+without regard to case. Each `ui.FontFamily` tells whether it is
+`Monospaced`, for a terminal's or an editor's font setting, and whether
+the app `Registered` it:
+
+```go
+for _, f := range ui.FontFamilies() {
+	if f.Monospaced {
+		fonts = append(fonts, f.Name)
+	}
+}
+```
+
+The first call asks the system, which takes a while with many fonts
+installed (tens of milliseconds with hundreds), without holding up the
+windows' text; later calls reuse the system's list until `RegisterFont`,
+so fonts installed while the app runs show after a restart. Browsers do
+not tell what fonts they have: there the list holds the registered
+families alone, and a family counts as monospaced once its font has
+loaded.
 
 Text that a widget lays out itself, as in the cells of a terminal, is
 shaped once with `ui.Shape`: see [drawing](drawing.md#shaping-text).

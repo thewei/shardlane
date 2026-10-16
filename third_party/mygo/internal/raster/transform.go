@@ -81,7 +81,7 @@ func (r *renderer) transformed(op *scene.Op, px scene.EffectPixels, b *scene.Bac
 	if hasBorder {
 		inner = newShape(scene.InnerRadii(op.Rect, radii, bw))
 	}
-	pt := newPainter(op, opacityOf(op.Opacity))
+	pt, bp := borderPainter(op, opacityOf(op.Opacity), r.s.Stops)
 	border := op.BorderColor.Premul(opacityOf(op.Opacity))
 	box := op.Rect
 	if inset {
@@ -148,7 +148,7 @@ func (r *renderer) transformed(op *scene.Op, px scene.EffectPixels, b *scene.Bac
 					if op.Dashed {
 						bc *= dash(op.Rect, bw, lx, ly)
 					}
-					blend(p, border, bc*clip)
+					blend(p, borderAt(bp, border, op.BorderColor, lx, ly), bc*clip)
 				}
 			case scene.OpImage:
 				if op.Image == nil || op.Image.W == 0 || op.Image.H == 0 || unflipped(op.Src).Empty() {
@@ -210,8 +210,8 @@ func transformedShadowAt(op *scene.Op, box *shape, x, y float32) float32 {
 
 func (r *renderer) transformedGlyphs(op *scene.Op) {
 	var pt *painter
-	if op.Paint == scene.PaintLinear || op.Paint == scene.PaintOklab {
-		p := newPainter(op, opacityOf(op.Opacity))
+	if op.Paint == scene.PaintLinear || op.Paint == scene.PaintOklab || op.Paint.HasStops() {
+		p := newPainter(op, opacityOf(op.Opacity), r.s.Stops)
 		pt = &p
 	}
 	for _, g := range r.s.Glyphs[op.Start:op.End] {

@@ -68,9 +68,8 @@ if ui.Button(c, "Save").Clicked() {
 }
 ```
 
-Click and shortcut queries apply pending bound input to controls built so
-far before returning, so an inline save sees the latest edits. Configure
-those controls before asking for an action response.
+A control takes the user's input as its constructor returns, so an inline
+save sees the latest edits of the controls built before it.
 
 `OnClick` schedules the action after the view finishes building and bound
 input has been applied:
@@ -99,10 +98,10 @@ that input. MyGo rebuilds changed state before painting the frame.
 
 Widgets that change a value take a pointer to it, so they need no handler:
 `ui.Checkbox(c, &app.settings.Sync, "Sync")` binds the field to the control.
-`Changed` and `Submitted` apply pending input to the controls built so far
-before returning. Their bound values are available immediately in the same
-build pass. Set `Disabled`, `ReadOnly` and other input options before querying
-responses; configuration after a query cannot undo input already applied.
+As in Dear ImGui and egui, the control writes the user's edit through the
+pointer before its constructor returns, so the next statement reads the new
+value. `Changed` reports that it changed in this build pass, and `Submitted`
+that Enter was pressed in a single-line text input.
 
 ```go
 if ui.TextInput(c, &app.query).Placeholder("Search").Changed() {
@@ -110,14 +109,31 @@ if ui.TextInput(c, &app.query).Placeholder("Search").Changed() {
 }
 ```
 
-Local copies work too, including values read from a map:
+Local copies work too, including values read from a map, compared with the
+value they came from or through `Changed`:
 
 ```go
 viewed := app.viewed[file.ID]
 if ui.Checkbox(c, &viewed, "Viewed").Changed() {
     app.viewed[file.ID] = viewed
 }
+
+chosen := app.language
+ui.RadioGroup(c, func() {
+    for _, tag := range app.languages {
+        ui.Radio(c, &chosen, tag, i18n.Autonym(tag))
+    }
+})
+if chosen != app.language {
+    app.setLanguage(chosen)
+}
 ```
+
+A container takes its input with its children, as the call that built it
+returns: a radio group's arrow keys move among all of its radios. Input
+follows the options of the frame the user acted on: an input shown
+read-only takes no typing, and `Disabled`, `ReadOnly` or `Step` set in
+this build govern the input of the frames after it, as they show.
 
 `OnChange` and `OnSubmit` run after construction and bound input, before the
 rebuild. Use callbacks when an action should wait until the view has finished

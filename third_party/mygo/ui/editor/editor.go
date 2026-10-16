@@ -7,12 +7,22 @@ import (
 	"strings"
 	"time"
 
+	"github.com/egoist/mygo/internal/l10n"
 	"github.com/egoist/mygo/ui"
+)
+
+// The sides of a diff viewer, of options.diffSide.
+const (
+	diffNewSide = 1 + iota
+	diffOldSide
 )
 
 // options are a code editor's options for a frame, from a
 // State or a DiffState.
 type options struct {
+	// diffSide is the side of a diff viewer the editor shows, which
+	// names it.
+	diffSide      int8
 	readOnly      bool
 	font          ui.Font
 	lineHeight    float32
@@ -28,18 +38,22 @@ type options struct {
 	autoClose     bool
 	folding       bool
 	activeLine    bool
+	cursorShape   CursorShape
 	fitContent    bool
 	placeholder   string
 	label         string
 	theme         *Theme
 	bindings      []Binding
 	gutterMarks   []GutterMark
+	backgrounds   []LineBackground
 	diffBase      *Buffer
 	onCompletion  func(CompletionRequest)
 	onHover       func(HoverRequest)
 	onDefinition  func(int)
 	onGutterClick func(int)
 	contextMenu   func(m *ui.Menu)
+	onInput       func(ui.InputEvent) bool
+	noInputMethod bool
 	// The parts' render functions, nil for the editor's own.
 	renderFindBar     func(*ui.Context, ui.Element, *FindBar)
 	renderGoToLine    func(*ui.Context, ui.Element, *GoToLineBar)
@@ -110,6 +124,9 @@ type editor struct {
 	view  view
 	o     options
 	theme *Theme
+	// texts are MyGo's strings in the window's language, as of the last
+	// frame.
+	texts l10n.Messages
 
 	sels   []sel
 	nextID int
@@ -135,7 +152,8 @@ type editor struct {
 	gutterW    float32
 	textX      float32
 	viewH      float32
-	focused    bool // the editor and its window have the keyboard
+	shown      [2]int // the first and last lines the last frame showed
+	focused    bool   // the editor and its window have the keyboard
 	blinkStart time.Time
 	services   ui.Services
 	chord      *Binding
@@ -217,7 +235,7 @@ func (ed *editor) init(buf *Buffer, o options, t *ui.Theme) {
 	if ed.sels == nil {
 		ed.sels = []sel{{goal: -1, id: 0}}
 		ed.nextID = 1
-		ed.blinkStart = time.Now()
+		ed.blinkStart = ed.frameNow
 		ed.hover.asked = -1
 		ed.hoverLine = -1
 	}
@@ -368,7 +386,7 @@ func (ed *editor) setSels(sels []sel, reveal reveal) {
 	if reveal != revealNone {
 		ed.reveal = max(ed.reveal, reveal)
 	}
-	ed.blinkStart = time.Now()
+	ed.blinkStart = ed.frameNow
 	ed.autoclosed = ed.autoclosed[:0]
 	// What select next, add cursor and select larger go on from.
 	ed.wholeWord = false

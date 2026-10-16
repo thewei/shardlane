@@ -137,7 +137,7 @@ func (t *tray) PopUpMenu(m *platform.Menu) {
 	defer procDestroyMenu.Call(menu)
 	var pt point
 	procGetCursorPos.Call(uintptr(unsafe.Pointer(&pt)))
-	if cmd := t.b.trackPopup(menu, t.b.appHwnd, pt); cmd != 0 {
+	if cmd := t.b.trackPopup(menu, t.b.appHwnd, pt, 0); cmd != 0 {
 		t.b.menuCommand(cmd, nil)
 	}
 }

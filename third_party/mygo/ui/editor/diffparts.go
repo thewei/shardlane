@@ -3,6 +3,7 @@ package editor
 import (
 	"fmt"
 
+	"github.com/egoist/mygo/internal/l10n"
 	"github.com/egoist/mygo/ui"
 )
 
@@ -53,6 +54,7 @@ func (s *DiffSeparator) Theme() *Theme { return s.theme }
 // all; or a hunk's header. Shift expands all the lines from any button.
 func DefaultSeparator(c *ui.Context, sep ui.Element, s *DiffSeparator) {
 	t := c.Theme()
+	tx := l10n.In(c.Locale())
 	ct := s.Theme()
 	sep.Padding(4)
 	sep.Children(func() {
@@ -94,17 +96,17 @@ func DefaultSeparator(c *ui.Context, sep ui.Element, s *DiffSeparator) {
 			}
 			switch {
 			case s.First:
-				chevron(-1, "Expand up", s.ExpandUp)
+				chevron(-1, tx.ExpandUp(), s.ExpandUp)
 			case s.Last:
-				chevron(1, "Expand down", s.ExpandDown)
+				chevron(1, tx.ExpandDown(), s.ExpandDown)
 			case s.Lines <= s.Step:
-				chevron(0, "Expand all", s.ExpandAll)
+				chevron(0, tx.ExpandAll(), s.ExpandAll)
 			default:
-				chevron(1, "Expand down", s.ExpandDown)
-				chevron(-1, "Expand up", s.ExpandUp)
+				chevron(1, tx.ExpandDown(), s.ExpandDown)
+				chevron(-1, tx.ExpandUp(), s.ExpandUp)
 			}
-			label := fmt.Sprintf("%d unmodified line%s", s.Lines, map[bool]string{true: "", false: "s"}[s.Lines == 1])
-			b := ui.ButtonBase(c).Key("all").Padding(t.Space(0.5), t.Space(1)).Radius(4).Label("Expand " + label).Cursor(ui.CursorPointer)
+			label := tx.UnmodifiedLines(s.Lines)
+			b := ui.ButtonBase(c).Key("all").Padding(t.Space(0.5), t.Space(1)).Radius(4).Label(tx.Expand(label)).Cursor(ui.CursorPointer)
 			b.Children(func() { ui.Text(c, label).FontSize(max(t.FontSize-1, 11)).TextColor(t.TextMuted) })
 			if b.Clicked() {
 				s.ExpandAll()
@@ -139,7 +141,7 @@ func (d *DiffState) buildSeparators(c *ui.Context, ct *Theme) {
 		}
 		label := s.Header
 		if s.Lines > 0 {
-			label = fmt.Sprintf("%d unmodified lines", s.Lines)
+			label = l10n.In(c.Locale()).UnmodifiedLines(s.Lines)
 		}
 		sep := ui.Box(c).Key(key).Absolute().Left(0).Right(scrollbarWidth).Top(float32(top - ed.scrollY)).Height(b.height).
 			Role(ui.RoleGroup).Label(label).Cursor(ui.CursorDefault).KeepFocus().HandleInput(shield)
@@ -168,13 +170,14 @@ func DefaultHunkActions(c *ui.Context, bar ui.Element, a *DiffHunkActions) {
 	t := c.Theme()
 	lh := a.d.eds[1].view.lineHeight
 	bar.Row().Gap(t.Space(1))
+	tx := l10n.In(c.Locale())
 	bar.Children(func() {
 		for _, act := range []struct {
-			label string
-			fn    func()
-		}{{"Revert", a.Revert}, {"Keep", a.Keep}} {
-			btn := ui.ButtonBase(c).Key(act.label).Padding(0, t.Space(2)).Height(lh-4).Radius(t.Radius-2).
-				Background(t.Surface).Border(1, t.Border).Label(act.label + " change")
+			key, label string
+			fn         func()
+		}{{"revert", tx.Revert(), a.Revert}, {"keep", tx.Keep(), a.Keep}} {
+			btn := ui.ButtonBase(c).Key(act.key).Padding(0, t.Space(2)).Height(lh-4).Radius(t.Radius-2).
+				Background(t.Surface).Border(1, t.Border).Label(tx.HunkAction(act.label))
 			btn.Children(func() { ui.Text(c, act.label).FontSize(max(11, t.FontSize-2)) })
 			if btn.Clicked() {
 				act.fn()
@@ -187,7 +190,7 @@ func DefaultHunkActions(c *ui.Context, bar ui.Element, a *DiffHunkActions) {
 // + on the accent color.
 func DefaultGutterButton(c *ui.Context, btn ui.Element, r DiffLineRange) {
 	t := c.Theme()
-	btn.Radius(4).Background(t.Accent).Label(fmt.Sprintf("Line %d", r.Start+1))
+	btn.Radius(4).Background(t.Accent).Label(l10n.In(c.Locale()).Line(r.Start + 1))
 	btn.Draw(func(p *ui.Painter, r ui.Rect) {
 		cx, cy := r.X+r.W/2, r.Y+r.H/2
 		p.Line(cx-4, cy, cx+4, cy, 1.5, t.AccentText)

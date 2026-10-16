@@ -339,8 +339,7 @@ func TestReviewHoverOffText(t *testing.T) {
 	ed := &st.ed
 	y := float32(ed.view.heights.geometry(1).rows-ed.scrollY) + ed.view.lineHeight/2
 	rest := func() {
-		ed.hover.restAt = time.Now().Add(-time.Hour)
-		tt.Frame()
+		tt.Advance(time.Hour)
 	}
 	tt.Move(ed.textX+40, y)
 	tt.Move(5, y) // to the gutter

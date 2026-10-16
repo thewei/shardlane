@@ -435,6 +435,11 @@ func (s *surface) SetTextInput(t platform.TextInputState) {
 		s.marked = ""
 		send(send(s.view, "inputContext"), "discardMarkedText")
 	}
+	if s.input.Active && t.Active && t.NoInputMethod && !s.input.NoInputMethod {
+		// Input methods turned off give up what they composed.
+		s.marked = ""
+		send(send(s.view, "inputContext"), "discardMarkedText")
+	}
 	if s.input.Active && !t.Active && s.marked != "" {
 		s.marked = ""
 		send(send(s.view, "inputContext"), "discardMarkedText")
@@ -856,7 +861,8 @@ func registerSurfaceClass() {
 				return
 			}
 			mods := eventMods(ev)
-			ime := s.input.Active && mods&(platform.ModSuper|platform.ModCtrl) == 0
+			text := s.input.Active && mods&(platform.ModSuper|platform.ModCtrl) == 0
+			ime := text && !s.input.NoInputMethod
 			// A key typed while the input method composes is the input
 			// method's alone, as Enter choosing a candidate or Escape
 			// giving the composition up, as GTK's and IMM32's filtering
@@ -870,6 +876,12 @@ func registerSurfaceClass() {
 				s.keyDown = true
 				send(self, "interpretKeyEvents:", uintptr(nsArray(ev)))
 				s.keyDown = false
+			} else if text {
+				// Input methods off: the key types the characters of the
+				// layout, as winit's keys do without them.
+				if t := typedChars(stringOf(send(ev, "characters"))); t != "" {
+					s.insertText(t, nsRange{Location: nsNotFound})
+				}
 			}
 		}),
 		method("keyUp:", func(self id, _ objc.SEL, ev id) {
@@ -885,7 +897,7 @@ func registerSurfaceClass() {
 		command("copy"), command("cut"), command("paste"), command("selectAll"), command("undo"), command("redo"), command("delete"),
 		method("pasteAsPlainText:", func(self id, _ objc.SEL, sender id) {
 			if s := b().surfaceOf(self); s != nil {
-				s.send(platform.SurfaceEvent{Kind: platform.SurfaceCommand, Text: "paste"})
+				s.send(platform.SurfaceEvent{Kind: platform.SurfaceCommand, Text: "pasteAndMatchStyle"})
 			}
 		}),
 		method("validateMenuItem:", func(self id, _ objc.SEL, item id) bool { return true }),

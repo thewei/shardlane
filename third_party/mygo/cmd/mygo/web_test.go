@@ -12,11 +12,13 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/egoist/mygo/internal/wait"
 )
 
 func TestWebPage(t *testing.T) {
 	c := &Config{Name: `The "Demo" <App>`}
-	page := webPage(c, "demo.0123abcd.wasm", "icon.png", false)
+	page := webPage(c, "demo.0123abcd.wasm", "icon.png", false, "")
 	for _, want := range []string{`<title>The &#34;Demo&#34; &lt;App&gt;</title>`, `fetch("demo.0123abcd.wasm")`, `src="wasm_exec.js"`, `rel="icon" href="icon.png"`, `class="spinner"`} {
 		if !strings.Contains(page, want) {
 			t.Errorf("the page lacks %s:\n%s", want, page)
@@ -25,7 +27,7 @@ func TestWebPage(t *testing.T) {
 	if strings.Contains(page, devEvents) || strings.Contains(page, "MYGO_ENV") {
 		t.Error("a production page listens to mygo dev")
 	}
-	dev := webPage(c, "app.wasm", "", true)
+	dev := webPage(c, "app.wasm", "", true, "")
 	for _, want := range []string{devEvents, `MYGO_ENV: "development"`, "build-error", `fetch("app.wasm")`} {
 		if !strings.Contains(dev, want) {
 			t.Errorf("the development page lacks %s", want)
@@ -92,7 +94,7 @@ func TestWebDev(t *testing.T) {
 		select {
 		case e := <-done:
 			return e
-		case <-time.After(5 * time.Second):
+		case <-time.After(wait.Guard):
 			t.Fatal("no event")
 			return ""
 		}

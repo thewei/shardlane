@@ -82,7 +82,7 @@ func coreCollapsible(c *context, label string, open *bool, fn func()) *node {
 	root.Children(func() {
 		p := coreCollapsibleBase(c, open)
 		tr := p.Trigger.AlignSelf(Start).AlignItems(Center).Gap(t.Space(1)).
-			Padding(t.Space(1), t.Space(2), t.Space(1), t.Space(0.5)).Radius(t.Radius)
+			Padding(t.Space(1), 0).PaddingStart(t.Space(0.5)).PaddingEnd(t.Space(2)).Radius(t.Radius)
 		tr.styleFn = func(tr *node) {
 			if tr.Hovered() {
 				tr.bg = t.SurfaceHover
@@ -99,23 +99,37 @@ func coreCollapsible(c *context, label string, open *bool, fn func()) *node {
 		})
 		if panel := p.Panel(fn); panel != nil {
 			// Below the label.
-			panel.Padding(t.Space(1), 0, t.Space(1), t.Space(5.5)).Gap(t.Space(2))
+			panel.Padding(t.Space(1), 0).PaddingStart(t.Space(5.5)).Gap(t.Space(2))
 		}
 	})
 	return root
 }
 
 // disclosureArrow draws the arrow of a disclosure: pointing right, turned
-// by deg degrees clockwise.
+// by deg degrees clockwise, or right to left pointing left, turned as far
+// the other way, as Finder's do.
 func disclosureArrow(c *context, deg float32) *node {
 	t := c.theme
-	return coreBox(c).Size(t.Space(4), t.Space(4)).Shrink(0).Draw(func(p *Painter, r Rect) {
-		cx, cy, d := r.X+r.W/2, r.Y+r.H/2, r.W/8
-		at := rotate(cx, cy, deg)
-		var path Path
-		path.MoveTo(at(-d, -2*d)).LineTo(at(d, 0)).LineTo(at(-d, 2*d))
-		p.StrokePath(&path, 1.5, t.TextMuted)
+	e := coreBox(c).Size(t.Space(4), t.Space(4)).Shrink(0)
+	rtl := e.rtl()
+	return e.Draw(func(p *Painter, r Rect) {
+		p.StrokePath(disclosurePath(r, deg, rtl), 1.5, t.TextMuted)
 	})
+}
+
+// disclosurePath returns the arrow of a disclosure in r, turned by deg
+// degrees from pointing right, or from pointing left the other way right
+// to left (rtl).
+func disclosurePath(r Rect, deg float32, rtl bool) *Path {
+	cx, cy, d := r.X+r.W/2, r.Y+r.H/2, r.W/8
+	s := float32(1)
+	if rtl {
+		s, deg = -1, -deg
+	}
+	at := rotate(cx, cy, deg)
+	var path Path
+	path.MoveTo(at(-s*d, -2*d)).LineTo(at(s*d, 0)).LineTo(at(-s*d, 2*d))
+	return &path
 }
 
 // accordionBuild is an Accordion being built: the headers of its

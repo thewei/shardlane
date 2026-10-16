@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -50,6 +51,13 @@ func writeBundle(c *Config, dir, bin string, icns []byte, car *assetCatalog, res
 	if err := copyResources(res, filepath.Join(contents, "Resources")); err != nil {
 		return "", err
 	}
+	langs, err := c.languages()
+	if err != nil {
+		return "", err
+	}
+	if err := writeLocalizations(c, filepath.Join(contents, "Resources"), langs); err != nil {
+		return "", err
+	}
 	if err := os.WriteFile(filepath.Join(contents, "Info.plist"), infoPlist(c, name, iconFile, iconName), 0o644); err != nil {
 		return "", err
 	}
@@ -63,6 +71,57 @@ func writeBundle(c *Config, dir, bin string, icns []byte, car *assetCatalog, res
 func bundleExecutable(app string) string {
 	name := filepath.Base(app)
 	return filepath.Join(app, "Contents", "MacOS", name[:len(name)-len(".app")])
+}
+
+// writeLocalizations writes the localization folder of each language the
+// app ships into the Resources of its bundle, named as Xcode names them,
+// which make AppKit say its own texts in the language and System Settings
+// list the language for the app; the InfoPlist.strings of each names the
+// app in the language where its catalog does (mygo.appName). An
+// InfoPlist.strings the app's resources put there already is kept, and
+// the name added to it where it has none: its strings translate those of
+// Info.plist, such as the reasons the system shows as it asks for a
+// permission.
+func writeLocalizations(c *Config, resources string, langs []appLanguage) error {
+	for _, l := range langs {
+		dir := filepath.Join(resources, lprojName(l.Tag)+".lproj")
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return err
+		}
+		names := map[string]any{}
+		path := filepath.Join(dir, "InfoPlist.strings")
+		if data, err := os.ReadFile(path); err == nil {
+			own, err := parseStrings(data)
+			if err != nil {
+				return fmt.Errorf("%s.lproj/InfoPlist.strings of the resources: %w", lprojName(l.Tag), err)
+			}
+			for k, v := range own {
+				names[k] = v
+			}
+		}
+		if l.Name != "" && l.Name != c.Name {
+			for _, k := range []string{"CFBundleName", "CFBundleDisplayName"} {
+				if names[k] == nil {
+					names[k] = l.Name
+				}
+			}
+		}
+		var b bytes.Buffer
+		b.WriteString(`<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+`)
+		writePlistValue(&b, names, "")
+		b.WriteString("</plist>\n")
+		// The copy of the resources keeps links: write a new file, not through one.
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		if err := os.WriteFile(path, b.Bytes(), 0o644); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // appIcon renders the configured icon as .icns, or returns nil without one.
@@ -167,6 +226,18 @@ func infoPlist(c *Config, executable, icon, iconName string) []byte {
 		"NSPrincipalClass":                     "NSApplication",
 		"NSHighResolutionCapable":              true,
 		"NSSupportsAutomaticGraphicsSwitching": true,
+	}
+	if langs, _ := c.languages(); len(langs) > 0 {
+		// The app's own language, which the system falls back to, and
+		// those it ships, which AppKit picks its texts' language among.
+		d["CFBundleDevelopmentRegion"] = lprojName(langs[0].Tag)
+		var names []any
+		for _, l := range langs {
+			if name := lprojName(l.Tag); !slices.Contains(names, any(name)) {
+				names = append(names, name)
+			}
+		}
+		d["CFBundleLocalizations"] = names
 	}
 	if icon != "" {
 		d["CFBundleIconFile"] = icon

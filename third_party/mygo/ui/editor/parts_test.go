@@ -191,8 +191,7 @@ func TestCodeEditorHoverLeave(t *testing.T) {
 	}, 800, 400)
 	tt.Frame()
 	rest := func() {
-		st.ed.hover.restAt = time.Now().Add(-time.Hour)
-		tt.Frame()
+		tt.Advance(time.Hour)
 	}
 	// Over a word, then out to the sidebar before resting: no hover.
 	tt.Move(400, 10)
@@ -213,8 +212,7 @@ func TestCodeEditorHoverLeave(t *testing.T) {
 		t.Fatal("the hover went at once as the pointer left the editor, not after a grace")
 	}
 	graceOver := func() {
-		st.ed.hover.hideAt = time.Now().Add(-time.Millisecond)
-		tt.Frame()
+		tt.Advance(hoverHideDelay)
 	}
 	graceOver()
 	if st.ed.hover.shown {
@@ -241,8 +239,7 @@ func TestCodeEditorHoverInteractive(t *testing.T) {
 	ed := &st.ed
 	y := float32(ed.view.heights.geometry(2).rows-ed.scrollY) + ed.view.lineHeight/2
 	tt.Move(ed.textX+80, y)
-	ed.hover.restAt = time.Now().Add(-time.Hour)
-	tt.Frame()
+	tt.Advance(time.Hour)
 	r, ok := tt.Find("func bar() int")
 	if !ok {
 		t.Fatalf("no hover: %q", tt.Texts())
@@ -253,8 +250,7 @@ func TestCodeEditorHoverInteractive(t *testing.T) {
 	tt.Frame()
 	tt.Move(r.X+4, r.Y+r.H/2)
 	tt.Frame()
-	ed.hover.hideAt = time.Now().Add(-time.Millisecond)
-	tt.Frame()
+	tt.Advance(hoverHideDelay)
 	if !ed.hover.shown {
 		t.Fatal("the hover went as the pointer went into it")
 	}

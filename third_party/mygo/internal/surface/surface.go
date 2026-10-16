@@ -4,6 +4,7 @@
 package surface
 
 import (
+	"github.com/egoist/mygo/i18n"
 	"github.com/egoist/mygo/internal/platform"
 	"github.com/egoist/mygo/transfer"
 )
@@ -33,6 +34,16 @@ type Conn struct {
 	// tells changes of as well.
 	IsDark      func() bool
 	Preferences func() platform.Preferences
+	// Locale returns the language the app shows (App.Locale), and Region
+	// the user's regional formats, which LocaleChanged tells changes of.
+	// They cost nothing: the content may read them every frame.
+	Locale func() string
+	Region func() i18n.Region
+	// RightToLeft reports whether the content is laid out right to left,
+	// as the app's language reads (i18n.Direction of App.Locale), unless
+	// the window says otherwise; nil is left to right. The content reads
+	// it as it builds each frame: call Changed after it changes.
+	RightToLeft func() bool
 	// UIFont returns the family of the desktop's interface font where the
 	// system's text stack does not know it (Linux), else "".
 	UIFont func() string
@@ -76,6 +87,9 @@ type Conn struct {
 	// TitleBarChanged when TitleBar does.
 	ThemeChanged    func()
 	TitleBarChanged func()
+	// LocaleChanged is called when Locale or Region changed, for the
+	// content to build its frame anew.
+	LocaleChanged func()
 	// Capture renders the content as it is now into premultiplied RGBA.
 	Capture func() (width, height int, rgba []byte)
 	// ToggleDevTools opens or closes the content's inspector, for the

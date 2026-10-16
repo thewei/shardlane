@@ -44,6 +44,9 @@ const modifierMask = 1<<0 | 1<<2 | 1<<3 | 1<<26 | 1<<27 | 1<<28
 var editCommands = map[string]string{
 	"undo": "Undo", "redo": "Redo", "cut": "Cut", "copy": "Copy", "paste": "Paste",
 	"pasteAndMatchStyle": "PasteAsPlainText", "delete": "Delete", "selectAll": "SelectAll",
+	// The Format menu's.
+	"bold": "Bold", "italic": "Italic", "underline": "Underline", "strikethrough": "Strikethrough",
+	"alignLeft": "JustifyLeft", "alignCenter": "JustifyCenter", "alignRight": "JustifyRight",
 }
 
 func initMenuCallbacks() {
@@ -84,9 +87,6 @@ func initMenuCallbacks() {
 			} else if w != nil {
 				if w.surface != nil {
 					role := itemRoles[id]
-					if role == "pasteAndMatchStyle" {
-						role = "paste"
-					}
 					w.h.SurfaceEvent(platform.SurfaceEvent{Kind: platform.SurfaceCommand, Text: role})
 				} else {
 					webkitWebViewExecuteEditingCommand(w.web, cs(cmd))
@@ -272,15 +272,19 @@ func gtkAccelerator(acc string) (uint32, uint32, bool) {
 func (b *Backend) SetApplicationMenu(m *platform.Menu) {
 	b.appMenu = m
 	for _, w := range b.windows {
-		if !w.ownMenu {
+		if !w.ownMenu && w.hasAppMenu() {
 			w.installMenu(m)
 		}
 	}
 }
 
+// hasAppMenu tells whether the window shows the application menu in its
+// menu bar: flyouts and panels show none.
+func (w *window) hasAppMenu() bool { return w.opts.Flyout == nil && !w.opts.Panel }
+
 func (w *window) SetMenu(m *platform.Menu) {
 	w.ownMenu = m != nil
-	if m == nil {
+	if m == nil && w.hasAppMenu() {
 		m = w.b.appMenu
 	}
 	w.installMenu(m)
@@ -387,9 +391,17 @@ func (b *Backend) PopupMenu(m *platform.Menu, pw platform.Window, pos *platform.
 	gtkWidgetShowAll(menu)
 	event, anchor := w.popupTrigger(), w.contentWindow()
 	const northWest = 1 // GDK_GRAVITY_NORTH_WEST
+	corner := int32(northWest)
+	if m.RightToLeft {
+		// GTK_TEXT_DIR_RTL lays the menu out from the right (its items
+		// take the default direction, which GTK takes from the locale),
+		// and GDK_GRAVITY_NORTH_EAST opens it to the left of the point.
+		gtkWidgetSetDirection(menu, 2)
+		corner = 3
+	}
 	switch {
 	case pos != nil && anchor != 0:
-		gtkMenuPopupAtRect(menu, anchor, &gdkRectangle{X: int32(pos.X), Y: int32(pos.Y), Width: 1, Height: 1}, northWest, northWest, event)
+		gtkMenuPopupAtRect(menu, anchor, &gdkRectangle{X: int32(pos.X), Y: int32(pos.Y), Width: 1, Height: 1}, northWest, corner, event)
 	case event != 0:
 		gtkMenuPopupAtPointer(menu, event)
 	case anchor != 0:

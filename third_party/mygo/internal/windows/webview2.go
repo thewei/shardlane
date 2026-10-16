@@ -4,6 +4,7 @@ package windows
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -33,34 +34,35 @@ const (
 	ctl2PutDefaultBackgroundColor        = 27
 
 	// ICoreWebView2
-	wvGetSettings                         = 3
-	wvGetSource                           = 4
-	wvNavigate                            = 5
-	wvNavigateToString                    = 6
-	wvAddNavigationStarting               = 7
-	wvAddContentLoading                   = 9
-	wvAddPermissionRequested              = 23
-	wvAddNavigationCompleted              = 15
-	wvAddProcessFailed                    = 25
-	wvAddScriptToExecuteOnDocumentCreated = 27
-	wvExecuteScript                       = 29
-	wvCapturePreview                      = 30
-	wvReload                              = 31
-	wvAddWebMessageReceived               = 34
-	wvCallDevToolsProtocolMethod          = 36
-	wvGetCanGoBack                        = 38
-	wvGetCanGoForward                     = 39
-	wvGoBack                              = 40
-	wvGoForward                           = 41
-	wvStop                                = 43
-	wvAddNewWindowRequested               = 44
-	wvAddDocumentTitleChanged             = 46
-	wvGetDocumentTitle                    = 48
-	wvOpenDevToolsWindow                  = 51
-	wvAddWebResourceRequested             = 55
-	wvAddWebResourceRequestedFilter       = 57
-	wvRemoveWebResourceRequestedFilter    = 58
-	wvAddWindowCloseRequested             = 59
+	wvGetSettings                            = 3
+	wvGetSource                              = 4
+	wvNavigate                               = 5
+	wvNavigateToString                       = 6
+	wvAddNavigationStarting                  = 7
+	wvAddContentLoading                      = 9
+	wvAddPermissionRequested                 = 23
+	wvAddNavigationCompleted                 = 15
+	wvAddProcessFailed                       = 25
+	wvAddScriptToExecuteOnDocumentCreated    = 27
+	wvRemoveScriptToExecuteOnDocumentCreated = 28
+	wvExecuteScript                          = 29
+	wvCapturePreview                         = 30
+	wvReload                                 = 31
+	wvAddWebMessageReceived                  = 34
+	wvCallDevToolsProtocolMethod             = 36
+	wvGetCanGoBack                           = 38
+	wvGetCanGoForward                        = 39
+	wvGoBack                                 = 40
+	wvGoForward                              = 41
+	wvStop                                   = 43
+	wvAddNewWindowRequested                  = 44
+	wvAddDocumentTitleChanged                = 46
+	wvGetDocumentTitle                       = 48
+	wvOpenDevToolsWindow                     = 51
+	wvAddWebResourceRequested                = 55
+	wvAddWebResourceRequestedFilter          = 57
+	wvRemoveWebResourceRequestedFilter       = 58
+	wvAddWindowCloseRequested                = 59
 
 	// ICoreWebView2Settings, ICoreWebView2Settings2
 	setPutIsScriptEnabled                = 4
@@ -144,9 +146,32 @@ const (
 	keyQueryValue   = 0x0001
 )
 
-// createEnvironment starts creating the WebView2 environment; done runs on
-// the main thread with it, or with an error.
-func createEnvironment(userData string, done func(env uintptr, err error)) error {
+// createEnvironment starts creating the WebView2 environment, in language,
+// the app's (envOptions), or the system's for ""; done runs on the main
+// thread with it, or with an error. A runtime that fails to create one with
+// the options is asked for one without them.
+func createEnvironment(userData, language string, done func(env uintptr, err error)) error {
+	err := createEnvironmentWith(userData, language, func(env uintptr, err error) {
+		if err != nil && language != "" {
+			// A runtime that takes no options of ours: one without them,
+			// in the language of the system.
+			log.Printf("%v; creating it again without its language", err)
+			if err := createEnvironmentWith(userData, "", done); err != nil {
+				done(0, err)
+			}
+			return
+		}
+		done(env, err)
+	})
+	if err != nil && language != "" {
+		return createEnvironmentWith(userData, "", done)
+	}
+	return err
+}
+
+// createEnvironmentWith creates the environment as createEnvironment does,
+// with the options of language, or none for "".
+func createEnvironmentWith(userData, language string, done func(env uintptr, err error)) error {
 	completed := func(hr, env uintptr) {
 		if failed(hr) || env == 0 {
 			done(0, hresultError("creating the WebView2 environment", hr))
@@ -156,23 +181,22 @@ func createEnvironment(userData string, done func(env uintptr, err error)) error
 		done(env, nil)
 	}
 	dataDir := u16(userData)
+	var options uintptr
+	if language != "" {
+		options = newEnvOptions(language)
+		defer release(options) // the environment takes its own reference
+	}
 
 	// An official loader next to the executable wins.
-	if exe, err := os.Executable(); err == nil {
-		loader := filepath.Join(filepath.Dir(exe), "WebView2Loader.dll")
-		if _, err := os.Stat(loader); err == nil {
-			proc := syscall.NewLazyDLL(loader).NewProc("CreateCoreWebView2EnvironmentWithOptions")
-			if proc.Find() == nil {
-				hr := withHandler(completed, func(h uintptr) uintptr {
-					r, _, _ := proc.Call(0, uintptr(unsafe.Pointer(dataDir)), 0, h)
-					return r
-				})
-				if failed(hr) {
-					return hresultError("CreateCoreWebView2EnvironmentWithOptions", hr)
-				}
-				return nil
-			}
+	if proc := loaderProc(); proc != nil {
+		hr := withHandler(completed, func(h uintptr) uintptr {
+			r, _, _ := proc.Call(0, uintptr(unsafe.Pointer(dataDir)), options, h)
+			return r
+		})
+		if failed(hr) {
+			return hresultError("CreateCoreWebView2EnvironmentWithOptions", hr)
 		}
+		return nil
 	}
 
 	// Otherwise the runtime's client library, as the loader does: a fixed
@@ -192,13 +216,55 @@ func createEnvironment(userData string, done func(env uintptr, err error)) error
 		return fmt.Errorf("mygo: unsupported WebView2 Runtime at %s: %w", client, err)
 	}
 	hr := withHandler(completed, func(h uintptr) uintptr {
-		r, _, _ := proc.Call(1, runtimeType, uintptr(unsafe.Pointer(dataDir)), 0, h)
+		r, _, _ := proc.Call(1, runtimeType, uintptr(unsafe.Pointer(dataDir)), options, h)
 		return r
 	})
 	if failed(hr) {
 		return hresultError("creating the WebView2 environment", hr)
 	}
 	return nil
+}
+
+// loaderProc returns the official WebView2 loader next to the executable and
+// its CreateCoreWebView2EnvironmentWithOptions, or nil when there is no
+// loader to use. createEnvironment calls what it returns, and
+// WebViewAvailable asks for it, so the two cannot disagree: a DLL of that
+// name with no such export is no loader, and a runtime is looked for
+// instead.
+func loaderProc() *syscall.LazyProc {
+	exe, err := os.Executable()
+	if err != nil {
+		return nil
+	}
+	path := filepath.Join(filepath.Dir(exe), "WebView2Loader.dll")
+	if _, err := os.Stat(path); err != nil {
+		return nil
+	}
+	proc := syscall.NewLazyDLL(path).NewProc("CreateCoreWebView2EnvironmentWithOptions")
+	if proc.Find() != nil {
+		return nil
+	}
+	return proc
+}
+
+// WebViewAvailable reports whether a window showing a web page can have
+// one: the WebView2 Runtime is installed, or a loader next to the
+// executable loads a fixed version runtime or the installed one itself. It
+// starts nothing; once a window showing a page created the environment, it
+// says whether that worked. It reads the registry and the disk only, so any
+// goroutine may call it, before Init too.
+func (b *Backend) WebViewAvailable() bool {
+	switch b.envResult.Load() {
+	case 1:
+		return true
+	case 2:
+		return false
+	}
+	if loaderProc() != nil {
+		return true
+	}
+	_, _, err := webview2.Find()
+	return err == nil
 }
 
 // regDWORD reads a DWORD value, reporting whether it exists.

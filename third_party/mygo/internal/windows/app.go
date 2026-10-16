@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -27,7 +28,10 @@ type Backend struct {
 	signaled atomic.Bool
 
 	windows map[uintptr]*window // by HWND
-	appMenu *platform.Menu
+	// languages are those SetLanguages told: the first is the language
+	// of the WebView2 environment, once made.
+	languages []string
+	appMenu   *platform.Menu
 
 	// The WebView2 environment is created asynchronously, when the first
 	// window that shows a web page needs it; windows wait.
@@ -35,6 +39,12 @@ type Backend struct {
 	envErr     error
 	envStarted bool
 	envWaiters []func()
+	// envResult is whether the environment was created (1) or failed (2),
+	// 0 before, for WebViewAvailable, which any goroutine may call.
+	envResult atomic.Int32
+
+	// cookies gives cookie calls a cookie manager (cookies.go).
+	cookies cookieStore
 
 	menus menuTable
 
@@ -113,6 +123,7 @@ func (b *Backend) Init(h platform.AppHandler, opts platform.AppOptions) error {
 	}
 	b.taskbarCreated = registerWindowMessage("TaskbarCreated")
 	b.taskbarButtonCreated = registerWindowMessage("TaskbarButtonCreated")
+	b.applyMenuTheme() // for the menus of trays too, before any window
 	// Clipboard and drag/drop share startup-created OLE callback tables.
 	dropOnce.Do(initDropTarget)
 	return nil
@@ -132,10 +143,17 @@ func (b *Backend) startEnvironment() error {
 	}
 	userData := filepath.Join(dir, sanitize(b.name), "WebView2")
 	_ = os.MkdirAll(userData, 0o755)
-	err := createEnvironment(userData, func(env uintptr, err error) {
+	language := ""
+	if len(b.languages) > 0 {
+		language = b.languages[0]
+	}
+	err := createEnvironment(userData, language, func(env uintptr, err error) {
 		b.env, b.envErr = env, err
 		if err != nil {
 			log.Print(err)
+			b.envResult.Store(2)
+		} else {
+			b.envResult.Store(1)
 		}
 		waiters := b.envWaiters
 		b.envWaiters = nil
@@ -318,6 +336,9 @@ func (b *Backend) appMessage(m uint32, wp, lp uintptr) (uintptr, bool) {
 		return 0, true
 	case wmAppWake:
 		return 0, true
+	case wmAppCookieView:
+		b.closeCookieViewNow()
+		return 0, true
 	case wmAppTray:
 		b.trayMessage(uint32(wp), uint32(loword(lp)))
 		return 0, true
@@ -332,6 +353,9 @@ func (b *Backend) appMessage(m uint32, wp, lp uintptr) (uintptr, bool) {
 		case lp != 0 && wstr(lp) == settingImmersiveColorSet:
 			b.applyTheme()
 			b.h.ThemeChanged()
+		case lp != 0 && wstr(lp) == settingIntl:
+			// The display languages or the regional formats.
+			b.h.LocaleChanged()
 		case preferencesChanged(wp, lp):
 			b.h.ThemeChanged()
 		}
@@ -346,6 +370,9 @@ func (b *Backend) appMessage(m uint32, wp, lp uintptr) (uintptr, bool) {
 		}
 	case wmAppDeviceRemoved:
 		b.deviceRemoved(wp)
+		return 0, true
+	case wmAppNetwork:
+		b.h.NetworkChanged(b.Network().Status())
 		return 0, true
 	case wmQueryEndSession:
 		return 1, true
@@ -496,15 +523,9 @@ func (a appController) ShowAboutPanel(o platform.AboutPanelOptions) {
 			detail += "\n" + s
 		}
 	}
-	a.b.messageBox(0, &platform.MessageBoxOptions{Type: "info", Title: "About " + o.ApplicationName, Message: o.ApplicationName, Detail: detail, Buttons: []string{"OK"}})
-}
-
-func (a appController) Locale() string {
-	buf := make([]uint16, 85) // LOCALE_NAME_MAX_LENGTH
-	if n, _, _ := procGetUserDefaultLocaleNm.Call(uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf))); n > 0 {
-		return syscall.UTF16ToString(buf)
-	}
-	return "en-US"
+	tx := platform.CurrentTexts()
+	title := strings.Replace(tx.About, "\x00", o.ApplicationName, 1)
+	a.b.messageBox(0, &platform.MessageBoxOptions{Type: "info", Title: title, Message: o.ApplicationName, Detail: detail, Buttons: []string{tx.OK}})
 }
 
 // Package reads the version resource `mygo build` embeds in the
@@ -523,13 +544,26 @@ func (a appController) Package() (platform.PackageInfo, bool) {
 	if r, _, _ := procGetFileVersionInfoW.Call(uintptr(unsafe.Pointer(path)), 0, size, uintptr(unsafe.Pointer(&data[0]))); r == 0 {
 		return platform.PackageInfo{}, false
 	}
-	query := func(key string) string {
+	value := func(path string) (uintptr, uint32) {
 		var p uintptr
 		var n uint32
-		if r, _, _ := procVerQueryValueW.Call(uintptr(unsafe.Pointer(&data[0])), uintptr(unsafe.Pointer(u16(`\StringFileInfo\040904b0\`+key))), uintptr(unsafe.Pointer(&p)), uintptr(unsafe.Pointer(&n))); r == 0 || n == 0 {
-			return ""
+		if r, _, _ := procVerQueryValueW.Call(uintptr(unsafe.Pointer(&data[0])), uintptr(unsafe.Pointer(u16(path))), uintptr(unsafe.Pointer(&p)), uintptr(unsafe.Pointer(&n))); r == 0 || n == 0 {
+			return 0, 0
 		}
-		return wstr(p)
+		return p, n
+	}
+	// The strings of the app's own language, the first of its
+	// translations: en-US and Unicode (040904b0) before it shipped others.
+	table := "040904b0"
+	if p, n := value(`\VarFileInfo\Translation`); n >= 4 {
+		lang, codePage := *(*uint16)(native(p)), *(*uint16)(native(p + 2))
+		table = fmt.Sprintf("%04x%04x", lang, codePage)
+	}
+	query := func(key string) string {
+		if p, _ := value(`\StringFileInfo\` + table + `\` + key); p != 0 {
+			return wstr(p)
+		}
+		return ""
 	}
 	info := platform.PackageInfo{Name: query("ProductName"), Version: query("ProductVersion"), Identifier: query("MyGoIdentifier")}
 	if info.Identifier == "" {
@@ -538,42 +572,35 @@ func (a appController) Package() (platform.PackageInfo, bool) {
 	return info, true
 }
 
-// ClearBrowsingData clears the profile the app's web views share.
+// ClearBrowsingData clears the profile the app's web views share, through
+// the web view cookie calls use: a window's, or a hidden one before a
+// window shows a page (cookies.go).
 func (a appController) ClearBrowsingData(done func(error)) {
-	var web uintptr
-	for _, w := range a.b.windows {
-		if w.webview != 0 {
-			web = w.webview
-			break
-		}
-	}
-	if web == 0 {
-		done(errors.New("mygo: clearing browsing data needs an open window"))
-		return
-	}
-	wv13 := queryInterface(web, &iidICoreWebView2_13)
-	if wv13 == 0 {
-		done(errors.New("mygo: clearing browsing data needs a newer WebView2 Runtime"))
-		return
-	}
-	var profile uintptr
-	comCall(wv13, wv13GetProfile, uintptr(unsafe.Pointer(&profile)))
-	release(wv13)
-	p2 := queryInterface(profile, &iidICoreWebView2Profile2)
-	release(profile)
-	if p2 == 0 {
-		done(errors.New("mygo: clearing browsing data needs a newer WebView2 Runtime"))
-		return
-	}
-	defer release(p2)
-	hr := withHandler(func(result, _ uintptr) {
-		if failed(result) {
-			done(hresultError("clearing browsing data", result))
+	a.withCookieManager(func(_ []platform.Cookie, err error) { done(err) }, func(r *cookieRequest) {
+		wv13 := queryInterface(r.webview, &iidICoreWebView2_13)
+		if wv13 == 0 {
+			r.finish(nil, errors.New("mygo: clearing browsing data needs a newer WebView2 Runtime"))
 			return
 		}
-		done(nil)
-	}, func(h uintptr) uintptr { return comCall(p2, profile2ClearBrowsingDataAll, h) })
-	if failed(hr) {
-		done(hresultError("clearing browsing data", hr))
-	}
+		var profile uintptr
+		comCall(wv13, wv13GetProfile, uintptr(unsafe.Pointer(&profile)))
+		release(wv13)
+		p2 := queryInterface(profile, &iidICoreWebView2Profile2)
+		release(profile)
+		if p2 == 0 {
+			r.finish(nil, errors.New("mygo: clearing browsing data needs a newer WebView2 Runtime"))
+			return
+		}
+		defer release(p2)
+		hr := withHandler(func(result, _ uintptr) {
+			if failed(result) {
+				r.finish(nil, hresultError("clearing browsing data", result))
+				return
+			}
+			r.finish(nil, nil)
+		}, func(h uintptr) uintptr { return comCall(p2, profile2ClearBrowsingDataAll, h) })
+		if failed(hr) {
+			r.finish(nil, hresultError("clearing browsing data", hr))
+		}
+	})
 }

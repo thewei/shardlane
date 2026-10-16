@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/egoist/mygo"
+	"github.com/egoist/mygo/internal/wait"
 	"github.com/egoist/mygo/ui"
 )
 
@@ -60,7 +61,7 @@ func TestContentWindowTransforms(t *testing.T) {
 		t.Fatal("bounding-box corner outside rotated element took a click")
 	}
 	scale := deviceScale(w)
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(wait.Guard)
 	for {
 		data, ok := surfaceOnScreen(w)
 		if !ok {
@@ -108,7 +109,7 @@ func TestContentWindowPerspective(t *testing.T) {
 	}
 	eventually(t, "a click through perspective", func() bool { return clicks.Load() == 1 })
 	scale := deviceScale(w)
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(wait.Guard)
 	for {
 		data, ok := surfaceOnScreen(w)
 		if !ok {

@@ -40,10 +40,13 @@ func (*Backend) Shell() platform.Shell                                      { re
 func (*Backend) Screen() platform.Screen                                    { return screen{} }
 func (*Backend) Theme() platform.Theme                                      { return theme{} }
 func (*Backend) Power() platform.Power                                      { return power{} }
+func (*Backend) Network() platform.Network                                  { return network{} }
+func (*Backend) Secrets() platform.Secrets                                  { return secrets{} }
 func (*Backend) NewTray(platform.TrayHandler) (platform.Tray, error)        { return nil, errUnsupported }
 func (*Backend) RegisterHotkey(int, string) error                           { return errUnsupported }
 func (*Backend) UnregisterHotkey(int)                                       {}
 func (*Backend) NotificationsSupported() bool                               { return false }
+func (*Backend) WebViewAvailable() bool                                     { return false }
 func (*Backend) RemoveNotification(string)                                  {}
 
 func (*Backend) ShowNotification(_ *platform.Notification, done func(error)) {
@@ -65,7 +68,11 @@ func (app) Bounce(bool) int                                   { return 0 }
 func (app) CancelBounce(int)                                  {}
 func (app) SetDockIcon([]byte) error                          { return errUnsupported }
 func (app) ShowAboutPanel(platform.AboutPanelOptions)         {}
-func (app) Locale() string                                    { return "en-US" }
+func (app) PreferredLanguages() []string                      { return []string{"en-US"} }
+func (app) Region() platform.Region                           { return platform.Region{FirstWeekday: -1} }
+func (app) SavedLocale() (string, bool)                       { return "", false }
+func (app) SaveLocale(string) bool                            { return false }
+func (app) SetLanguages([]string, bool)                       {}
 func (app) Package() (platform.PackageInfo, bool)             { return platform.PackageInfo{}, false }
 func (app) RegisterURLScheme(string, string, string) error    { return errUnsupported }
 func (app) UnregisterURLScheme(string, string, string) error  { return errUnsupported }
@@ -75,6 +82,16 @@ func (app) OpenAtLogin(string, string, string) bool           { return false }
 func (app) OpenedAtLogin() bool                               { return false }
 func (app) SetDockMenu(*platform.Menu)                        {}
 func (app) ClearBrowsingData(done func(error))                { done(errUnsupported) }
+func (app) AddRecentDocument(string) error                    { return errUnsupported }
+func (app) ClearRecentDocuments() error                       { return errUnsupported }
+func (app) SetJumpList(platform.JumpList) error               { return errUnsupported }
+
+func (app) ListCookies(_ string, done func([]platform.Cookie, error)) {
+	done(nil, platform.ErrUnsupported)
+}
+func (app) SetCookie(_ platform.Cookie, done func(error))       { done(platform.ErrUnsupported) }
+func (app) DeleteCookie(_ platform.CookieKey, done func(error)) { done(platform.ErrUnsupported) }
+func (app) ClearCookies(done func(error))                       { done(platform.ErrUnsupported) }
 
 type dialogs struct{}
 
@@ -109,11 +126,15 @@ func (clipboard) AvailableFormats() []string { return nil }
 
 type shell struct{}
 
-func (shell) OpenExternal(string) error { return errUnsupported }
-func (shell) OpenPath(string) error     { return errUnsupported }
-func (shell) ShowItemInFolder(string)   {}
-func (shell) TrashItem(string) error    { return errUnsupported }
-func (shell) Beep()                     {}
+func (shell) OpenExternal(string) error            { return errUnsupported }
+func (shell) OpenPath(string) error                { return errUnsupported }
+func (shell) ShowItemInFolder(string)              {}
+func (shell) TrashItem(string) error               { return errUnsupported }
+func (shell) Beep()                                {}
+func (shell) FileIcon(string, int) ([]byte, error) { return nil, errUnsupported }
+func (shell) OpenApplication(string) error         { return errUnsupported }
+
+func (*Backend) Applications() ([]platform.Application, error) { return nil, errUnsupported }
 
 type screen struct{}
 
@@ -136,3 +157,14 @@ func (power) Watch()                        {}
 func (power) KeepAwake(bool, string) func() { return func() {} }
 func (power) OnBattery() bool               { return false }
 func (power) IdleTime() time.Duration       { return 0 }
+
+type network struct{}
+
+func (network) Watch()                         {}
+func (network) Status() platform.NetworkStatus { return platform.NetworkStatus{} }
+
+type secrets struct{}
+
+func (secrets) SetSecret(string, string, []byte) error { return platform.ErrUnsupported }
+func (secrets) Secret(string, string) ([]byte, error)  { return nil, platform.ErrUnsupported }
+func (secrets) DeleteSecret(string, string) error      { return platform.ErrUnsupported }

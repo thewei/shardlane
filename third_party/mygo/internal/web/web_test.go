@@ -147,3 +147,12 @@ func TestDroppedFiles(t *testing.T) {
 		t.Error("the files of the oldest drop stay")
 	}
 }
+
+// TestWebViewAvailable: browsers have no system webview, so the call says
+// so, and an app opens a window of native UI instead of one showing a page
+// it could not show.
+func TestWebViewAvailable(t *testing.T) {
+	if New().WebViewAvailable() {
+		t.Error("WebViewAvailable = true in a browser, which has no webview")
+	}
+}

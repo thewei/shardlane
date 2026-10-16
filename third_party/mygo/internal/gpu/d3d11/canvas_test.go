@@ -33,7 +33,7 @@ func TestCanvases(t *testing.T) {
 			s.Canvases = nil
 		}
 	}
-	if len(r.canvases) != 2 {
-		t.Errorf("%d canvas textures, want 2", len(r.canvases))
+	if len(r.canvases) != 3 {
+		t.Errorf("%d canvas textures, want 3", len(r.canvases))
 	}
 }

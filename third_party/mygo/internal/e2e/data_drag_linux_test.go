@@ -12,6 +12,7 @@ import (
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/internal/linux"
+	"github.com/egoist/mygo/internal/wait"
 	"github.com/egoist/mygo/transfer"
 	"github.com/egoist/mygo/ui"
 )
@@ -36,7 +37,7 @@ func gtkDragResult(t *testing.T, result <-chan transfer.Result) transfer.Result 
 	select {
 	case r := <-result:
 		return r
-	case <-time.After(5 * time.Second):
+	case <-time.After(wait.Guard):
 		t.Fatal("GTK drag did not complete")
 	}
 	return transfer.Result{}

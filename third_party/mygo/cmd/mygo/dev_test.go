@@ -15,6 +15,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/egoist/mygo/internal/wait"
 )
 
 // TestMain lets the test binary play a development build of an app for
@@ -101,7 +103,7 @@ func TestDevLaunch(t *testing.T) {
 		if p.err == nil || !strings.Contains(p.err.Error(), "exit status 3") {
 			t.Errorf("exit: %v", p.err)
 		}
-	case <-time.After(5 * time.Second):
+	case <-time.After(wait.Guard):
 		t.Fatal("the exit of a build went unnoticed")
 	}
 
@@ -110,11 +112,13 @@ func TestDevLaunch(t *testing.T) {
 	if p, err = s.launch(os.Args[0]); err != nil {
 		t.Fatal(err)
 	}
+	// stop returns once it has killed it, after the grace: the test's
+	// timeout is the guard against a stop that waits for it forever. The
+	// build may yet die of SIGTERM, when that comes before it ignores it.
 	stopGrace = 200 * time.Millisecond
-	start := time.Now()
 	p.stop()
-	if d := time.Since(start); d > 3*time.Second {
-		t.Errorf("a hanging build took %v to be killed", d)
+	if p.err == nil {
+		t.Error("a build killed exited cleanly")
 	}
 }
 
@@ -150,21 +154,16 @@ func TestWatcher(t *testing.T) {
 	var reported []string // the paths of the last change
 	expect := func(changed bool, what string) {
 		t.Helper()
-		wait := 300 * time.Millisecond
 		if changed {
-			// Loaded CI runners can delay polling; unchanged-input checks
-			// still need only the short window to detect spurious events.
-			wait = 3 * time.Second
+			reported = wait.For(t, what+" reported", changes)
+			return
 		}
+		// Nothing comes for a while: a busy machine may only make this
+		// miss a spurious change, never fail a right watcher.
 		select {
 		case reported = <-changes:
-			if !changed {
-				t.Fatalf("%s: change reported", what)
-			}
-		case <-time.After(wait):
-			if changed {
-				t.Fatalf("%s: change not reported", what)
-			}
+			t.Fatalf("%s: change reported", what)
+		case <-time.After(300 * time.Millisecond):
 		}
 	}
 	expect(false, "nothing")

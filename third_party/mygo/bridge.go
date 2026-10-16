@@ -8,6 +8,7 @@ import (
 	"encoding/json/jsontext"
 	"encoding/json/v2"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/egoist/mygo/internal/bridge"
@@ -26,7 +27,94 @@ func (w *Window) bridgeScript() string {
 		WindowID: w.top().id, // the window a web view is in
 		Version:  Version,
 		Secret:   w.secret,
+		Locale:   App.Locale(),
+		Dir:      appDir(),
 	})
+}
+
+// preferencesScriptIndex is the place of preferencesScript in a window's
+// user scripts, right after the bridge, which it tells.
+const preferencesScriptIndex = 1
+
+// pageScripts are the scripts a page of the window gets at document start:
+// the bridge, the preferences of the page and the preload script.
+func (w *Window) pageScripts() []platform.UserScript {
+	scripts := []platform.UserScript{{Source: w.bridgeScript()}, {Source: preferencesScript()}}
+	if w.preload != "" {
+		scripts = append(scripts, platform.UserScript{Source: w.preload})
+	}
+	return scripts
+}
+
+// localeEvent returns the message of LocaleEvent for locale.
+func localeEvent(locale string) (message, error) {
+	return encodeEvent(bridge.LocaleEvent, bridge.Locale{Locale: locale, Dir: appDir()})
+}
+
+// sendLocale tells the page of a window the language the app shows, which
+// the bridge configuration told it at document start: a page that started
+// loading as the language changed may have had the one before. The bridge
+// tells its listeners only of a language it did not have. Main thread
+// only.
+func (w *Window) sendLocale() {
+	if w.content != nil || w.native == nil {
+		return
+	}
+	if msg, err := localeEvent(App.Locale()); err == nil {
+		w.enqueue(msg, true)
+	}
+}
+
+// pagesLocaleChanged tells the pages of every window the language the app
+// shows, and makes it the one of the pages they load later. Main thread
+// only.
+func pagesLocaleChanged(locale string) {
+	msg, err := localeEvent(locale)
+	if err != nil {
+		return
+	}
+	for _, w := range pageWindows() {
+		if w.content != nil || w.native == nil {
+			continue
+		}
+		w.userScripts = w.pageScripts()
+		w.native.SetUserScripts(w.userScripts)
+		w.enqueue(msg, true)
+	}
+}
+
+// preferencesScript tells a page the desktop's preferences at document
+// start. Main thread only.
+func preferencesScript() string {
+	b, _ := json.Marshal(Theme.preferences())
+	return bridge.PreferencesScript(b)
+}
+
+// sendPreferences tells the pages that the desktop's preferences changed.
+// Main thread only.
+func sendPreferences() {
+	prefs, script := Theme.preferences(), preferencesScript()
+	for _, w := range pageWindows() {
+		w.sendPreferences(prefs, script)
+	}
+}
+
+// sendPreferences tells the page of w that the preferences changed, if
+// they did: the documents it loads next through its user script, which
+// the backend replaces, so that their first paint has them, and the
+// current one through the event. Main thread only.
+func (w *Window) sendPreferences(prefs ThemePreferences, script string) {
+	if w.content != nil || w.native == nil || len(w.userScripts) <= preferencesScriptIndex ||
+		w.userScripts[preferencesScriptIndex].Source == script {
+		return
+	}
+	scripts := slices.Clone(w.userScripts)
+	scripts[preferencesScriptIndex].Source = script
+	w.userScripts = scripts
+	w.native.SetUserScripts(scripts)
+	if msg, err := encodeEvent(bridge.PreferencesEvent, prefs); err == nil {
+		w.enqueue(msg, true)
+	}
 }
 
 // decodeResult decodes the JSON result of eval into v.
@@ -38,6 +126,10 @@ const (
 	// The statement form runs code as a function body.
 	evalBody = "try{return JSON.stringify({ok:true,v:await(async()=>{\n%s\n})()})}catch(e){return JSON.stringify({ok:false,e:String(e&&e.message||e)})}"
 )
+
+// evalCanceled, a hook of tests, runs after eval delivered the
+// cancellation of its context.
+var evalCanceled func()
 
 // eval returns the JSON result of code, which shares the memory of the
 // page's answer.
@@ -52,7 +144,12 @@ func (w *Window) eval(ctx context.Context, code string) (jsontext.Value, error) 
 	// Both the cancellation and the page may answer; the first one counts
 	// and the other must not block.
 	ch := make(chan result, 2)
-	stop := context.AfterFunc(ctx, func() { deliver(ch, result{err: ctx.Err()}) })
+	stop := context.AfterFunc(ctx, func() {
+		deliver(ch, result{err: ctx.Err()})
+		if evalCanceled != nil {
+			evalCanceled()
+		}
+	})
 	defer stop()
 
 	ran := false
@@ -151,6 +248,7 @@ func (w *Window) handleMessage(msg string) {
 		// The script at document start may tell a later page the room of
 		// the controls before a change.
 		w.sendTitleBar()
+		w.sendLocale()
 		w.flush()
 		fire(&w.onDOMReady)
 		w.readyToShow()

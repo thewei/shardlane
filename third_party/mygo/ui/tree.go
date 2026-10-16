@@ -52,7 +52,7 @@ func coreTreeItem(c *context, label string, open *bool, children func()) *node {
 		parent = tb.parents[n-1]
 	}
 	branch := children != nil && open != nil
-	item := coreRow(c).Height(t.Space(7)).Gap(t.Space(0.5)).AlignItems(Center).Padding(0, t.Space(2), 0, t.Space(1+4*float32(tb.depth))).Focusable().Shrink(0).Role(RoleTreeItem)
+	item := coreRow(c).Height(t.Space(7)).Gap(t.Space(0.5)).AlignItems(Center).Padding(0, t.Space(2)).PaddingStart(t.Space(1 + 4*float32(tb.depth))).Focusable().Shrink(0).Role(RoleTreeItem)
 	item.widget = "TreeItem"
 	item.flags |= flagClickable | flagHover | flagOwnRing
 	tb.items = append(tb.items, item.id)
@@ -64,6 +64,8 @@ func coreTreeItem(c *context, label string, open *bool, children func()) *node {
 		}
 	}
 	at := slices.Index(tb.last, item.id)
+	// Right opens, Left closes, the other way right to left.
+	back, forth := item.arrows()
 	switch {
 	case item.Shortcut(0, KeyDown):
 		if at >= 0 && at+1 < len(tb.last) {
@@ -73,14 +75,14 @@ func coreTreeItem(c *context, label string, open *bool, children func()) *node {
 		if at > 0 {
 			focus(tb.last[at-1])
 		}
-	case item.Shortcut(0, KeyRight):
+	case item.Shortcut(0, forth):
 		if branch && !*open {
 			*open = true
 			c.rt.consumed = true
 		} else if branch && at >= 0 && at+1 < len(tb.last) {
 			focus(tb.last[at+1])
 		}
-	case item.Shortcut(0, KeyLeft):
+	case item.Shortcut(0, back):
 		if branch && *open {
 			*open = false
 			c.rt.consumed = true
@@ -115,11 +117,15 @@ func coreTreeItem(c *context, label string, open *bool, children func()) *node {
 				*open = !*open
 				c.rt.consumed = true
 			}
+			rtl := arrow.rtl()
 			arrow.Draw(func(p *Painter, r Rect) {
 				var path Path
-				if expanded {
+				switch {
+				case expanded:
 					path.MoveTo(r.X+r.W/4, r.Y+r.H*3/8).LineTo(r.X+r.W/2, r.Y+r.H*5/8).LineTo(r.X+r.W*3/4, r.Y+r.H*3/8)
-				} else {
+				case rtl:
+					path.MoveTo(r.X+r.W*5/8, r.Y+r.H/4).LineTo(r.X+r.W*3/8, r.Y+r.H/2).LineTo(r.X+r.W*5/8, r.Y+r.H*3/4)
+				default:
 					path.MoveTo(r.X+r.W*3/8, r.Y+r.H/4).LineTo(r.X+r.W*5/8, r.Y+r.H/2).LineTo(r.X+r.W*3/8, r.Y+r.H*3/4)
 				}
 				p.StrokePath(&path, 1.5, arrowColor(t, item))

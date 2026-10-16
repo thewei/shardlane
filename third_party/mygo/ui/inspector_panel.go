@@ -80,7 +80,9 @@ func (rt *engine) buildInspector(c *context, appW, w, h float32) {
 	c.theme, c.parent = t, c.root
 	defer func() { c.theme, c.parent = saved, savedParent }()
 
-	panel := coreColumn(c).Key(inspectorKey)
+	// The panel reads left to right whatever the window, as browsers'
+	// developer tools do.
+	panel := coreColumn(c).Key(inspectorKey).Direction(LeftToRight)
 	in.panel = panel.id
 	panel.Absolute().Left(appW).Top(0).Width(w-appW).Height(h).Background(pal.bg).
 		BorderWidth(0, 0, 0, 1).BorderColor(pal.border).FontSize(12).TextColor(pal.text).Label("Developer tools")
@@ -134,6 +136,17 @@ func (in *inspector) toolbar(c *context, rt *engine) {
 			}
 		}
 		coreSpacer(c)
+		// Lays the window out right to left, or back, to try it without
+		// translations, as GTK's inspector can.
+		rtl := rt.direction()
+		dir := in.tab0(c, "RTL", rtl, 30).Role(RoleToggleButton).Tooltip("Lay the window out right to left")
+		if dir.Clicked() {
+			rt.dirOverride = 2
+			if rtl {
+				rt.dirOverride = 1
+			}
+			rt.requestFrame()
+		}
 		if n := len(rt.warnings); n > 0 {
 			badge := coreRow(c).Gap(3).PaddingX(6).AlignItems(Center).Cursor(CursorPointer).Label(fmt.Sprintf("%d issues", n))
 			badge.Children(func() {
