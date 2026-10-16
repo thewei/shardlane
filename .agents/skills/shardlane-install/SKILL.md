@@ -5,18 +5,19 @@ description: "Build the newest Shardlane.app from the herdr-client working tree 
 
 # Shardlane Install
 
-One script performs the whole verified flow — vet, build, bundle checks,
+One script performs the whole verified flow — vet, build, artifact checks,
 graceful restart, replace, relaunch, liveness — with each stage gating the
 next. Run it from anywhere inside the repository and read its staged output;
 do not re-implement the steps by hand.
 
-## Run
+The script is **platform-aware** (2026-10-16, per user): it branches on
+`uname -s` and installs what the current machine runs.
 
-```sh
-bash .agents/skills/shardlane-install/scripts/install.sh
-```
+## macOS (`Darwin`)
 
-Stages, in order (each prints `==> N/7`):
+Builds and replaces the `Shardlane.app` bundle (default target
+`~/Applications/Shardlane.app`, override `SHARDLANE_INSTALL_DST`). Stages, in
+order (each prints `==> N/7`):
 
 1. **vet** — `go tool mygo vet .`; a broken tree stops before any build.
 2. **build** — `go tool mygo build` over the **working tree**, so uncommitted
@@ -36,15 +37,50 @@ Stages, in order (each prints `==> N/7`):
 7. **launch and verify** — `open`, then a two-stage liveness check so a
    crash-on-launch is caught, not reported as success.
 
-`SHARDLANE_INSTALL_DST=/Applications/Shardlane.app` overrides the target.
+## Linux (`Linux`)
+
+Builds the user-local Linux app and installs it through the **installer that
+`go tool mygo build` generates** (`build/linux-amd64/install.sh`) — the
+framework's installer owns staging, whole-directory replacement and the
+applications-menu entry; this script only gates and drives it. Target:
+`~/.local/shardlane.app` + `~/.local/share/applications/shardlane.desktop`
+(override the app dir with `SHARDLANE_INSTALL_APP_DIR`; no root needed).
+
+1. **vet** — same gate as macOS.
+2. **build** — same `go tool mygo build`; announces the dirty-file count.
+3. **artifact checks** — executable, generated installer, and the
+   `<arch>` archive must all exist under `build/linux-amd64/`.
+4. **target preflight** — reports fresh install vs replace. Linux has no
+   bundle identity file, so the macOS identity guard does not apply; the
+   MyGo-owned target name is the identity.
+5. **quit** — graceful TERM with 10 s grace, then abort (no SIGKILL, same
+   rule). Scope is the target **plus this repository's `build/` outputs**:
+   instances launched day to day from a build output directory are this
+   repo's own products, never user-authored state, so they are replaced too.
+6. **install** — runs the generated installer; then verifies the executable
+   and the desktop entry landed.
+7. **launch and verify** — `gtk-launch shardlane` when a Wayland/X display
+   is reachable, then a two-stage liveness check; without a display session
+   it reports the install and points at the applications menu.
+
+`libwebkit2gtk-4.1` is the Chat surface's runtime dependency; the generated
+installer warns when it is missing.
+
+## Run
+
+```sh
+bash .agents/skills/shardlane-install/scripts/install.sh
+```
 
 ## Reading the result
 
-- `done: Shardlane <id> <version> installed at <path> and running (pid N)` —
-  report success with the pid and the dirty-file count from stage 2.
+- `done: Shardlane <id|version> installed at <path> and running (pid N)` —
+  report success with the pid and the dirty-file count from stage 2. On a
+  Linux box without a display session the done line says the app was
+  installed and names the applications menu instead.
 - Any `ERROR: ...` line names the failed gate. Report it verbatim and stop:
-  - *identity mismatch* — the target holds a different app; ask before
-    replacing.
+  - *identity mismatch* (macOS) — the target holds a different app; ask
+    before replacing.
   - *still running* — the user must quit the app manually; rerun after.
   - *vet/build failures* — fix the tree first; this script never patches
     around a failed gate.
